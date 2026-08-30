@@ -35,9 +35,17 @@
 //!     means the fixture itself is invalid for some
 //!     language feature the Rust path also lacks).
 //!
-//! Gate: the test **passes iff DIVERGE == 0**.  MIND_UNSUPPORTED is
-//! expected and does not fail the test.  RUST_ONLY means the Rust path
-//! itself could not compile the fixture (invalid syntax, etc.).
+//!   * `MIND_CRASH` — the pure-MIND compiler terminated ABNORMALLY on a
+//!     fixture (panic / internal assertion / worker death). A DEFECT, never a
+//!     porting-backlog entry.
+//!
+//! Gate: the test **passes iff DIVERGE == 0 AND MIND_CRASH == 0**.
+//! MIND_UNSUPPORTED is expected and does not fail the test — declining a
+//! construct is legitimate. CRASHING on one is not, and the two used to share
+//! a bucket: a null handle and a dead worker both collapsed to `None`, so the
+//! pure-MIND compiler segfaulted 21 times over four days inside runs that
+//! reported pass. RUST_ONLY means the Rust path itself could not compile the
+//! fixture (invalid syntax, etc.).
 //!
 //! Coverage report is written to `target/g2-coverage.txt` and printed to
 //! stdout (captured by default; use `--nocapture` to see it live).
@@ -235,7 +243,26 @@ unsafe fn call_mindc_compile(lib: &Library, src_bytes: &[u8]) -> Option<Vec<u8>>
 /// duration. We pass a raw pointer into the spawned thread; this is safe
 /// because the calling thread joins before returning, and the `.so` stays
 /// loaded in-process.
-fn call_on_large_stack(lib: &Library, src_bytes: &[u8]) -> Option<Vec<u8>> {
+/// Outcome of one pure-MIND `mindc_compile` call.
+///
+/// `Option` was WRONG here: it collapsed two different things into `None` — the
+/// compiler deliberately declining a construct (a null handle) and the compiler
+/// DYING on it (a panicked worker). Those were then both reported as
+/// MIND_UNSUPPORTED, so an abnormal termination read as "not ported yet" and the
+/// gate stayed green. A crash is a defect; an unsupported construct is a backlog
+/// item. They must not share an outcome.
+enum MindCall {
+    /// `mindc_compile` returned a handle and we decoded its buffer.
+    Ok(Vec<u8>),
+    /// `mindc_compile` returned a NULL handle — the pure-MIND front end declined
+    /// this fixture. Legitimate, expected, and non-fatal to the gate.
+    NullHandle,
+    /// The worker terminated abnormally (panic / internal assertion / stack
+    /// overflow the runtime turned into an unwind). NOT an unsupported construct.
+    Crashed(String),
+}
+
+fn call_on_large_stack(lib: &Library, src_bytes: &[u8]) -> MindCall {
     // 64 MiB — enough for the pure-MIND compiler's recursive parsing of
     // large files (e.g. examples/mindc_mind/main.mind, ~1700 LOC).
     const STACK_SIZE: usize = 64 * 1024 * 1024;
@@ -265,10 +292,24 @@ fn call_on_large_stack(lib: &Library, src_bytes: &[u8]) -> Option<Vec<u8>> {
     // Keep the src box alive past the thread join.
     drop(src_bytes_box);
 
-    // A panicked worker thread (e.g. stack-overflow caught by the OS, or the
-    // pure-MIND compiler hitting an internal assertion) is treated as
-    // unsupported — `Err(_)` collapses to the `None` default.
-    result.unwrap_or_default()
+    // A panicked worker is a CRASH, not an unsupported construct. It used to be
+    // `result.unwrap_or_default()`, which turned `Err(_)` into the same `None` a
+    // deliberate null handle produces — the classification bug that let the pure-MIND
+    // compiler die on a fixture while the gate reported pass.
+    match result {
+        Ok(Some(bytes)) => MindCall::Ok(bytes),
+        Ok(None) => MindCall::NullHandle,
+        Err(payload) => {
+            // Recover the panic message where the payload carries one, so the gate
+            // failure names what died rather than just that something did.
+            let detail = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "no panic payload".to_string());
+            MindCall::Crashed(format!("worker terminated abnormally: {detail}"))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -361,9 +402,22 @@ fn collect_mind_files(dir: &Path, out: &mut Vec<PathBuf>) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Outcome {
     Match,
-    Diverge { diff_preview: String },
-    MindUnsupported { reason: String },
-    RustOnly { reason: String },
+    Diverge {
+        diff_preview: String,
+    },
+    MindUnsupported {
+        reason: String,
+    },
+    /// The pure-MIND compiler terminated abnormally on a fixture. This is a DEFECT,
+    /// never a porting-backlog entry, and it FAILS the gate. Kept distinct from
+    /// MindUnsupported because collapsing the two is what let 21 real crashes ride
+    /// inside a green test run over four days.
+    MindCrash {
+        reason: String,
+    },
+    RustOnly {
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +486,17 @@ fn run_fixture(bin: &Path, lib: &Library, fixture: &Path) -> Outcome {
     let mind_raw = call_on_large_stack(lib, &src_bytes);
 
     let mind_out: Vec<u8> = match mind_raw {
-        Some(bytes) => bytes,
-        None => {
+        MindCall::Ok(bytes) => bytes,
+        // Declining a construct is legitimate and stays non-fatal.
+        MindCall::NullHandle => {
             return Outcome::MindUnsupported {
-                reason: "mindc_compile returned null handle or panicked".to_string(),
+                reason: "mindc_compile returned a null handle (construct not lowered yet)"
+                    .to_string(),
             };
+        }
+        // Dying on a construct is not the same event and must not share its bucket.
+        MindCall::Crashed(reason) => {
+            return Outcome::MindCrash { reason };
         }
     };
 
@@ -464,6 +524,7 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
 
     let mut n_match = 0usize;
     let mut n_diverge = 0usize;
+    let mut n_crash = 0usize;
     let mut n_unsupported = 0usize;
     let mut n_rust_only = 0usize;
 
@@ -488,6 +549,10 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
                     buf.push_str(&format!("                   {line}\n"));
                 }
             }
+            Outcome::MindCrash { reason } => {
+                n_crash += 1;
+                buf.push_str(&format!("MIND_CRASH {rel}  [{reason}]\n"));
+            }
             Outcome::MindUnsupported { reason } => {
                 n_unsupported += 1;
                 buf.push_str(&format!("MIND_UNSUPPORTED {rel}  [{reason}]\n"));
@@ -499,9 +564,9 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
         }
     }
 
-    let total = n_match + n_diverge + n_unsupported + n_rust_only;
+    let total = n_match + n_diverge + n_crash + n_unsupported + n_rust_only;
     let summary = format!(
-        "\nSUMMARY: {n_match} MATCH / {n_diverge} DIVERGE / \
+        "\nSUMMARY: {n_match} MATCH / {n_diverge} DIVERGE / {n_crash} MIND_CRASH / \
          {n_unsupported} MIND_UNSUPPORTED / {n_rust_only} RUST_ONLY \
          out of {total} fixtures\n"
     );
@@ -625,7 +690,40 @@ fn g2_1_differential_coverage() {
         report_path.display()
     );
 
-    // Gate: fail if any DIVERGE exists.
+    // Gate part 1: a CRASH fails, always and first.
+    //
+    // This check did not exist. An abnormal termination was classified as
+    // MIND_UNSUPPORTED and the gate looked only at DIVERGE, so the pure-MIND
+    // compiler segfaulted 21 times across four days inside test runs that reported
+    // pass. A construct the compiler declines is a backlog item; a construct that
+    // KILLS it is a defect, and the difference has to be visible to the gate.
+    let crashes: Vec<&(PathBuf, Outcome)> = rows
+        .iter()
+        .filter(|(_, o)| matches!(o, Outcome::MindCrash { .. }))
+        .collect();
+
+    if !crashes.is_empty() {
+        let root = repo_root();
+        let mut msg = format!(
+            "G2.1 GATE FAILED: the pure-MIND compiler CRASHED on {} fixture(s).\n\
+             This is not a porting gap — an unsupported construct returns a null handle \
+             and is reported as MIND_UNSUPPORTED. These terminated abnormally.\n",
+            crashes.len()
+        );
+        for (path, outcome) in &crashes {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(path)
+                .display()
+                .to_string();
+            if let Outcome::MindCrash { reason } = outcome {
+                msg.push_str(&format!("\n  {rel}:\n    {reason}\n"));
+            }
+        }
+        panic!("{msg}");
+    }
+
+    // Gate part 2: fail if any DIVERGE exists.
     let divergences: Vec<&(PathBuf, Outcome)> = rows
         .iter()
         .filter(|(_, o)| matches!(o, Outcome::Diverge { .. }))
