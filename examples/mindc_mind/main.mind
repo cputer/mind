@@ -7250,10 +7250,39 @@ pub fn tc_let(node: i64, env: Map, buf: i64, report: String) -> TcResult {
 
     let n_lo: i64 = ast_span_lo(name_node);
     let n_hi: i64 = ast_span_hi(name_node);
-    let t_lo: i64 = ast_span_lo(ty_node);
-    let t_hi: i64 = ast_span_hi(ty_node);
 
-    let ty: i64 = resolve_type_ident(buf, t_lo, t_hi);
+    // ty_node == 0 means NO SINGLE-TOKEN ANNOTATION, which is broader than "untyped".
+    // parse_let emits `ast_new_let(.., name, 0, init)` on FOUR paths: the untyped form
+    // `let x = 1;` (:3538), the typed-ARRAY form `let a: [i64; N] = [..]` where the
+    // annotation is a type ASSERTION only (:3622), and the two malformed-annotation
+    // arms (:3604, :3611). Verified: `let a: [i64;4] = [1,2,3,4];` faulted identically
+    // before this guard — a TYPED let, so calling this bug "untyped lets" understates it.
+    //
+    // nb_width_of_ann (-> 64) and nb_let_descriptor (-> init-derived) already handle 0.
+    // This consumer did not: it read ast_span_lo(ty_node) unconditionally, dereferencing
+    // NULL at +8 and faulting before resolve_type_ident was even reached.
+    //
+    // It survived because main.mind's own source uses ONLY typed lets, so the
+    // self-compile parse never reaches ty_node == 0 and every self-host gate stayed
+    // green; it fired only on user code, 21 times in the G2 differential harness.
+    //
+    // With no annotation the binding's type is the type of its initialiser — the same
+    // init-derived rule the other consumers use. ast_child2 is the init slot (n+40),
+    // and every one of the 30 ast_new_let call sites passes a real node there (never 0),
+    // so this cannot reintroduce the same fault one level down. That is an UNENFORCED
+    // invariant: a future desugarer passing 0 as the init would fault in ast_kind.
+    //
+    // The value this computes reaches only the type-check REPORT: typecheck() returns
+    // tc_report(result) and drops the env, so `ty` never reaches lower_program and a
+    // wrong inference here cannot mis-lower a byte. type_of_expr does return ty_unknown
+    // for float/string/call initialisers, which disagrees with nb_width_of_ann's 64 —
+    // harmless while the env is report-only, and a precondition to fix BEFORE any future
+    // work wires the type-check environment into emit.
+    let ty: i64 = if ty_node == 0 {
+        type_of_expr(ast_child2(node), env, buf)
+    } else {
+        resolve_type_ident(buf, ast_span_lo(ty_node), ast_span_hi(ty_node))
+    };
     let new_env: Map = env_bind(env, buf, n_lo, n_hi, ty);
 
     let s1: String = push_kw_let(report);

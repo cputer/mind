@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 3419 | **Est. tokens:** ~8,078,972
-**Generated:** 2026-08-30 00:50 UTC
+**Files:** 3419 | **Est. tokens:** ~8,081,576
+**Generated:** 2026-08-30 07:13 UTC
 
 ## Token Budget Guide
 
@@ -76,7 +76,7 @@
 | `.github/workflows/` | 9 | ~23,936 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,261 |
-| `scripts/` | 18 | ~37,760 |
+| `scripts/` | 18 | ~38,309 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,299 |
@@ -418,7 +418,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 332 | ~572,185 |
+| `tests/` | 332 | ~573,917 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -470,7 +470,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 9 | ~184 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/type_checker/` | 2 | ~140 |
-| `tools/` | 5 | ~6,143 |
+| `tools/` | 5 | ~6,466 |
 | `tools/mindfuzz/` | 7 | ~16,763 |
 | `tools/mindfuzz/seeds/` | 6 | ~1,330 |
 | `tools/mindfuzz/violations/` | 1 | ~0 |
@@ -1159,7 +1159,7 @@
 - `check_json_not_evidence.sh` (~546 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~723 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
-- `exec_semantics_gate.sh` (~4691 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~5104 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -1173,7 +1173,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~5218 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~5354 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~1094 tok, large) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~1751 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -4484,7 +4484,7 @@
 - `for_continue_step_injection.rs` (~1302 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~859 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1442 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~7315 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~9047 tok, huge) — Copyright 2025 STARGA Inc.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3678 tok, huge) — Copyright 2025 STARGA Inc.
@@ -5034,7 +5034,7 @@
 ### `tools/`
 
 - `add_copyright_headers.py` (~1132 tok, large) — # Copyright 2025 STARGA Inc.
-- `bench_gate.py` (~3283 tok, huge) — # Copyright 2025 STARGA Inc.
+- `bench_gate.py` (~3606 tok, huge) — # Copyright 2025 STARGA Inc.
 - `cargo-deny-sanitize.sh` (~572 tok, large) — Run cargo-deny but sanitize advisory entries that older cargo-deny versions
 ### `tools/mindfuzz/`
 
