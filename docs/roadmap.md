@@ -2182,3 +2182,94 @@ Minimum surface:
 attribute to a key is a weaker claim than one you can), and it is the
 demonstration surface that makes Phase 19 worth building — an anchor nobody
 outside can verify is an internal log.
+
+---
+
+## Phase 19.3 — Exhaustive-cell conformance over the codegen flag product
+
+**Status: gap identified 2026-08-30, not scoped.**
+
+The wedge is a **universally-quantified** claim: identical source produces
+bit-identical output across substrates, for every combination of the flags that
+select a lowering path. What defends it today is a **curated sample**, not an
+enumeration.
+
+Measured against HEAD:
+
+| | count |
+|---|---|
+| workload fixtures (`manifest.toml` + `reference_hashes.toml`) | 25 |
+| substrate keys per fixture (`avx2`, `neon`) | 2 |
+| total pinned cells | **50** |
+| fixtures exercising the VNNI int-dot rung | **1** |
+| `proptest` invocations in the tree (dependency is declared) | **0** |
+
+Each fixture pins one kernel, one dtype, and one flag configuration. The flag
+space they are sampled from is a product:
+
+- `FpMode` — `Unknown` / `Strict` / `Relaxed` (`src/ir/fp_mode.rs`)
+- `IntDotMode` — `Avx2` / `Vnni` (`src/mlir/gemm_tuning.rs`)
+- `BackendTarget` — `Cpu` / `Gpu` / … (`src/runtime/types.rs`)
+- substrate — `avx2` / `neon`
+- mic version — `mic@1` / `mic@3`
+
+Nobody has enumerated that product. 50 pinned cells is strong evidence and it is
+not a proof of coverage; the cells that are *not* pinned are precisely where a
+silent divergence would live, and we would not learn about it from a green gate.
+
+This is the same shape as the self-host emitter risk already on record: the
+danger is never the construct that is tested, it is the one that is reachable
+and is not.
+
+### Shape
+
+- [ ] **Enumerate the cell space explicitly.** A single source of truth listing
+      the flag dimensions and their legal values, with illegal/not-yet-supported
+      combinations named and excluded *by construction* rather than by silence.
+      An excluded cell must carry the reason it is excluded.
+- [ ] **Per-cell oracle = the byte-identity hash.** The oracle already exists and
+      is the strongest one available: two independent lowerings of the same
+      source must produce the same bytes. Extending it from 50 hand-picked cells
+      to the enumerated space is a coverage change, not a new mechanism.
+- [ ] **Failure names the cell, not "a test failed."** The value of an exhaustive
+      diff is diagnostic: the output must be the specific `(FpMode, IntDotMode,
+      substrate, …)` tuple that diverged. A gate that reports a count has thrown
+      away the reason to run it.
+- [ ] **Use the declared `proptest` dependency** (`Cargo.toml:58`, `1.4`) for the
+      dimensions that are ranges rather than small enums, instead of adding a new
+      one. Rung 3 of the write-avoidance ladder: it is already present and has
+      never been used.
+
+### Why this is worth doing now
+
+The two defects fixed on this branch are both instances of the general failure:
+a crash that read as an unsupported construct (`c3b77416`) and an unguarded
+optional field (`9ec7514f`). Neither was found by a gate. Both were found by
+running the thing on an input nobody had thought to pin. An enumeration is the
+systematic version of that accident.
+
+### Firewall — do not cross it
+
+- The cell enumeration is a **test-side** artifact. It must not become an input
+  to codegen, and no lowering decision may read it. A conformance layer that the
+  compiler consults is no longer an independent check.
+- Excluded cells stay **loud**. An exclusion list that silently grows is how a
+  coverage gate becomes a coverage claim; every exclusion carries a reason and a
+  reason that has expired is a failure, not a skip.
+- This does **not** replace the pinned fixtures. The 25 workloads carry
+  provenance (real ARM hardware, recorded in `reference_hashes.toml`) that a
+  generated cell does not. Exhaustive breadth and hardware-attested depth answer
+  different questions; keep both.
+
+### Open questions — answer before this gets a milestone
+
+- Which dimensions are genuinely independent, and which are correlated? A naive
+  product will generate cells that cannot occur (`Vnni` on `neon`), and counting
+  those as covered would overstate the result exactly as badly as undercounting.
+- What is the runtime budget? A full product that nobody runs because it takes
+  an hour is worse than 50 cells that run on every push. The likely answer is a
+  fast subset per-push and the full enumeration on a schedule — but that split
+  must be designed, not defaulted into.
+- Does the substrate dimension multiply or partition? `avx2` and `neon` are not
+  flags we set; they are hardware we run on. Cells requiring both may only be
+  checkable in the dual-arch CI matrix, not locally.
