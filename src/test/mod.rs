@@ -622,9 +622,11 @@ fn contains_assert(stmts: &[Node]) -> bool {
     stmts.iter().any(|s| match s {
         Node::Assert { .. } => true,
         Node::Block { stmts: inner, .. } => contains_assert(inner),
-        Node::For { body, .. } | Node::While { body, .. } | Node::Region { body, .. } => {
-            contains_assert(body)
-        }
+        Node::For { body, .. } => contains_assert(body),
+        // `While` and `Region` exist only under std-surface (src/ast/mod.rs:612, :874),
+        // so referencing them unconditionally broke the --no-default-features build.
+        #[cfg(feature = "std-surface")]
+        Node::While { body, .. } | Node::Region { body, .. } => contains_assert(body),
         Node::If {
             then_branch,
             else_branch,
@@ -723,7 +725,17 @@ fn eval_asserts_in_stmts(
             // the silence one level down -- an eval error is ignored below.
             //
             // "Cannot verify" must not read as "verified". Refuse, and say why.
-            Node::For { body, .. } | Node::While { body, .. } => {
+            #[cfg(feature = "std-surface")]
+            Node::While { body, .. } => {
+                if contains_assert(body) {
+                    return Err("assertion inside a loop body: this runner evaluates \
+                                assertions statically and cannot execute loop iterations, \
+                                so the assertion was never checked. Refusing to report a \
+                                pass for a test whose verification did not run."
+                        .to_string());
+                }
+            }
+            Node::For { body, .. } => {
                 if contains_assert(body) {
                     return Err("assertion inside a loop body: this runner evaluates \
                                 assertions statically and cannot execute loop iterations, \
