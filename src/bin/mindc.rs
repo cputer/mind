@@ -2466,8 +2466,8 @@ fn run_verify(
     trusted: &[Vec<u8>],
 ) -> i32 {
     use libmind::ir::compact::{
-        CollapseVerifyStatus, Determinism, EvidenceError, MAX_MIC3_INPUT, TraceHashKind,
-        mic3_evidence_report, parse_mic3,
+        CollapseVerifyStatus, Determinism, EvidenceError, MAX_MIC3_INPUT, Mic3NonCanonical,
+        TraceHashKind, mic3_canonical_check, mic3_evidence_report, parse_mic3,
     };
     use libmind::ir::{IrVerifyError, check_ssa_well_formed, verify_module};
 
@@ -2500,6 +2500,39 @@ fn run_verify(
             return 2;
         }
     };
+
+    // CANONICAL-FORM GATE (SECURITY). Neither integrity layer covers the LITERAL
+    // bytes: `trace_hash` anchors the re-emission of the PARSED IR, and the RFC 0021
+    // signature preimage covers trace_hash + scheme tag + DECODED provenance entries.
+    // So every mutation the decoder normalises away produced a DIFFERENT file, with a
+    // different SHA-256, that still reported "signature is valid and signer key is
+    // trusted" and exited 0 — appending a byte after the MAP epilogue, padding to the
+    // MAX_MIC3_INPUT ceiling, re-encoding the MAP entry-count ULEB non-minimally,
+    // downgrading the wire-version byte inside the accepted read window, or flipping a
+    // normalised body byte. A valid signature therefore did not identify ONE byte
+    // string, which is the whole point of signing it: any hash-pinning consumer — a
+    // lockfile, a transparency log, a reproducible-build comparison — could be handed
+    // a different file that `verify` blesses.
+    //
+    // `mic3_canonical_check` re-emits the artifact and byte-compares against the
+    // input, so distinct byte streams can never share one verdict. It existed,
+    // documented as a hard gate of `mindc verify`, with ZERO call sites outside its
+    // own unit tests.
+    //
+    // `Unparseable` is deliberately NOT fatal here: canonicality is undecidable on a
+    // body that does not decode, and the parse/SSA path immediately below reports the
+    // authoritative diagnostic for it. Every other variant fails closed.
+    if let Err(nc) = mic3_canonical_check(&bytes) {
+        if !matches!(nc, Mic3NonCanonical::Unparseable) {
+            eprintln!(
+                "error[verify]: {artifact} is not in canonical mic@3 form: {nc}\n  \
+                 the artifact's literal bytes differ from the canonical re-emission of \
+                 the IR they decode to, so a signature or trace_hash over it would not \
+                 identify these exact bytes (fail-closed)"
+            );
+            return 1;
+        }
+    }
 
     // SSA well-formedness (RFC 0017, second static-verification slice): parse
     // the mic@3 IR body and statically confirm single-assignment +
@@ -2991,6 +3024,24 @@ fn run_verify(
             // Plain `verify` (no flag) still exits 0 here — attestation is
             // absent, not failed (RFC 0017).
             //
+            // `--require-signed` gate (fail-closed) — SECURITY. The flag is an
+            // explicit demand for a VALID signature, and it was honoured at only
+            // one site (the attested arm), so an artifact with NO evidence_chain
+            // took this arm and exited 0. Stripping the chain therefore turned
+            // REJECTED into ACCEPTED: `verify --require-signed evil.mic3` passed
+            // on a fully attacker-authored, unsigned artifact, so a CI gate
+            // `verify --require-signed KEY && deploy` would deploy it. An
+            // unattested artifact carries no signature at all and so can never
+            // satisfy the demand. This is the identical downgrade the
+            // pinned-signer guard immediately below already closes, and the two
+            // must not disagree about whether a missing chain is benign.
+            if require_signed {
+                eprintln!(
+                    "error[verify]: --require-signed was given but {artifact} carries no evidence_chain — an unattested artifact has no signature to verify (fail-closed)"
+                );
+                return 1;
+            }
+
             // Pinned-signer gate (fail-closed) — SECURITY (audit rank 1). A
             // pinned signer (`--signer-pubkey` / `MIND_EVIDENCE_VERIFY_PUBKEYS`)
             // is an explicit demand for a valid, trusted signature. An
