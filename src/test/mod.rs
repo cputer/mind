@@ -648,11 +648,20 @@ fn eval_asserts_in_stmts(
     use crate::eval;
     use crate::eval::ExecMode;
 
-    // Build a value env from the integer bindings produced by the first pass.
-    let venv: std::collections::HashMap<String, eval::Value> = parent_env
-        .iter()
-        .map(|(k, v)| (k.clone(), eval::Value::Int(*v)))
-        .collect();
+    // Sequential env: each assert must be evaluated against the state AT ITS POINT.
+    //
+    // This was seeded from `parent_env` -- the bindings left behind AFTER the first pass
+    // had executed the WHOLE body -- and then never updated. So every assert saw FINAL
+    // values, and the runner reported the exact inverse of the truth (#241):
+    //
+    //     fn a() { let mut x = 1; assert x == 1; x = 2 }   reported FAILED
+    //     fn b() { let mut y = 1; assert y == 2         }   reported passed
+    //
+    // Starting empty and applying `Let` / `Assign` in source order is what makes an
+    // assert mean what it says. Test functions take no parameters, so there is nothing
+    // legitimate to inherit from the caller.
+    let mut venv: std::collections::HashMap<String, eval::Value> = std::collections::HashMap::new();
+    let _ = parent_env;
     let tensor_env = std::collections::HashMap::new();
 
     for stmt in stmts {
@@ -681,11 +690,24 @@ fn eval_asserts_in_stmts(
                     }
                 }
             }
+            // #240: this arm was `let _ = (name, value);` -- a no-op under a comment
+            // claiming it bound the value, so a `let` of a CALL result was invisible to
+            // every later assert ("unknown identifier"). Bind it for real.
             Node::Let { name, value, .. } => {
-                // Evaluate the let binding so that subsequent asserts can use it.
-                // We re-evaluate here because the first pass may have produced
-                // a richer env; for simplicity we just skip errors.
-                let _ = (name, value);
+                if let Ok(v) =
+                    eval::eval_value_expr_mode(value, &venv, &tensor_env, ExecMode::Preview)
+                {
+                    venv.insert(name.clone(), v);
+                }
+            }
+            // #241: a later mutation must not change what an EARLIER assert saw. Applying
+            // assignments in order is the other half of evaluating at the assert's point.
+            Node::Assign { name, value, .. } => {
+                if let Ok(v) =
+                    eval::eval_value_expr_mode(value, &venv, &tensor_env, ExecMode::Preview)
+                {
+                    venv.insert(name.clone(), v);
+                }
             }
             Node::Return { value: Some(v), .. } => {
                 // A return with a value: evaluate it.
