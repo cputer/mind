@@ -132,13 +132,55 @@ fn require_mindc() -> Option<PathBuf> {
 /// real-ELF `.so` happens to be present locally (e.g. a prior build left one
 /// in the example dir) it is reused; a stub or absent artifact triggers a
 /// rebuild, and a failed rebuild (no MLIR toolchain) returns `None` to skip.
+/// True when `so` is older than any input that determines its bytes, or when that
+/// cannot be established. Mirrors the input set of the Python resolver's `_stamp()`
+/// (`examples/mindc_mind/_selfhost_so.py`), which caches on the same four files.
+///
+/// Fails STALE on any unreadable mtime: an oracle we cannot prove current is exactly
+/// the one that must not be trusted.
+fn is_stale(so: &Path) -> bool {
+    let Ok(so_mtime) = fs::metadata(so).and_then(|m| m.modified()) else {
+        return true;
+    };
+    let root = repo_root();
+    [
+        "examples/mindc_mind/main.mind",
+        "examples/mindc_mind/selfhost_driver.mind",
+        "Mind.toml",
+        "target/release/mindc",
+    ]
+    .iter()
+    .any(
+        |rel| match fs::metadata(root.join(rel)).and_then(|m| m.modified()) {
+            Ok(input_mtime) => input_mtime > so_mtime,
+            // An input whose mtime cannot be read cannot clear the artifact, so it
+            // counts as stale. The one exception is `target/release/mindc`: the caller
+            // passes its own binary path and a release build need not exist at all, so
+            // its absence is normal and must not by itself condemn the oracle.
+            Err(_) => !rel.ends_with("mindc"),
+        },
+    )
+}
+
 fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
     static SO: OnceLock<Option<PathBuf>> = OnceLock::new();
     SO.get_or_init(|| {
         let committed = repo_root().join("examples/mindc_mind/libmindc_mind.so");
 
-        // Use the committed oracle if it is a real ELF.
-        if committed.exists() {
+        // Use the in-tree oracle only if it is a real ELF **and is not STALE**.
+        //
+        // This file is an UNTRACKED build artifact, not a committed one, so its age
+        // is whatever the last local build left behind — on CI it is absent and gets
+        // rebuilt, on a dev box it can be arbitrarily old. Accepting it on existence
+        // alone made this gate compare the Rust oracle against a pure-MIND compiler
+        // built from source that no longer exists.
+        //
+        // Measured: a 35-hour-old artifact reported 32 fixtures as SIGSEGV crashes
+        // that the then-current source did not crash on at all. The same hole runs
+        // the other way and is far worse — a bug newly introduced into main.mind is
+        // INVISIBLE here, because the gate never loads the code under test. A gate
+        // that cannot see the change it exists to gate is not a gate.
+        if committed.exists() && !is_stale(&committed) {
             if let Ok(bytes) = fs::read(&committed) {
                 if bytes.starts_with(b"\x7fELF") {
                     return Some(committed);
@@ -317,6 +359,14 @@ const WORKER_ENV: &str = "G2_MIND_WORKER_SRC";
 /// select a different library than the one the parent is testing, which would make
 /// every verdict describe the wrong artifact.
 const WORKER_SO_ENV: &str = "G2_MIND_WORKER_SO";
+/// Where the child writes the compiled bytes.
+///
+/// NOT stdout: the child re-execs this same TEST binary, so the worker body runs
+/// inside a libtest test, and libtest installs an output capture that swallows
+/// writes through `std::io::stdout()`. The compiled bytes never reached the parent
+/// and every fixture compared as EMPTY — 0 MATCH / 99 DIVERGE, a differential gate
+/// that silently compared nothing at all. A plain file has no such interception.
+const WORKER_OUT_ENV: &str = "G2_MIND_WORKER_OUT";
 const WORKER_EXIT_NULL_HANDLE: i32 = 3;
 /// The worker could not reach the compiler at all. See the exit-code table above:
 /// this must NEVER be `WORKER_EXIT_NULL_HANDLE`, because a null handle means the
@@ -355,19 +405,40 @@ fn run_as_worker_if_requested() {
         // MATCH floor stood between that and a green gate, and it named the wrong cause.
         Err(e) => worker_fault(&format!("cannot dlopen {so_path}: {e}")),
     };
-    // SAFETY: same contract as the in-process call — the library outlives the call.
-    match unsafe { call_mindc_compile(&lib, &src) } {
+    // 64 MiB, the same stack the in-process path used. The pure-MIND compiler
+    // parses recursively, so a large fixture can outgrow the default ~8 MiB main
+    // stack. Moving the call into a subprocess made the signal OBSERVABLE; it must
+    // not also make it more LIKELY. A harness-induced stack overflow arrives as a
+    // SIGSEGV and is indistinguishable, at the parent, from a real compiler crash —
+    // so dropping this would manufacture the exact fault the gate now reports.
+    const WORKER_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+    // A panic inside the compile is NOT caught here: it unwinds, the child exits
+    // non-zero, and the parent files it as Crashed with the message quoted.
+    let compiled = std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .stack_size(WORKER_STACK_SIZE)
+            // SAFETY: same contract as before — `lib` and `src` outlive the scope,
+            // which joins the thread before returning.
+            .spawn_scoped(scope, || unsafe { call_mindc_compile(&lib, &src) })
+            .unwrap_or_else(|e| worker_fault(&format!("cannot spawn compile thread: {e}")));
+        match handle.join() {
+            Ok(v) => v,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    });
+
+    match compiled {
         Some(bytes) => {
-            use std::io::Write as _;
+            let Ok(out_path) = std::env::var(WORKER_OUT_ENV) else {
+                worker_fault("worker was not given an output path")
+            };
             // A dropped or short write silently truncates the compiled bytes, and the
             // parent then byte-compares a truncated stream against the Rust oracle and
             // reports DIVERGE — a harness fault indicted as a compiler defect. The
             // mirror image of the collapse above, and just as wrong.
-            if let Err(e) = std::io::stdout().write_all(&bytes) {
-                worker_fault(&format!("cannot write compiled bytes to stdout: {e}"));
-            }
-            if let Err(e) = std::io::stdout().flush() {
-                worker_fault(&format!("cannot flush compiled bytes to stdout: {e}"));
+            if let Err(e) = std::fs::write(&out_path, &bytes) {
+                worker_fault(&format!("cannot write compiled bytes to {out_path}: {e}"));
             }
             std::process::exit(0);
         }
@@ -387,9 +458,12 @@ fn call_in_subprocess(src_bytes: &[u8], so_path: &Path) -> MindCall {
         return MindCall::Crashed("cannot stage fixture for worker".to_string());
     }
 
+    let out_file = std::env::temp_dir().join(format!("g2_worker_out_{}.bin", std::process::id()));
+    let _ = std::fs::remove_file(&out_file);
     let out = std::process::Command::new(exe)
         .env(WORKER_ENV, &tmp)
         .env(WORKER_SO_ENV, so_path)
+        .env(WORKER_OUT_ENV, &out_file)
         .stdin(std::process::Stdio::null())
         .output();
     let _ = std::fs::remove_file(&tmp);
@@ -418,7 +492,18 @@ fn call_in_subprocess(src_bytes: &[u8], so_path: &Path) -> MindCall {
     // actual cause rather than a bare exit number.
     let child_err = String::from_utf8_lossy(&out.stderr).trim().to_string();
     match out.status.code() {
-        Some(0) => MindCall::Ok(out.stdout),
+        Some(0) => match std::fs::read(&out_file) {
+            Ok(bytes) => {
+                let _ = std::fs::remove_file(&out_file);
+                MindCall::Ok(bytes)
+            }
+            // Exit 0 promises a result file. Its absence is a harness fault, never
+            // an empty compilation — the distinction this whole file exists to keep.
+            Err(e) => MindCall::Crashed(format!(
+                "worker exited 0 but left no result at {}: {e}",
+                out_file.display()
+            )),
+        },
         Some(c) if c == WORKER_EXIT_NULL_HANDLE => MindCall::NullHandle,
         Some(c) if c == WORKER_EXIT_HARNESS_FAULT => MindCall::Crashed(format!(
             "HARNESS FAULT (the compiler was never asked about this fixture): {child_err}"
@@ -434,75 +519,6 @@ fn call_in_subprocess(src_bytes: &[u8], so_path: &Path) -> MindCall {
         None => MindCall::Crashed("worker ended with neither code nor signal".to_string()),
     }
 }
-
-fn call_on_large_stack(lib: &Library, src_bytes: &[u8]) -> MindCall {
-    // 64 MiB — enough for the pure-MIND compiler's recursive parsing of
-    // large files (e.g. examples/mindc_mind/main.mind, ~1700 LOC).
-    const STACK_SIZE: usize = 64 * 1024 * 1024;
-
-    // Move data to heap so they can be shared via raw pointers.
-    let src_bytes_box: Box<[u8]> = src_bytes.into();
-    let src_ptr = src_bytes_box.as_ptr() as usize;
-    let src_len = src_bytes_box.len();
-
-    // SAFETY: We cast a reference-counted library handle to a raw pointer
-    // and join the thread before returning, so the library outlives the thread.
-    let lib_ptr = lib as *const Library as usize;
-
-    let result = std::thread::Builder::new()
-        .stack_size(STACK_SIZE)
-        .spawn(move || {
-            // SAFETY: library is alive in the parent thread, which joins
-            // before we return.
-            let lib_ref: &Library = unsafe { &*(lib_ptr as *const Library) };
-            let src_slice: &[u8] =
-                unsafe { std::slice::from_raw_parts(src_ptr as *const u8, src_len) };
-            unsafe { call_mindc_compile(lib_ref, src_slice) }
-        })
-        .expect("spawn worker thread")
-        .join();
-
-    // Keep the src box alive past the thread join.
-    drop(src_bytes_box);
-
-    // A panicked worker is a CRASH, not an unsupported construct. It used to be
-    // `result.unwrap_or_default()`, which turned `Err(_)` into the same `None` a
-    // deliberate null handle produces — the classification bug that let the pure-MIND
-    // compiler die on a fixture while the gate reported pass.
-    match result {
-        Ok(Some(bytes)) => MindCall::Ok(bytes),
-        Ok(None) => MindCall::NullHandle,
-        Err(payload) => {
-            // Recover the panic message where the payload carries one, so the gate
-            // failure names what died rather than just that something did.
-            let detail = payload
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "no panic payload".to_string());
-            MindCall::Crashed(format!("worker terminated abnormally: {detail}"))
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Self-host coverage note
-// ---------------------------------------------------------------------------
-//
-// There is no longer a source-level "unsupported feature" pre-filter. The
-// pure-MIND front-end (examples/mindc_mind/main.mind) lowers EVERY top-level
-// construct in this corpus byte-identically to mindc-Rust `--emit-ir`: fn /
-// struct / enum / `extern "C"` blocks / `module NAME { }` blocks / use / import
-// / const (one stub per item), plus a bare top-level arithmetic expression
-// (`1 + 2 * 3`), which is const-folded to one `const.i64 <val>` exactly like
-// Rust. A fixture the front-end genuinely could not handle now surfaces as a
-// DIVERGE (gate failure) instead of being silently excluded — the honest,
-// strict posture. The only remaining `MIND_UNSUPPORTED` path is the runtime
-// valve in run_fixture (mindc_compile returned a null handle or panicked).
-
-// ---------------------------------------------------------------------------
-// Fixture corpus
-// ---------------------------------------------------------------------------
 
 fn collect_fixtures() -> Vec<PathBuf> {
     let root = repo_root();
