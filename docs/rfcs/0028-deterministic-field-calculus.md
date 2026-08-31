@@ -225,7 +225,7 @@ the input field, exactly.
 ```mind
 #[conserves(sum)]
 fn diffuse(F: field q16 over Grid2D) -> field q16 over Grid2D {
-    return F .+ laplacian(F);        // unscaled: ring-closed, provable
+    return F .+ laplacian(F);        // unscaled, ring-`q16` ops only: provable
 }
 ```
 
@@ -235,6 +235,12 @@ any ring; therefore `sum(F .+ laplacian(F)) == sum(F)`. The prover checks the bo
 rule is `Periodic`, that the expression is a sum of the input and terms whose global
 sum is provably zero, and that every operation between the field and the sum stays in
 one ring (§5.4).
+
+Read that condition strictly. `.+` here denotes the **compiler-known ring-`q16`
+addition** this RFC introduces — native `i32` addition on the Q16.16 representation,
+wrapping per `docs/determinism.md` §1. It is **not** a call to a saturating helper that
+happens to add Q16.16 values. The distinction is not pedantic: §5.4.1 shows the
+reference implementation's own `laplacian` fails this condition, on a constant field.
 
 Note what is **absent** from that example. The natural diffusion form carries a
 coefficient — `F .+ (A .* laplacian(F))` — and that form is **not** provable in v1:
@@ -262,7 +268,7 @@ obligation builds on.
 | `E2302` | The obligation does not hold under the domain's boundary rule (names the rule). |
 | `E2303` | Mixed-ring arithmetic in a conserved expression — the identity is not ring-closed. |
 | `E2304` | Conserved function has a side effect, escaping store, or I/O. |
-| `E2305` | The expression leaves the ring — a non-ring operation (`>>`, division, saturating or clamping call, narrowing cast) sits between the field and the conserved sum. See §5.4. |
+| `E2305` | **Proof domain escaped.** Expected closed ring arithmetic (`ring_q16`); encountered a non-ring operation between the field and the conserved sum — saturating/clamping call (incl. `q16_add`/`q16_sub`/`q16_mul`), rounded fixed-point multiply, `>>` rescale, division, narrowing cast, or normalization. The domain is inferred from the lowered ops, never declared. See §5.4 / §5.4.1. |
 | `E2310` | Field dtype is not `q16` (see §3 — `f32`/`f64` fields are not admitted in v1). |
 | `E2311` | Field domain mismatch across an assignment or operator. |
 
@@ -329,14 +335,72 @@ Rounding discards information, the shift is not additive, and the saturation is
 (`groupnorm.mind:101`), adding a fourth. So the honest statement of what v1 can prove
 about that file is:
 
-- `laplacian(F)` alone, under `Periodic` boundary, carries `#[conserves(zero_sum)]` — **provable**.
+- The **compiler-known** ring-`q16` `laplacian(F)`, under `Periodic` boundary, carries
+  `#[conserves(zero_sum)]` — **provable**.
+- `rfn-mind`'s **existing hand-written** `laplacian` (`laplacian.mind:79-84`) —
+  **`E2305`**. It calls the saturating `q16_add`/`q16_sub`, not ring addition. See
+  §5.4.1; this is a correction to an earlier draft of this RFC, which wrongly listed it
+  as provable.
 - `F .+ (A .* laplacian(F))` with a Q16.16 scalar multiply — **`E2305`**, because
   `q16_mul`'s rounding, `>>16` rescale and saturating clamp all sit between the field
   and the sum.
 - The full normalized `field_step` — **`E2305`**, for the same reason plus
   `group_norm`/`clamp_all`.
 
-The unscaled case (`A == 1`, no rescale) is provable and is the v1 acceptance target.
+### 5.4.1 The reference `laplacian` is not ring-closed (verified counterexample)
+
+The saturation table above lists saturating calls as non-ring, but an earlier draft
+applied that rule only to `q16_mul` and let the reference `laplacian` through. It does
+not pass. `laplacian.mind:79-84` reads:
+
+```mind
+let sum_neighbors: fixed_point.Q16_16 = fixed_point.q16_add(
+    fixed_point.q16_add(up, dn),
+    fixed_point.q16_add(lf, rt)
+)
+let four_center: fixed_point.Q16_16 = center << 2
+let lap: fixed_point.Q16_16 = fixed_point.q16_sub(sum_neighbors, four_center)
+```
+
+`q16_add`/`q16_sub` (`fixed_point.mind:101-109`) widen to `i64` and return
+`sat_i64_to_q16` (`:113`), which clamps at `±2^31`. So a **single cell** of the
+reference Laplacian mixes two algebras in one expression: three **saturating** adds,
+one **wrapping** `<< 2`, and one **saturating** subtract.
+
+The failure is not hypothetical or edge-case-only. Take the constant field
+`F[c,y,x] = Q16_MAX` under `Periodic` boundary, where the Laplacian is mathematically
+zero in every cell. Two independent breakages compound:
+
+| Quantity | True value | Reference implementation |
+|---|---|---|
+| `sum_neighbors` = `4 * Q16_MAX` | `8589934588` | `2147483647` (saturated) |
+| `four_center` = `Q16_MAX << 2` | `8589934588` | `-4` (wrapped) |
+| `lap` | `0` | **`2147483647`** |
+
+Every cell returns `Q16_MAX` where the theorem demands `0`. A control value that
+saturates nothing (`v = 1000`) returns `0` as expected — which is exactly why a
+sampled runtime assertion would pass and a compile-time proof must not.
+
+Two consequences, both narrowing:
+
+1. **The v1 theorem is about ring-`q16` arithmetic, not about "Q16.16".** `Q16.16` is a
+   *representation*; it does not by itself name an algebra. The proof domain is
+   `ring_q16` — native wrapping `i32` ops on that representation — and it must be
+   **inferred from the lowered operations**, never declared by the author. This mirrors
+   `fp_mode`, which derives strict/relaxed from the ops rather than trusting a
+   declaration: inferred-and-attested beats programmer-asserted.
+2. **`rfn-mind` is a reference specimen, not an all-input equivalence oracle.** Gate 1
+   (§7) compares lowering on accepted reference vectors within the non-saturating
+   subset; it cannot claim all-input result equality, because the two implementations
+   genuinely disagree on saturating inputs — and where they disagree, the ring form is
+   the one with a theorem.
+
+Whether `rfn-mind` should itself migrate to ring-`q16` for the Laplacian is an RFN
+semantic question (does that path *want* saturation as clipping?), owned by that repo
+and explicitly out of scope here.
+
+The unscaled **ring-`q16`** case (`A == 1`, no rescale, compiler-known addition) is
+provable and is the v1 acceptance target.
 This is a narrower claim than "RFC 0028 proves conservation for RFN's field step," and
 it is stated here deliberately, because the failure mode this RFC exists to prevent is
 a certificate that is broader than its proof. A future obligation covering scaled
@@ -407,13 +471,28 @@ conflating them would over-claim:
 
 > `laplacian.mind` and `field_step.mind`, re-expressed in the field calculus, must
 > lower to output **byte-identical** to the current hand-written Q16.16
-> index-arithmetic implementation.
+> index-arithmetic implementation **on the accepted reference vectors**, which are
+> drawn from the non-saturating subset of the input space.
 
 This mirrors RFC 0012 §7.2's IR-text byte-identity gate (`A @ B` ≡
 `tensor.matmul(A, B)`) and RFC 0024's requirement that a collapsed loop equal its
 un-collapsed form. A field calculus that changes results is not an abstraction, it is
-a rewrite. This gate applies to the *whole* reference workload, scaling and
-normalization included, because it is a statement about lowering — not about proofs.
+a rewrite. Structurally the gate applies to the *whole* reference workload — scaling
+and normalization included — because it is a statement about lowering, not about
+proofs.
+
+**Why the subset qualifier is not a loophole.** Per §5.4.1 the reference `laplacian`
+calls saturating helpers, so on saturating inputs it *provably* disagrees with the
+ring-`q16` form — on `F = Q16_MAX` it returns `Q16_MAX` where the ring form returns
+`0`. An unqualified all-input byte-identity claim would therefore be unsatisfiable, and
+the honest response is to narrow the gate rather than weaken the theorem. Two
+requirements keep this from becoming a hiding place:
+
+- The reference vector set is **committed to the repo and enumerated**, not selected at
+  gate time; adding a vector is a reviewable diff.
+- The gate additionally asserts the **known divergence** — a saturating vector (`F =
+  Q16_MAX`, `Periodic`) must produce the §5.4.1 table's two different answers. A
+  parity gate that cannot demonstrate where parity ends is measuring its own test set.
 
 **Gate 2 — prove-or-refuse (covers only the ring-closed subset).**
 
@@ -438,6 +517,97 @@ re-derives.
 public `mindc` (`forensic_audit.md:219`). That blocker (its "E0") must close before
 this gate can run. This is a dependency, not an excuse — it is recorded here so the
 RFC cannot be declared implementable while its only reference workload does not build.
+
+---
+
+## 7.1 Determinism and performance constitution (normative)
+
+This RFC ships only if it costs the existing compiler nothing. The ordering below is
+lexicographic, not a weighting — a lower item never buys a higher one:
+
+1. Correctness
+2. Determinism / reproducibility
+3. No-regression compatibility
+4. Runtime performance
+5. Compiler performance
+6. New capability
+
+So `+20% faster but non-deterministic` is a failure, and so is `elegant field
+abstraction but 15% slower`.
+
+**G0 — zero-regression default path (exact, absolute).** For every existing keystone
+and canary program that does **not** use RFC 0028 syntax:
+
+| Property | Requirement |
+|---|---|
+| Canonical mic@3 bytes | **EXACT** match, pre- vs post-RFC compiler |
+| `trace_hash` | **EXACT** |
+| Execution result | **EXACT** |
+| `fp_mode` classification | **EXACT** |
+| Native code (where emitted) | **EXACT** |
+
+One changed byte in a program that does not use the feature fails the release. This is
+strictly stronger than "tests still pass."
+
+**G1 — structural default-off.** The prover must not merely be cheap when unused; it
+must not **initialize**. No field analysis, stencil recognition, domain solving, or
+proof-obligation collection may run unless the opt-in construct is present in the
+parsed AST. Reviewable as a code-structure property, not only as a benchmark result.
+
+**G2 — compiler performance (statistical).** Criterion benchmarks over parse /
+typecheck / lower / canonicalize / native-emit / full-compile / warm-cache, across
+tiny / medium / large / self-host workloads. Requirement: **no statistically
+significant regression beyond a pre-committed noise envelope.** Baselines are frozen
+and committed *before* implementation begins, with raw Criterion output retained — not
+remembered numbers or screenshots.
+
+**G3 — runtime performance (parity floor, SOTA target).** The compiler-known stencil
+must be **at least as fast** as the hand-written reference on the same workload.
+Falling short means the implementation stays experimental; "more elegant" is not a
+defence. The target is higher than parity: once `laplacian` is compiler-known, the
+compiler gains the semantic room for stencil fusion, tiling, boundary specialization
+and allocation elimination that hand-written index arithmetic denies it. Abstraction
+must create optimization headroom, not consume it.
+
+**G4 — no proof machinery in the hot path.** Proving happens at compile time and
+re-derivation happens in `mindc verify`. The emitted program computes; it does not
+carry, check, or re-derive its own certificate at runtime. Runtime cost of a proven
+kernel over an unproven one: zero.
+
+**Tracked beyond wall-clock,** because a 5% speedup that doubles allocations or binary
+size is not a win: ns/op, cycles/op, instructions, allocations, peak RSS, binary size,
+IR size, compile latency, warm-cache latency, artifact size delta, `mindc verify` cost
+delta.
+
+**Two kill switches.**
+
+- *Determinism* — if a strict-profile construct breaks cross-substrate canonical
+  identity or execution identity, it does not ship as strict.
+- *Performance* — if the abstraction cannot reach parity with the hand-written
+  reference on its target workload, the implementation stays experimental.
+
+**Gate matrix, not stars.** Status is reported as GREEN / OPEN / RED per gate. A star
+rating hides exactly the distinction that matters — an excellent implementation with
+unproven determinism and a mediocre one with proven determinism both read as four
+stars.
+
+| Gate | Meaning | v1 status |
+|---|---|---|
+| `D0` | Deterministic correctness (ring identity holds as proven) | OPEN |
+| `D1` | Canonical byte identity, x86 ↔ ARM | OPEN |
+| `G0` | Zero-regression default path | OPEN |
+| `G1` | Prover structurally default-off | OPEN |
+| `C0` | Compiler no-regression (Criterion) | OPEN |
+| `R0` | CPU runtime parity vs hand-written reference | OPEN |
+| `R1` | CPU runtime beats reference (SOTA target) | OPEN |
+| `P0` | `mindc verify` independently re-derives the proof | OPEN |
+| `P1` | Refusal gate — non-ring forms rejected with `E2305` | OPEN |
+| `GPU0` | Q16 GPU deterministic profile | OPEN (out of scope, §6) |
+| `X0` | Distributed deterministic collective | OPEN (out of scope, §6) |
+
+`GPU0` and `X0` are listed to make explicit that this RFC does **not** advance them. A
+field being a language construct does not make it deterministic on a substrate; the
+*operations* determine the profile, exactly as `fp_mode` already works.
 
 ---
 
