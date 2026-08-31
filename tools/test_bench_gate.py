@@ -51,6 +51,62 @@ def main() -> int:
             ("missing baseline -> exit 4 (no default substitution)", run(d / "nope.txt", good), 4),
             ("valid full run -> exit 0 (normal PASS preserved)", run(base, good), 0),
         ]
+        # --- transition-line parsing (the superseded-number bug) ------------
+        # A real baseline file narrates the re-baseline in prose BEFORE stating
+        # the frozen numbers:
+        #
+        #   small_matmul:   2.80 µs -> 2.98 µs   (+6.4%)   <- OLD -> NEW prose
+        #   ...
+        #   small_matmul:   2.98 µs   (3-run: ...)          <- the frozen number
+        #
+        # REF_LINE used to match the prose line first and setdefault() locked in
+        # its LEFT-hand (superseded) value, so the gate silently enforced the
+        # numbers the file exists to REPLACE. Assert the frozen block wins.
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "bench_gate", Path(__file__).resolve().parent / "bench_gate.py"
+        )
+        _bg = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_bg)
+
+        rebaselined = d / "rebaselined.txt"
+        rebaselined.write_text(
+            "Net effect vs the prior baseline:\n"
+            "\n"
+            "  small_matmul:   2.80 µs \u2192 2.98 µs   (+6.4%)\n"
+            "  medium_mlp:     6.55 µs \u2192 6.93 µs   (+5.8%)\n"
+            "  large_network: 17.10 µs \u2192 18.43 µs  (+7.8%)\n"
+            "\n"
+            "Frozen reference measurement:\n"
+            "\n"
+            "  small_matmul:   2.98 µs   (3-run: 2.93 / 2.98 / 3.16)\n"
+            "  medium_mlp:     6.93 µs   (3-run: 6.80 / 6.93 / 7.28)\n"
+            "  large_network:  18.43 µs  (3-run: 17.95 / 18.43 / 19.52)\n"
+        )
+        parsed = _bg.parse_reference(rebaselined)
+        want_frozen = {"small_matmul": 2.98, "medium_mlp": 6.93, "large_network": 18.43}
+        for name, want_v in want_frozen.items():
+            got_v = parsed.get(name)
+            ok = got_v == want_v
+            label = f"frozen block wins over prose transition line ({name})"
+            print(f"[{'PASS' if ok else 'FAIL'}] {label} (got {got_v}, want {want_v})")
+            if not ok:
+                failures.append(label)
+
+        # And the same check against the REAL committed baseline the CI gate
+        # uses, so a future edit to that file cannot reintroduce the bug.
+        real = Path(__file__).resolve().parent.parent / ".bench-baseline-2026-06-01-correctness.txt"
+        if real.exists():
+            rp = _bg.parse_reference(real, prefix="compiler_pipeline/parse_typecheck_ir")
+            for name, want_v in want_frozen.items():
+                key = f"compiler_pipeline/parse_typecheck_ir/{name}"
+                got_v = rp.get(key)
+                ok = got_v == want_v
+                label = f"committed baseline parses to frozen value ({name})"
+                print(f"[{'PASS' if ok else 'FAIL'}] {label} (got {got_v}, want {want_v})")
+                if not ok:
+                    failures.append(label)
+
         for label, got, want in cases:
             ok = got == want
             print(f"[{'PASS' if ok else 'FAIL'}] {label} (got {got}, want {want})")

@@ -63,9 +63,32 @@ TIME_PATTERN = re.compile(
     r"([0-9.]+)\s*([µu]?s|ms|ns)\s*\]"
 )
 # A reference-file line: "<name>   2.98 µs   ..." (baseline/champion files).
+#
+# The trailing (?!...) is load-bearing, not cosmetic. Baseline files carry TWO
+# line shapes that both start "<name>  <float> µs":
+#
+#   prose comparison:  "small_matmul:   2.80 µs -> 2.98 µs   (+6.4%)"   <- OLD then NEW
+#   frozen reference:  "small_matmul:   2.98 µs   (3-run: ...)"          <- the real number
+#
+# Without the guard this pattern matched the comparison line FIRST (it appears
+# earlier in the file), and `out.setdefault` then locked in its LEFT-hand value
+# -- the SUPERSEDED pre-milestone number -- while the frozen block below was
+# silently discarded as a duplicate key. Measured on
+# .bench-baseline-2026-06-01-correctness.txt: the gate enforced 2.80/6.55/17.10
+# (the 2026-05-18 numbers the file exists to replace) instead of the documented
+# 2.98/6.93/18.43. That errs STRICT -- roughly a 2-4% effective threshold
+# instead of the advertised 10% -- so it never produced a false green, but the
+# workflow, this baseline file and docs/versioning.md all described a gate that
+# was not the one running. A perf gate whose enforced number nobody can read off
+# its own reference file is not auditable.
+#
+# So: reject any line whose value is followed by an arrow (a TRANSITION, i.e. a
+# before->after narration), and accept only a standalone measurement.
+_ARROW = r"(?:->|\u2192|=>)"
 REF_LINE = re.compile(
     r"^\s*-?\s*(?P<name>[A-Za-z0-9_]+)\s*[:=]?\s+"
     r"(?P<value>[0-9]+\.[0-9]+)\s*(?:µs|us|microseconds)"
+    rf"(?!\s*{_ARROW})"
 )
 
 
