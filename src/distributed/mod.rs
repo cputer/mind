@@ -21,9 +21,29 @@
 //! use mind.distributed.pipeline
 //! ```
 //!
-//! Each submodule below is the compiler-side IR for one primitive. The
-//! invariants in `invariants` are the compile-time gates `mindc`
-//! evaluates before emitting MLIR.
+//! Each submodule below is the compiler-side IR for one primitive.
+//!
+//! ## Status of the invariants: DEFINED, NOT WIRED
+//!
+//! `invariants` holds `check_deterministic_all_reduce`,
+//! `check_gather_order_lexicographic` and `check_evidence_chain_continuous`. They
+//! are correct and unit-tested, and `mindc` does NOT evaluate them: every call
+//! site is `#[cfg(test)]` in that file, and nothing in the parser, lowering or
+//! emit path ever constructs an `AllReduceOp` / `AllGatherOp` / `PipelineGraph`
+//! for them to inspect. `to_mlir` emits whatever `order` it is handed.
+//!
+//! This doc previously said the invariants "are the compile-time gates `mindc`
+//! evaluates before emitting MLIR". That was not true of the shipped compiler and
+//! is the reason it is being corrected rather than quietly left: a stated gate
+//! that does not run is worse than an absent one, because it is relied on.
+//!
+//! Wiring them is not a matter of adding a call -- it requires the front end to
+//! build these ops in the first place. Until then, treat an arrival-order
+//! all-reduce as UNREFUSED by the compiler.
+//!
+//! deferred: construct the distributed ops during lowering and evaluate these
+//! checks there -- upgrade path: a `mind.distributed.*` import becomes a real IR
+//! node, and `to_mlir` calls the matching `check_*` before emitting.
 //!
 //! ## Speed-preservation discipline
 //!

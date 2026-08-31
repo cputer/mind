@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1426 | **Est. tokens:** ~2,689,006
-**Generated:** 2026-08-31 08:11 UTC
+**Files:** 1426 | **Est. tokens:** ~2,689,431
+**Generated:** 2026-08-31 08:55 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~27,191 |
+| `./` | 33 | ~27,239 |
 | `agents/` | 1 | ~436 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
@@ -46,7 +46,7 @@
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 4 | ~11,498 |
 | `docs/mindcraft/` | 3 | ~7,086 |
-| `docs/rfcs/` | 35 | ~166,687 |
+| `docs/rfcs/` | 35 | ~166,772 |
 | `docs/specs/` | 2 | ~976 |
 | `examples/` | 28 | ~49,880 |
 | `examples/bimap_currency/` | 3 | ~780 |
@@ -96,7 +96,7 @@
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
 | `src/diagnostics/` | 1 | ~3,719 |
-| `src/distributed/` | 6 | ~7,433 |
+| `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
 | `src/eval/` | 16 | ~86,932 |
 | `src/eval/stdlib/` | 2 | ~8,586 |
@@ -218,7 +218,7 @@
 - `rustfmt.toml` (~23 tok, tiny) — max_width = 100
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
 - `.sembleignore` (~72 tok, small) — # semble code-search ignore list
-- `STATUS.md` (~4409 tok, huge) — MIND Compiler Status
+- `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
 - `test_real_compile_time.py` (~265 tok, medium) — Quick test of real MIND compilation time using Python bindings."""
 ### `agents/`
 
@@ -448,7 +448,7 @@
 - `0014-per-substrate-mlir-lowering-contracts.md` (~5412 tok, huge) — RFC 0014: Per-Substrate MLIR Lowering Pipeline Contracts
 - `0015-cross-substrate-bit-identity.md` (~5174 tok, huge) — RFC 0015: Cross-Substrate Bit-Identity Proof Obligation
 - `0016-evidence-chain-emission.md` (~6998 tok, huge) — RFC 0016: Compile-Time Evidence-Chain Emission
-- `0017-mindc-verify.md` (~4275 tok, huge) — RFC 0017: `mindc verify` — Artifact Verification Surface
+- `0017-mindc-verify.md` (~4360 tok, huge) — RFC 0017: `mindc verify` — Artifact Verification Surface
 - `0018-bare-metal-substrate.md` (~3799 tok, huge) — RFC 0018: Bare-Metal Substrate Lowering Tier
 - `0019-deterministic-agent-substrate.md` (~4131 tok, huge) — RFC 0019: Deterministic Agent Substrate
 - `0020-mind-bench-reproducibility-harness.md` (~4083 tok, huge) — RFC 0020: mind-bench Public Reproducibility Harness
@@ -1010,7 +1010,7 @@
 - `allgather.rs` (~813 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `allreduce.rs` (~1011 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `invariants.rs` (~1416 tok, large) — Copyright 2025-2026 STARGA Inc.
-- `mod.rs` (~580 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `mod.rs` (~872 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `pipeline.rs` (~1973 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `shard.rs` (~1640 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/doc/`

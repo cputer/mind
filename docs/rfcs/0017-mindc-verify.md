@@ -308,7 +308,11 @@ a build step; conflating them obscures the audit trail. The correct model is:
    not `mindc verify --cross-substrate`.
 5. `--json` emits a machine-readable receipt (fields per §4.6 and
    `mindc verify --help`, including `provenance_authenticated`).
-6. The subcommand reuses `mic3_evidence_report` and `verify_evidence_chain` from
+6. The subcommand reuses `mic3_evidence_report` from the mic@3 evidence module.
+   NOT MET as stated: `verify_evidence_chain` is the mic@2 Graph verifier and has no
+   caller on the CLI path — `mindc verify` reads mic@3 and pairs `mic3_evidence_report`
+   with `mic3_canonical_check`. This criterion described an intended reuse that the
+   implementation never took; recorded rather than silently treated as satisfied.
    the shipped library core; no new hash or signing primitive is introduced.
 7. Phase B of RFC 0016 (`mindc verify --evidence`) is satisfied by this subcommand
    landing; the two specs are consistent.

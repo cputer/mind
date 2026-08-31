@@ -183,7 +183,7 @@ function-body semantics; mic@3 binary commits the full `IRModule`; supersedes RF
 | `mindc --emit-mic3` / `--emit-evidence` CLI | `src/bin/mindc.rs` | ✅ Shipped (RFC 0021 step 3, mind@7fc10d2) |
 | `trace_hash` anchored on canonical mic@3 binary bytes (re-anchored 2026-05-31, supersedes RFC 0016 GAP-1 mic@1-text rule) | `src/ir/evidence.rs::ir_trace_hash` | ✅ Shipped |
 | RFC 0016 Phase A evidence emit (inert, unsigned) | `src/ir/compact/v2/evidence.rs` | ✅ Shipped (mind@e7c8c28 / cadca87) |
-| RFC 0016 Phase B verifier core | `src/ir/compact/v2/evidence.rs::verify_evidence_chain` | ✅ Shipped (mind@cadca87) |
+| RFC 0016 Phase B verifier core | `src/ir/compact/v2/evidence.rs::verify_evidence_chain` | ⚠️ Present, NOT on the CLI path (mind@cadca87) — it verifies a mic@2 Graph chain; `mindc verify` operates on mic@3 and uses `mic3_evidence_report` + `mic3_canonical_check`. No production caller; only a re-export. |
 | `mindc verify` CLI subcommand (RFC 0017) | pending | 🚧 In progress (RFC 0021 step 4) |
 | mic@2.x → `mind-model@2` demotion | cross-repo migration | 🚧 In progress (RFC 0021 step 5) |
 | Cross-substrate CI oracle gate | `tests/cross_substrate_identity/` + `oracle.rs` | 🚧 In progress (RFC 0021 step 6, #307) |
