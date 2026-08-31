@@ -648,6 +648,18 @@ drops shape information is precisely the failure mode MIND exists to avoid.
 `.sum` shipping is directly load-bearing here: the v1 obligations in §5.2 are
 statements about global sums.
 
+**Scoped.** `docs/design/rfc0012-b2-shape-threading-scope.md` maps the work to
+file:line. Two findings sharpen this dependency:
+
+- The blocker is narrower than RFC 0012 §7.2 implies. `.max` and the norm
+  shorthands are *not* gated on shape threading — only `.reshape` and the MLIR
+  byte-identity target are.
+- `.T`/`.sum`/`.mean` shipped by lowering to **shape-agnostic** IR nodes
+  (`Instr::Transpose` carries `{dst, src, perm}` and no dims,
+  `src/ir/mod.rs:382`). They did not solve shape threading; they avoided needing
+  it. A stencil lowering cannot — which is exactly why this RFC's Phase B
+  inherits the dependency that Phase B.2's shipped operators escaped.
+
 ### 9.2 The NCCL determinism question (blocker, not a task)
 
 `mind-runtime` has a real TCP transport but its NCCL path is not complete — the

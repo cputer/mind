@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1425 | **Est. tokens:** ~2,685,298
-**Generated:** 2026-08-31 07:55 UTC
+**Files:** 1426 | **Est. tokens:** ~2,688,102
+**Generated:** 2026-08-31 08:01 UTC
 
 ## Token Budget Guide
 
@@ -44,9 +44,9 @@
 | `docs/` | 35 | ~90,856 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
-| `docs/design/` | 3 | ~8,181 |
+| `docs/design/` | 4 | ~10,816 |
 | `docs/mindcraft/` | 3 | ~7,086 |
-| `docs/rfcs/` | 35 | ~166,518 |
+| `docs/rfcs/` | 35 | ~166,687 |
 | `docs/specs/` | 2 | ~976 |
 | `examples/` | 28 | ~49,880 |
 | `examples/bimap_currency/` | 3 | ~780 |
@@ -398,6 +398,7 @@
 
 - `execution-plan-performance-mode.md` (~8045 tok, huge) — Design: PerformanceMode + ExecutionPlan + ExecutionProvider
 - `README.md` (~26 tok, tiny) — Design Docs
+- `rfc0012-b2-shape-threading-scope.md` (~2635 tok, huge) — RFC 0012 Phase B.2 — shape-dim threading: execution scope
 - `v0.3.md` (~110 tok, small) — MIND Design v0.3 (Draft)
 ### `docs/`
 
@@ -456,7 +457,7 @@
 - `0024-loop-collapse.md` (~7579 tok, huge) — RFC 0024: Loop Collapse — prove-or-fail closed-form replacement of counted loops (`#[collapse]`)
 - `0025-mind-intent-contracts.md` (~3605 tok, huge) — RFC 0025: MIND Intent — Intent Contracts (goal + constraints → verifiable Contract IR)
 - `0027-governed-physical-device-plane.md` (~2790 tok, huge) — RFC 0027: Governed Physical-Device Plane — evidence-bound actuation (`device_receipts`)
-- `0028-deterministic-field-calculus.md` (~10113 tok, huge) — RFC 0028: Deterministic Field Calculus
+- `0028-deterministic-field-calculus.md` (~10282 tok, huge) — RFC 0028: Deterministic Field Calculus
 - `DRAFT-deterministic-format-frontend.md` (~10522 tok, huge) — RFC DRAFT: Deterministic Multi-Format Ingest Front-End (JSON / TOON / CSV / TSV / NDJSON / TOML)
 - `DRAFT-deterministic-json-frontend.md` (~5177 tok, huge) — RFC DRAFT: Deterministic Streaming SIMD JSON Structural Front-End
 - `DRAFT-governed-device-io-mhs.md` (~5629 tok, huge) — Draft RFC: Governed Device I/O and MHS Compatibility — SUPERSEDED
