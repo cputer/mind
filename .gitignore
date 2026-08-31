@@ -110,3 +110,17 @@ examples/mindc_mind/mindfuzz_self_host_staged/
 # preflight builds mindc CI-style (--no-default-features) here so it cannot
 # clobber the working ./target/release/mindc — see scripts/preflight.sh
 /target-preflight/
+
+# Fuzzer/tool caches — regenerated.
+tools/mindfuzz/__pycache__/
+
+# Vendored JS dependencies are NOT committed: sdk/ts/mic-map carries both a
+# package.json and a package-lock.json, so `npm ci` reproduces them exactly.
+# 2065 vendored files were tracked here with no workflow or script referencing
+# them — pure weight in a public tree.
+node_modules/
+**/node_modules/
+
+# Python bytecode caches — regenerated on every run, never an input to a gate.
+__pycache__/
+*.pyc
