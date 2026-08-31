@@ -455,6 +455,25 @@ pub fn is_module_kw(buf: i64, lo: i64, hi: i64) -> i64 {
 // item entirely (no module slot: the emitted module is byte-identical to the
 // same source with the item removed). Non-empty trait bodies do not compile in
 // the oracle, so they are not a self-host gap.
+pub fn is_export_kw(buf: i64, lo: i64, hi: i64) -> i64 {
+    if hi - lo == 6 {
+        if load_byte(buf, lo + 0) == 101 {
+            if load_byte(buf, lo + 1) == 120 {
+                if load_byte(buf, lo + 2) == 112 {
+                    if load_byte(buf, lo + 3) == 111 {
+                        if load_byte(buf, lo + 4) == 114 {
+                            if load_byte(buf, lo + 5) == 116 {
+                                return 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
 pub fn is_trait_kw(buf: i64, lo: i64, hi: i64) -> i64 {
     if hi - lo == 5 {
         if load_byte(buf, lo + 0) == 116 {
@@ -5493,8 +5512,9 @@ pub fn parse_params_rest(toks: Vec, pos: i64, buf: i64, acc: Vec) -> ParseResult
     let n_lo: i64 = tok_lo(toks, pos);
     let n_hi: i64 = tok_hi(toks, pos);
     let n_name: i64 = ast_new_leaf(ast_ident(), n_lo, n_hi);
+    let t_end: i64 = param_type_end(toks, pos + 2);
     let t_lo: i64 = tok_lo(toks, pos + 2);
-    let t_hi: i64 = tok_hi(toks, pos + 2);
+    let t_hi: i64 = tok_hi(toks, t_end - 1);
     let n_ty: i64 = ast_new_leaf(ast_ident(), t_lo, t_hi);
     let p: i64 = ast_new_param(n_lo, t_hi, n_name, n_ty);
     let new_acc: Vec = vec_push(acc, p);
@@ -5505,11 +5525,7 @@ pub fn parse_params_rest(toks: Vec, pos: i64, buf: i64, acc: Vec) -> ParseResult
     // crashes the downstream struct-lit desugar / field-prefold pass). Non-generic
     // types (every param in main.mind and std today) take the pos+3 path unchanged,
     // so the canary / seeded self-host stay byte-identical.
-    let after_param: i64 = if tok_kind(toks, pos + 3) == tk_lt() {
-        skip_generic_args(toks, pos + 4, 1)
-    } else {
-        pos + 3
-    };
+    let after_param: i64 = t_end;
     if tok_kind(toks, after_param) == tk_comma() {
         return parse_params_rest(toks, after_param + 1, buf, new_acc);
     }
@@ -5560,6 +5576,57 @@ pub fn parse_use(toks: Vec, pos: i64, buf: i64) -> ParseResult {
 // Consume a balanced `{ .. }` body: pos is the first token AFTER the opening
 // `{`, depth is the running brace depth (1 on entry). Returns the position
 // after the matching `}` (or EOF).
+pub fn skip_balanced_bracket(toks: Vec, pos: i64, depth: i64) -> i64 {
+    if at_eof(toks, pos) == 1 {
+        return pos;
+    }
+    let k: i64 = tok_kind(toks, pos);
+    if k == tk_lbracket() {
+        return skip_balanced_bracket(toks, pos + 1, depth + 1);
+    }
+    if k == tk_rbracket() {
+        if depth == 1 {
+            return pos + 1;
+        }
+        return skip_balanced_bracket(toks, pos + 1, depth - 1);
+    }
+    skip_balanced_bracket(toks, pos + 1, depth)
+}
+
+// Token index ONE PAST the parameter type starting at `pos`.
+//
+// The old code assumed every parameter is exactly three tokens, `name : type`,
+// read the type at pos+2 and resumed at pos+3. That is true only for a bare
+// single-token type. For `s: &u8` the type was taken to be `&` and the cursor
+// was left parked on `u8`, which is NOT `,` or `)` — a token-stream DESYNC, the
+// same hazard the generic case below was already fixed for, but with a far worse
+// symptom: the fn item parse then walked off the end of its own item and consumed
+// every FOLLOWING item. Measured on this tree, `fn a(s: &u8) -> bool { 1 }
+// fn b() -> i64 { 7 } fn c() -> i64 { 9 }` emitted ONLY `fn a` — two functions
+// silently vanished, with no diagnostic, and no ast_unsupported marker for the
+// B0 guard to refuse on.
+//
+// It never fired during self-compile because main.mind and std use only bare
+// single-token parameter types — the exact self-host blind spot that lets a
+// construct the compiler cannot parse sit undetected behind a green byte-identity
+// loop.
+pub fn param_type_end(toks: Vec, pos: i64) -> i64 {
+    let k: i64 = tok_kind(toks, pos);
+    // `&T` / `&[T]` — a reference binds tighter than anything that follows it.
+    if k == tk_amp() {
+        return param_type_end(toks, pos + 1);
+    }
+    // `[T]` / `[T; N]` — balanced, so a nested element type is handled too.
+    if k == tk_lbracket() {
+        return skip_balanced_bracket(toks, pos + 1, 1);
+    }
+    // `T<..>` — unchanged from the generic handling this replaces.
+    if tok_kind(toks, pos + 1) == tk_lt() {
+        return skip_generic_args(toks, pos + 2, 1);
+    }
+    pos + 1
+}
+
 pub fn skip_balanced_brace(toks: Vec, pos: i64, depth: i64) -> i64 {
     if at_eof(toks, pos) == 1 {
         return pos;
@@ -5627,8 +5694,88 @@ pub fn skip_unknown_item_d(toks: Vec, pos: i64, depth: i64) -> i64 {
 
 // ===== Top-level item / program =====
 
+// 1 iff the item-level attribute named at `pos` is known to be CODEGEN-INERT --
+// i.e. the oracle records it but emits exactly the fn set the un-attributed
+// program would emit. Today: `test` (RFC 0008 Phase B, sets an is_test flag only),
+// `repr`, `protection`.
+//
+// This is an ALLOWLIST, deliberately. The alternative -- denylisting the
+// codegen-driving names -- fails OPEN on the next one added to the oracle: the
+// attribute would be skipped and the functions it synthesises would be silently
+// missing, which is exactly the class of miscompile the B0 guard exists to stop.
+// the `bimap` attribute is the live example: it synthesises EIGHT accessor fns per annotated
+// struct, so skipping it would emit a program missing all of them. Unknown
+// attributes therefore fall through to the poison path and the whole compile
+// refuses, until the name is proven inert and added here.
+//
+// deferred: derive this set from the oracle's own attribute table rather than
+// restating it -- upgrade path: emit the inert-attribute list from
+// src/parser/mod.rs into a generated fixture both sides read.
+pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
+    let lo: i64 = tok_lo(toks, pos);
+    let n: i64 = tok_hi(toks, pos) - lo;
+    if n == 4 {
+        // "test"
+        if load_byte(buf, lo) == 116 {
+            if load_byte(buf, lo + 1) == 101 {
+                if load_byte(buf, lo + 2) == 115 {
+                    if load_byte(buf, lo + 3) == 116 {
+                        return 1;
+                    }
+                }
+            }
+        }
+        // "repr"
+        if load_byte(buf, lo) == 114 {
+            if load_byte(buf, lo + 1) == 101 {
+                if load_byte(buf, lo + 2) == 112 {
+                    if load_byte(buf, lo + 3) == 114 {
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    if n == 10 {
+        // "protection"
+        if load_byte(buf, lo) == 112 {
+            if load_byte(buf, lo + 1) == 114 {
+                if load_byte(buf, lo + 2) == 111 {
+                    if load_byte(buf, lo + 3) == 116 {
+                        if load_byte(buf, lo + 4) == 101 {
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
 pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     let k: i64 = tok_kind(toks, pos);
+    // Item-level attribute (hash + bracketed list, RFC 0012 §5). The `#` lexes to
+    // tk_unsupported,
+    // so WITHOUT this arm the item dropped to the generic fallback, whose skipper
+    // walks `#` `[` .. `]` back to depth 0 and then hands the DECORATED function's
+    // own `{ .. }` body to skip_balanced_brace -- swallowing the entire function.
+    // Measured: a file of nothing but a `test`-annotated fn emitted an EMPTY module.
+    //
+    // Keyed on the literal byte `#` read from the source, NOT on tk_unsupported:
+    // that kind also covers `@`, `'` and `$`, which are not attributes and must keep
+    // failing closed. The oracle draws the same distinction in parse_attribute_list.
+    //
+    // Re-dispatching on the decorated item (rather than falling through) handles
+    // stacked attributes and an annotated `pub fn` for free, and reproduces the oracle's
+    // emitted fn set for every attribute it records but does not act on.
+    if load_byte(buf, tok_lo(toks, pos)) == 35 {
+        if tok_kind(toks, pos + 1) == tk_lbracket() {
+            if attr_is_known_inert(buf, toks, pos + 2) == 1 {
+                return parse_item(toks, skip_balanced_bracket(toks, pos + 2, 1), buf);
+            }
+        }
+    }
     if k == tk_kw_use() {
         return parse_use(toks, pos, buf);
     }
@@ -5681,6 +5828,22 @@ pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
         }
         if is_const_kw(buf, lo, hi) == 1 {
             return parse_const_decl(toks, pos, buf);
+        }
+        if is_export_kw(buf, lo, hi) == 1 {
+            // `export { a, b }` is a VISIBILITY declaration: it names already-defined
+            // items and lowers to nothing. Verified against the oracle -- the emitted
+            // IR for a program is byte-identical with and without its export block.
+            //
+            // Yield the ZERO dropped-item sentinel (same contract as the empty-trait
+            // arm below), so the program parses exactly as if the block were absent.
+            // Without this arm `export { .. }` reached the generic fallback and became
+            // an ast_unsupported poison marker, which -- correctly, once the B0 guard
+            // was wired -- refused the WHOLE compile. A file exporting its own API is
+            // ordinary MIND, so refusing it made the guard look wrong when the real
+            // gap was that this item shape had no arm.
+            if tok_kind(toks, pos + 1) == tk_lbrace() {
+                return pr_new(skip_balanced_brace(toks, pos + 2, 1), 0);
+            }
         }
         if is_trait_kw(buf, lo, hi) == 1 {
             // `trait NAME { }` with an EMPTY body is the one brace-bodied item
@@ -25142,6 +25305,42 @@ pub fn emit_program_items(s: EmitState, buf: i64, items_addr: i64, items_len: i6
 pub fn lower_program(ast_addr: i64, buf: i64) -> EmitState {
     let items_addr: i64 = ast_child0(ast_addr);
     let items_len: i64 = ast_aux(ast_addr);
+    // B0 fail-closed — MIRRORS THE NATIVE PATH (nb_emit_program, this file), which
+    // has refused a poisoned item list since it was written. This path did not, and
+    // the asymmetry was the whole defect: `emit_program_items`' terminal `else { s }`
+    // returns the accumulator UNCHANGED for an ast_unsupported item, so the marker
+    // contributed zero bytes and the surrounding fns were emitted anyway.
+    //
+    // That is a fail-OPEN miscompile, and it is not hypothetical. Measured on this
+    // tree, an item-level attribute on a fn is folded into ONE
+    // poison item by the parser fallback, and this path then emitted a module for
+    // the surrounding program as though the attributed function had never been
+    // written. The consumer cannot tell that from a correct compile. Refusing (0B)
+    // is the honest answer, and it is the answer the native backend already gives.
+    //
+    // `nb_items_any_unsupported` was written for exactly this hazard — its own
+    // comment names this miscompile — and had a single call site, on the native
+    // path. Wiring it here is that fix.
+    //
+    // SCOPE, measured rather than assumed: this catches only what the parser
+    // actually POISONS. It does NOT catch silent OVER-CONSUMPTION, where the parse
+    // walks past an item without leaving a marker. Verified on this tree:
+    // `fn a(s: &u8) -> bool { 1 } fn b() -> i64 { 7 } fn c() -> i64 { 9 }` still
+    // emits ONLY `fn a` with this guard in place — a non-scalar parameter type
+    // swallows every following item and produces no ast_unsupported node, so there
+    // is nothing here to refuse on. That parser defect is REAL, SEPARATE, and OPEN;
+    // do not read this guard as covering it.
+    // deferred: fix the parameter-list parse so a non-scalar type cannot consume
+    // the following items — upgrade path: make the fn-item parse fail closed into
+    // an ast_unsupported node on an unparsed parameter type, which then reaches
+    // this guard.
+    //
+    // Byte-identity: main.mind's own top-level items are all import/pub/fn/struct,
+    // none of which reach the parser fallback, so this never fires during
+    // self-compile and the fixed point is unchanged.
+    if nb_items_any_unsupported(items_addr, items_len, 0) == 1 {
+        return es_new();
+    }
     let s0: EmitState = es_new();
     let s1: EmitState = emit_lit_module_open(s0);
     let s2: EmitState = emit_program_items(s1, buf, items_addr, items_len, 0);

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1423 | **Est. tokens:** ~2,670,255
-**Generated:** 2026-08-31 05:11 UTC
+**Files:** 1423 | **Est. tokens:** ~2,671,223
+**Generated:** 2026-08-31 05:58 UTC
 
 ## Token Budget Guide
 
@@ -60,7 +60,7 @@
 | `examples/grammar_mask/` | 2 | ~4,636 |
 | `examples/halbach_q16/` | 2 | ~7,856 |
 | `examples/lexer/` | 6 | ~8,888 |
-| `examples/mindc_mind/` | 165 | ~401,524 |
+| `examples/mindc_mind/` | 165 | ~401,841 |
 | `examples/mindc_mind/testdata/` | 3 | ~4,159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -76,10 +76,10 @@
 | `.github/workflows/` | 9 | ~26,213 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,261 |
-| `scripts/` | 19 | ~43,898 |
+| `scripts/` | 19 | ~44,289 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
-| `scripts/sdlc/` | 2 | ~2,299 |
+| `scripts/sdlc/` | 2 | ~2,559 |
 | `sdk/ts/mic-map/` | 6 | ~16,202 |
 | `sdk/ts/mic-map/dist/` | 36 | ~29,044 |
 | `sdk/ts/mic-map/scripts/` | 1 | ~499 |
@@ -612,7 +612,7 @@
 - `param_types_smoke.py` (~1273 tok, large)
 - `_ref_add.note` (~16 tok, tiny) — 6fa59a74687e6bac38c983655d4d93ab1873299f130f68cbe481cf92041f6610
 - `_ref_if_ret.note` (~16 tok, tiny) — 3fdc70390e9e12d8030552d11b2194078e8579fbcfac19b14d1beed77174cb07
-- `_ref_main.note` (~16 tok, tiny) — 2c863dfc07ba39244f9fd426dfefb0b98e110a0e31cf0daca4ee8436b982930d
+- `_ref_main.note` (~16 tok, tiny) — 2b9ae02888cf3ccc66c8eb1f175536f763abe685dcfbcb45137292bd9e3a8c54
 - `ref_netverify.py` (~1473 tok, large) — # Canonical independent net-verify harness for i64 references in the native-ELF backend.
 - `_ref_recursion.note` (~16 tok, tiny) — 6d125a946243b0550700d9aa6bc2058b51a3b8bf6e536a8b0b3f545d79b7346f
 - `_ref_struct_field.note` (~16 tok, tiny) — 2f7f2ea32ee47138e1b0162bd51f418b4e5005b4569054f5f3c392ebd2258d96
@@ -737,7 +737,7 @@
 - `stdlib_manifest_lint.py` (~2418 tok, huge) — stdlib_manifest_lint.py — machine-checked contract for WHICH std/*.mind
 - `_stdlib_manifest.py` (~1129 tok, large) — Shared reader for the committed std/*.mind manifest.
 - `struct_fields_smoke.py` (~1076 tok, large)
-- `struct_lit_smoke.py` (~1923 tok, huge)
+- `struct_lit_smoke.py` (~2240 tok, huge)
 - `tc_differential_fuzz.py` (~13242 tok, huge) — tcdiff — differential fuzzer for the self-host source-position tc-rule ports.
 ### `examples/mindc_mind/testdata/backend_native_bridge/`
 
@@ -867,7 +867,7 @@
 - `check_no_ai_attribution.sh` (~995 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~6805 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~7196 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -887,7 +887,7 @@
 - `run_crypto_vectors.sh` (~1932 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
 ### `scripts/sdlc/`
 
-- `enforcement_bijection.py` (~1054 tok, large) — A test must never outlive the rule it asserts.
+- `enforcement_bijection.py` (~1314 tok, large) — A test must never outlive the rule it asserts.
 - `lost_by_merge.py` (~1245 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
