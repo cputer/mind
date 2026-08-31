@@ -86,6 +86,23 @@ def main() -> int:
             print(f"  - {p}", file=sys.stderr)
         return 1
     if total == 0:
+        # The docstring above already states the contract: zero markers in a tree that
+        # declares required paths is EXIT 1, because "a lint asserting nothing is not a
+        # passing lint". The code returned 0 anyway, so deleting every `enforced-by:` /
+        # `enforces:` marker in the repo -- including the pairing this lint exists to
+        # defend -- turned it green. The failure mode it guards against and the failure
+        # mode that silences it were the same edit.
+        #
+        # `src/` present is the "declares required paths" condition: an empty scratch
+        # tree legitimately has nothing to pair, a real checkout does not.
+        if (ROOT / "src").is_dir():
+            print(
+                "  no `enforced-by:` / `enforces:` markers found in a tree that HAS src/ — "
+                "every pairing this lint defends has been removed, or the scan is broken. "
+                "A lint asserting nothing is not a passing lint.",
+                file=sys.stderr,
+            )
+            return 1
         print(
             "  no `enforced-by:` / `enforces:` markers found yet — this lint asserts nothing "
             "until rules are marked. Adding markers is how it starts protecting them."

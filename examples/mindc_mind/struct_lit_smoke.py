@@ -163,12 +163,19 @@ def main() -> int:
 
     print("self-host STRUCT-LITERAL construction — emit vs --emit-mic3")
     failures = 0
+    compared = 0
+    skipped = 0
     for label, src in CASES:
         got = _emit(fn, src)
         oracle = _oracle(src)
         if oracle is None:
-            print(f"  [?] {label:<32} oracle unavailable (mindc absent)")
+            # Counted, not just printed. CI's vacuous-green backstop greps for a
+            # leading SKIP, which `[?]` never matched, so an unavailable oracle was
+            # invisible to the runner AND to the summary below.
+            skipped += 1
+            print(f"  SKIP [?] {label:<32} oracle unavailable (mindc absent or --emit-mic3 failed)")
             continue
+        compared += 1
         ok = got == oracle
         failures += not ok
         tag = (f"BYTE-EXACT ({len(got)}B == oracle)" if ok
@@ -178,7 +185,21 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    print(f"\nALL PASS  ({len(CASES)} cases byte-exact vs live oracle)")
+    # A gate that compared NOTHING is not a passing gate. The summary previously
+    # printed "ALL PASS (N cases byte-exact vs live oracle)" using len(CASES) --
+    # the size of the case list, not the number of comparisons actually made. With
+    # `target/release/mindc` absent, or `--emit-mic3` failing, every case took the
+    # oracle-unavailable path and this still claimed all N were byte-exact against
+    # an oracle it never ran. The claim and the evidence had no connection.
+    if compared == 0:
+        print(f"\nFAILED: 0 of {len(CASES)} cases were compared — no oracle was available, "
+              f"so nothing was verified. Build target/release/mindc first.")
+        return 1
+    if skipped:
+        print(f"\nFAILED: {skipped} of {len(CASES)} cases had no oracle. This gate claims "
+              f"byte-exactness for the whole case list; it must not report that on a subset.")
+        return 1
+    print(f"\nALL PASS  ({compared} of {len(CASES)} cases byte-exact vs live oracle)")
     return 0
 
 

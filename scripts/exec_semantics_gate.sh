@@ -395,11 +395,15 @@ for tier in "${want[@]}"; do
   )
   zero_fatal=()
   zero_ok=()
+  # Targets that ACTUALLY reported an environmental skip. This is the evidence
+  # tolerance is granted on below -- not the mere fact of being listed.
+  env_skipped=()
   for m in ${markers[@]+"${markers[@]}"}; do
     read -r mtarget mname mran <<<"$m"
     [ "$mran" = 0 ] || continue
     if in_list "$mtarget" ${tolerated[@]+"${tolerated[@]}"}; then
       zero_ok+=("$mname (tests/$mtarget.rs)")
+      env_skipped+=("$mtarget")
     else
       zero_fatal+=("$mname (tests/$mtarget.rs)")
     fi
@@ -440,8 +444,14 @@ for tier in "${want[@]}"; do
   # The harness prints an unmistakable marker when it classifies a crash, so tolerance
   # is withdrawn for exactly that case and left intact for the environmental one.
   crashed=()
-  if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED|MIND_CRASH [^0]" "$log" 2>/dev/null; then
-    mapfile -t crashed < <(grep -oE "MIND_CRASH [A-Za-z0-9_/.-]+" "$log" | awk '{print $2}' | sort -u)
+  # The per-fixture marker is `MIND_CRASH <path>.mind  [reason]`. Anchor on that exact
+  # shape: the SUMMARY line also carries the token (`... / 0 MIND_CRASH / ...`), and the
+  # looser `MIND_CRASH [^0]` matched the `/` immediately after it -- so EVERY run that
+  # printed a summary was reported as a crash, a pure divergence with `0 MIND_CRASH`
+  # included. Right exit code, wrong cause, and it would send someone hunting a segfault
+  # that never happened.
+  if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED|MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$log" 2>/dev/null; then
+    mapfile -t crashed < <(grep -oE "MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$log" | awk '{print $2}' | sort -u)
     echo
     echo "FAIL[$tier]: the pure-MIND compiler CRASHED. Tolerance does NOT apply —"
     echo "  an unsupported construct returns a null handle; these terminated abnormally."
@@ -452,11 +462,25 @@ for tier in "${want[@]}"; do
   unexpected=()
   for t in "${failing[@]}"; do
     in_list "$t" ${quarantine[@]+"${quarantine[@]}"} && continue
-    # Tolerance is withdrawn when the log shows a crash (handled above).
+    # Tolerance is granted ONLY for the outcome it exists for: the target could not
+    # RUN here. The evidence is the target's own `ran=0` marker, collected into
+    # `env_skipped` above.
+    #
+    # This was previously written the other way round: tolerance applied by DEFAULT
+    # and was withdrawn for one named bad outcome (a crash). That is a denylist, and
+    # it fails open on every outcome nobody thought to name. The one that mattered is
+    # a byte-DIVERGENCE between the pure-MIND and Rust compilers: it prints no crash
+    # marker, so `g2_differential_mlir` could report 99 diverging fixtures while this
+    # tier printed `ok[exec]` and exited 0 -- the differential gate, whose entire
+    # purpose is catching that disagreement, could not fail the build it gates.
+    #
+    # A target that RAN and produced findings is a real failure, whatever list it is
+    # on. Environmental tolerance covers a missing oracle, never a wrong answer.
     if in_list "$t" ${tolerated[@]+"${tolerated[@]}"}; then
-      if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED" "$log" 2>/dev/null; then
-        unexpected+=("$t")
+      if in_list "$t" ${env_skipped[@]+"${env_skipped[@]}"}; then
+        continue
       fi
+      unexpected+=("$t")
       continue
     fi
     unexpected+=("$t")
