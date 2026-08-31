@@ -185,6 +185,11 @@ fn idempotence_stdlib_toml() {
 // examples/**/*.mind
 // ---------------------------------------------------------------------------
 
+/// Ratchet floor for `idempotence_examples`: the number of files under examples/
+/// that round-trip through the formatter today. Raising it is free; lowering it is a
+/// deliberate, explained change.
+const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 52; // measured 2026-08-31: 52 pass, 8 skip, 60 total
+
 #[test]
 fn idempotence_examples() {
     let base = manifest_dir();
@@ -218,7 +223,30 @@ fn idempotence_examples() {
     // Parse skips are permitted (tensor/autodiff examples), but the
     // idempotence assertion inside check_idempotence must hold for every
     // file that does parse.
-    let _ = (passed, skipped); // counts informational only
+    //
+    // The counts used to be discarded here (`let _ = (passed, skipped)`), which made
+    // this a test that could not fail: `check_idempotence` returns false on a pass-1
+    // parse/format error, so if EVERY example stopped parsing, `passed` was 0,
+    // `skipped` was everything, and the only surviving assertion -- that the file list
+    // is non-empty -- still held. A formatter or parser regression severe enough to
+    // make the entire examples corpus unparseable was reported as ok.
+    //
+    // The sibling tests already demand positive counts (`idempotence_stdlib` requires
+    // skipped == 0 && passed == 3; `idempotence_fmt_fixtures` requires passed == 7).
+    // This one cannot demand zero skips -- some examples legitimately do not parse --
+    // so it ratchets on what the corpus proves TODAY instead.
+    eprintln!(
+        "idempotence_examples: {passed} passed, {skipped} skipped, {} total",
+        paths.len()
+    );
+    assert!(
+        passed >= EXAMPLES_IDEMPOTENCE_FLOOR,
+        "idempotence floor breached: {passed} of {} examples round-tripped, floor is \
+         {EXAMPLES_IDEMPOTENCE_FLOOR}. Either a formatter/parser regression stopped \
+         files parsing, or examples were removed -- if the drop is intentional, lower \
+         the floor IN THE SAME CHANGE and say why.",
+        paths.len(),
+    );
 }
 
 // ---------------------------------------------------------------------------

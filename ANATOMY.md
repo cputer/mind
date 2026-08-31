@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1423 | **Est. tokens:** ~2,671,223
-**Generated:** 2026-08-31 05:59 UTC
+**Files:** 1423 | **Est. tokens:** ~2,672,232
+**Generated:** 2026-08-31 06:02 UTC
 
 ## Token Budget Guide
 
@@ -73,10 +73,10 @@
 | `.githooks/` | 1 | ~434 |
 | `.github/` | 4 | ~601 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~26,213 |
+| `.github/workflows/` | 9 | ~26,538 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,261 |
-| `scripts/` | 19 | ~44,289 |
+| `scripts/` | 19 | ~44,575 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,559 |
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 332 | ~575,561 |
+| `tests/` | 332 | ~575,959 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -838,7 +838,7 @@
 - `required-ci-jobs.tsv` (~452 tok, medium) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
-- `bench-gate.yml` (~1843 tok, huge) — name: Bench gate
+- `bench-gate.yml` (~2168 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~229 tok, medium) — name: Cargo Deny
 - `ci.yml` (~17109 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1454 tok, large) — name: Crypto Vectors
@@ -881,7 +881,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~5568 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~5854 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~1376 tok, large) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~1932 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -1475,7 +1475,7 @@
 ### `tests/`
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_idempotence.rs` (~2946 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_idempotence.rs` (~3344 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_ir_preservation.rs` (~2030 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.

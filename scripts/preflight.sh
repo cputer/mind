@@ -177,10 +177,25 @@ if [ "${1:-}" = "--full" ]; then
   # Two accepted CI-ABSENT local-only failures are excluded: mindfuzz_cross_substrate
   # (needs the MLIR toolchain; soft-skips in CI's build_test job) and g2_differential_mlir
   # (dlopens the gitignored, stale in-tree libmindc_mind.so; CI's fresh checkout rebuilds).
-  nft_out=$(cargo test --no-default-features --features std-surface,cross-module-imports \
-              --no-fail-fast 2>&1 | grep -E "error: test failed|has overflowed its stack" | \
-              grep -viE "mindfuzz_cross_substrate|g2_differential_mlir" || true)
-  if [ -z "$nft_out" ]; then echo "ok (no test failures beyond the accepted CI-absent mindfuzz + g2)"; else
+  # A COMPILE failure prints `error: could not compile \`mind\` (test "x")`, never
+  # `error: test failed`, so the old two-pattern grep came back EMPTY and this step
+  # printed ok for a tree whose harnesses do not build. `set -uo pipefail` without
+  # `-e`, plus the trailing `|| true`, meant cargo's own exit status was discarded
+  # too -- nothing here observed failure except the grep, and the grep was blind to
+  # the most basic way this command can fail.
+  #
+  # Now: the pattern set covers compile and link failures, AND cargo's exit status is
+  # captured. A non-zero cargo with no recognised marker fails CLOSED rather than
+  # being read as success -- the sibling keystone step already demands a positive
+  # `test result: ok. N passed` for exactly this reason.
+  nft_raw=$(cargo test --no-default-features --features std-surface,cross-module-imports \
+              --no-fail-fast 2>&1); nft_rc=$?
+  nft_all=$(printf '%s\n' "$nft_raw" | grep -E "error: test failed|error: could not compile|error: linking with|has overflowed its stack" || true)
+  nft_out=$(printf '%s\n' "$nft_all" | grep -viE "mindfuzz_cross_substrate|g2_differential_mlir" | grep -vE '^$' || true)
+  if [ -z "$nft_out" ] && [ "$nft_rc" -ne 0 ] && [ -z "$nft_all" ]; then
+    bad "cargo test --no-default-features exited $nft_rc but printed no recognised failure marker (fail-closed):"
+    printf '%s\n' "$nft_raw" | tail -15
+  elif [ -z "$nft_out" ]; then echo "ok (no test failures beyond the accepted CI-absent mindfuzz + g2)"; else
     bad "cargo test --no-default-features --features std-surface,cross-module-imports FAILS beyond mindfuzz:"; printf '%s\n' "$nft_out" | head
   fi
 

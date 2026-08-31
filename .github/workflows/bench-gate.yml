@@ -25,6 +25,18 @@ on:
       - 'src/ast/**'
       - 'src/eval/**'
       - 'src/opt/**'
+      # The benches time libmind::compile_source, which is DEFINED in src/pipeline.rs
+      # and pulls in types/, diagnostics/, shapes/ and intrinsics.rs. None of those
+      # were listed, so a slowdown confined to the timed function itself never queued
+      # this job -- the gate could not observe a regression in the exact code it exists
+      # to measure. This workflow already documents the same hole for tools/bench_gate.py
+      # and simply never applied it to the function under test.
+      - 'src/pipeline.rs'
+      - 'src/lib.rs'
+      - 'src/intrinsics.rs'
+      - 'src/types/**'
+      - 'src/diagnostics/**'
+      - 'src/shapes/**'
       - 'benches/**'
       - 'Cargo.toml'
       # The gate's OWN inputs. Without these three the filter had the shape this
@@ -44,6 +56,18 @@ on:
       - 'src/ast/**'
       - 'src/eval/**'
       - 'src/opt/**'
+      # The benches time libmind::compile_source, which is DEFINED in src/pipeline.rs
+      # and pulls in types/, diagnostics/, shapes/ and intrinsics.rs. None of those
+      # were listed, so a slowdown confined to the timed function itself never queued
+      # this job -- the gate could not observe a regression in the exact code it exists
+      # to measure. This workflow already documents the same hole for tools/bench_gate.py
+      # and simply never applied it to the function under test.
+      - 'src/pipeline.rs'
+      - 'src/lib.rs'
+      - 'src/intrinsics.rs'
+      - 'src/types/**'
+      - 'src/diagnostics/**'
+      - 'src/shapes/**'
       - 'benches/**'
       - 'Cargo.toml'
       # The gate's OWN inputs. Without these three the filter had the shape this
