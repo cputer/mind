@@ -84,6 +84,29 @@ fn repo_root() -> PathBuf {
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
+/// Emit a machine-readable `SDLC-GATE ... ran=N fail=K` marker that SURVIVES
+/// libtest's stdout capture.
+///
+/// `println!` goes through `std::io::_print`, whose sink libtest swaps per test:
+/// a PASSING test's output is buffered and thrown away unless the run asks for
+/// `--show-output`/`--nocapture`. A skip that returns `Ok` is exactly the case
+/// this marker exists for, so a `println!`-only marker can never appear in the
+/// tier log — documentation, not evidence. Writing to the process stdout handle
+/// bypasses the capture shim (measured: the direct write lands in the log, the
+/// `println!` next to it does not).
+///
+/// Turning on `--show-output` for the whole tier would work too, and is worse:
+/// it splices every passing test's captured stdout into the log that
+/// scripts/exec_semantics_gate.sh counts `^test result:` lines in, and some of
+/// this repo's tests print a subprocess `mindc test` summary that starts with
+/// exactly that prefix — inflating the very floors the gate defends.
+fn emit_gate_marker(line: &str) {
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{line}");
+    let _ = out.flush();
+}
+
 fn require_mindc() -> Option<PathBuf> {
     let bin = mindc_bin();
     if bin.exists() {
@@ -260,6 +283,156 @@ enum MindCall {
     /// The worker terminated abnormally (panic / internal assertion / stack
     /// overflow the runtime turned into an unwind). NOT an unsupported construct.
     Crashed(String),
+}
+
+/// Re-exec THIS test binary as a single-fixture worker so a hard signal is
+/// observable instead of fatal.
+///
+/// Why this exists: a SIGSEGV does not unwind. Measured directly — a thread that
+/// reads address 8 kills the whole process, `join()` never returns, exit 139. So
+/// the in-process `MindCall::Crashed` arm can only ever see a PANIC. A genuine
+/// segfault in the pure-MIND compiler would take the harness down with it, and the
+/// gate would never get to classify anything.
+///
+/// Running the call in a child process turns that fatal signal into an exit status
+/// the parent can read and attribute. The child does the dlopen itself (a `Library`
+/// handle cannot cross a process boundary), writes the compiled bytes to stdout, and
+/// signals its verdict through the exit code:
+///
+///   0   -> compiled; stdout holds the bytes
+///   3   -> `mindc_compile` returned a NULL handle (legitimately unsupported)
+///   4   -> the WORKER ITSELF could not get as far as asking the compiler
+///          (staged fixture unreadable, `.so` path not passed, dlopen failed,
+///          stdout unwritable). Distinct from 3 on purpose: this is a harness
+///          fault, and folding it into the null-handle bucket would report a
+///          fixture the gate never compiled as "construct not lowered yet" —
+///          the exact declined-vs-died collapse this file was fixed for.
+///   <0  -> killed by a signal: SIGSEGV / SIGBUS / SIGILL / SIGABRT — a CRASH
+///
+/// deferred: one process per fixture costs a fork+dlopen per call. If that becomes
+/// the harness's bottleneck, upgrade path is a persistent worker fed fixtures over a
+/// pipe, respawned on death — same classification, one dlopen.
+const WORKER_ENV: &str = "G2_MIND_WORKER_SRC";
+/// The parent passes the ALREADY-RESOLVED .so. Re-deriving it in the child could
+/// select a different library than the one the parent is testing, which would make
+/// every verdict describe the wrong artifact.
+const WORKER_SO_ENV: &str = "G2_MIND_WORKER_SO";
+const WORKER_EXIT_NULL_HANDLE: i32 = 3;
+/// The worker could not reach the compiler at all. See the exit-code table above:
+/// this must NEVER be `WORKER_EXIT_NULL_HANDLE`, because a null handle means the
+/// pure-MIND front end looked at the fixture and declined it, and that is a
+/// legitimate, gate-passing outcome. A harness fault is not.
+const WORKER_EXIT_HARNESS_FAULT: i32 = 4;
+
+/// Bail out of the child with the harness-fault code, naming the fault on stderr so
+/// the parent can quote it instead of reporting a bare exit number.
+fn worker_fault(reason: &str) -> ! {
+    eprintln!("{reason}");
+    std::process::exit(WORKER_EXIT_HARNESS_FAULT)
+}
+
+/// Runs in the CHILD when WORKER_ENV is set. Never returns.
+fn run_as_worker_if_requested() {
+    let Ok(src_path) = std::env::var(WORKER_ENV) else {
+        return;
+    };
+    // `unwrap_or_default()` here handed the compiler an EMPTY source whenever the
+    // staged fixture could not be read, and an empty program is exactly the kind of
+    // input the front end declines — so an I/O fault arrived at the parent wearing a
+    // null handle and was filed as MIND_UNSUPPORTED. Same collapse as the one this
+    // file was fixed for, one layer down.
+    let src = match std::fs::read(&src_path) {
+        Ok(b) => b,
+        Err(e) => worker_fault(&format!("cannot read staged fixture {src_path}: {e}")),
+    };
+    let Ok(so_path) = std::env::var(WORKER_SO_ENV) else {
+        worker_fault("worker was not given the resolved .so path")
+    };
+    let lib = match unsafe { Library::new(&so_path) } {
+        Ok(l) => l,
+        // A `.so` that will not dlopen means EVERY fixture is uncompiled. Reported as a
+        // null handle that read as "the whole corpus is unsupported yet" — only the
+        // MATCH floor stood between that and a green gate, and it named the wrong cause.
+        Err(e) => worker_fault(&format!("cannot dlopen {so_path}: {e}")),
+    };
+    // SAFETY: same contract as the in-process call — the library outlives the call.
+    match unsafe { call_mindc_compile(&lib, &src) } {
+        Some(bytes) => {
+            use std::io::Write as _;
+            // A dropped or short write silently truncates the compiled bytes, and the
+            // parent then byte-compares a truncated stream against the Rust oracle and
+            // reports DIVERGE — a harness fault indicted as a compiler defect. The
+            // mirror image of the collapse above, and just as wrong.
+            if let Err(e) = std::io::stdout().write_all(&bytes) {
+                worker_fault(&format!("cannot write compiled bytes to stdout: {e}"));
+            }
+            if let Err(e) = std::io::stdout().flush() {
+                worker_fault(&format!("cannot flush compiled bytes to stdout: {e}"));
+            }
+            std::process::exit(0);
+        }
+        None => std::process::exit(WORKER_EXIT_NULL_HANDLE),
+    }
+}
+
+/// Parent side: run one fixture in a child and classify how it ended.
+fn call_in_subprocess(src_bytes: &[u8], so_path: &Path) -> MindCall {
+    use std::os::unix::process::ExitStatusExt as _;
+
+    let Ok(exe) = std::env::current_exe() else {
+        return MindCall::Crashed("cannot locate test binary to re-exec".to_string());
+    };
+    let tmp = std::env::temp_dir().join(format!("g2_worker_src_{}.mind", std::process::id()));
+    if std::fs::write(&tmp, src_bytes).is_err() {
+        return MindCall::Crashed("cannot stage fixture for worker".to_string());
+    }
+
+    let out = std::process::Command::new(exe)
+        .env(WORKER_ENV, &tmp)
+        .env(WORKER_SO_ENV, so_path)
+        .stdin(std::process::Stdio::null())
+        .output();
+    let _ = std::fs::remove_file(&tmp);
+
+    let out = match out {
+        Ok(o) => o,
+        Err(e) => return MindCall::Crashed(format!("failed to spawn worker: {e}")),
+    };
+
+    // A signal means the compiler DIED on this fixture. That is the case the
+    // in-process path structurally cannot observe, and the reason this exists.
+    if let Some(sig) = out.status.signal() {
+        let name = match sig {
+            11 => "SIGSEGV",
+            7 => "SIGBUS",
+            4 => "SIGILL",
+            6 => "SIGABRT",
+            _ => "signal",
+        };
+        return MindCall::Crashed(format!(
+            "pure-MIND compiler killed by {name} ({sig}) — this is a crash, not an \
+             unsupported construct"
+        ));
+    }
+    // The child writes its fault to stderr; quote it so a gate failure names the
+    // actual cause rather than a bare exit number.
+    let child_err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    match out.status.code() {
+        Some(0) => MindCall::Ok(out.stdout),
+        Some(c) if c == WORKER_EXIT_NULL_HANDLE => MindCall::NullHandle,
+        Some(c) if c == WORKER_EXIT_HARNESS_FAULT => MindCall::Crashed(format!(
+            "HARNESS FAULT (the compiler was never asked about this fixture): {child_err}"
+        )),
+        Some(c) => MindCall::Crashed(format!(
+            "worker exited {c} without a verdict{}",
+            if child_err.is_empty() {
+                String::new()
+            } else {
+                format!(": {child_err}")
+            }
+        )),
+        None => MindCall::Crashed("worker ended with neither code nor signal".to_string()),
+    }
 }
 
 fn call_on_large_stack(lib: &Library, src_bytes: &[u8]) -> MindCall {
@@ -483,7 +656,16 @@ fn run_fixture(bin: &Path, lib: &Library, fixture: &Path) -> Outcome {
     let rust_out: Vec<u8> = normalize_rust_output(&rust_result.stdout).to_vec();
 
     // --- Pure-MIND path (on a large-stack thread to handle deep recursion) ---
-    let mind_raw = call_on_large_stack(lib, &src_bytes);
+    // Subprocess, not a thread: a hard signal must be observable rather than fatal
+    // to the harness (a SIGSEGV does not unwind — measured, exit 139, join never
+    // returns). `lib` stays loaded in-process for the Rust-side path.
+    let _ = lib;
+    let Some(so_for_worker) = oracle_so_path(bin) else {
+        return Outcome::MindUnsupported {
+            reason: "pure-MIND oracle .so unavailable".to_string(),
+        };
+    };
+    let mind_raw = call_in_subprocess(&src_bytes, &so_for_worker);
 
     let mind_out: Vec<u8> = match mind_raw {
         MindCall::Ok(bytes) => bytes,
@@ -628,14 +810,38 @@ fn g2_1_differential_coverage() {
 #[cfg(target_os = "linux")]
 #[test]
 fn g2_1_differential_coverage() {
+    // When re-exec'd as a single-fixture worker this never returns.
+    run_as_worker_if_requested();
+
     let Some(bin) = require_mindc() else {
+        // Previously entirely silent: no marker, no println. A run that never found
+        // the compiler was indistinguishable from a run that compared every fixture.
+        emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
+        emit_gate_marker(
+            "g2_differential_mlir: SKIP -- mindc binary unavailable. This asserted \
+             NOTHING; do not read it as a pass.",
+        );
         return;
     };
 
     let Some(so_path) = oracle_so_path(&bin) else {
+        // A missing oracle is environmental and may legitimately skip — but it must
+        // not look like a run that passed. Without a marker the exec-tier gate cannot
+        // distinguish "compared every fixture and found no divergence" from "compared
+        // nothing", and a harness that silently asserts nothing is the same class of
+        // false green as the crash-as-unsupported bug this file was just fixed for.
+        //
+        // SDLC-GATE naming matches the ran=/fail= convention the other gates print.
+        // scripts/exec_semantics_gate.sh CONSUMES this line: it attributes the marker
+        // to the enclosing `Running tests/<target>.rs` block and treats ran=0 as a
+        // failure to EXECUTE unless that target is named in ENV_TOLERATED_<tier>.
+        // g2_differential_mlir is named there, so this skip is reported and counted
+        // rather than fatal — but it can no longer read as a green run.
+        emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
         println!(
             "g2_differential_mlir: SKIP -- could not obtain a valid \
-             libmindc_mind.so (MLIR toolchain absent)"
+             libmindc_mind.so (MLIR toolchain absent). This asserted NOTHING; do not \
+             read it as a pass."
         );
         return;
     };
@@ -646,11 +852,19 @@ fn g2_1_differential_coverage() {
     match fs::read(&so_path) {
         Ok(bytes) if bytes.starts_with(b"\x7fELF") => {}
         _ => {
-            println!(
-                "g2_differential_mlir: SKIP -- {} is not a native ELF; \
-                 cannot dlopen for the differential harness",
+            // This is the LIKELIER of the two skips: it covers the stale/truncated
+            // in-tree .so that ENV_TOLERATED_exec documents, and it previously left
+            // no trace at all in a passing run.
+            // The LIKELIER of the two skips: it covers the stale/truncated in-tree
+            // .so that ENV_TOLERATED_exec documents, and it was explained only by a
+            // println! — which libtest DISCARDS for a passing test, so it left no
+            // trace at all in the tier log.
+            emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
+            emit_gate_marker(&format!(
+                "g2_differential_mlir: SKIP -- {} is not a native ELF. This asserted \
+                 NOTHING; do not read it as a pass.",
                 so_path.display()
-            );
+            ));
             return;
         }
     }
@@ -762,8 +976,31 @@ fn g2_1_differential_coverage() {
         .filter(|(_, o)| matches!(o, Outcome::RustOnly { .. }))
         .count();
 
+    // A run that compared NOTHING has not shown the absence of divergence.
+    //
+    // Without this floor the gate passes on zero comparisons: DIVERGE == 0 and
+    // MIND_CRASH == 0 are both trivially true when every fixture landed in
+    // RUST_ONLY or MIND_UNSUPPORTED. The cheapest way to reach that state is not
+    // exotic — run_fixture marks EVERY fixture RustOnly when `mindc --emit-ir`
+    // exits non-zero, so a renamed flag silently converts the whole suite into a
+    // green run that asserted nothing.
+    //
+    // The sibling harness already does this (mindfuzz_self_host.py, "refusing a
+    // silent green"); this one did not. The floor is deliberately a FLOOR, not an
+    // equality: fixtures may legitimately move between categories, but the number
+    // actually COMPARED must not collapse.
+    const MIN_MATCH: usize = 1;
+    assert!(
+        n_match >= MIN_MATCH,
+        "G2.1 GATE FAILED: only {n_match} fixture(s) MATCHED (floor {MIN_MATCH}) out of {} \
+         — {n_unsupported} MIND_UNSUPPORTED, {n_rust_only} RUST_ONLY. DIVERGE == 0 is \
+         vacuous when nothing was compared: this run demonstrated the absence of a \
+         comparison, not the absence of a divergence.",
+        rows.len()
+    );
+
     println!(
-        "g2_differential_mlir PASS: {} MATCH / 0 DIVERGE / {} MIND_UNSUPPORTED / \
+        "g2_differential_mlir PASS: {} MATCH / 0 DIVERGE / 0 MIND_CRASH / {} MIND_UNSUPPORTED / \
          {} RUST_ONLY out of {} fixtures",
         n_match,
         n_unsupported,

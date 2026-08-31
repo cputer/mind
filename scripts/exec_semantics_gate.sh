@@ -38,6 +38,9 @@
 #   scripts/exec_semantics_gate.sh                 # all tiers
 #   scripts/exec_semantics_gate.sh exec            # one tier: exec | lowering | pkg
 #   scripts/exec_semantics_gate.sh --print-count   # report counts, never fail
+#   scripts/exec_semantics_gate.sh --from-log <log> <tier>
+#                                                  # ANALYSIS-ONLY: re-read a saved
+#                                                  # tier log without running cargo
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -189,19 +192,51 @@ QUARANTINE_pkg=()
 #   mindfuzz_cross_substrate  — needs the MLIR toolchain; soft-skips in ci.yml's
 #       build_test job. Also already excluded by scripts/preflight.sh.
 ENV_TOLERATED_exec=(g2_differential_mlir)
-ENV_TOLERATED_lowering=(mindfuzz_cross_substrate)
-ENV_TOLERATED_pkg=(mindfuzz_cross_substrate)
+# g2_differential_mlir is listed for ALL THREE tiers, not just exec.
+#
+# It has no [[test]] required-features entry, so cargo builds it in every tier — but
+# it dlopens a libmindc_mind.so that only the exec tier's feature set can produce
+# (FEATURES_exec carries mlir-build; lowering and pkg deliberately do not). In those
+# two tiers it therefore skips and emits `ran=0`, which the SKIP-MARKER CONSUMER above
+# treats as fatal. Without these entries that consumer would RED two tiers that are
+# green today, for a target that cannot meaningfully run in them.
+#
+# This is not a weakening: g2 is a real gate in exec, where it is now also exempt from
+# crash-tolerance (a MIND_CRASH escapes tolerance and fails the tier). Here it records
+# an honest environmental skip. The correct long-term fix is a [[test]]
+# required-features = ["mlir-build"] entry in Cargo.toml so cargo does not build it in
+# tiers that cannot run it — reported rather than applied, since changing the test's
+# build shape is a Cargo-level change with its own blast radius.
+ENV_TOLERATED_lowering=(mindfuzz_cross_substrate g2_differential_mlir)
+ENV_TOLERATED_pkg=(mindfuzz_cross_substrate g2_differential_mlir)
 
 # ---------------------------------------------------------------------------
 print_only=0
+# --from-log: analyse a log this script already wrote (it keeps them at a stable
+# path precisely so the "which test, and why" question can be answered after the
+# fact) WITHOUT running cargo. It is analysis, never evidence: the pass banner is
+# deliberately withheld in this mode, so a green CI line can never be produced by
+# replaying a saved log.
+from_log=""
 want=()
-for a in "$@"; do
-  case "$a" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --print-count) print_only=1 ;;
-    exec|lowering|pkg) want+=("$a") ;;
-    *) echo "usage: $0 [--print-count] [exec|lowering|pkg ...]" >&2; exit 2 ;;
+    --from-log)
+      shift
+      from_log="${1:-}"
+      [ -n "$from_log" ] || { echo "--from-log needs a log path" >&2; exit 2; } ;;
+    exec|lowering|pkg) want+=("$1") ;;
+    *) echo "usage: $0 [--print-count] [--from-log <log> <tier>] [exec|lowering|pkg ...]" >&2; exit 2 ;;
   esac
+  shift
 done
+if [ -n "$from_log" ]; then
+  [ -r "$from_log" ] || { echo "--from-log: cannot read $from_log" >&2; exit 2; }
+  # The tier selects the floors, quarantine and ENV_TOLERATED list to judge the
+  # log against, so it cannot be inferred from the file.
+  [ ${#want[@]} -eq 1 ] || { echo "--from-log needs exactly one tier" >&2; exit 2; }
+fi
 [ ${#want[@]} -eq 0 ] && want=("${TIERS[@]}")
 
 in_list() { local n=$1; shift; local e; for e in "$@"; do [ "$e" = "$n" ] && return 0; done; return 1; }
@@ -228,14 +263,19 @@ for tier in "${want[@]}"; do
   log="${MIND_TIER_LOG_DIR:-${TMPDIR:-/tmp}}/mind-tier-$tier.log"
   mkdir -p "$(dirname "$log")"
 
-  if [ "$require_toolchain" = 1 ]; then
+  if [ -n "$from_log" ]; then
+    log="$from_log"
+    cargo_status="n/a (--from-log)"
+    echo "ANALYSIS-ONLY: re-reading $log; NO tests were run by this invocation."
+  elif [ "$require_toolchain" = 1 ]; then
     MIND_BENCH_REQUIRE=1 cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$log" 2>&1
+    cargo_status=$?
   else
     cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$log" 2>&1
+    cargo_status=$?
   fi
-  cargo_status=$?
 
   # --- POSITIVE-COUNT ASSERT (the anti-silent-zeroing core) ----------------
   harnesses=$(grep -c '^test result:' "$log")
@@ -308,15 +348,117 @@ for tier in "${want[@]}"; do
     rc=1
   fi
 
+  # --- SKIP-MARKER CONSUMER: ran=0 is a failure to EXECUTE -----------------
+  # A gate that cannot run prints an honest `SDLC-GATE <name> ran=<n> fail=<k>`
+  # marker instead of asserting nothing in silence (tests/g2_differential_mlir.rs
+  # prints one when the pure-MIND oracle .so is unobtainable). Until now NOTHING
+  # read those lines — grep found producers and no consumer — so "compared every
+  # fixture and found no divergence" and "compared nothing" produced the same
+  # green tier. A marker nobody reads is documentation, not a gate.
+  #
+  # This answers a DIFFERENT question from the triage below. That one asks "did
+  # it pass"; this one asks "did it run at all", and the two need separate
+  # verdicts because the fixes are unrelated: a failure to pass is a code defect,
+  # a failure to execute is a missing input or an erased harness.
+  #
+  # Environmental skips stay possible — through the list that ALREADY documents
+  # them per-tier, rather than a second list that would drift out of step with
+  # it. The default is fail-closed: a ran=0 marker from any target NOT named in
+  # ENV_TOLERATED_<tier> fails the tier, so the next gate to print a marker is
+  # enforced without anyone remembering to wire it up.
+  #
+  # Attribution is per-target (the enclosing `Running tests/<t>.rs` block), not
+  # per-log, so one tolerated target cannot excuse another's silence.
+  mapfile -t markers < <(
+    awk '
+      # Clear attribution at EVERY compilation-unit boundary, not just at
+      # `Running tests/*.rs`. cargo also emits `Doc-tests <crate>`,
+      # `Running benches/<x>.rs` and `Running unittests src/lib.rs`; without this
+      # reset a marker printed from one of those inherits the identity of whichever
+      # tests/<t>.rs block appeared last. Measured: a marker inside a `Doc-tests`
+      # block was reported as coming from tests/filler_299.rs, which printed nothing.
+      # Two wrong outcomes — the gate names the wrong file, and if that borrowed
+      # carrier happens to be env-tolerated, a genuine ran=0 is silently downgraded
+      # from fatal to tolerated. That is the exact false-green class this consumer
+      # exists to remove, so it must fail closed to <unattributed> instead.
+      /^[[:space:]]*(Running|Doc-tests) / { t = "" }
+      match($0, /Running tests\/[A-Za-z0-9_]+\.rs/) {
+        t = substr($0, RSTART + 14, RLENGTH - 17); next
+      }
+      /SDLC-GATE [A-Za-z0-9_.-]+ ran=[0-9]+/ {
+        name = ""; ran = ""
+        for (i = 1; i < NF; i++) if ($i == "SDLC-GATE") { name = $(i + 1); break }
+        for (i = 1; i <= NF; i++) if ($i ~ /^ran=[0-9]+$/) { ran = substr($i, 5); break }
+        if (name != "" && ran != "")
+          printf "%s %s %s\n", (t == "" ? "<unattributed>" : t), name, ran
+      }' "$log" | sort -u
+  )
+  zero_fatal=()
+  zero_ok=()
+  for m in ${markers[@]+"${markers[@]}"}; do
+    read -r mtarget mname mran <<<"$m"
+    [ "$mran" = 0 ] || continue
+    if in_list "$mtarget" ${tolerated[@]+"${tolerated[@]}"}; then
+      zero_ok+=("$mname (tests/$mtarget.rs)")
+    else
+      zero_fatal+=("$mname (tests/$mtarget.rs)")
+    fi
+  done
+  if [ ${#zero_fatal[@]} -gt 0 ]; then
+    echo
+    echo "FAIL[$tier]: ${#zero_fatal[@]} gate(s) reported ran=0 — they did not EXECUTE."
+    for z in "${zero_fatal[@]}"; do echo "  - $z"; done
+    echo "  A failure to EXECUTE, not a failure to pass: these asserted NOTHING, so the"
+    echo "  tier's green says nothing about what they defend. Supply the missing input,"
+    echo "  or — if the skip is genuinely environmental — name the target in"
+    echo "  ENV_TOLERATED_$tier with the reason, where the skip stays visible and counted."
+    rc=1
+  fi
+  if [ ${#zero_ok[@]} -gt 0 ]; then
+    echo "gates that did NOT run : ${#zero_ok[@]}  (env-tolerated ran=0 — a skip, never a pass)"
+    for z in "${zero_ok[@]}"; do echo "  - $z"; done
+  fi
+
   # --- FAILURE TRIAGE against the quarantine ratchet -----------------------
   mapfile -t failing < <(
     sed -n 's/^error: test failed, to rerun pass `--test \([A-Za-z0-9_]*\)`.*/\1/p' "$log" | sort -u
   )
 
+  # A CRASH is never tolerable, whatever the target's environmental status.
+  #
+  # Environmental tolerance exists for a real reason: g2_differential_mlir dlopens a
+  # gitignored, possibly-stale in-tree .so, so it can fail LOCALLY for reasons that say
+  # nothing about the code. But that reason covers a MISSING or STALE oracle — it does
+  # not cover the compiler DYING on a fixture. Those are different events and only one
+  # of them is environmental.
+  #
+  # Measured 2026-08-29: with g2 failing, a replay still printed "ALL TIERS OK /
+  # GATE EXIT=0", because the tolerated check below `continue`s before `unexpected` is
+  # built. The harness had just been fixed to DETECT a crash (MIND_CRASH); this line is
+  # what stopped that detection from ever GATING anything.
+  #
+  # The harness prints an unmistakable marker when it classifies a crash, so tolerance
+  # is withdrawn for exactly that case and left intact for the environmental one.
+  crashed=()
+  if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED|MIND_CRASH [^0]" "$log" 2>/dev/null; then
+    mapfile -t crashed < <(grep -oE "MIND_CRASH [A-Za-z0-9_/.-]+" "$log" | awk '{print $2}' | sort -u)
+    echo
+    echo "FAIL[$tier]: the pure-MIND compiler CRASHED. Tolerance does NOT apply —"
+    echo "  an unsupported construct returns a null handle; these terminated abnormally."
+    for c in ${crashed[@]+"${crashed[@]}"}; do echo "  - $c"; done
+    rc=1
+  fi
+
   unexpected=()
   for t in "${failing[@]}"; do
     in_list "$t" ${quarantine[@]+"${quarantine[@]}"} && continue
-    in_list "$t" ${tolerated[@]+"${tolerated[@]}"} && continue
+    # Tolerance is withdrawn when the log shows a crash (handled above).
+    if in_list "$t" ${tolerated[@]+"${tolerated[@]}"}; then
+      if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED" "$log" 2>/dev/null; then
+        unexpected+=("$t")
+      fi
+      continue
+    fi
     unexpected+=("$t")
   done
   if [ ${#unexpected[@]} -gt 0 ]; then
@@ -348,6 +490,11 @@ for tier in "${want[@]}"; do
   if [ "$rc" = 0 ] && [ ${#crit_bad[@]} -eq 0 ]; then
     echo "ok[$tier]: $executed tests executed across $harnesses harnesses; ${#failing[@]} failing"
     echo "          target(s), all accounted for (quarantine ${#quarantine[@]}, env-tolerated ${#tolerated[@]})."
+    # An env-tolerated ran=0 does not red the tier, but it must never vanish into
+    # the ok line: the tier is green ABOUT LESS than it looks.
+    if [ ${#zero_ok[@]} -gt 0 ]; then
+      echo "          NOTE: ${#zero_ok[@]} gate(s) above reported ran=0 and asserted NOTHING."
+    fi
   else
     echo
     echo "cargo exit was $cargo_status; failing targets: ${failing[*]:-none}"
@@ -365,6 +512,12 @@ echo
 if [ "$print_only" = 1 ]; then
   echo "--print-count: re-derive the floors from the numbers above; this mode never fails"
   exit 0
+fi
+if [ -n "$from_log" ]; then
+  # No pass banner here, ever. --from-log ran no tests, so nothing it prints may
+  # be greppable as proof that the tier is green.
+  echo "ANALYSIS-ONLY (--from-log): judged a saved log; NO tests were run. rc=$overall"
+  exit $overall
 fi
 [ "$overall" = 0 ] && echo "ALL TIERS OK" || echo "GATE FAILED — see FAIL[...] above"
 exit $overall

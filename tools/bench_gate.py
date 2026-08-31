@@ -225,6 +225,7 @@ def main() -> int:
     current = parse_current(args.current)
 
     rows: list[tuple[str, float | None, float | None, float, float, float | None, str]] = []
+    missing: list[str] = []
     failed = False
     trusted = 0
     rebless_candidates: list[str] = []
@@ -236,7 +237,20 @@ def main() -> int:
         ref = ch if ch is not None else fl  # champion is the primary reference
         cv = current.get(name)
         if ref is None or cv is None:
-            print(f"::warning::missing bench for {name} (champion={ch}, floor={fl}, current={cv})")
+            # A missing MEASUREMENT is not a warning, it is an absent gate.
+            #
+            # This fails CLOSED on a missing reference (above) but used to fail OPEN
+            # here: every watched name `continue`d, rows stayed empty, trusted==0 with
+            # no noisy entries skipped the inconclusive guard, and the run printed
+            # "bench gate: PASS" exit 0 having compared NOTHING. Measured 2026-08-29 —
+            # an empty --current produced three warnings and a green gate.
+            #
+            # Both consumers can produce that empty file: preflight.sh redirects the
+            # bench output and never tests its exit code, and bench-gate.yml pipes
+            # `cargo bench | tee` without pipefail. So a bench that failed to RUN read
+            # as a bench that found no regression.
+            missing.append(f"{name} (champion={ch}, floor={fl}, current={cv})")
+            print(f"::error::missing bench for {name} (champion={ch}, floor={fl}, current={cv})")
             continue
         c, rel_var = cv
         d_ch = (c - ch) / ch if ch is not None else None
@@ -279,6 +293,15 @@ def main() -> int:
             "rationale + a confirmation run."
         )
         return 1
+    if missing:
+        print(
+            f"::error::bench gate FAILED: {len(missing)} watched bench(es) produced no "
+            "measurement. A gate that compared nothing has not shown the absence of a "
+            "regression — it has shown the absence of a bench."
+        )
+        for m in missing:
+            print(f"  - {m}")
+        return 4
     if trusted == 0 and noisy:
         print(
             f"::warning::all benches inconclusive (spread > {args.max_rel_variance:.0%}): "

@@ -114,6 +114,23 @@ else
   bad "scripts/cfg_gate_wiring_lint.py MISSING — CI runs it; preflight cannot verify it"
 fi
 
+step "comment-enumeration contract  [ci.yml enumeration_drift_lint.py]"
+# The tc_let shape, generalised: a comment that COUNTS or NAMES a set, beside code
+# that owns the real set, with nothing comparing the two. `parse_let` documented
+# ty=0 as "the exact no-annotation value every let consumer already handles" and
+# named the handlers; tc_let was not among them and read ast_span_lo(0). Two
+# enumerations that had already rotted the same way are pinned here.
+if [ -f scripts/enumeration_drift_lint.py ]; then
+  if ed_out=$(python3 scripts/enumeration_drift_lint.py 2>&1); then
+    printf '%s\n' "$ed_out" | tail -1
+  else
+    bad "comment-enumeration contract FAILED — a comment disagrees with its code:"
+    printf '%s\n' "$ed_out" | head -12
+  fi
+else
+  bad "scripts/enumeration_drift_lint.py MISSING — CI runs it; preflight cannot verify it"
+fi
+
 step "smoke-corpus wiring contract  [ci.yml mindcraft_self_host first step]"
 # Same class, other corpus: examples/mindc_mind/*.py is the ONLY regression gate for
 # constructs main.mind does not self-use, and its wiring used to be two hand-copied
@@ -255,10 +272,14 @@ if [ "${1:-}" = "--full" ]; then
   # of this commit: task #316 (goldens predate the #318 lower.rs merge fix). It is
   # reported, never silently skipped; see the banked rule "never print KEYSTONE=PASS
   # while #316 is red".
-  if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then
-    if mp_out=$(MINDC_SO="${MINDC_SO:-/tmp/libmindc_mind_self_host.so}" \
-                python3 examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
-
+# --- git-level SDLC gates -------------------------------------------------
+# These run UNCONDITIONALLY and BEFORE the mic@3 smoke.
+#
+# They were previously nested inside that smoke's SUCCESS branch (merge collateral,
+# 5b0d0097). mic@3 primitives is known-red at this commit (#316, 4/122 stale goldens),
+# so the branch never executed and all four gates below silently did not run — a gate
+# whose execution depends on an unrelated red gate is not a gate. They are text-only
+# (git + python3 stdlib), need no toolchain, and take seconds.
 # SDLC gates (git-level, no build). Both exist because of a real incident: a merge
 # deleted a security ENFORCEMENT line while its enum variant, Display arm, error
 # mapping AND its test all survived, so nothing failed to compile and the test kept
@@ -278,6 +299,11 @@ python3 scripts/sdlc/enforcement_bijection.py || { echo "preflight: enforcement/
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
 # Verified green at 9d3d5d41; a regression here must block a push, not surface at flip time.
 python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || { echo "preflight: RI-D1 readiness gate FAILED"; exit 1; }
+
+  if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then
+    if mp_out=$(MINDC_SO="${MINDC_SO:-/tmp/libmindc_mind_self_host.so}" \
+                python3 examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
+
       echo "ok (mic@3 primitives byte-exact vs the live oracle)"
     else
       bad "mic@3 primitives smoke FAILED (stale golden vs live oracle — see #316):"
