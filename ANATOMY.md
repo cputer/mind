@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1426 | **Est. tokens:** ~2,688,102
-**Generated:** 2026-08-31 08:01 UTC
+**Files:** 1426 | **Est. tokens:** ~2,688,784
+**Generated:** 2026-08-31 08:05 UTC
 
 ## Token Budget Guide
 
@@ -44,7 +44,7 @@
 | `docs/` | 35 | ~90,856 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
-| `docs/design/` | 4 | ~10,816 |
+| `docs/design/` | 4 | ~11,498 |
 | `docs/mindcraft/` | 3 | ~7,086 |
 | `docs/rfcs/` | 35 | ~166,687 |
 | `docs/specs/` | 2 | ~976 |
@@ -398,7 +398,7 @@
 
 - `execution-plan-performance-mode.md` (~8045 tok, huge) — Design: PerformanceMode + ExecutionPlan + ExecutionProvider
 - `README.md` (~26 tok, tiny) — Design Docs
-- `rfc0012-b2-shape-threading-scope.md` (~2635 tok, huge) — RFC 0012 Phase B.2 — shape-dim threading: execution scope
+- `rfc0012-b2-shape-threading-scope.md` (~3317 tok, huge) — RFC 0012 Phase B.2 — shape-dim threading: execution scope
 - `v0.3.md` (~110 tok, small) — MIND Design v0.3 (Draft)
 ### `docs/`
 

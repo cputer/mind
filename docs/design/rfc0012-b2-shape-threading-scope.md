@@ -162,21 +162,72 @@ if ikind == Some(IntrinsicKind::MatmulRmajorF32V) && args.len() == 5 {
 ```
 — `src/mlir/lowering.rs:2881-2884`
 
-So the two forms cannot emit identical MLIR because they cannot even reach the
-same emitter: one is a 2-operand IR node, the other a 5-operand call. The three
-missing operands are the output pointer and the two dims — exactly what a shape
-table supplies. The identical structure exists for `MatmulRmajorQ16V`
-(`src/mlir/lowering.rs:2897`), which is the Q16.16 path RFC 0028 would use.
+So the two forms cannot even reach the same emitter. But arity is only **one of
+four** independent divergences, and shape threading addresses only that one:
+
+| # | Divergence | Path A (`A @ B`) | Path B (intrinsic) |
+|---|---|---|---|
+| 1 | **Arity** | 2 SSA operands | 5 (`w, x, y, rows, cols`) |
+| 2 | **ABI** | tensor-typed SSA values | i64 opaque addresses (`llvm.inttoptr`) |
+| 3 | **Output model** | value semantics — `tensor.empty()` allocates a result | destination-passing — writes into caller's `y_addr` and returns `ValueKind::ScalarI64`, a *status code* (`src/mlir/lowering.rs:2883`) |
+| 4 | **Dialect level** | one `linalg.matmul`, pre-bufferization | hand-emitted `scf.for` + `vector` + `llvm.inttoptr`, post-bufferization |
+
+Path A emits `tensor.empty()` + `linalg.matmul` (`src/mlir/lowering.rs:2476-2499`);
+Path B emits `llvm.inttoptr` and `arith.index_cast` over raw addresses
+(`emit_vec_matmul_rmajor_f32`, `src/mlir/lowering.rs:6491+`).
+
+> **Shape threading supplies only `rows`/`cols` — 2 of the 5 operands.** Even
+> with perfect `(M, K)` in hand, `A @ B` still has no destination buffer to pass,
+> still yields a tensor rather than an i64 status, and still sits several dialect
+> levels above the intrinsic.
+
+Converging them is a **buffer-ownership and dialect-level redesign of
+`Instr::MatMul`'s lowering strategy**, not a type-threading task. This is the
+single largest correction to RFC 0012 §7.2's framing of the item. Note also that
+the deferred test's own plan lists 4 args (`[a, b, rows, cols]`) while the
+intrinsic is arity **5** — the note understates its own scope.
+
+The same structure holds for `dot_*_v` (`src/intrinsics.rs:96,128`, arity 3) and
+for `MatmulRmajorQ16V` (`src/mlir/lowering.rs:2897`), the Q16.16 path RFC 0028
+would use.
 
 ---
 
-## 7. `.reshape` vs `.sum`
+## 7. `.reshape` vs `.sum` — the real wall is not shape threading
 
 `.sum` collapses extents and needs no ground value at the call site. `.reshape`
 **is** its extents: the target shape is the operation. It cannot lower to a
 shape-agnostic node, and it must reject a `Sym` target dim (§2) or a
-non-volume-preserving one — both of which require `Known` values in
-`lower_expr`.
+non-volume-preserving one — both of which want `Known` values in `lower_expr`.
+
+**But that is not what actually blocks it.** `Instr::Reshape` has **no arm in
+the executable MLIR backend at all**:
+
+```
+$ grep -c "Reshape" src/mlir/lowering.rs
+0
+```
+
+It therefore falls to the catch-all at `src/mlir/lowering.rs:5547-5552` and
+errors as `MlirLowerError::UnsupportedOp`. By contrast `Instr::Sum` and
+`Instr::Mean` have real arms (`src/mlir/lowering.rs:4533`, `:4541`) routing to
+the pinned-fold reduction tier. `Reshape` *is* handled in
+`src/eval/mlir_export.rs:275` — but that is the **export-only** path, not the
+executable one.
+
+> **The decisive asymmetry: `.sum` has an executable lowering, `.reshape` does
+> not. Shape threading alone will not make `.reshape` run.**
+
+A further correctness gap, independent of both: the type checker enforces
+volume preservation (`src/type_checker/mod.rs:1038-1057`,
+`known_product(old) != known_product(new)`), but `lower_expr`
+(`src/eval/lower.rs:5543-5552`) re-parses dims from strings and re-checks
+**nothing**. And `tensor.reshape(x, (dims))` already exists as an explicit call
+form — the deferred item is the *postfix method spelling*, not reshape itself.
+
+Finding #273 hardening (`shape::reshape_runtime_dim`,
+`src/type_checker/mod.rs:1009-1037`, regression tests in
+`tests/reshape_runtime_dim_273.rs`) must survive any new surface.
 
 ---
 
