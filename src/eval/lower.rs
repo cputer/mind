@@ -2432,7 +2432,26 @@ fn record_narrow_let(name: &str, ann: &Option<TypeAnn>) {
         // Finding 6: a declared tuple annotation is recorded too, so a numeric
         // tuple index `t.N` can resolve its element types (same shadow-clear
         // rule via the `_ =>` arm below).
-        Some(ty) if is_narrow_scalar_ty(ty) || is_payload_generic_ty(ty) || is_tuple_ann_ty(ty) => {
+        // Full-width `u64` is recorded too. `is_narrow_scalar_ty` is deliberately
+        // false for it -- u64 needs no re-MASKING, it is already i64-wide -- but the
+        // registry is what `mask_narrow_assign` consults to re-apply the
+        // `__mind_conv_u64` SIGNEDNESS TAG on reassignment, and that tag is the sole
+        // carrier of unsignedness through lowering. Conflating "needs masking" with
+        // "needs tracking" dropped the tag on every reassignment:
+        //     let mut y: u64 = 5; y = 0 - 1; y >> 63   ==>  -1, correct answer 1
+        // while the same value written as a direct literal answered 1. No branch, no
+        // loop, default backend. `mask_narrow_let` has always emitted the right thing
+        // for u64; it was simply never reached from the assign path.
+        //
+        // Same predicate pairing already used at the narrow-arith site below, so this
+        // is the established spelling of "narrow OR u64", not a new concept. An
+        // all-i64 module still records nothing, so the keystone stays byte-identical.
+        Some(ty)
+            if is_narrow_scalar_ty(ty)
+                || matches!(scalar_int64_cast_signed(ty), Some(false))
+                || is_payload_generic_ty(ty)
+                || is_tuple_ann_ty(ty) =>
+        {
             NARROW_LOCALS.with(|n| n.borrow_mut().insert(name.to_string(), ty.clone()));
         }
         // Finding 1(a): a re-`let` (shadow) of the SAME name at a WIDE/non-narrow

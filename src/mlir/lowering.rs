@@ -1182,7 +1182,13 @@ impl LoweringContext {
         // `extui` for unsigned/bool, `extsi` for signed.
         #[cfg(feature = "std-surface")]
         fn is_unsigned(k: &ValueKind) -> bool {
-            matches!(k, ValueKind::ScalarU32 | ValueKind::ScalarBool)
+            // ScalarU64 was ABSENT here. Same lost-carrier bug as the merge join
+            // below, one layer down: this selects `extui` vs `extsi` on the widening
+            // path, so a u64 operand widened as though it were signed.
+            matches!(
+                k,
+                ValueKind::ScalarU32 | ValueKind::ScalarU64 | ValueKind::ScalarBool
+            )
         }
         #[cfg(not(feature = "std-surface"))]
         fn is_unsigned(_k: &ValueKind) -> bool {
@@ -1190,6 +1196,47 @@ impl LoweringContext {
         }
 
         // Same MLIR type on both arms → no widening, byte-identical path.
+        //
+        // The KIND, however, is a join and must be COMMUTATIVE. This returned
+        // `then_kind` unconditionally, discarding `else_kind`, and ScalarU64/ScalarI64
+        // both map to "i64" -- so the merge took whichever arm was syntactically THEN:
+        //     if c { 1 } else { x }   -> ScalarI64 -> `>>` emits shrsi (SIGNED)
+        //     if c { x } else { 1 }   -> ScalarU64 -> `>>` emits shrui (UNSIGNED)
+        // for the same `x: u64`. The primary defect is not a wrong preference, it is
+        // that a join depended on ARM ORDER -- a determinism violation on its own terms
+        // for a compiler whose claim is order-independent byte-identity.
+        //
+        // The join is signedness ABSORPTION: I64 ⊔ U64 = U64, I32 ⊔ U32 = U32. That is
+        // commutative and associative, and it is the rule the binop path already ships
+        // (`u64_unsigned = lhs is ScalarU64 || rhs is ScalarU64`), so `1 + x` and
+        // `x + 1` were already unsigned while `if c {1} else {x}` was not. An untyped
+        // literal defaults to ScalarI64 as a CARRIER default, not a signedness vote;
+        // absorption makes it neutral without inventing literal-provenance tracking.
+        //
+        // Value strings are untouched, so no new MLIR op is emitted here; only
+        // downstream variant selection changes, and only where the tags disagreed.
+        #[cfg(feature = "std-surface")]
+        if mlir_type(then_kind)? == mlir_type(else_kind)? {
+            let joined = match (then_kind, else_kind) {
+                (ValueKind::ScalarU64, _) | (_, ValueKind::ScalarU64) => ValueKind::ScalarU64,
+                (ValueKind::ScalarU32, _) | (_, ValueKind::ScalarU32) => ValueKind::ScalarU32,
+                _ => {
+                    // Same MLIR type, kinds differ, and NOT a signed/unsigned pair we
+                    // know how to join. Fail closed rather than silently pick one,
+                    // mirroring the float⨯integer arm below.
+                    if then_kind != else_kind {
+                        return Err(MlirLowerError::ShapeError(format!(
+                            "merge arms have the same MLIR type but unjoinable kinds \
+                             {then_kind:?} vs {else_kind:?}; refusing to pick one \
+                             (a merge kind must not depend on arm order)"
+                        )));
+                    }
+                    then_kind.clone()
+                }
+            };
+            return Ok((joined, then_val.to_string(), else_val.to_string()));
+        }
+        #[cfg(not(feature = "std-surface"))]
         if mlir_type(then_kind)? == mlir_type(else_kind)? {
             return Ok((
                 then_kind.clone(),

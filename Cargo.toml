@@ -92,6 +92,12 @@ required-features = ["std-surface"]
 name = "g2_differential_mlir"
 required-features = ["mlir-build"]
 
+# Order-symmetry of merge signedness. Needs std-surface: ScalarU64/ScalarU32 do not
+# exist without it, so the property under test is unreachable in a default build.
+[[test]]
+name = "merge_kind_order_symmetry"
+required-features = ["std-surface"]
+
 [[bench]]
 name = "compiler"
 harness = false
