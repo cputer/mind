@@ -64,6 +64,7 @@ import tempfile
 _HERE = pathlib.Path(__file__).parent.resolve()
 _REPO = _HERE.parents[1]
 sys.path.insert(0, str(_HERE))
+import _stdlib_manifest  # noqa: E402
 from _selfhost_so import resolve_so  # noqa: E402
 # Reuse the loop's EXACT source-combining so the headline compiles the identical
 # bytes the frozen stage1.elf was minted from.
@@ -71,11 +72,11 @@ from self_host_loop_smoke import build_seed  # noqa: E402
 
 SO = resolve_so()
 
-_STDLIB_MODULES = [
-    "arena", "async", "blas", "cli", "fs", "io", "io_canon", "iouring",
-    "json", "map", "net", "process", "reactor", "regex", "ring", "sha256",
-    "string", "time", "toml", "tui", "vec",
-]
+# enforced-by: STDLIB-MANIFEST
+# Was a hand-copied literal twin of the bridge's STD_MODULES in
+# src/bin/mindc.rs. Both readers now consume testdata/stdlib_manifest.txt;
+# stdlib_manifest_lint.py fails on drift in either direction.
+_STDLIB_MODULES = _stdlib_manifest.seed_modules()
 _FROZEN = _HERE / "testdata" / "selfhost_loop" / "stage1.elf"
 
 # A small std-seeded program for the non-vacuous rung: add(2,3) -> exit 5.

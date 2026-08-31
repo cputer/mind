@@ -121,6 +121,8 @@ const KEY_TRACE_HASH_KIND: &str = "evidence_chain.trace_hash_kind";
 /// key (e.g. RFC 0027's `evidence_chain.device_receipts`) MUST be added here in the same
 /// change that starts emitting it, or every artifact carrying it fails verification —
 /// which is the loud direction to fail in.
+/// enforced-by: ENUM-DRIFT — every `evidence_chain.*` key const must appear here;
+/// `scripts/enumeration_drift_lint.py` compares the two and fails on either gap.
 const EVIDENCE_CHAIN_KEYS: [&str; 8] = [
     KEY_COLLAPSE_RECEIPTS,
     KEY_DETERMINISM,
@@ -174,6 +176,8 @@ const KEY_SIG_SLHDSA: &str = "signature.slhdsa";
 /// the check site because the failure mode is a new `KEY_SIG_*` const being added
 /// without the reader learning about it — which is how the ml-dsa-87 / slh-dsa
 /// keys would have been rejected when a 5-key allowlist met a 9-key emitter.
+/// enforced-by: ENUM-DRIFT — every `KEY_SIG_*` const must appear in this array;
+/// `scripts/enumeration_drift_lint.py` compares the two and fails on either gap.
 const SIGNATURE_KEYS: [&str; 9] = [
     KEY_SIG_SCHEME,
     KEY_SIG_PUBKEY,
@@ -3848,9 +3852,16 @@ mod tests {
                 "{k} must be in the reserved namespace"
             );
         }
-        // The allowlist is exactly these five and nothing else: a new signature
+        // The allowlist is exactly these nine and nothing else: a new signature
         // key added without extending the read-side check would reopen the hole,
         // so this asserts the pairing rather than trusting it.
+        //
+        // This sentence itself read "exactly these five" until 2026-08-30 — it was
+        // the fossil of the very drift the comment ten lines above describes fixing:
+        // the code learned about the four PQC keys, the prose beside it did not.
+        // `scripts/enumeration_drift_lint.py` now compares this number to
+        // `SIGNATURE_KEYS.len()`, and asserts every `KEY_SIG_*` const is listed
+        // there — the failure mode the definition site relies on proximity to catch.
         // END-TO-END: build a real artifact carrying an injected reserved key and
         // assert the canonical check rejects it. Asserting the allowlist set alone
         // would not prove the check is WIRED — that is the mistake this whole

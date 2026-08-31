@@ -15,6 +15,7 @@
 
 import ctypes
 import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,20 @@ from pathlib import Path
 MINDC = Path(__file__).resolve().parents[2] / "target" / "release" / "mindc"
 if not MINDC.exists():
     MINDC = Path(__file__).resolve().parents[2] / "target" / "debug" / "mindc"
+
+ENV_SKIP_OPT_IN = "MIND_SMOKE_ALLOW_ENV_SKIP"
+
+
+def _env_skip_allowed() -> bool:
+    """True only for a bare local run that explicitly opted in to skipping on a
+    missing toolchain. A harness run (CI or fast_keystone.sh) always sets
+    MINDC_SO/MINDC_BIN, and that DOMINATES the opt-in, so a stray
+    MIND_SMOKE_ALLOW_ENV_SKIP leaking into a CI environment still cannot re-open
+    the hole. Same idiom as mod_operator_smoke.py."""
+    if os.environ.get("MINDC_SO") or os.environ.get("MINDC_BIN"):
+        return False
+    return os.environ.get(ENV_SKIP_OPT_IN) == "1"
+
 
 MAIN_MIND = """import std.sha256
 
@@ -52,9 +67,20 @@ sources = ["src/main.mind"]
 
 
 def main() -> int:
+    # Both skip paths below used to `return 0` unconditionally. This smoke runs
+    # inside a ci.yml batch loop whose only vacuous-green backstop is
+    # `grep -q '^SKIP'` on the output -- and neither message starts with "SKIP",
+    # so a missing mindc or a misread build failure graded as a passing gate with
+    # nothing to catch it. Fail closed unless a bare local run opted in.
     if not MINDC.exists():
-        print("sha256-hash-smoke: mindc not found; skipping")
-        return 0
+        if _env_skip_allowed():
+            print(f"SKIP: sha256-hash-smoke: mindc not found ({ENV_SKIP_OPT_IN}=1)")
+            return 0
+        print(f"sha256-hash-smoke: FAIL - mindc not found at {MINDC} - refusing to "
+              f"skip; the sha256.hash ABI assertion did not run. Build it, or set "
+              f"{ENV_SKIP_OPT_IN}=1 for a bare local run with neither MINDC_SO nor "
+              f"MINDC_BIN set.")
+        return 1
     with tempfile.TemporaryDirectory() as td:
         proj = Path(td)
         (proj / "src").mkdir()
@@ -70,8 +96,15 @@ def main() -> int:
         if out.returncode != 0:
             stderr = out.stderr
             if "mlir-build" in stderr and "requires" in stderr:
-                print("sha256-hash-smoke: needs mlir-build; skipping")
-                return 0
+                if _env_skip_allowed():
+                    print(f"SKIP: sha256-hash-smoke: needs mlir-build "
+                          f"({ENV_SKIP_OPT_IN}=1)")
+                    return 0
+                print("sha256-hash-smoke: FAIL - mindc lacks the mlir-build feature "
+                      "- refusing to skip; the sha256.hash ABI assertion did not "
+                      f"run. Set {ENV_SKIP_OPT_IN}=1 for a bare local run.\n"
+                      + stderr)
+                return 1
             print("sha256-hash-smoke: mindc build failed:\n" + stderr)
             return 1
 

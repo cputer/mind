@@ -24,8 +24,30 @@ SINK='sha256|mini_sha256|trace_hash|nb_sha256|evidence_hash|preimage|anchor_hash
 JSON='jv_dump|jv_encode|json_encode|json_dump|json\.encode|json\.dump'
 PATTERN="(${SINK})[a-z_]*[[:space:]]*\([^;]*\b(${JSON})\b"
 
-hits=$(git grep -nE "$PATTERN" -- '*.mind' ':!node_modules' ':!**/node_modules' 2>/dev/null \
-       | grep -viE 'json-hash-ok' || true)
+PATHSPEC=( '*.mind' ':!node_modules' ':!**/node_modules' )
+
+# Vacuity floor. This gate scans ONLY *.mind, so it is one pathspec typo away
+# from scanning nothing at all -- and `2>/dev/null || true` used to render that
+# indistinguishable from a clean tree: empty `hits` printed PASS whether the scan
+# found no violation, matched no file, or failed outright. The corpus size is now
+# compared to a floor and `git grep`'s own status is read (0 match / 1 no match /
+# >=2 error). ONE pathspec array feeds the count and the scan, so they cannot drift.
+MIN_SCANNED=100  # tracked *.mind today: ~345
+scanned=$(git ls-files -- "${PATHSPEC[@]}" | wc -l)
+if [ "$scanned" -lt "$MIN_SCANNED" ]; then
+  echo "::error::json-not-evidence gate scanned only $scanned tracked .mind files"
+  echo "         (floor $MIN_SCANNED). The scan scope evaporated - a PASS here"
+  echo "         would assert nothing. Check the pathspec above."
+  exit 1
+fi
+
+raw=$(git grep -nE "$PATTERN" -- "${PATHSPEC[@]}")
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  echo "::error::git grep failed (rc=$rc) - the gate did not run; refusing to pass."
+  exit 1
+fi
+hits=$(printf '%s' "$raw" | grep -viE 'json-hash-ok')
 
 if [ -n "$hits" ]; then
   echo "::error::JSON fed into an evidence/hash preimage (forbidden — wedge integrity):"
@@ -38,4 +60,4 @@ if [ -n "$hits" ]; then
   echo "non-evidence (e.g. a cache key), append '// json-hash-ok: <reason>'."
   exit 1
 fi
-echo "json-not-evidence gate: PASS"
+echo "json-not-evidence gate: PASS ($scanned tracked .mind files scanned)"

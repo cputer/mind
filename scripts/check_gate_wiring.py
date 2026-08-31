@@ -61,6 +61,13 @@ def scanned_globs(script: Path) -> list[str]:
         if not ln.lstrip().startswith("#")
     ]
     logical = "\n".join(code).replace("\\\n", " ")
+    # A gate may hold its pathspec in a `PATHSPEC=( ... )` array so that the
+    # `git ls-files` corpus-floor count and the `git grep` scan read the SAME
+    # list (one source, no drift). Flatten any such array onto one synthetic
+    # `git grep` line so this parser keeps seeing the real scan scope; without
+    # it the array form reads as "no scope" and fails this lint closed.
+    for body in re.findall(r"PATHSPEC=\((.*?)\)", logical, re.DOTALL):
+        logical += "\ngit grep " + " ".join(body.split())
     globs: set[str] = set()
     for line in logical.splitlines():
         if "git grep" not in line:

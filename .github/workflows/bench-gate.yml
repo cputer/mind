@@ -27,6 +27,15 @@ on:
       - 'src/opt/**'
       - 'benches/**'
       - 'Cargo.toml'
+      # The gate's OWN inputs. Without these three the filter had the shape this
+      # project has already been bitten by: a gate that exists but does not run on
+      # the path that matters. Editing tools/bench_gate.py (the enforcement logic),
+      # the frozen baseline numbers it compares against, or this workflow file
+      # changes the VERDICT while touching none of the source globs above, so the
+      # change would land without the gate it changes ever executing once.
+      - 'tools/bench_gate.py'
+      - '.bench-baseline-*.txt'
+      - '.github/workflows/bench-gate.yml'
   pull_request:
     paths:
       - 'src/parser/**'
@@ -37,6 +46,15 @@ on:
       - 'src/opt/**'
       - 'benches/**'
       - 'Cargo.toml'
+      # The gate's OWN inputs. Without these three the filter had the shape this
+      # project has already been bitten by: a gate that exists but does not run on
+      # the path that matters. Editing tools/bench_gate.py (the enforcement logic),
+      # the frozen baseline numbers it compares against, or this workflow file
+      # changes the VERDICT while touching none of the source globs above, so the
+      # change would land without the gate it changes ever executing once.
+      - 'tools/bench_gate.py'
+      - '.bench-baseline-*.txt'
+      - '.github/workflows/bench-gate.yml'
   workflow_dispatch:
 
 permissions:
@@ -85,6 +103,12 @@ jobs:
         # runner-to-runner variance. Prior runs on the same code path
         # spanned +0.6% to +2.28% — noise around a flat regression.
         run: |
+          # pipefail is load-bearing: the GitHub default shell is `bash -e {0}`,
+          # so without it this pipeline reports TEE's status. A cargo bench that
+          # failed to build, panicked, or matched no bench target would exit 0
+          # here and leave a truncated/empty bench.out for the gate to read --
+          # the step named "Run criterion bench" asserting that it ran at all.
+          set -eo pipefail
           cargo bench --bench compiler --no-default-features -- \
             --warm-up-time 3 \
             --measurement-time 8 \

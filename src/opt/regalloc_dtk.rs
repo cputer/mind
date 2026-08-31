@@ -23,14 +23,19 @@
 //! hottest values resident in registers instead of on the stack.
 //!
 //! # Byte-identity story (load-bearing)
-//! This module has **no consumer on any emission path**. The Rust compiler
+//! **This Rust module** has no consumer on any emission path: the Rust compiler
 //! emits MLIR text and shells to `clang` (which runs its own register
-//! allocation); the native-ELF backend that would consume a DTK plan lives in
-//! the self-host `examples/mindc_mind/main.mind` (a separate lane). So planning
-//! is a **standalone analysis with zero side effects on emitted bytes** — the
-//! keystone / cross-substrate byte-identity holds *by construction* because no
-//! emitter is touched. This is the strongest form of "default-off": the flag is
-//! the absence of a caller, not a runtime branch that could drift.
+//! allocation), so nothing here can perturb a Rust-emitted byte. Its role is to
+//! be the **differential parity oracle** for the pure-MIND twin.
+//!
+//! The twin is NOT dormant. `nb_dtk_*` in the self-host
+//! `examples/mindc_mind/main.mind` runs this same ranking and its plan IS
+//! consumed by the native-ELF emitter (`nb_val_store_rax` / `nb_val_load_rax` /
+//! `nb_val_arith_rax` / `nb_val_cmp_rax` / `nb_val_prologue` /
+//! `nb_val_epilogue`), and that emitter ships inside the frozen
+//! `testdata/selfhost_loop/stage1.elf` that `mindc build --backend=native`
+//! spawns. A change to the RANKING here is therefore only byte-neutral for the
+//! Rust lane; porting it to the twin is a native-corpus re-freeze.
 //!
 //! # Determinism (the wedge invariant)
 //! The plan is a **pure function of the IR**: no clock, no RNG, no pointer bits,
@@ -54,11 +59,31 @@
 //! above (under-count, never miscompile); enumerate those ids here before
 //! `Region` joins the exactly-covered self-host subset roster at Phase C6.
 //!
-//! deferred: wiring a DTK plan into an actual native-ELF register/spill emitter
-//! is Phase C6 and lives in `main.mind` (self-host lane) — upgrade path: the
-//! self-host `nb_*` slot scheme reads `Slot::Reg` for a value and emits a
-//! callee-saved GPR home (with prologue push / epilogue pop) instead of a
-//! `nb_slot_disp` stack home, gated on its own byte-identity re-freeze.
+//! # What slice 1 is NOT (the remaining gap — Independence Roadmap row 13)
+//! There is **no liveness and no interference graph**: a ranked value is given a
+//! register for the WHOLE function body, so at most `K` values in a function can
+//! ever be register-homed no matter how many non-overlapping live ranges exist,
+//! and a value whose live range is a single instruction can win a callee-saved
+//! register (costing a push/pop pair) over a value used in a loop. That is why
+//! the eligibility predicate in the twin has to be so narrow — leaf,
+//! straight-line, scalar-i64, reg-form ops only — and why the pass is safe: an
+//! ineligible function yields an EMPTY plan and every wrapper falls through to
+//! the `nb_slot_disp` stack scheme, byte-identical to pre-DTK output.
+//!
+//! Measured against the self-host corpus (the twin's `selftest_dtk_plan` export
+//! run over every top-level fn of `main.mind`): 133 of 1971 fns are eligible,
+//! 130 of them get exactly one register, none is longer than four source lines.
+//! Every fn carrying a branch, loop or call is refused. So `K` is NOT the
+//! binding constraint — raising it to 5 would move nothing; ELIGIBILITY is.
+//!
+//! deferred: live-range/interference-based allocation (the production allocator)
+//! is Phase C6 and must land in the twin, not here — upgrade path: compute live
+//! intervals over the twin's existing linear statement walk, allocate by
+//! linear-scan over intervals sorted by (start ASC, ValueId ASC) with an
+//! explicit spill/reload emitter, and only THEN widen the eligibility whitelist
+//! past leaf/straight-line. Sequenced as its own whole-corpus re-freeze, and
+//! mirrored here first so `dtk_plan_parity_smoke.py` can diff the two
+//! implementations before either emits a byte.
 
 use crate::ir::{IRModule, Instr, ValueId};
 use std::collections::{BTreeMap, BTreeSet};

@@ -87,7 +87,23 @@ def resolve_so() -> pathlib.Path:
     """Resolve the self-host `.so` path (see module docstring for the order)."""
     env = os.environ.get("MINDC_SO")
     if env:
-        return pathlib.Path(env)
+        # Fail CLOSED on an explicit-but-missing MINDC_SO. Setting it is a promise
+        # that a real `.so` is there and the gate must run for real -- it is how
+        # ci.yml, fast_keystone.sh and preflight.sh all invoke these smokes. Handing
+        # the path back regardless left each of ~46 importers to decide, and eight of
+        # them printed `SKIP ... not built` and returned 0: a broken wiring graded as
+        # a green gate. Several callers already open-code this refusal; centralising
+        # it means a NEW smoke cannot reintroduce the hole by forgetting to.
+        p = pathlib.Path(env)
+        if not p.is_file():
+            raise SystemExit(
+                f"FAIL[_selfhost_so]: MINDC_SO is set to {env!r} but no such file "
+                f"exists. Refusing to skip -- with MINDC_SO set, a skip would grade "
+                f"a broken .so wiring as a passing gate. Build it with "
+                f"`mindc build --release --emit=cdylib --out={env}`, or unset "
+                f"MINDC_SO to let this resolver build a fresh one."
+            )
+        return p
     if os.environ.get("MINDC_SO_NOBUILD") or not _MINDC.exists():
         return _LEGACY_SO
     fresh = _build_fresh()

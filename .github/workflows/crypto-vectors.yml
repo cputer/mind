@@ -112,9 +112,21 @@ jobs:
         # Fail-closed guard: if the MLIR toolchain is absent this errors here,
         # long before any driver could be reported as "passed".
         run: |
-          mlir-opt --version | head -1
-          mlir-translate --version | head -1
-          clang --version | head -1
+          # `tool --version | head -1` is NOT a verification: without pipefail the
+          # pipeline's status is head's, so an ABSENT or broken tool exits 0 and
+          # this step -- whose entire job is catching a toolchain that never made
+          # it onto PATH -- passes. (The GitHub default shell is `bash -e {0}`;
+          # pipefail is only on when a step sets `shell: bash` or asks for it.)
+          # Run each tool WITHOUT a pipe so `-e` sees its real status, and check
+          # presence explicitly; head then reads a file and cannot mask anything.
+          # Not `set -o pipefail` on the original pipes: `head -1` closes early
+          # and would SIGPIPE the tool, trading a false pass for a false failure.
+          set -e
+          for t in mlir-opt mlir-translate clang; do
+            command -v "$t" >/dev/null || { echo "FAIL: $t is not on PATH"; exit 1; }
+            "$t" --version > /tmp/toolver.txt
+            head -1 /tmp/toolver.txt
+          done
 
       - name: Build mindc (MLIR backend)
         run: |

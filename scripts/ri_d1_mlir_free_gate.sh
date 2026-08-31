@@ -40,6 +40,25 @@ fails=0
 TD="$(mktemp -d)"
 trap 'rm -rf "$TD"' EXIT
 
+# Vacuity floor for the strace evidence. Both legs below conclude "ZERO
+# toolchain was spawned" from an EMPTY grep over the strace log -- but an empty
+# log is equally consistent with tracing never having happened at all (a seccomp
+# or container quirk, a clobbered redirect, an strace that logged elsewhere).
+# Absence of evidence was being read as evidence of absence, which is the whole
+# assertion of this gate. A traced run ALWAYS records at least mindc's own
+# execve, so a log with none is a broken observation, not a clean result.
+assert_traced() {  # $1 = strace log, $2 = leg name
+  n="$(grep -c 'execve("' "$1" 2>/dev/null)"
+  if [ "${n:-0}" -lt 1 ]; then
+    echo "FAIL: strace recorded ZERO execve on the $2 leg ($1) — tracing did not"
+    echo "      happen, so 'no toolchain spawned' is an EMPTY observation rather"
+    echo "      than evidence. Expected at least mindc's own execve."
+    return 1
+  fi
+  echo "  ok: $2 leg traced ($n execve record(s) observed)"
+  return 0
+}
+
 # A scalar in-profile program: 7 + 35 -> exit 42.
 printf 'fn add(a:i64,b:i64)->i64{return a+b;}\nfn main()->i64{return add(7,35);}\n' > "$TD/p.mind"
 env MINDC_STD_DIR="$HERE/std" MINDC_NATIVE_ELF="$HERE/$STAGE1" \
@@ -51,6 +70,8 @@ rc=$?
 # status prose). Assert the toolchain set is empty.
 tool="$(grep -oE 'execve\("[^"]+"' "$TD/strace" | sed 's/execve("//' \
         | grep -oiE 'mlir-opt|mlir-translate|clang|/ld$|ld\.lld|lld|/cc$' | sort -u | tr '\n' ',')"
+
+assert_traced "$TD/strace" "in-profile" || fails=$((fails+1))
 
 if [ "$rc" -ne 0 ] || [ ! -s "$TD/p.elf" ]; then
   echo "FAIL: MLIR-free native build rc=$rc, artifact=$([ -s "$TD/p.elf" ] && echo yes || echo no)"
@@ -75,6 +96,8 @@ env MINDC_STD_DIR="$HERE/std" MINDC_NATIVE_ELF="$HERE/$STAGE1" \
 trc=$?
 ttool="$(grep -oE 'execve\("[^"]+"' "$TD/strace2" | sed 's/execve("//' \
          | grep -oiE 'mlir-opt|mlir-translate|clang' | sort -u | tr '\n' ',')"
+assert_traced "$TD/strace2" "out-of-profile" || fails=$((fails+1))
+
 if [ "$trc" -eq 0 ] || [ -s "$TD/t.elf" ] || [ -n "$ttool" ]; then
   echo "FAIL: out-of-profile tensor build rc=$trc artifact=$([ -s "$TD/t.elf" ] && echo yes || echo no) toolchain=[$ttool] — must fail-closed"
   fails=$((fails+1))

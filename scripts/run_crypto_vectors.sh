@@ -143,6 +143,20 @@ run_driver tls13_handshake   tests/tls13_handshake_driver.py   "$WORK/tls13_hs.s
 echo "======================================================================"
 echo "CRYPTO-VECTOR SUMMARY"
 echo "======================================================================"
+
+# Count floor. The header above claims this runner "can never pass vacuously",
+# but the summary below only ever inspected the results it HAPPENED to collect:
+# with every `run_driver` line deleted, commented out, or skipped by an early
+# `return`, RESULTS is empty, the loop body never executes, and the script
+# printed "GREEN - all 0 crypto drivers passed" and exited 0. A KAT gate that
+# ran no known-answer test is not green. Raise this when a driver is added.
+EXPECTED_DRIVERS=13
+if [ "${#RESULTS[@]}" -lt "$EXPECTED_DRIVERS" ]; then
+  echo "RESULT: RED - only ${#RESULTS[@]} crypto driver(s) ran, expected at least"
+  echo "        $EXPECTED_DRIVERS. A vector gate that ran no vectors asserts nothing."
+  exit 1
+fi
+
 fail=0
 for r in "${RESULTS[@]}"; do
   echo "  $r"

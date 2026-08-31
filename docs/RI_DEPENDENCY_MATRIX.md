@@ -22,11 +22,11 @@ tracing + byte-diff + run-parity.
 | 7 | LINKER_DEPENDENCY | **PARTIAL** | default path (clang→ld) | native path emits static ELF directly | `file <native.bin>` → "statically linked, no ld in tree" | RI-D1 default flip |
 | 8 | RUST_DRIVER_DEPENDENCY | **NO** | `mindc` (Rust binary) orchestrates + spawns stage1.elf | pure-MIND CLI driver not the shipping entrypoint | `which mindc` is an ELF built by cargo | RI-G: pure-MIND `mindc` replaces Rust driver |
 | 9 | SCALAR_LANGUAGE_COVERAGE | **PASS** | native backend | — | int `7+35`→42, struct-return `3+4`→7 via `--backend=native` | done |
-| 10 | FLOAT_LANGUAGE_COVERAGE | **PARTIAL** | native backend | tensor-float / full f32 vector surface | `2.5+4.0 as i64`→6 native (scalar OK); tensor float NO | RI-E: native tensor float |
+| 10 | FLOAT_LANGUAGE_COVERAGE | **PARTIAL** | native backend | scalar f64 `+ − ×` only; float COMPARE is NaN-divergent vs MLIR (now out of profile); f32 / non-dyadic literal / mixed int-float / `%` / tensor-float all refused | `2.5+4.0 as i64`→6 native; NaN compare → `binop.compare_in_float_module` refusal (was: native 3 vs MLIR 0) | RI-E: native tensor float + a NaN-aware `nb_fp_setcc_opcode` |
 | 11 | TENSOR_LANGUAGE_COVERAGE | **NO** | native backend | tensor lowering not in stage1.elf subset | tensor prog `--backend=native` → FAIL-CLOSED `error[backend-native]` | RI-E: native tensor lowering |
-| 12 | AGGREGATE_ENUM_COVERAGE | **PARTIAL** | native backend | full enum-payload / trait dispatch | struct-return native OK; trait → FAIL-CLOSED | RI-F: native trait/enum-payload dispatch |
+| 12 | AGGREGATE_ENUM_COVERAGE | **PARTIAL** | native backend | aggregate ABI is intrinsic-call-shaped; array WRITE + enum values unported | fixed-array READ native OK; struct/enum → FAIL-CLOSED (see row-12 measured map) | RI-F: native trait/enum-payload dispatch |
 | 13 | REGALLOC | **PARTIAL** | native emitter | production-grade allocation | DTK (Deterministic Top-K) first slice landed (#254) | RI-C-REGALLOC: production allocator |
-| 14 | STDLIB_LINKING | **PARTIAL** | native backend | std-blob linked via self-host image, not general std resolution | scalar builds link the seeded std blob | RI-E stdlib native link |
+| 14 | STDLIB_LINKING | **PARTIAL** | native backend | std-blob linked via self-host image, not general std resolution; 19 of 42 `std/*.mind` resolve on NEITHER path | `stdlib_manifest_lint.py` (membership now a checked contract, both directions); scalar builds link the seeded std blob | RI-E stdlib native link |
 | 15 | CROSS_MACHINE_DETERMINISM | **PASS** | the wedge | — | `cross_substrate_identity` (avx2==neon canaries) + native build byte-identical across runs | done |
 
 ## RI-D0 — E2E GATE (LANDED, `main` 82cf8e87)
@@ -98,6 +98,204 @@ GLOBAL_DEFAULT_NATIVE flips only when ALL hold:
   scan is per-byte tail recursion (no TCO in the dialect) so a very large fail-closing program
   can exhaust the stack — bound it. Gate today: `self_host_native_diag_smoke.py` (CI-wired) —
   itself weak (exact-spelling only; audit #8).
+
+## ROW 10 — FLOAT_LANGUAGE_COVERAGE, MEASURED MAP (2026-08-29)
+
+The true float boundary of `--backend native`, measured on the shipped `stage1.elf` and
+`target/{release,debug}/mindc` built from this tree. Three buckets — the third is the one
+that matters.
+
+**Byte-identical / value-correct (PROVEN).** f64 literals (dyadic, ≤18 digits of integer
+content), `+ − ×`, float params, float-returning user calls, `as i64` with saturating
+Rust-`as` semantics, `as f64` from an int source. Strict-FP holds **by construction**: the
+native emitter has no FMA encoder at all (`grep -ci 'fmadd\|vfma' examples/mindc_mind/main.mind`
+→ 0), and `objdump -D -b binary -m i386:x86-64` of a native `a*b + c` artifact shows a
+separate `mulsd` then `addsd` — no contraction, so the `-ffp-contract=off` contract the MLIR
+path enforces with a flag the native path satisfies by having nothing to contract with.
+
+**Refused, loud (fail-closed, correct).** `f32`, non-dyadic literals (`0.1`), literals ≥2^63,
+mixed int/float binops, `float % float`, narrowing float casts, `as f64` from a float source,
+bare float if/while conditions, all tensor/SIMD float. Note *which* fence catches each:
+`binop.div` and (today) every `__mind_conv_*` cast are stopped by the FIRST fence, while
+`f32` / non-dyadic literal / mixed binop pass the first fence and are stopped only by the
+frozen ELF. `Instr::ConstF64` is admitted for **every** f64 bit pattern; the dyadic
+restriction lives solely in the second fence.
+
+**Admitted but NOT proven — the wedge-breaking one (FOUND + CLOSED).** The frozen profile
+admitted `BinOp::{Lt,Le,Gt,Ge,Eq,Ne}` keyed on the OPERATOR alone, so a **float** comparison
+was in profile. The two backends do not agree on it:
+
+| | native (`main.mind::nb_fp_setcc_opcode`) | MLIR (`src/mlir/lowering.rs`) | NaN result |
+|---|---|---|---|
+| `<` | `ucomisd` + `setb` (CF) | `arith.cmpf "olt"` | **native true, MLIR false** |
+| `<=` | `ucomisd` + `setbe` (CF\|ZF) | `arith.cmpf "ole"` | **native true, MLIR false** |
+| `==` | `ucomisd` + `sete` (ZF) | `arith.cmpf "oeq"` | **native true, MLIR false** |
+| `!=` | `ucomisd` + `setne` (ZF) | `arith.cmpf "une"` | **native false, MLIR true** |
+| `>` / `>=` | `seta` / `setae` (CF=0) | `"ogt"` / `"oge"` | agree (both false) |
+
+An unordered `ucomisd` sets CF=ZF=PF=1, so the unsigned `setcc` family reads the NaN case
+backwards for four of the six operators. Reachable with profile constructs only — a f64
+literal plus `*` and `-`: six squarings of `65536.0` overflow to `+inf`, and `+inf - +inf`
+is NaN. Measured, one source file, both backends built from this tree:
+
+```
+fn main()->i64{let a:f64=65536.0; let b:f64=a*a; let c:f64=b*b; let d:f64=c*c;
+  let e:f64=d*d; let g:f64=e*e; let h:f64=g*g; let n:f64=h-h;
+  if n == 0.0 { if n < 0.0 { return 3; } return 1; } if n < 0.0 { return 2; } return 0;}
+
+  mindc build --backend native  → exit 3   ("n == 0.0" AND "n < 0.0" BOTH true —
+                                            impossible for any real number)
+  mindc build --backend mlir    → exit 0
+```
+
+Both fences admitted it and the native artifact ran with a silently wrong value — the exact
+failure the allowlist exists to prevent, one operator family over from the `Call` and `BinOp`
+findings, and the same root shape: **admission keyed on the constructor rather than on what
+the construct denotes.** `BinOp::Lt` denotes `cmpi slt` on i64 and `ucomisd`+`setb` on f64;
+one is corpus-proven and one is not IEEE.
+
+**Closed by** `src/ir/frozen_profile.rs`: a module carrying any `Instr::ConstF64` now rejects
+every comparison as `binop.compare_in_float_module`. The taint is module-scoped and rejects
+integer comparisons too, because `Instr::Param { dst, name, index }` carries **no type** — a
+callee `fn lt(x:f64,y:f64)->i64{ if x<y {…} }` holds a float compare with no float literal in
+its own body. Over-rejection is the loud, recoverable direction. Regression pinned as
+`ri_d1_frozen_profile_gate.py::OUT_PROFILE["float_nan_compare"]` (`PINNED_OUT_PROFILE` 2→3);
+that entry FAILS against the pre-fix binary (`rc=0`, 1038B artifact written) and passes
+after — it has teeth.
+
+**Dependency cut when:** `nb_fp_setcc_opcode` grows a NaN-aware predicate (parity-flag
+masking for `==`/`!=`, swapped-operand `seta`/`setae` for `<`/`<=`), the taint is replaced by
+real `(op, operand_type)` keying (task #313), and a NaN program moves to `IN_PROFILE` proving
+native == MLIR. **Row 10 stays PARTIAL** — this removed an unsound admission, it did not add
+coverage.
+
+**Residual, NOT closed (INFERRED from source, not proven).** The float-returning-`main`
+epilogue is a raw `cvttsd2si` (`nb_fp_trunc_rax_xmm0` = `F2 48 0F 2C C0`, no clamp), whereas
+the MLIR path routes float→int through `emit_saturating_fp_to_i64`. Raw `cvttsd2si` yields
+`INT64_MIN` for NaN and for out-of-range, where the saturating contract wants `0` and
+`INT64_MAX`. `fn main()->f64` returning `2^128` gives native exit 0 vs MLIR exit 232 — but
+MLIR returned 232 for *every* float tested, so its float-`main` path looks value-lossy and
+the exit-code channel cannot adjudicate this. Needs a non-exit-code oracle before anyone
+calls it a bug in either backend. This is also why the raw-`cvttsd2si` epilogue must not be
+reused for the `as i64` cast path, which IS saturating and IS proven
+(`general_float_netverify.py`).
+
+## ROW 12 — AGGREGATE_ENUM_COVERAGE, MEASURED MAP (2026-08-29)
+
+Measured black-box against the SHIPPED artifacts (`target/release/mindc` carrying the
+RI-D1 first fence + the frozen `stage1.elf`), one program per construct: build with
+`--backend native`, then run the ELF and compare its exit code to the expected value.
+No rebuild — this is what the seam does today.
+
+**Load-bearing structural fact:** MIND has no aggregate/enum `Instr` variants. A struct
+literal and an enum payload record both lower to intrinsic `Instr::Call`s —
+`__mind_alloc` + `__mind_store_i64` (`lower.rs::emit_boxed_enum_record`, and the
+`StructLit` arm), field reads to `__mind_load_i64`, a full-width `as` cast to
+`__mind_conv_i64`. So row 12 is decided almost entirely by `admit_call`, NOT by any
+tensor-style named rejection.
+
+| Construct | Fence #1 (allowlist) | Frozen native path | Verdict |
+|---|---|---|---|
+| fixed-array literal + const index `a[2]` | admit | runs, `3` | **PROVEN in-profile** |
+| fixed-array literal + loop index | admit | runs, `10` | **PROVEN in-profile** |
+| `let mut` array, no store | admit | runs, `1` | **PROVEN in-profile** |
+| scalar `match` | admit | runs, `20` | **PROVEN in-profile** |
+| `a[i] = v` (`Instr::ArrayStore`) | **admitted** → now rejected | refuses | **OVER-ADMISSION (fixed)** |
+| C-like enum value `let e = E.A` | **admitted** | refuses | **OVER-ADMISSION (open)** |
+| struct literal / field read / struct return | reject `call.undefined_or_builtin` | — | **OVER-REJECTION** |
+| struct param, nested struct, f64 field, field assign | reject `call.undefined_or_builtin` | — | **OVER-REJECTION** |
+| enum tuple-payload / struct-variant + match | reject `call.undefined_or_builtin` | — | over-rejection (unproven anyway) |
+| trait dispatch | reject `cannot determine` (parse) | — | out-of-profile (row 12 blocker) |
+
+Two defect directions, both instances of admission keyed on the CONSTRUCTOR rather than
+on what the construct DENOTES — the same shape as the `admit_binop` (2026-08-21) and
+`admit_call` findings:
+
+1. **Over-admission — `ArrayStore` (CLOSED).** `Instr::ArrayStore` was admitted in one
+   arm with `ConstArray | ArrayLoad` purely for sharing their constructor family.
+   Reading a fixed array is corpus-proven; writing one is not ported to the frozen
+   `stage1.elf`, which refuses it as the SECOND fence. Now rejected as
+   `aggregate.array_store`. Capability-neutral and byte-neutral (the build already
+   exited 3 with no artifact); it only moves the refusal to where it can name the
+   construct. Corroborated independently by `rh_f64_aggregate_canary_smoke.py`.
+2. **Over-admission — C-like enum value (OPEN, NOT fixable at IR level).**
+   `let e = E.A` lowers to allowlisted scalar IR yet the frozen ELF refuses it, so an
+   IR-construct allowlist provably CANNOT separate it from the scalar `match` that does
+   work. Honest bound on the mechanism: fence #1 is a sound over-approximation, not a
+   complete predictor, and fence #2 stays load-bearing. Safe today (refusal is loud);
+   the risk to track is a future `stage1.elf` reseed that ACCEPTS such a construct
+   without a corpus program proving it.
+
+**Blocking, not row 12's to fix — the first-fence wiring over-rejects the readiness
+corpus.** `admit_call` admits only callees DEFINED in the module, so every aggregate
+intrinsic is refused. Measured: **3 of the 5 `IN_PROFILE` programs in
+`ri_d1_frozen_profile_gate.py` now fail** (`float_as_i64`, `struct_return`,
+`narrow_u8_wrap`), and that gate exits 1. `self_host_native_diag_smoke.py` also exits 1
+because the fence intercepts the `trait` program with a parse-level "cannot determine"
+before the RI-D1a construct-naming diagnostic can run. Both are fail-closed (no
+miscompile risk) but they break the allowlist⇔corpus bijection the cutover gate requires.
+
+Slice plan to restore it — **do NOT name-key the intrinsics**: the corpus proves
+`__mind_store_i64` only for an *i64* struct field, and an f64 field is a different
+native store path, so a bare `{__mind_alloc, __mind_store_i64, __mind_load_i64,
+__mind_conv_i64}` allowlist would re-commit the constructor-vs-denotation defect one
+level down. The sound form needs the field/operand type — the same `FnDef.value_types`
+threading `admit_binop` already defers for `(op, operand_type)` keying. Sequence: (a)
+thread `value_types` into the predicate; (b) admit each intrinsic keyed on its
+*operand type*; (c) extend `IN_PROFILE` with an f64-field struct program so the
+admission is corpus-derived rather than asserted; (d) add the bijection test that fails
+when the allowlist and the corpus disagree in EITHER direction — which is what would
+have caught both defects above.
+
+## ROW 14 — STDLIB_LINKING, MEASURED MAP (2026-08-29)
+
+Row 14 stays **PARTIAL**. What changed is not the status but the *shape* of the
+dependency: std membership was an unchecked hand-copied fact and is now a checked
+contract, `examples/mindc_mind/testdata/stdlib_manifest.txt`.
+
+**Measured, three different sets — none of which agreed and none of which were checked:**
+
+| Set | Count | Who consumes it |
+|---|---|---|
+| `std/*.mind` on disk | 42 | — |
+| `STDLIB_MIND_SOURCES` (`src/project/stdlib.rs`, `include_str!` bundle) | 23 | general `use std.<m>` resolution, `feature = "cross-module-imports"` |
+| native seed blob | 21 | `mindc.rs::run_native_backend_bridge` → frozen `stage1.elf` |
+
+`seed(21) ⊂ bundled(23) ⊂ disk(42)`. The two extra bundled modules are `http` and
+`sha512`. **19 modules resolve on NEITHER path** — the whole TLS 1.3 / crypto surface
+(`aes_gcm`, `chacha20_poly1305`, `ecdsa_p256`, `hkdf`, `hpack`, `http2_frame`,
+`keccak`, `mlkem768`, `rsa_pss`, `tls13_*`, `x25519`, `x25519mlkem768`, `x509`) plus
+`detmath`, `llvm`, `mlir`. `use std.x25519` resolves nowhere today.
+
+**Structural fact this shares with row 12:** the defect was the same one the
+2026-08-21 audit found in `admit_binop` and the tensor-builtin fix found in
+`admit_call` — a fact asserted by its *duplicate spelling* rather than derived from
+what it *denotes*. Membership was spelled out in 17 hand-copied literal lists (the
+bridge + 16 `examples/mindc_mind/*.py` copies) plus a 4th, differently-spelled list
+in `stdlib.rs`, with nothing executable asserting they agreed.
+
+**Landed:** one committed manifest, exhaustive over `std/*.mind` with **no wildcard
+row** — a new std module is a hard lint failure until someone records a deliberate
+in/out decision per consumer, exactly as a new `Instr` variant is a compile error in
+`profile_frozen_admits`. Both named readers consume it: `mindc.rs` via `include_str!`
+(compile-time, so the shipping binary gains no runtime file dependency) and the
+Python smokes via `_stdlib_manifest.py`. The seed blob's sha256 is pinned in the
+manifest header, so a reseed — which changes the compiled bytes of every native
+build — cannot land as a quiet one-line edit.
+
+**Still open for row 14 → PASS (general std resolution):**
+
+1. **There is no std *resolver* on the native path at all.** The bridge does not
+   resolve `use std.<m>`; it unconditionally concatenates all 21 seed modules into
+   every compile, whether the program imports them or not. General resolution means
+   import-driven selection, which changes the compiled bytes → gated behind a reseed.
+2. **The 19 unreachable modules** must become reachable by *some* path before "the
+   stdlib links" is true in the ordinary sense.
+3. **`STDLIB_MIND_SOURCES` is still a hand-written list** — now drift-checked against
+   the manifest in both directions, but not yet *generated* from it. Making it
+   data-driven needs `build.rs` codegen (`include_str!` needs literal paths), which is
+   a separate change on the `cross-module-imports` surface.
+4. Until 1–3, "scalar builds link the seeded std blob" remains the honest claim.
 
 ## PRIORITY ORDER (by production-profile dependency impact, NOT patch size)
 

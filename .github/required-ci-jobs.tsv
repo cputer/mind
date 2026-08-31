@@ -1,0 +1,33 @@
+# required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
+# a release is published from.
+#
+# Consumed by scripts/verify_ci_green.py, which the Release workflow runs before
+# it builds or publishes anything.  Kept honest by scripts/check_release_gating.py,
+# which fails when this file and .github/workflows/ci.yml disagree in EITHER
+# direction:
+#
+#   * a ci.yml job with no row here      -> FAIL (new gate, silently not required)
+#   * a row here with no ci.yml job      -> FAIL (stale row, or a gate was deleted)
+#
+# So deleting a gate from ci.yml cannot quietly weaken what a release is checked
+# against: it becomes a build error that forces an explicit, reviewed edit here.
+#
+# Column 2 is the *prefix* of the check-run name, not the whole name. GitHub
+# renders a matrix job as "<name> (<matrix values>)" and substitutes
+# ${{ matrix.* }} inside a name, so only the part left of the first
+# interpolation is knowable from the file. verify_ci_green.py requires at least
+# one successful job whose name starts with the prefix — and separately requires
+# the whole workflow run to have concluded `success`, which is what proves every
+# matrix leg passed, not just the one that matched.
+#
+# Format: <ci.yml job id> TAB <check-run name prefix>
+build_test	Build & Test
+cross_substrate_identity	Cross-substrate bit-identity (
+mindfuzz_cross_runner_identity	Fuzzer cross-runner mic@3 identity (avx2 == neon)
+format	Format Check
+docs	Documentation
+mindcraft_self_host	Mindcraft self-host (RFC 0008 Phase G — KEYSTONE)
+executable_miscompile_gate	Executable miscompile gate (compile + run + assert)
+executable_semantics_tier	Executable-semantics test tier (mlir-build)
+mindcraft_check	Mindcraft check (RFC 0007 Phase 6)
+sdlc_integrity	SDLC gate integrity (merge + enforcement pairing)

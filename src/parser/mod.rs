@@ -174,15 +174,22 @@ enum StmtKw {
 /// Recognise a statement-leading keyword from the identifier run at the cursor.
 ///
 /// This is a **compile-time perfect-hash keyword recogniser** in the classic
-/// (gperf) shape: the discriminator `(len, word[0])` maps the 23-keyword set to
+/// enforced-by: ENUM-DRIFT — the keyword count below is compared to the table.
+/// (gperf) shape: the discriminator `(len, word[0])` maps the 25-keyword set to
 /// at most TWO candidates — `(6, b'e')` = {export, extern} and `(6, b'r')` =
 /// {region, return} are the only pairs; every other `(len, byte0)` cell holds a
 /// single candidate. The candidate is then confirmed with ONE full-slice
 /// equality. Worst case: one integer switch + two byte compares + one `memcmp`;
 /// the old ladder averaged ~12 failed byte-prefix probes before a hit and paid
-/// the FULL ~23 probes for the common case (a plain expression / assignment
+/// the FULL ~25 probes for the common case (a plain expression / assignment
 /// statement, which matches no keyword at all) — that case now costs a single
 /// switch miss.
+///
+/// **The 25 keywords occupy 23 cells** — the two counts differ by exactly the two
+/// ambiguous pairs above, which is why a stale keyword count reads as plausible.
+/// This sentence and the table are compared by `scripts/enumeration_drift_lint.py`:
+/// the prose said 23 from 2026-07-14 until `trait`/`impl` were added on 2026-07-30
+/// and nothing re-checked it. Do not reconcile the prose by writing the CELL count.
 ///
 /// **Determinism.** The discriminator is a fixed structural function of the key
 /// — `(slice length, first byte, third byte)` — with NO seed, NO search, NO

@@ -103,23 +103,24 @@ pub fn ir_trace_hash(ir: &IRModule) -> [u8; 32] {
 // descriptor this module cannot prove constant can be `0`, so it is world-reading.
 use crate::intrinsics::callee_is_nondeterministic;
 
-/// The NAME of the first non-deterministic builtin an instruction stream calls
-/// (searching nested function bodies, loop bodies, and if-branches in
-/// deterministic instruction order), or `None` if the stream is deterministic.
-/// Returning the offender's name — not just a bool — lets the build gate NAME it
-/// in a fail-loud diagnostic and lets `verify` re-derive the label from the
-/// hashed body.
-fn find_nondeterministic_call(instrs: &[crate::ir::Instr]) -> Option<String> {
-    find_nondeterministic_call_ext(instrs, &std::collections::BTreeSet::new())
-}
-
-/// Scope ENTRY: classify one SSA namespace's instruction stream.
+/// Scope ENTRY: the NAME of the first non-deterministic builtin an instruction
+/// stream calls (searching nested function bodies, loop bodies, and if-branches
+/// in deterministic instruction order), or `None` if the stream is
+/// deterministic. Returning the offender's name — not just a bool — lets the
+/// build gate NAME it in a fail-loud diagnostic and lets `verify` re-derive the
+/// label from the hashed body.
 ///
 /// A namespace is the module top level or ONE `FnDef` body — value ids are
 /// numbered per function (`src/ir/verify.rs`: "a body `%0` and an
 /// enclosing/top-level `%0` are distinct values"), so the constant environment
 /// the call-site descriptor check consults is built per namespace, never shared
 /// across a `FnDef` boundary.
+///
+/// `externs` is REQUIRED, not defaulted. A thin `externs = {}` wrapper used to
+/// sit here; it is deliberately gone, because calling it would have silently
+/// re-opened the extern default-ADMIT hole `collect_extern_symbols` closes —
+/// an unclassified `extern "C"` callee would classify as deterministic. Every
+/// entry point must pass the module's real extern set.
 fn find_nondeterministic_call_ext(
     instrs: &[crate::ir::Instr],
     externs: &std::collections::BTreeSet<String>,
@@ -251,21 +252,39 @@ pub fn ir_first_nondeterministic_call(module: &IRModule) -> Option<String> {
 /// `determinism: deterministic`.
 fn collect_extern_symbols(instrs: &[crate::ir::Instr]) -> std::collections::BTreeSet<String> {
     use crate::ir::Instr;
+    // `mut` is dead in the `--no-default-features` build for the same reason the
+    // worklist note below gives: `Instr::ExternFnDecl` does not exist there, so
+    // nothing inserts and the set is provably empty. Empty is the CORRECT answer
+    // in that configuration (an IR with no extern declarations has no
+    // unclassified externs to taint), not a silenced gap.
+    #[cfg_attr(not(feature = "std-surface"), allow(unused_mut))]
     let mut out = std::collections::BTreeSet::new();
-    fn walk(instrs: &[Instr], out: &mut std::collections::BTreeSet<String>) {
-        for instr in instrs {
+    // An explicit worklist, not recursion. Two reasons, both load-bearing:
+    // the traversal runs over UNTRUSTED decoded IR (`parse_mic3` on a consumer
+    // artifact), so an arbitrarily deep nest must not be able to exhaust the
+    // stack before the classifier reaches a verdict; and under
+    // `--no-default-features` — the configuration the CI clippy gate builds —
+    // every `out`-writing arm below is compiled out, leaving a recursive helper
+    // whose accumulator is threaded purely through its own calls
+    // (`clippy::only_used_in_recursion`, which an item-level `allow` does not
+    // suppress). Order is irrelevant: the result is a `BTreeSet`, so the set
+    // and every downstream lookup are identical whatever order the streams are
+    // visited in.
+    let mut worklist: Vec<&[Instr]> = vec![instrs];
+    while let Some(stream) = worklist.pop() {
+        for instr in stream {
             match instr {
                 #[cfg(feature = "std-surface")]
                 Instr::ExternFnDecl { name, .. } => {
                     out.insert(name.clone());
                 }
-                Instr::FnDef { body, .. } => walk(body, out),
+                Instr::FnDef { body, .. } => worklist.push(body),
                 #[cfg(feature = "std-surface")]
                 Instr::While {
                     cond_instrs, body, ..
                 } => {
-                    walk(cond_instrs, out);
-                    walk(body, out);
+                    worklist.push(cond_instrs);
+                    worklist.push(body);
                 }
                 #[cfg(feature = "std-surface")]
                 Instr::If {
@@ -274,15 +293,23 @@ fn collect_extern_symbols(instrs: &[crate::ir::Instr]) -> std::collections::BTre
                     else_instrs,
                     ..
                 } => {
-                    walk(cond_instrs, out);
-                    walk(then_instrs, out);
-                    walk(else_instrs, out);
+                    worklist.push(cond_instrs);
+                    worklist.push(then_instrs);
+                    worklist.push(else_instrs);
                 }
+                // RFC 0010 Phase J-A `region { }` carries a full nested stream.
+                // `scan_scope` already descends into it, so an `extern "C"`
+                // DECLARED inside a region and CALLED there would otherwise be
+                // absent from this set and hit `extern_call_is_unclassified`'s
+                // default-ADMIT — the exact forge the extern check exists to
+                // close, one nesting level down. Descended here for the same
+                // reason `scan_scope` descends.
+                #[cfg(feature = "std-surface")]
+                Instr::Region { body, .. } => worklist.push(body),
                 _ => {}
             }
         }
     }
-    walk(instrs, &mut out);
     out
 }
 

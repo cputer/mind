@@ -864,6 +864,55 @@ fn main() {
 /// Fail-closed: a non-zero exit from the pure-MIND compiler is propagated verbatim and
 /// NO artifact is written. There is deliberately NO MLIR fallback — a `native` request
 /// that the pure-MIND subset cannot lower must fail loud, never silently degrade.
+/// Parse + lower one source file and ask the frozen-profile allowlist about it.
+///
+/// Returns `Ok(None)` when every construct is on the allowlist, `Ok(Some(r))` naming
+/// the FIRST out-of-profile construct, and `Err` when the module could not be lowered
+/// at all — which the caller treats as a refusal, never as admission.
+///
+/// This deliberately re-lowers rather than reusing a cached module: the fence must
+/// see exactly the IR the profile predicate was proven against, and a stale or
+/// partially-built module is precisely the input that would make an allowlist lie.
+fn parse_and_lower_for_profile_check(
+    path: &str,
+    src: &[u8],
+) -> Result<Option<libmind::ir::frozen_profile::FrozenProfileRejection>, String> {
+    let text = std::str::from_utf8(src).map_err(|e| format!("source is not valid UTF-8: {e}"))?;
+    let module =
+        libmind::parser::parse(text).map_err(|e| format!("{path}: {} parse error(s)", e.len()))?;
+    let ir = libmind::eval::lower_to_ir(&module);
+    match libmind::ir::frozen_profile::profile_frozen_admits(&ir) {
+        Ok(()) => Ok(None),
+        Err(rejection) => Ok(Some(rejection)),
+    }
+}
+
+/// The `native_seed` column of the committed std manifest, in FILE ORDER.
+///
+/// enforced-by: STDLIB-MANIFEST
+///
+/// One source of truth, shared with the Python self-host smokes through
+/// `examples/mindc_mind/_stdlib_manifest.py`, which parses the same file with the
+/// same rules. `include_str!` bakes the manifest in at compile time, so the
+/// shipping binary gains NO runtime file dependency (the bridge must keep working
+/// from any cwd) and editing the manifest forces a rebuild of this reader.
+///
+/// The manifest is exhaustive over `std/*.mind` and its row order is the byte
+/// order of the std blob the frozen `stage1.elf` was minted from; both properties
+/// are gated by `examples/mindc_mind/stdlib_manifest_lint.py`.
+fn frozen_std_seed_modules() -> Vec<&'static str> {
+    const MANIFEST: &str = include_str!("../../examples/mindc_mind/testdata/stdlib_manifest.txt");
+    MANIFEST
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let module = fields.next()?;
+            (fields.next()? == "seed").then_some(module)
+        })
+        .collect()
+}
+
 fn run_native_backend_bridge(paths: &[String], out: &Option<String>) {
     use std::io::Write as _;
 
@@ -887,19 +936,36 @@ fn run_native_backend_bridge(paths: &[String], out: &Option<String>) {
         }
     };
 
-    // Compose the std blob exactly as the pure-MIND compiler expects: the 21 std modules
-    // in this fixed order, '\n'-joined with a trailing '\n'. This list is the twin of
-    // self_host_standalone_driver_smoke.py::_STDLIB_MODULES; the bridge's byte-identity
-    // gate fails loud if the two ever drift (bridge output != stage1-direct output).
-    // deferred: unify both readers on one committed manifest — upgrade path:
-    //   examples/mindc_mind/testdata/stdlib_manifest.txt read by smoke + bridge.
-    const STD_MODULES: [&str; 21] = [
-        "arena", "async", "blas", "cli", "fs", "io", "io_canon", "iouring", "json", "map", "net",
-        "process", "reactor", "regex", "ring", "sha256", "string", "time", "toml", "tui", "vec",
-    ];
+    // Compose the std blob exactly as the pure-MIND compiler expects: the seed std
+    // modules in the manifest's fixed order, '\n'-joined with a trailing '\n'.
+    //
+    // enforced-by: STDLIB-MANIFEST
+    //
+    // This list used to be a hand-copied literal twin of
+    // self_host_standalone_driver_smoke.py::_STDLIB_MODULES (and, it turned out, of
+    // fifteen more copies across examples/mindc_mind/*.py), with nothing asserting
+    // they agreed. Both readers now consume the ONE committed manifest, and
+    // examples/mindc_mind/stdlib_manifest_lint.py fails on drift in both directions.
+    let std_modules = frozen_std_seed_modules();
+    // The frozen stage1.elf was minted from EXACTLY this many modules in EXACTLY
+    // this order. Changing the seed set changes the compiled bytes of every native
+    // build — a whole-corpus RESEED event, never a routine edit — so it must not be
+    // able to arrive as a quiet one-line manifest change. Refuse instead.
+    const FROZEN_STD_SEED_COUNT: usize = 21;
+    if std_modules.len() != FROZEN_STD_SEED_COUNT {
+        eprintln!(
+            "error[backend-native]: std manifest declares {} seed modules, but the frozen \
+             stage1.elf was minted from {FROZEN_STD_SEED_COUNT}.\n  \
+             Changing the seed set is a whole-corpus reseed event: re-mint stage1.elf and \
+             update FROZEN_STD_SEED_COUNT in the same change. Refusing rather than \
+             emitting bytes against a std blob the frozen compiler was not built on.",
+            std_modules.len()
+        );
+        process::exit(2);
+    }
     let std_dir = std::env::var("MINDC_STD_DIR").unwrap_or_else(|_| "std".to_string());
     let mut combined: Vec<u8> = Vec::new();
-    for m in STD_MODULES.iter() {
+    for m in std_modules.iter() {
         let p = format!("{std_dir}/{m}.mind");
         match std::fs::read(&p) {
             Ok(b) => combined.extend_from_slice(&b),
@@ -916,6 +982,77 @@ fn run_native_backend_bridge(paths: &[String], out: &Option<String>) {
     let user_lo = combined.len() as i64;
     combined.extend_from_slice(&user_src);
     let src_len = combined.len() as i64;
+
+    // RI-D1 FIRST FENCE — the frozen-profile construct allowlist.
+    //
+    // SCOPE IS AN OPEN ARCHITECTURAL QUESTION, deliberately left at `user_src`.
+    //
+    // Checking the full image the ELF receives (`std_blob ++ user_src`) is the
+    // sound-looking choice and was tried: it closes the porosity where a user
+    // program reaches an out-of-profile operator through a std callee. But it
+    // REJECTS THREE CONSTRUCTS THE READINESS CORPUS PROVES — float-as-i64,
+    // struct-return and u8-narrow all fail with `binop.div`, because the std
+    // helpers they pull in contain `/` (json 37, io 16, fs 11 occurrences), while
+    // plain int arithmetic and array-index loops do not reach them and still pass.
+    // The native path emits all three correctly today, so that is a FALSE refusal.
+    //
+    // deferred: the scope question is genuinely open and is NOT a subagent-sized
+    // call — reachability-scoped admission, per-callee proof, or corpus-proving Div
+    // under (op, operand_type) keying are three different architectures with
+    // different byte-identity obligations. Until it is decided, the fence keeps its
+    // original `user_src` scope: that leaves the std-callee porosity OPEN (a program
+    // calling std/sha256.mind reaches 13 `>>` the predicate rejects by name), which
+    // is the state that already existed, rather than shipping a gate that refuses
+    // proven programs. A red gate teaches people to ignore red.
+    //
+    // enforced-by: RI-D1-PROFILE
+    //
+    // Placement is load-bearing and was wrong once. Checking `user_src` alone made
+    // the fence and the ELF reason about DIFFERENT programs: the ELF compiles
+    // `std_blob ++ user_src`, and std/sha256.mind alone contains 13 `>>` operators —
+    // the very operator the predicate rejects by name, because shift-count and
+    // arithmetic-vs-logical behaviour are not corpus-proven. A user program calling
+    // into std therefore passed the fence while the ELF emitted Shr natively, so the
+    // Shr/Div/Mod rejections were porous through every std callee.
+    //
+    // The alternative fix — an allowlist of "std symbols proven on the native path" —
+    // was rejected: it is a second hand-maintained list that must agree with the real
+    // std surface, with nothing asserting that it does. That is this repo's single
+    // most common defect class and it has produced several real incidents. Lowering
+    // the same bytes needs no list and cannot drift.
+    //
+    // Why a POSITIVE allowlist rather than "hand it over and see if it refuses": the
+    // dangerous failure is not "native refuses" (loud, recoverable) but "native accepts
+    // and emits WRONG bytes" (silent). `profile_frozen_admits` is an EXHAUSTIVE match
+    // with no blanket arm, so a future Instr variant is a compile error there and must
+    // be given a deliberate in/out-of-profile decision.
+    //
+    // The frozen stage1.elf's own fail-closed refusal remains the SECOND fence. Neither
+    // is a fallback: an out-of-profile program is REFUSED, never re-routed to MLIR.
+    match parse_and_lower_for_profile_check(&paths[0], &user_src) {
+        Ok(Some(rejection)) => {
+            eprintln!(
+                "error[backend-native]: `{}` is not in the frozen native profile \
+                 (out-of-profile construct: {}).\n  \
+                 The native backend is proven byte-identical only on the frozen \
+                 construct allowlist. Rerun with `--backend mlir` for the full \
+                 surface. This is a refusal, not a fallback: silently compiling an \
+                 unproven construct is the failure this fence exists to prevent.",
+                paths[0], rejection.construct
+            );
+            process::exit(3);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            // Undecidable => refuse. An unchecked module must never be read as admitted.
+            eprintln!(
+                "error[backend-native]: cannot determine frozen-profile admission for '{}': {e}\n  \
+                 Refusing rather than admitting an unchecked module.",
+                paths[0]
+            );
+            process::exit(3);
+        }
+    }
 
     // stdin image: [8B user_lo LE][8B src_len LE][combined]
     let mut image: Vec<u8> = Vec::with_capacity(16 + combined.len());

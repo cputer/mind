@@ -127,6 +127,13 @@ FOLDED_KW = {"import", "use", "pub", "else", "fn", "let", "if"}
 
 # Every type_check diagnostic with a position (E1001 = parse error).
 DIAG_ALL_RE = re.compile(r":(\d+):(\d+): error: .*\[type_check::(E\d+)\]")
+# Any namespaced diagnostic (`[fmt::drift]`, `[type_check::E2002]`, ...). Used only
+# to tell "the oracle rendered a verdict" from "the oracle never got that far" — a
+# bare `error[check]: ... does not exist` carries no namespace and matches nothing.
+ANY_DIAG_RE = re.compile(r": error: .*\[[a-z_]+::")
+# Per-case wall-clock cap on the live oracle. Generous next to the ~40ms/case
+# steady state, so it only ever fires on a genuinely non-terminating check.
+LIVE_ORACLE_TIMEOUT_S = 120
 
 
 def fail_infra(msg):
@@ -402,14 +409,53 @@ class LiveOracle:
         self.runs += 1
         with open(path, "w") as f:
             f.write(src)
-        r = subprocess.run(
-            [self.mindc, "check", path], capture_output=True, text=True
-        )
+        try:
+            r = subprocess.run(
+                [self.mindc, "check", path], capture_output=True, text=True,
+                timeout=LIVE_ORACLE_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            fail_infra(
+                f"live oracle HUNG (>{LIVE_ORACLE_TIMEOUT_S}s) on {path} — a "
+                "non-terminating oracle has no verdict to compare against"
+            )
         codes_all, at = set(), {}
         for m in DIAG_ALL_RE.finditer(r.stdout + r.stderr):
             code = m.group(3)
             codes_all.add(code)
             at.setdefault((int(m.group(1)), int(m.group(2))), set()).add(code)
+        # The oracle's EXIT STATUS was never read, so "live mindc declined to
+        # diagnose this program" and "live mindc never got far enough to have an
+        # opinion" both arrived here as an empty diagnostic set. `eval_case` then
+        # reads that as live_fires=False, and a port that also declines scores
+        # "agree" — so a case that CRASHES the live compiler is silently recorded
+        # as a clean program and the sweep still prints "0 divergences". The
+        # startup `sentinels()` check only proves the oracle was alive at t=0; it
+        # says nothing about the case in hand.
+        #
+        # Measured contract of `mindc check` (verified against this tree's binary):
+        #   rc=0 -> clean, zero diagnostics
+        #   rc=1 -> >=1 namespaced `[ns::CODE]` diagnostic ... OR an oracle-level
+        #           refusal carrying none at all (e.g. the file could not be read,
+        #           which prints a bare `error[check]: ... does not exist`)
+        # The test is deliberately ANY namespaced diagnostic, not a type_check one:
+        # a badly-formatted generated case exits 1 on `[fmt::drift]` alone, and that
+        # IS a real "the type checker found nothing" verdict (verified: fmt::drift
+        # and type_check::E2002 are emitted together, so fmt drift never masks a
+        # type error). Demanding a type_check code here would fail the gate on
+        # ordinary unformatted fuzz output.
+        if r.returncode < 0:
+            fail_infra(
+                f"live oracle KILLED BY SIGNAL {-r.returncode} on {path} — a crash "
+                "is a defect in the oracle, not a verdict about the program. "
+                "Refusing to score this case as 'live reports nothing'."
+            )
+        if r.returncode != 0 and not ANY_DIAG_RE.search(r.stdout + r.stderr):
+            fail_infra(
+                f"live oracle exited {r.returncode} on {path} with NO namespaced "
+                f"diagnostic at all — it delivered no verdict to compare the port "
+                f"against.\n  stdout: {r.stdout[-600:]}\n  stderr: {r.stderr[-600:]}"
+            )
         self.cache[src] = (codes_all, at)
         return codes_all, at
 

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1422 | **Est. tokens:** ~2,665,909
-**Generated:** 2026-08-31 04:49 UTC
+**Files:** 1423 | **Est. tokens:** ~2,670,255
+**Generated:** 2026-08-31 05:10 UTC
 
 ## Token Budget Guide
 
@@ -28,7 +28,7 @@
 | `.arch-mind/` | 2 | ~644 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
-| `bench/` | 4 | ~3,105 |
+| `bench/` | 5 | ~7,451 |
 | `benches/` | 28 | ~83,676 |
 | `bench/fft/` | 8 | ~8,060 |
 | `benchmarks/` | 12 | ~20,412 |
@@ -362,6 +362,7 @@
 - `matmul_det_bench.mind` (~1079 tok, large) — bench/matmul_det_bench.mind — first pure-MIND runtime benchmark for the
 - `RESULTS-beat-clang-igemm-2026-08-21.md` (~839 tok, large) — MIND vs clang -O3 — int8 GEMM head-to-head (2026-08-21)
 - `RESULTS-int8-2026-06-08.md` (~693 tok, large) — MIND int8 VNNI GEMM — single-core vs OpenBLAS f32 (2026-06-08)
+- `turboquant.mind` (~4346 tok, huge) — bench/turboquant.mind — KV-cache quantization pipeline in pure MIND.
 ### `.cargo/`
 
 - `config.toml` (~130 tok, small) — [registries]

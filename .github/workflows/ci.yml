@@ -306,9 +306,21 @@ jobs:
 
       - name: Verify toolchain on PATH
         run: |
-          mlir-opt --version | head -1
-          mlir-translate --version | head -1
-          clang --version | head -1
+          # `tool --version | head -1` is NOT a verification: without pipefail the
+          # pipeline's status is head's, so an ABSENT or broken tool exits 0 and
+          # this step -- whose entire job is catching a toolchain that never made
+          # it onto PATH -- passes. (The GitHub default shell is `bash -e {0}`;
+          # pipefail is only on when a step sets `shell: bash` or asks for it.)
+          # Run each tool WITHOUT a pipe so `-e` sees its real status, and check
+          # presence explicitly; head then reads a file and cannot mask anything.
+          # Not `set -o pipefail` on the original pipes: `head -1` closes early
+          # and would SIGPIPE the tool, trading a false pass for a false failure.
+          set -e
+          for t in mlir-opt mlir-translate clang; do
+            command -v "$t" >/dev/null || { echo "FAIL: $t is not on PATH"; exit 1; }
+            "$t" --version > /tmp/toolver.txt
+            head -1 /tmp/toolver.txt
+          done
 
       - name: Build mindc (MLIR backend)
         run: |
@@ -497,6 +509,23 @@ jobs:
         run: python3 examples/mindc_mind/smoke_wiring_lint.py
         working-directory: ${{ github.workspace }}
 
+      - name: std manifest contract (stdlib_manifest_lint.py)
+        # Guards WHICH std/*.mind modules each consumer links. That membership used
+        # to be 17 hand-copied literal lists (the native-backend bridge in
+        # src/bin/mindc.rs + 16 copies across examples/mindc_mind/*.py) plus a
+        # fourth, DIFFERENT list (STDLIB_MIND_SOURCES in src/project/stdlib.rs, the
+        # `use std.<m>` resolver) with nothing asserting they agreed.
+        # testdata/stdlib_manifest.txt is the checked contract: exhaustive over
+        # std/*.mind, so a NEW std module fails here until someone records a
+        # deliberate in/out decision per consumer. The lint checks manifest<->disk
+        # and manifest<->STDLIB_MIND_SOURCES in BOTH directions, and pins the seed
+        # blob's sha256 — reordering or changing the seed set changes the compiled
+        # bytes of every native build (a whole-corpus RESEED event), so it must not
+        # be able to land as a quiet one-line edit. Pure text analysis, no build
+        # artifacts, so it runs early and fails fast alongside the wiring lint.
+        run: python3 examples/mindc_mind/stdlib_manifest_lint.py
+        working-directory: ${{ github.workspace }}
+
       - name: Install Rust (nightly)
         uses: dtolnay/rust-toolchain@nightly
 
@@ -535,9 +564,21 @@ jobs:
 
       - name: Verify toolchain on PATH
         run: |
-          mlir-opt --version | head -1
-          mlir-translate --version | head -1
-          clang --version | head -1
+          # `tool --version | head -1` is NOT a verification: without pipefail the
+          # pipeline's status is head's, so an ABSENT or broken tool exits 0 and
+          # this step -- whose entire job is catching a toolchain that never made
+          # it onto PATH -- passes. (The GitHub default shell is `bash -e {0}`;
+          # pipefail is only on when a step sets `shell: bash` or asks for it.)
+          # Run each tool WITHOUT a pipe so `-e` sees its real status, and check
+          # presence explicitly; head then reads a file and cannot mask anything.
+          # Not `set -o pipefail` on the original pipes: `head -1` closes early
+          # and would SIGPIPE the tool, trading a false pass for a false failure.
+          set -e
+          for t in mlir-opt mlir-translate clang; do
+            command -v "$t" >/dev/null || { echo "FAIL: $t is not on PATH"; exit 1; }
+            "$t" --version > /tmp/toolver.txt
+            head -1 /tmp/toolver.txt
+          done
 
       - name: Build mindc (MLIR backend)
         run: |
@@ -828,7 +869,14 @@ jobs:
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
               # the gate is inapplicable.
-              if grep -q '^SKIP' /tmp/wire_out.txt; then
+              # Anchored to column 0, `^SKIP` missed every INDENTED skip line
+              # ("  SKIP  <check> unavailable", "  SKIPPED") that a multi-leg
+              # smoke prints when only one leg opts out -- the backstop against
+              # vacuous green had a hole in exactly the shape it exists to catch.
+              # Leading whitespace is now allowed; the prefix still covers
+              # SKIP/SKIPPED, and no passing smoke in these lists prints a
+              # SKIP-prefixed line.
+              if grep -qE '^[[:space:]]*SKIP' /tmp/wire_out.txt; then
                 echo "ERROR: $s SKIPped with MINDC_SO set — vacuous green, failing closed"
                 fail=1
               fi
@@ -895,7 +943,14 @@ jobs:
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
               # the gate is inapplicable.
-              if grep -q '^SKIP' /tmp/wire_out.txt; then
+              # Anchored to column 0, `^SKIP` missed every INDENTED skip line
+              # ("  SKIP  <check> unavailable", "  SKIPPED") that a multi-leg
+              # smoke prints when only one leg opts out -- the backstop against
+              # vacuous green had a hole in exactly the shape it exists to catch.
+              # Leading whitespace is now allowed; the prefix still covers
+              # SKIP/SKIPPED, and no passing smoke in these lists prints a
+              # SKIP-prefixed line.
+              if grep -qE '^[[:space:]]*SKIP' /tmp/wire_out.txt; then
                 echo "ERROR: $s SKIPped with MINDC_SO set — vacuous green, failing closed"
                 fail=1
               fi
@@ -964,7 +1019,14 @@ jobs:
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
               # the gate is inapplicable.
-              if grep -q '^SKIP' /tmp/wire_out.txt; then
+              # Anchored to column 0, `^SKIP` missed every INDENTED skip line
+              # ("  SKIP  <check> unavailable", "  SKIPPED") that a multi-leg
+              # smoke prints when only one leg opts out -- the backstop against
+              # vacuous green had a hole in exactly the shape it exists to catch.
+              # Leading whitespace is now allowed; the prefix still covers
+              # SKIP/SKIPPED, and no passing smoke in these lists prints a
+              # SKIP-prefixed line.
+              if grep -qE '^[[:space:]]*SKIP' /tmp/wire_out.txt; then
                 echo "ERROR: $s SKIPped with MINDC_SO set — vacuous green, failing closed"
                 fail=1
               fi
@@ -1059,9 +1121,21 @@ jobs:
 
       - name: Verify toolchain on PATH
         run: |
-          mlir-opt --version | head -1
-          mlir-translate --version | head -1
-          clang --version | head -1
+          # `tool --version | head -1` is NOT a verification: without pipefail the
+          # pipeline's status is head's, so an ABSENT or broken tool exits 0 and
+          # this step -- whose entire job is catching a toolchain that never made
+          # it onto PATH -- passes. (The GitHub default shell is `bash -e {0}`;
+          # pipefail is only on when a step sets `shell: bash` or asks for it.)
+          # Run each tool WITHOUT a pipe so `-e` sees its real status, and check
+          # presence explicitly; head then reads a file and cannot mask anything.
+          # Not `set -o pipefail` on the original pipes: `head -1` closes early
+          # and would SIGPIPE the tool, trading a false pass for a false failure.
+          set -e
+          for t in mlir-opt mlir-translate clang; do
+            command -v "$t" >/dev/null || { echo "FAIL: $t is not on PATH"; exit 1; }
+            "$t" --version > /tmp/toolver.txt
+            head -1 /tmp/toolver.txt
+          done
 
       - name: Build mindc (MLIR backend)
         run: |
@@ -1179,9 +1253,21 @@ jobs:
         # missing MLIR toolchain into a hard failure inside the harnesses, and this
         # step catches it before the 45-minute build even starts.
         run: |
-          mlir-opt --version | head -1
-          mlir-translate --version | head -1
-          clang --version | head -1
+          # `tool --version | head -1` is NOT a verification: without pipefail the
+          # pipeline's status is head's, so an ABSENT or broken tool exits 0 and
+          # this step -- whose entire job is catching a toolchain that never made
+          # it onto PATH -- passes. (The GitHub default shell is `bash -e {0}`;
+          # pipefail is only on when a step sets `shell: bash` or asks for it.)
+          # Run each tool WITHOUT a pipe so `-e` sees its real status, and check
+          # presence explicitly; head then reads a file and cannot mask anything.
+          # Not `set -o pipefail` on the original pipes: `head -1` closes early
+          # and would SIGPIPE the tool, trading a false pass for a false failure.
+          set -e
+          for t in mlir-opt mlir-translate clang; do
+            command -v "$t" >/dev/null || { echo "FAIL: $t is not on PATH"; exit 1; }
+            "$t" --version > /tmp/toolver.txt
+            head -1 /tmp/toolver.txt
+          done
 
       - name: Tier 'exec' — executable semantics (mlir-build)
         # 110 mlir-build-gated files, including the alias-miscompile gate and the
@@ -1203,6 +1289,61 @@ jobs:
         # pkg` but never `cargo test`, so neither had ever executed.
         # measured@f2a2d87d: 317 harnesses / 1265 executed.
         run: scripts/exec_semantics_gate.sh pkg
+
+  # Gate & merge integrity. These are text-only checks (git + python3 stdlib), so
+  # they run in seconds and need no toolchain — there is no reason for them to live
+  # only in a developer's preflight. Both exist because of a measured incident: a
+  # merge deleted a security ENFORCEMENT line while its enum variant, Display arm,
+  # error mapping AND its test all survived, so nothing failed to compile and the
+  # test kept passing over a rule that no longer existed.
+  sdlc_integrity:
+    name: SDLC gate integrity (merge + enforcement pairing)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # lost_by_merge needs BOTH parents of a merge commit; a shallow clone
+          # would silently reduce the check to "not a merge, ran=0" — which the
+          # script reports honestly, but which would gate nothing.
+          fetch-depth: 0
+
+      - name: Lines dropped by a merge that BOTH parents had
+        run: python3 scripts/sdlc/lost_by_merge.py HEAD
+
+      - name: Enforcement/test pairing (a test must not outlive its rule)
+        run: python3 scripts/sdlc/enforcement_bijection.py
+
+      - name: Feature-gated tests must be reachable from a CI selector
+        run: python3 scripts/cfg_gate_wiring_lint.py
+
+      - name: IR operand visitors must not drift apart
+        run: python3 scripts/operand_visitor_parity_lint.py
+
+      - name: A comment's enumeration must match the code it describes
+        # The tc_let shape: `parse_let` said ty=0 was "the exact no-annotation value
+        # every let consumer already handles" and NAMED them; tc_let was not among
+        # them, read ast_span_lo(0), and died 21 times over four days. A comment that
+        # counts or names a set is checked by nothing. This pins two such sets that
+        # had ALREADY rotted (a 23-vs-25 keyword count, a "these five" beside a
+        # nine-key allowlist) to the code that owns them.
+        run: python3 scripts/enumeration_drift_lint.py
+
+      - name: Bench gate must fail CLOSED on a missing measurement
+        # tools/test_bench_gate.py asserts the fail-closed contract of
+        # tools/bench_gate.py: an empty / truncated bench.out or a missing
+        # baseline must exit 4, never fall through to "bench gate: PASS".
+        #
+        # It lives HERE, not in bench-gate.yml, for two reasons. bench-gate.yml
+        # runs behind a `paths:` filter and needs a ~30-minute criterion run
+        # before it reaches the gate at all; and it is absent from
+        # .github/required-ci-jobs.tsv, so its verdict cannot block a release.
+        # This job is in that manifest and needs no toolchain, so the contract is
+        # checked on every push and a release is verified against it.
+        #
+        # Non-vacuity (measured): against a bench_gate.py stubbed to always
+        # `exit 0` — exactly the vacuous-PASS hole this defends — the three
+        # fail-closed cases go red and the runner exits 1.
+        run: python3 tools/test_bench_gate.py
 
   mindcraft_check:
     name: Mindcraft check (RFC 0007 Phase 6)

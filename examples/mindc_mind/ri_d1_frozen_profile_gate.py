@@ -58,10 +58,46 @@ IN_PROFILE = [
 # Out-of-profile: matrix-declared NOT in the native subset (row 11 tensor = NO / RI-E,
 # row 12 trait dispatch = PARTIAL / RI-F). Must fail-closed with zero toolchain spawn.
 OUT_PROFILE = [
-    ("tensor", "fn main()->i64{let t=zeros([4]); return 0;}"),
+    # Each fixture declares WHICH fence must refuse it. Without this the gate only
+    # checked `rc != 0` and the substring "backend-native" — which BOTH fences print —
+    # so the Rust-side first fence had ZERO negative coverage distinguishable from the
+    # frozen ELF's own refusal. A first fence that defers to the second is not a fence.
+    #   "first"  -> the Rust frozen-profile predicate must name the construct
+    #   "second" -> the pure-MIND compiler must be the one that rejects
+    # enforces: RI-D1-PROFILE
+    # These two fixtures are the TEST for the Rust-side frozen-profile fence. Both are
+    # accepted by the pure-MIND compiler and refused ONLY by the predicate, so deleting
+    # the fence makes them build instead of exiting 3 — which is exactly what the
+    # enforcement/test pairing lint requires: a rule whose removal something notices.
+    ("div_first_fence", "fn main()->i64{let a:i64=7; let b:i64=2; return a / b;}", "first"),
+    ("shr_first_fence", "fn main()->i64{let x:i64=256; return x >> 2;}", "first"),
+    ("tensor", "fn main()->i64{let t=zeros([4]); return 0;}", "first"),
     ("trait",
      "trait T{fn f(self)->i64;} struct S{} impl T for S{fn f(self)->i64{return 1;}} "
      "fn main()->i64{let s=S{}; return s.f();}"),
+    # Row 10 FLOAT_LANGUAGE_COVERAGE — the float COMPARISON, which the two backends
+    # answer DIFFERENTLY. Native lowers it to `ucomisd` + an UNSIGNED setcc
+    # (main.mind::nb_fp_setcc_opcode), and an unordered compare sets CF=ZF=PF=1, so
+    # `<` / `<=` / `==` read TRUE for a NaN operand and `!=` reads FALSE. MLIR lowers
+    # it to `arith.cmpf "olt"/"ole"/"oeq"` + `"une"` — the ORDERED IEEE predicates,
+    # which are false for NaN (true for `!=`).
+    #
+    # This source reaches NaN using ONLY profile constructs (f64 literal, `*`, `-`):
+    # six squarings of 65536.0 overflow to +inf, and `+inf - +inf` is NaN. It then asks
+    # two questions no real number can both answer yes: `n == 0.0` AND `n < 0.0`.
+    # Measured before the rejection landed: native exit 3 (BOTH true — the
+    # ucomisd-unordered signature), MLIR exit 0. Both fences admitted it, so the native
+    # artifact carried a silently wrong value. Per-operator: Lt/Le/Eq/Ne diverge,
+    # Gt/Ge agree.
+    #
+    # Gate meaning: this MUST stay fail-closed until `nb_fp_setcc_opcode` grows a
+    # NaN-aware predicate (parity masking for ==/!=, swapped-operand seta/setae for
+    # </<=). Only then may it move to IN_PROFILE, with an expected exit of 0 matching
+    # the MLIR path.
+    ("float_nan_compare",
+     "fn main()->i64{let a:f64=65536.0; let b:f64=a*a; let c:f64=b*b; let d:f64=c*c; "
+     "let e:f64=d*d; let g:f64=e*e; let h:f64=g*g; let n:f64=h-h; "
+     "if n == 0.0 { if n < 0.0 { return 3; } return 1; } if n < 0.0 { return 2; } return 0;}"),
 ]
 
 EXECVE_PATH = re.compile(r'execve\("([^"]+)"')
@@ -110,7 +146,7 @@ def main() -> int:
     # toolchain execve. Pin the corpus size so a silently-deleted fixture is a FAILURE,
     # not a vacuous pass. Bump deliberately when the allowlist+corpus grow together.
     PINNED_IN_PROFILE = 5
-    PINNED_OUT_PROFILE = 2
+    PINNED_OUT_PROFILE = 3
     if len(IN_PROFILE) < PINNED_IN_PROFILE or len(OUT_PROFILE) < PINNED_OUT_PROFILE:
         print(
             f"FAIL  corpus shrank below pinned floor: in={len(IN_PROFILE)}<{PINNED_IN_PROFILE} "
@@ -144,18 +180,54 @@ def main() -> int:
             else:
                 print(f"  ok   in-profile  {name:16} rc=0 exit={got} execve={execs} 0-toolchain")
 
-        for name, src in OUT_PROFILE:
+        for entry in OUT_PROFILE:
+            # A fixture may declare WHICH fence must refuse it. Optional, so existing
+            # two-field fixtures keep working; when present it is asserted.
+            if len(entry) == 3:
+                name, src, want_fence = entry
+            else:
+                name, src = entry
+                want_fence = None
             rc, art, serr, execs = strace_native_build(name, src, td)
             th = toolchain_hits(execs)
             problems = []
             if rc == 0:
                 problems.append(f"rc=0 (want non-zero refusal)")
+            # `rc != 0` alone cannot tell a REFUSAL from a DEATH: a process killed by
+            # a signal reports a negative returncode, which reads as "non-zero, so it
+            # fail-closed". Refusing a construct is the behaviour this gate certifies;
+            # segfaulting on it is a defect that happens to look identical from here
+            # (mindc can emit the diagnostic and then die on the way out, satisfying
+            # the stderr check below).
+            elif rc < 0:
+                problems.append(
+                    f"KILLED BY SIGNAL {-rc} — a crash is not a fail-closed refusal"
+                )
             if art:
                 problems.append(f"produced {len(art)}B artifact (want none)")
             if th:
                 problems.append(f"SPAWNED TOOLCHAIN {th} — SILENT MLIR FALLBACK")
             if "error[backend-native]" not in serr and "backend-native" not in serr:
                 problems.append("no error[backend-native] diagnostic")
+            # WHICH fence refused. Both print "backend-native", so without this the
+            # first fence's coverage is indistinguishable from the second's — and a
+            # first fence whose every case is also caught downstream has proven
+            # nothing. The Rust predicate NAMES the construct; the pure-MIND compiler
+            # says it rejected the program.
+            if want_fence == "first":
+                if "out-of-profile construct:" not in serr:
+                    problems.append(
+                        "expected the FIRST fence (the Rust frozen-profile predicate) to "
+                        "refuse and name the construct, but it did not — this fixture "
+                        "gives the first fence no coverage"
+                    )
+            elif want_fence == "second":
+                if "out-of-profile construct:" in serr:
+                    problems.append(
+                        "expected the SECOND fence (the pure-MIND compiler) to refuse, "
+                        "but the Rust predicate caught it first — the fixture no longer "
+                        "exercises the compiler's own fail-closed path"
+                    )
             if problems:
                 fails.append(f"out/{name}: " + "; ".join(problems))
             else:

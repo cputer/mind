@@ -269,6 +269,16 @@ def main() -> int:
     try:
         so_stage1 = stage0_emit(combined, user_lo)
     except OSError as e:
+        # With MINDC_SO set the operator/CI promised a real oracle .so, so a load
+        # failure is a BROKEN gate, not an inapplicable one. This smoke runs BARE
+        # in ci.yml (no surrounding "SKIPped with MINDC_SO set" backstop like the
+        # batch loops have), and its skip line is indented + spelled "SKIPPED", so
+        # that backstop's `^SKIP` grep would not have caught it either way.
+        if os.environ.get("MINDC_SO"):
+            print(f"  FAIL  [ORACLE] MINDC_SO is set but the drift .so could not be "
+                  f"loaded ({e}) — refusing to skip; the source-drift assertion did "
+                  f"not run.")
+            return 1
         print(f"  NOTE  [ORACLE] could not load drift .so ({e}) — SKIPPED.")
         return 0
     if not is_static_elf(so_stage1):

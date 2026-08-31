@@ -31,10 +31,34 @@ PATTERN='\bfable\b|copilot|chatgpt|[0-9]+[- ]llm consensus|claude/[a-z-]+-[A-Za-
 # vendored/generated JS and sourcemaps are the risk — and exclude them by
 # pathspec rather than weakening PATTERN. The wiring lint picks up any widening
 # automatically, since it reads this pathspec rather than a second copy of it.
-hits=$(git grep -inE "$PATTERN" -- \
-  '*.md' '*.rs' '*.py' '*.mind' '*.sh' '*.toml' '*.rst' '*.txt' \
-  ':!node_modules' ':!**/node_modules' ':!ANATOMY.md' \
-  ':!scripts/check_no_ai_attribution.sh' 2>/dev/null || true)
+PATHSPEC=(
+  '*.md' '*.rs' '*.py' '*.mind' '*.sh' '*.toml' '*.rst' '*.txt'
+  ':!node_modules' ':!**/node_modules' ':!ANATOMY.md'
+  ':!scripts/check_no_ai_attribution.sh'
+)
+
+# Vacuity floor. `git grep` exits 1 on NO MATCH, and the old `2>/dev/null || true`
+# turned every other failure into that same empty result: a pathspec that matches
+# nothing (a renamed dir, a widened-then-typo'd extension list, a `git grep` that
+# errored) printed PASS while asserting nothing at all. A whole-tree gate must
+# prove it actually had a tree to scan, so the corpus size is compared to a floor
+# and the grep's own exit status is read. ONE pathspec array feeds both, so the
+# scanned set and the counted set can never drift apart.
+MIN_SCANNED=500  # tracked matches today: ~1436
+scanned=$(git ls-files -- "${PATHSPEC[@]}" | wc -l)
+if [ "$scanned" -lt "$MIN_SCANNED" ]; then
+  echo "::error::no-ai-attribution gate scanned only $scanned tracked files"
+  echo "         (floor $MIN_SCANNED). The scan scope evaporated - a PASS here"
+  echo "         would assert nothing. Check the pathspec above."
+  exit 1
+fi
+
+hits=$(git grep -inE "$PATTERN" -- "${PATHSPEC[@]}")
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  echo "::error::git grep failed (rc=$rc) - the gate did not run; refusing to pass."
+  exit 1
+fi
 if [ -n "$hits" ]; then
   echo "::error::AI-attribution found in tracked files (forbidden by STARGA policy):"
   echo "$hits"
@@ -45,4 +69,4 @@ if [ -n "$hits" ]; then
   echo "are fine."
   exit 1
 fi
-echo "no-ai-attribution gate: PASS"
+echo "no-ai-attribution gate: PASS ($scanned tracked files scanned)"

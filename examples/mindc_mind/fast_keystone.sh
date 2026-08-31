@@ -26,9 +26,28 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT" || exit 2
 MINDC="${MINDC_BIN:-$ROOT/target/release/mindc}"
 ENTRY="examples/mindc_mind/main.mind"
 DIR_SO="/tmp/fk_direct_$$.so"; MT_SO="/tmp/fk_mt_$$.so"
-t0=$(date +%s); pass=0; fail=0
+t0=$(date +%s); pass=0; fail=0; skip=0
+# A smoke that cannot find the self-host `.so` prints a column-0 `SKIP`/`BLOCKED`
+# marker and exits 0. Exit status alone therefore cannot tell "the invariant held"
+# from "the gate never ran", and grading a skip as a pass is how this runner prints
+# "N passed, 0 failed" having proven nothing: `_selfhost_so.resolve_so()` falls back
+# to the gitignored in-tree `.so` whenever `mindc build --emit=cdylib` fails, so ONE
+# broken self-host emit silently turns the WHOLE corpus green — the loudest possible
+# regression reported as a clean keystone. ci.yml already fails closed on exactly this
+# line for its smoke loops ("SKIPped with MINDC_SO set — vacuous green"); this is the
+# same rule for the local runner. It stays COLUMN-0 here on purpose: the tolerated
+# case is a deliberately-indented partial skip (mod_operator_smoke's documented
+# MIND_SMOKE_ALLOW_ENV_SKIP opt-in), which a local bare run may legitimately hit.
+# ci.yml's loops now allow leading whitespace instead, because `_env_skip_allowed()`
+# returns False whenever MINDC_SO/MINDC_BIN is set -- so under CI an indented SKIP
+# can only be an UNguarded one, and CI can afford to be the stricter of the two.
 chk() { local n="$1"; shift
-  if "$@" >/tmp/fk_step.log 2>&1; then echo "  PASS  $n"; pass=$((pass+1))
+  if "$@" >/tmp/fk_step.log 2>&1; then
+    if grep -qE '^(SKIP|BLOCKED)' /tmp/fk_step.log; then
+      echo "  SKIP  $n  — gate did NOT run (not a pass)"
+      grep -m1 -E '^(SKIP|BLOCKED)' /tmp/fk_step.log | sed 's/^/        /'
+      skip=$((skip+1))
+    else echo "  PASS  $n"; pass=$((pass+1)); fi
   else echo "  FAIL  $n"; tail -4 /tmp/fk_step.log | sed 's/^/        /'; fail=$((fail+1)); fi; }
 
 if [ "${MINDC_REBUILD:-0}" = "1" ]; then
@@ -160,7 +179,14 @@ chk "failclosed (poison boundary + float refusal)"   python3 examples/mindc_mind
 chk "closure_netverify (unresolved-callee fail-closed)" python3 examples/mindc_mind/closure_netverify.py
 chk "fp_call (float call-return/args + unresolved-callee 0B)" python3 examples/mindc_mind/self_host_native_fp_call_smoke.py
 chk "fp_field (float struct-field read (SSE))" python3 examples/mindc_mind/self_host_native_fp_field_smoke.py
+chk "scalar_narrow (RI-D #10 sat f64->i8/i16/i32 clamp)" python3 examples/mindc_mind/self_host_native_scalar_narrow_smoke.py
 
 rm -f "$DIR_SO" "$MT_SO"
-echo "== $pass passed, $fail failed in $(($(date +%s)-t0))s =="
-[ "$fail" -eq 0 ]
+echo "== $pass passed, $fail failed, $skip skipped in $(($(date +%s)-t0))s =="
+# A skipped gate is NOT a passed gate. Failing closed on it is what stops "the
+# self-host .so never built" from reading as a green keystone.
+if [ "$skip" -ne 0 ]; then
+  echo "   $skip gate(s) SKIPPED — they proved nothing. Build the self-host .so"
+  echo "   (mindc build --release --emit=cdylib) or set MINDC_SO, then re-run."
+fi
+[ "$fail" -eq 0 ] && [ "$skip" -eq 0 ]
