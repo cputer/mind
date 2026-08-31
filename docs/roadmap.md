@@ -154,11 +154,21 @@ independently. No new IR, no new evidence primitive, no new repo.
    before it.
 2. **RFC 0012 Phase B.2 shape-dim threading** is a *normative gate*, not a
    caveat. `laplacian` on a 2-D field requires the compiler to know H and W at
-   the lowering site to emit stencil offsets — the same type-checker →
-   `lower_expr` threading B.2 is blocked on (RFC 0012 §7, deferred `.reshape` /
-   MLIR-byte-identity cases). The field layer **cannot be claimed implemented**
-   while that threading is incomplete. A field language whose compiler loses the
-   dimensions its own lowering needs is a surface without a substrate.
+   the lowering site to emit stencil offsets, and only `ShapeDim::Known` can
+   become a literal call operand (`src/types/mod.rs:89-92`). The field layer
+   **cannot be claimed implemented** while that threading is incomplete. A field
+   language whose compiler loses the dimensions its own lowering needs is a
+   surface without a substrate.
+
+   The gate stands, but do **not** read the two deferred RFC 0012 §7.2 items as
+   its evidence — neither is actually a shape-threading blocker
+   (`docs/design/rfc0012-b2-shape-threading-scope.md`). `.reshape` has **no arm
+   in the executable MLIR backend at all** and falls to `UnsupportedOp`, where
+   `.sum`/`.mean` have real arms; threading shapes will not make it run. The
+   matmul byte-identity item is a buffer-ownership and dialect-level redesign
+   — arity is 1 of 4 divergences, and shapes supply 2 of 5 operands. What
+   RFC 0028 needs from B.2 is the `Known`-dim thread to a *new* stencil emitter,
+   which is a smaller and more tractable job than either deferred item.
 
 **The load-bearing restriction is `ring_q16`, not "Q16.16".** A representation
 does not name an algebra. Native `i32`/`i64` arithmetic wraps two's-complement

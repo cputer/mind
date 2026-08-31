@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1426 | **Est. tokens:** ~2,688,784
-**Generated:** 2026-08-31 08:05 UTC
+**Files:** 1426 | **Est. tokens:** ~2,688,979
+**Generated:** 2026-08-31 08:08 UTC
 
 ## Token Budget Guide
 
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 333 | ~576,725 |
+| `tests/` | 333 | ~576,920 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -1539,7 +1539,7 @@
 - `match_arm_stmt_run.rs` (~846 tok, large) — Copyright 2025 STARGA Inc.
 - `match_fallback_fail_closed.rs` (~1750 tok, huge) — Copyright 2025 STARGA Inc.
 - `match_scrutinee_once.rs` (~1521 tok, huge) — Copyright 2025 STARGA Inc.
-- `merge_kind_order_symmetry.rs` (~766 tok, large) — A merge's signedness must not depend on ARM ORDER.
+- `merge_kind_order_symmetry.rs` (~961 tok, large) — A merge's signedness must not depend on ARM ORDER.
 - `method_call.rs` (~397 tok, medium) — Copyright 2025 STARGA Inc.
 - `mic3_array_store_roundtrip.rs` (~1054 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_break_continue_string_roundtrip.rs` (~1668 tok, huge) — Copyright 2026 STARGA Inc.
