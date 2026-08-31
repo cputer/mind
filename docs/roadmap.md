@@ -134,8 +134,65 @@ This roadmap outlines upcoming milestones for the MIND language, runtime, and to
 ## Planned
 
 - **Formal Verification** – Proof-carrying IR passes for safety-critical deployments.
+  The first concrete instance is **RFC 0028 (Deterministic Field Calculus)**, below.
 - **Ecosystem Integrations** – Official bindings for Python, Swift, and WebAssembly targets.
 - **Package Registry** – Public `mindpkg` registry with curated models.
+
+### RFC 0028 — Deterministic Field Calculus (Draft, **not scheduled**)
+
+`docs/rfcs/0028-deterministic-field-calculus.md`. Adds spatial semantics to the
+existing shape-typed tensors of RFC 0012 — `domain`, `field`, three differential
+operators (`grad`/`div`/`laplacian`), and `#[conserves(...)]` conservation
+obligations the compiler either **proves or refuses to compile**. It copies the
+shipped `#[collapse]` (RFC 0024) structure exactly: opt-in attribute → prover →
+fail-closed diagnostic → re-derivable receipt that `mindc verify` checks
+independently. No new IR, no new evidence primitive, no new repo.
+
+**Not scheduled, and deliberately so.** Two hard prerequisites, in order:
+
+1. **Rust-independence (RI) holds the priority slot.** Nothing here is scheduled
+   before it.
+2. **RFC 0012 Phase B.2 shape-dim threading** is a *normative gate*, not a
+   caveat. `laplacian` on a 2-D field requires the compiler to know H and W at
+   the lowering site to emit stencil offsets — the same type-checker →
+   `lower_expr` threading B.2 is blocked on (RFC 0012 §7, deferred `.reshape` /
+   MLIR-byte-identity cases). The field layer **cannot be claimed implemented**
+   while that threading is incomplete. A field language whose compiler loses the
+   dimensions its own lowering needs is a surface without a substrate.
+
+**The load-bearing restriction is `ring_q16`, not "Q16.16".** A representation
+does not name an algebra. Native `i32`/`i64` arithmetic wraps two's-complement
+(`docs/determinism.md` §1), which *is* the statement that it forms the ring
+`Z/2^N` — so `sum(laplacian(F)) == 0` holds by cancellation with **no** range
+analysis and **no** no-overflow precondition. Saturating helpers leave that ring
+and break the identity. `E2305` ("proof domain escaped") is inferred from the
+lowered ops, never author-declared — the same inferred-and-attested discipline
+`fp_mode` already uses. `f32` fields are explicitly out of scope for v1: an
+`f32` conservation obligation could only ever be a tolerance check, and a
+tolerance comparison is not itself bit-identical across substrates.
+
+**The reference workload is a specimen, not an oracle.** `rfn-mind`'s
+`laplacian.mind` mixes three saturating adds with one wrapping `<< 2` in a single
+expression, so it is `E2305` — *not* provable. Verified counterexample in RFC
+§5.4.1: a constant field at `Q16_MAX` under `Periodic` boundary, whose Laplacian
+is mathematically zero, returns `Q16_MAX` everywhere. Parity is therefore gated
+on committed non-saturating vectors, and the gate must additionally **assert the
+known divergence** — a parity gate that cannot show where parity ends is
+measuring its own test set.
+
+**Determinism/performance constitution (RFC §7.1), precommitted before any
+implementation begins:** `G0` zero-regression exact-byte default path (a program
+not using the feature must produce identical canonical bytes, `trace_hash`, and
+result); `G1` the prover does not initialize unless the opt-in construct is
+present; `G2` Criterion baselines frozen *before* implementation, so a moved
+benchmark cannot be rationalized after the fact; `G3` runtime parity floor
+against the hand-written reference; `G4` no proof machinery in the hot path —
+proof is compile-time and verifier-time cost, never per-step runtime cost. Two
+kill switches: a new construct that breaks cross-substrate identity does not ship
+as strict, and an abstraction that cannot reach parity with the hand-written
+reference stays experimental. Status is tracked as a GREEN/OPEN/RED gate matrix
+(RFC §8), not a star rating — stars hide exactly the distinction between "good
+implementation" and "unproven determinism".
 
 ## Genesis Ecosystem Audit — verified findings (2026-05-29)
 
