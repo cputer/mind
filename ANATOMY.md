@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1425 | **Est. tokens:** ~2,679,585
-**Generated:** 2026-08-31 07:30 UTC
+**Files:** 1425 | **Est. tokens:** ~2,681,979
+**Generated:** 2026-08-31 07:38 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 3 | ~8,181 |
 | `docs/mindcraft/` | 3 | ~7,086 |
-| `docs/rfcs/` | 35 | ~161,845 |
+| `docs/rfcs/` | 35 | ~164,239 |
 | `docs/specs/` | 2 | ~976 |
 | `examples/` | 28 | ~49,880 |
 | `examples/bimap_currency/` | 3 | ~780 |
@@ -456,7 +456,7 @@
 - `0024-loop-collapse.md` (~7579 tok, huge) — RFC 0024: Loop Collapse — prove-or-fail closed-form replacement of counted loops (`#[collapse]`)
 - `0025-mind-intent-contracts.md` (~3605 tok, huge) — RFC 0025: MIND Intent — Intent Contracts (goal + constraints → verifiable Contract IR)
 - `0027-governed-physical-device-plane.md` (~2790 tok, huge) — RFC 0027: Governed Physical-Device Plane — evidence-bound actuation (`device_receipts`)
-- `0028-deterministic-field-calculus.md` (~5440 tok, huge) — RFC 0028: Deterministic Field Calculus
+- `0028-deterministic-field-calculus.md` (~7834 tok, huge) — RFC 0028: Deterministic Field Calculus
 - `DRAFT-deterministic-format-frontend.md` (~10522 tok, huge) — RFC DRAFT: Deterministic Multi-Format Ingest Front-End (JSON / TOON / CSV / TSV / NDJSON / TOML)
 - `DRAFT-deterministic-json-frontend.md` (~5177 tok, huge) — RFC DRAFT: Deterministic Streaming SIMD JSON Structural Front-End
 - `DRAFT-governed-device-io-mhs.md` (~5629 tok, huge) — Draft RFC: Governed Device I/O and MHS Compatibility — SUPERSEDED

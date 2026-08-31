@@ -109,7 +109,8 @@ knows, and getting it wrong would puncture the wedge:
    discharge, which is a narrower and firmer case than `#[deterministic]` in general.
 
 2. **A conservation proof over floats is not a proof.** `sum(laplacian(F)) == 0` is a
-   theorem in `Z/2^64` and in Q16.16 (both are rings under integer addition). Over
+   theorem in `Z/2^64` and in Q16.16 (both are rings under integer addition — see
+   §5.4 for why MIND's overflow rule is what makes this true rather than aspirational). Over
    IEEE-754 it is false in general — summation is not associative, so the result
    depends on reduction order, which is exactly the choice MIND pins and other
    compilers leave unspecified. A `#[conserves]` obligation over `f32` could only ever
@@ -224,15 +225,23 @@ the input field, exactly.
 ```mind
 #[conserves(sum)]
 fn diffuse(F: field q16 over Grid2D) -> field q16 over Grid2D {
-    return F .+ (A .* laplacian(F));
+    return F .+ laplacian(F);        // unscaled: ring-closed, provable
 }
 ```
 
 Provable because: under `Periodic` boundary, each grid cell contributes `+1` and `-1`
 of each neighbour term to the global sum, so `sum(laplacian(F)) == 0` identically in
-any ring; therefore `sum(F .+ A .* laplacian(F)) == sum(F)`. The prover checks the
-boundary rule is `Periodic`, that the expression is a sum of the input and terms whose
-global sum is provably zero, and that all arithmetic is in one ring.
+any ring; therefore `sum(F .+ laplacian(F)) == sum(F)`. The prover checks the boundary
+rule is `Periodic`, that the expression is a sum of the input and terms whose global
+sum is provably zero, and that every operation between the field and the sum stays in
+one ring (§5.4).
+
+Note what is **absent** from that example. The natural diffusion form carries a
+coefficient — `F .+ (A .* laplacian(F))` — and that form is **not** provable in v1:
+a Q16.16 multiply lowers to a multiply plus a `>>16` rescale, the shift is not
+additive, and the obligation is refused with `E2305`. §5.4 works this through in full.
+The v1 obligation deliberately covers the unscaled case only, rather than stretching
+the certificate to cover an expression whose identity has not been proven.
 
 Under `Reflective` or `Zero` boundary the identity does **not** hold — flux crosses
 the boundary — and the prover emits `E2302` naming the boundary rule as the reason.
@@ -253,22 +262,111 @@ obligation builds on.
 | `E2302` | The obligation does not hold under the domain's boundary rule (names the rule). |
 | `E2303` | Mixed-ring arithmetic in a conserved expression — the identity is not ring-closed. |
 | `E2304` | Conserved function has a side effect, escaping store, or I/O. |
-| `E2305` | An intermediate would need wider-than-64-bit precision to remain exact. |
+| `E2305` | The expression leaves the ring — a non-ring operation (`>>`, division, saturating or clamping call, narrowing cast) sits between the field and the conserved sum. See §5.4. |
 | `E2310` | Field dtype is not `q16` (see §3 — `f32`/`f64` fields are not admitted in v1). |
 | `E2311` | Field domain mismatch across an assignment or operator. |
 
 Following RFC 0024 §4.3, `E2305` is a **permanent** rejection, not a deferral: an
-identity that needs arbitrary precision to hold is not an identity in the field's own
-ring, and widening it silently would be exactly the kind of invisible semantic change
-the wedge forbids.
+expression that leaves the ring has no ring identity to prove, and silently widening or
+re-associating it to manufacture one would be exactly the kind of invisible semantic
+change the wedge forbids.
 
-### 5.4 The receipt
+### 5.4 Why wraparound does not break the proof (and what does)
 
-On success the compiler records under `evidence_chain.field.*`: the obligation kind,
-the domain's boundary rule, the ring, and the hash of the canonical mic@3 bytes of the
-proven function. `mindc verify` **re-derives** this rather than trusting it — same
-discipline as RFC 0024's collapse receipt. A receipt that cannot be re-derived is a
-verification failure, not a warning.
+An obvious objection: algebraic cancellation over the mathematical integers is not
+automatically cancellation under machine arithmetic. If an intermediate saturates or
+clamps, `+x` and `-x` no longer annihilate, and the conservation certificate would be
+issued for an implementation that does not actually conserve.
+
+MIND's normative integer rule resolves this, and resolves it in the *stronger*
+direction than a saturating language could:
+
+> Integer overflow **wraps two's-complement** (defined; identical on x86 and ARM).
+> — `docs/determinism.md` §1
+
+Wraparound is exactly the statement that MIND's `i32`/`i64` arithmetic **is** the ring
+`Z/2^32` / `Z/2^64`. Ring identities hold unconditionally in a ring, overflow included:
+`(a + b) - b == a` is true for every pair of machine integers under wraparound. So
+`sum(laplacian(F)) == 0` needs no range analysis, no no-overflow precondition, and no
+bounds on the field's magnitude. Each neighbour value is added once and subtracted
+once, and in `Z/2^64` those cancel exactly whether or not any intermediate wrapped.
+
+Crucially, the same doc records that the rule holds at **every** layer — interpreter,
+MLIR/native artifact (plain `arith.addi`, no `nsw`/`nuw`), and constant folding, where
+folding is exact-or-skip rather than emitting a wrapped or saturated constant. A proof
+discharged at compile time therefore describes the same algebra the artifact executes.
+Had MIND chosen saturating arithmetic instead, this RFC would need a no-overflow
+precondition and `E2305` would be a range-analysis diagnostic. It does not, and it is
+not.
+
+**What actually breaks the proof is leaving the ring**, and that is what `E2305`
+detects. Non-ring operations that may not appear between the field and its conserved
+sum:
+
+| Operation | Why it breaks cancellation |
+|---|---|
+| `>>` (the Q16.16 rescale after a product) | Arithmetic shift is not additive: `(a>>16) + (b>>16) != (a+b)>>16` in general. Each dropped low bit is an unrecoverable rounding. |
+| Integer division | Same reason; also MIND defines `x/0 == 0`, which is not a ring operation. |
+| Saturating / clamping calls (e.g. `kernel.clamp`) | Deliberately non-wrapping — that is their purpose — so `+x`/`-x` no longer annihilate. |
+| Narrowing casts (`i64 -> i32`) | Changes modulus mid-expression; terms cancel in different rings. |
+
+This has a concrete consequence for the reference workload, and it is the sharpest
+thing in this RFC. `rfn-mind`'s `field_step.mind:73` applies a Q16.16 multiply —
+`fixed_point.q16_mul(cfg.diffusion, buffers.lap[i])` — and `q16_mul`
+(`fixed_point.mind:120`) is *not* a ring operation. It widens to `i64`, then calls
+`q32_to_q16_sat` (`fixed_point.mind:83`), which does three non-ring things in
+sequence:
+
+```mind
+let shifted: i64 = (wide + 32768) >> 16   // 1. round-half-up  2. arithmetic shift
+if shifted >  2147483647 { return Q16_MAX }   // 3. saturating clamp
+if shifted < -2147483648 { return Q16_MIN }
+```
+
+Rounding discards information, the shift is not additive, and the saturation is
+*deliberately* non-wrapping — the exact operation that breaks `+x`/`-x` cancellation.
+`cfg.norm_mode` then applies either `group_norm` or `clamp_all`
+(`groupnorm.mind:101`), adding a fourth. So the honest statement of what v1 can prove
+about that file is:
+
+- `laplacian(F)` alone, under `Periodic` boundary, carries `#[conserves(zero_sum)]` — **provable**.
+- `F .+ (A .* laplacian(F))` with a Q16.16 scalar multiply — **`E2305`**, because
+  `q16_mul`'s rounding, `>>16` rescale and saturating clamp all sit between the field
+  and the sum.
+- The full normalized `field_step` — **`E2305`**, for the same reason plus
+  `group_norm`/`clamp_all`.
+
+The unscaled case (`A == 1`, no rescale) is provable and is the v1 acceptance target.
+This is a narrower claim than "RFC 0028 proves conservation for RFN's field step," and
+it is stated here deliberately, because the failure mode this RFC exists to prevent is
+a certificate that is broader than its proof. A future obligation covering scaled
+updates must first specify what is conserved under rounding — which is a genuinely
+different theorem (an inequality or an error bound, not an identity), with its own
+proof burden, and is out of scope here.
+
+---
+
+### 5.5 The receipt
+
+On success the compiler records under `evidence_chain.field.*`:
+
+| Key | Meaning |
+|---|---|
+| `theorem_id` + `theorem_version` | Which named theorem was discharged. Versioned so a later change to the theorem cannot silently re-interpret an old receipt. |
+| `stencil_id` | Which enumerated stencil (`laplacian_5pt_v1`). A closed set, not free-form. |
+| `boundary` | The domain's boundary rule (`Periodic`) — a premise of the theorem. |
+| `ring` | `z_mod_2_64` / `q16_16`. The algebra the identity holds in (§5.4). |
+| `subject_hash` | Hash of the canonical mic@3 bytes of the proven function body — binds the receipt to the exact computation, not to the source text. |
+
+`mindc verify` **re-derives** this rather than trusting it: it confirms `subject_hash`
+identifies the expected lowered computation, then re-runs the named theorem from the
+recorded premises. Same discipline as RFC 0024's collapse receipt. A receipt that
+cannot be re-derived is a verification failure, not a warning.
+
+These are additive MAP keys carried by RFC 0016's existing envelope — no new evidence
+primitive, no new IR node. Whether that is *sufficient* for independent re-derivation
+is open question 4 (§11), and is a prerequisite for Phase D rather than a detail to be
+settled during it.
 
 ---
 
@@ -301,16 +399,40 @@ function-like declaration form with no demonstrated benefit.
 
 ## 7. Reference workload and success criterion
 
-The gate for this RFC is not a synthetic test. It is:
+The gate for this RFC is not a synthetic test. It is `rfn-mind`'s `laplacian.mind`
+and `field_step.mind` — but the two halves of the gate cover **different scopes**, and
+conflating them would over-claim:
 
-> `rfn-mind`'s `laplacian.mind` + `field_step.mind`, re-expressed in the field
-> calculus, must lower to output **byte-identical** to the current hand-written
-> Q16.16 index-arithmetic implementation.
+**Gate 1 — lowering parity (covers both files).**
+
+> `laplacian.mind` and `field_step.mind`, re-expressed in the field calculus, must
+> lower to output **byte-identical** to the current hand-written Q16.16
+> index-arithmetic implementation.
 
 This mirrors RFC 0012 §7.2's IR-text byte-identity gate (`A @ B` ≡
 `tensor.matmul(A, B)`) and RFC 0024's requirement that a collapsed loop equal its
 un-collapsed form. A field calculus that changes results is not an abstraction, it is
-a rewrite.
+a rewrite. This gate applies to the *whole* reference workload, scaling and
+normalization included, because it is a statement about lowering — not about proofs.
+
+**Gate 2 — prove-or-refuse (covers only the ring-closed subset).**
+
+> `laplacian(F)` under `Periodic` boundary must compile with a `#[conserves(zero_sum)]`
+> receipt that `mindc verify` independently re-derives; and the scaled/normalized
+> `field_step` forms must be **refused** with `E2305`.
+
+Per §5.4, the Q16.16 rescale (`>>16`) and the normalization step leave the ring, so no
+v1 obligation covers them. Both halves of Gate 2 are load-bearing: the refusal is
+tested as rigorously as the acceptance, because a prove-or-refuse feature that never
+refuses has not been shown to be sound — it has only been shown to be permissive.
+
+**Additive-receipt caveat.** Gate 1 compares the *computational lowering* — the mic@3
+bytes of the function body and its execution result. It is not a comparison of whole
+artifacts: emitting an `evidence_chain.field.*` receipt necessarily changes the
+artifact's MAP epilogue, so a whole-artifact byte comparison would be self-defeating
+(it would forbid the receipt this RFC exists to add). The invariant is: same
+computation bytes, same result, plus an additive receipt that `mindc verify`
+re-derives.
 
 **Ordering caveat (honest):** `rfn-mind` does not currently compile end-to-end under
 public `mindc` (`forensic_audit.md:219`). That blocker (its "E0") must close before
@@ -387,9 +509,9 @@ this sits behind it. Nothing here should be read as competing for that slot.
 | Phase | Deliverable | Gate |
 |---|---|---|
 | A | `domain` + `field` types. Compile-time only: no new MLIR, no new IR node. `E2310`/`E2311` diagnostics. | Existing suite byte-identical; bootstrap oracle unchanged. Mirrors RFC 0012 Phase A exactly. |
-| B | `laplacian` as a semantic operator, lowering to the stencil the hand-written form produces. | **Byte-identity** against `rfn-mind`'s `laplacian.mind` (§7). Requires B.2 shape-dim threading (§9.1). |
+| B | `laplacian` as a semantic operator, lowering to the stencil the hand-written form produces. | **Gate 1** lowering parity against `rfn-mind`'s `laplacian.mind` + `field_step.mind` (§7). Requires B.2 shape-dim threading (§9.1). |
 | C | `grad` + `div`. | Byte-identity against hand-written equivalents. |
-| D | `#[conserves(zero_sum)]` + `#[conserves(sum)]`, prover, `E23xx`, `evidence_chain.field.*` receipt. | Prove-or-refuse verified both ways: provable cases compile, and each `E23xx` has a test that *fails to compile*. `mindc verify` re-derives every receipt. |
+| D | `#[conserves(zero_sum)]` + `#[conserves(sum)]`, prover, `E23xx`, `evidence_chain.field.*` receipt. | **Gate 2** prove-or-refuse verified both ways: the unscaled/ring-closed cases compile with a re-derivable receipt, and each `E23xx` — including the scaled `A .* laplacian(F)` form — has a test that *fails to compile*. Blocked on open question 4 (§11). |
 
 Phase D is the phase that matters. Phases A–C are the scaffolding that makes it
 expressible; D is the part no other compiler can copy.
@@ -411,3 +533,34 @@ expressible; D is the part no other compiler can copy.
    conserve sum, `g(f(x))` does too — but proving that requires interprocedural
    reasoning. Proposed resolution: v1 is intraprocedural only; composition is
    explicitly deferred rather than silently assumed.
+
+4. **How much must `mindc verify` see in order to re-derive the receipt — and does
+   that force `domain` to stop being purely compile-time metadata?** This is the
+   load-bearing open question and it is deliberately not answered here.
+
+   §4 states `domain` is compile-time-only semantic metadata that erases before
+   lowering. §5.5 requires `mindc verify` to *independently re-derive* the
+   conservation proof rather than trust the receipt. Those two statements are in
+   tension: re-deriving `sum(laplacian(F)) == 0` requires knowing the boundary rule
+   (`Periodic`), the stencil's coefficient structure, and that the operation is
+   ring-closed. If the verifier needs that, it must be *in the artifact*.
+
+   Two possible resolutions, with very different costs:
+
+   - **(a) Receipt-carried.** The `evidence_chain.field.*` MAP entry names a
+     `theorem_id` + `stencil_id` + boundary rule + ring, and the verifier re-derives a
+     *closed-form* theorem from those tokens plus the mic@3 hash of the proven
+     function body. `domain` stays erased; only the proof's premises are recorded.
+     This is additive MAP data and does **not** create a new IR concept — consistent
+     with §6's "no new IR."
+
+   - **(b) IR-carried.** The verifier needs to re-walk the field's structure in the
+     IR, which means domain topology must survive lowering as first-class IR data.
+     This **would** contradict both §4 and §6 and would make this a much larger RFC.
+
+   (a) is strongly preferred and is what §5.5's receipt contents are written toward.
+   But (a) is only sound if the enumerated `stencil_id` set is closed and each entry's
+   theorem is fixed at a known version — i.e. the verifier re-derives *a specific
+   named theorem*, not an arbitrary proof. Confirming that is a prerequisite for
+   Phase D, not an implementation detail to be discovered during it. If (a) turns out
+   to be insufficient, this RFC's framing needs revision before Phase D starts.
