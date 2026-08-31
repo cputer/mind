@@ -115,12 +115,24 @@ pub struct TestRunSummary {
     pub passed: u32,
     pub failed: u32,
     pub results: Vec<TestResult>,
+    /// Test files that could not be PARSED, so contributed no tests.
+    ///
+    /// Counted, not merely warned about. A file in a test suite that does not parse
+    /// is a broken test, never a skip -- and the warning below already said so
+    /// ("skipping it SILENTLY turns a real breakage into a misleading green") while
+    /// the run still exited 0 whenever any OTHER file yielded a passing test. The
+    /// diagnosis was written and the enforcement was not.
+    pub unparsed_files: u32,
 }
 
 impl TestRunSummary {
-    /// `true` when all discovered tests passed (or no tests were found).
+    /// `true` when all discovered tests passed AND every test file parsed.
+    ///
+    /// An unparsed file is a failure of the suite even though it produced no test
+    /// result to fail: the tests inside it did not run, and "did not run" must never
+    /// read as "passed".
     pub fn all_passed(&self) -> bool {
-        self.failed == 0
+        self.failed == 0 && self.unparsed_files == 0
     }
 }
 
@@ -181,6 +193,7 @@ pub fn run_tests(opts: &TestOptions) -> Result<TestRunSummary, TestError> {
             eprintln!("  {}: {msg}", path.display());
         }
     }
+    let unparsed_files = parse_failures.len() as u32;
 
     // 3. Apply filter.
     if !opts.filter.is_empty() {
@@ -207,7 +220,10 @@ pub fn run_tests(opts: &TestOptions) -> Result<TestRunSummary, TestError> {
     }
 
     // 6. Execute tests in parallel.
-    let summary = execute_tests(entries, opts)?;
+    let mut summary = execute_tests(entries, opts)?;
+    // Carried from THIS function: `execute_tests` never sees the discovery phase, so
+    // the count of files that failed to parse is attached here.
+    summary.unparsed_files = unparsed_files;
 
     // 7. Print summary.
     print_summary(&summary, opts);
@@ -414,6 +430,8 @@ fn execute_tests(entries: Vec<TestEntry>, opts: &TestOptions) -> Result<TestRunS
         passed,
         failed,
         results: all_results,
+        // Set by `run_tests`, which owns the discovery phase.
+        unparsed_files: 0,
     })
 }
 
@@ -595,6 +613,32 @@ fn resolve_std_import_fns(module: &crate::ast::Module) -> Result<Vec<Node>, Stri
 ///
 /// Non-assert nodes that hold `let` bindings are evaluated first so that later
 /// asserts can reference the bound names. This mirrors the first-pass env.
+/// True when `stmts` contain an `assert` anywhere beneath them.
+///
+/// Used to decide whether a construct this walker cannot faithfully evaluate -- a loop
+/// body, a match arm -- is hiding an assertion. Finding one there means the test's
+/// verification did not happen, which is a failure to VERIFY, never a pass.
+fn contains_assert(stmts: &[Node]) -> bool {
+    stmts.iter().any(|s| match s {
+        Node::Assert { .. } => true,
+        Node::Block { stmts: inner, .. } => contains_assert(inner),
+        Node::For { body, .. } | Node::While { body, .. } | Node::Region { body, .. } => {
+            contains_assert(body)
+        }
+        Node::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            contains_assert(then_branch) || else_branch.as_ref().is_some_and(|e| contains_assert(e))
+        }
+        Node::Match { arms, .. } => arms
+            .iter()
+            .any(|a| contains_assert(std::slice::from_ref(&a.body))),
+        _ => false,
+    })
+}
+
 fn eval_asserts_in_stmts(
     stmts: &[Node],
     parent_env: &std::collections::HashMap<String, i64>,
@@ -670,6 +714,33 @@ fn eval_asserts_in_stmts(
                         eval_asserts_in_stmts(then_branch, parent_env)?;
                     }
                     Err(_) => {}
+                }
+            }
+            // A loop body or match arm this walker cannot execute. These had NO arm,
+            // so `_ => {}` skipped the whole body and a test whose assertion fails
+            // inside a `for` reported PASS with that assertion never evaluated.
+            // Descending and evaluating with the loop variable unbound would only move
+            // the silence one level down -- an eval error is ignored below.
+            //
+            // "Cannot verify" must not read as "verified". Refuse, and say why.
+            Node::For { body, .. } | Node::While { body, .. } => {
+                if contains_assert(body) {
+                    return Err("assertion inside a loop body: this runner evaluates \
+                                assertions statically and cannot execute loop iterations, \
+                                so the assertion was never checked. Refusing to report a \
+                                pass for a test whose verification did not run."
+                        .to_string());
+                }
+            }
+            Node::Match { arms, .. } => {
+                if arms
+                    .iter()
+                    .any(|a| contains_assert(std::slice::from_ref(&a.body)))
+                {
+                    return Err("assertion inside a match arm: this runner cannot select \
+                                the live arm, so the assertion was never checked. Refusing \
+                                to report a pass for a test whose verification did not run."
+                        .to_string());
                 }
             }
             Node::Block { stmts: inner, .. } => {
