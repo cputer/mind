@@ -554,6 +554,42 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
 
     let build_result = build_result.map_err(|e| BuildError::Failed(format!("{e}")))?;
 
+    // ISSUE #244 — `mindc build` was not fail-closed.
+    //
+    // `compile_single_source` treats EVERY diagnostic except E2002 as non-fatal: it
+    // warns, embeds the source for the runtime JIT, and returns Ok(false). It reports
+    // that through `entry_native_compiled` / `fallback_sources`, whose own doc-comments
+    // say `run_project` fails loud on them -- and it does. `build` never looked, so the
+    // flags were computed and dropped, and the command exited 0.
+    //
+    // Measured: `fn broken( -> {` (which `mindc check` rejects with E1001) produced a
+    // 41 KB ELF and exit 0. A `[WARN]` was printed, so it was not silent -- but any CI
+    // step that reads the exit code passed on source that does not compile, which is
+    // the whole hazard. The emitted artifact is a launcher deferring to mind-runtime,
+    // and when the syntax exceeds that runtime's parser scope it prints a notice and
+    // exits 0 too -- a false green all the way down.
+    //
+    // Same two checks `run_project` already performs, in the same order.
+    if !build_result.entry_native_compiled {
+        return Err(BuildError::Failed(
+            "entry module was not natively compiled (embedded as a runtime-JIT fallback \
+             -- see the [WARN] above); refusing to report a successful build for an \
+             artifact that is a launcher deferring to the installed mind-runtime, which \
+             may exit 0 without executing your program"
+                .to_string(),
+        ));
+    }
+    if !build_result.fallback_sources.is_empty() {
+        return Err(BuildError::Failed(format!(
+            "module(s) not natively compiled (embedded as a runtime-JIT fallback -- see \
+             the [WARN] above): {}. The natively-compiled entry can call into their \
+             launcher-stub symbols and reach the installed mind-runtime at execution, \
+             which may exit 0 without executing that code; refusing to report success \
+             rather than emit a false green",
+            build_result.fallback_sources.join(", ")
+        )));
+    }
+
     // Move/rename the legacy output to the requested artifact_path if needed.
     let final_path = if artifact_path != build_result.output_path {
         if let Some(parent) = artifact_path.parent() {
