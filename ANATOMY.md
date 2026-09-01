@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1426 | **Est. tokens:** ~2,690,452
-**Generated:** 2026-08-31 11:21 UTC
+**Files:** 1428 | **Est. tokens:** ~2,693,043
+**Generated:** 2026-09-01 03:42 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~27,239 |
+| `./` | 33 | ~27,430 |
 | `agents/` | 1 | ~436 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
@@ -119,12 +119,12 @@
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
-| `src/test/` | 1 | ~8,233 |
+| `src/test/` | 1 | ~8,383 |
 | `src/type_checker/` | 1 | ~15,151 |
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 333 | ~576,920 |
+| `tests/` | 334 | ~579,032 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -170,7 +170,7 @@
 | `tests/mindcraft/lint/shadowing/` | 2 | ~87 |
 | `tests/mindcraft/lint/unused_import/` | 2 | ~99 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
-| `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2,832 |
+| `tests/mindfuzz_cross_substrate/staged/` | 16 | ~2,970 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 148 | ~9,289 |
 | `tests/selfhost_gaps/never_wrong/` | 9 | ~184 |
@@ -198,7 +198,7 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `bounties.md` (~888 tok, large) — MIND Bounty Board
 - `build.rs` (~234 tok, medium) — Copyright 2025 STARGA Inc.
-- `Cargo.toml` (~2664 tok, huge) — [package]
+- `Cargo.toml` (~2855 tok, huge) — [package]
 - `clippy.toml` (~25 tok, tiny)
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
@@ -614,7 +614,7 @@
 - `param_types_smoke.py` (~1273 tok, large)
 - `_ref_add.note` (~16 tok, tiny) — 6fa59a74687e6bac38c983655d4d93ab1873299f130f68cbe481cf92041f6610
 - `_ref_if_ret.note` (~16 tok, tiny) — 3fdc70390e9e12d8030552d11b2194078e8579fbcfac19b14d1beed77174cb07
-- `_ref_main.note` (~16 tok, tiny) — 2b9ae02888cf3ccc66c8eb1f175536f763abe685dcfbcb45137292bd9e3a8c54
+- `_ref_main.note` (~16 tok, tiny) — 5c09107874e19b9fd1063f23561d7635b1bf622fa16b3bca50dca3e3de4138a9
 - `ref_netverify.py` (~1473 tok, large) — # Canonical independent net-verify harness for i64 references in the native-ELF backend.
 - `_ref_recursion.note` (~16 tok, tiny) — 6d125a946243b0550700d9aa6bc2058b51a3b8bf6e536a8b0b3f545d79b7346f
 - `_ref_struct_field.note` (~16 tok, tiny) — 2f7f2ea32ee47138e1b0162bd51f418b4e5005b4569054f5f3c392ebd2258d96
@@ -1178,7 +1178,7 @@
 - `target.rs` (~5031 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/test/`
 
-- `mod.rs` (~8233 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~8383 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
 - `resolve.rs` (~15151 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1458,6 +1458,7 @@
 - `f64_call_arg_run.rs` (~1028 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1047 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1122 tok, large) — Copyright 2025 STARGA Inc.
+- `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 ### `tests/fixtures/`
 
@@ -1477,7 +1478,7 @@
 ### `tests/`
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_idempotence.rs` (~3344 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_idempotence.rs` (~3658 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_ir_preservation.rs` (~2030 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1486,7 +1487,7 @@
 - `for_continue_step_injection.rs` (~1302 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~859 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1442 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~10691 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~10959 tok, huge) — Copyright 2025 STARGA Inc.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3678 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1539,7 +1540,7 @@
 - `match_arm_stmt_run.rs` (~846 tok, large) — Copyright 2025 STARGA Inc.
 - `match_fallback_fail_closed.rs` (~1750 tok, huge) — Copyright 2025 STARGA Inc.
 - `match_scrutinee_once.rs` (~1521 tok, huge) — Copyright 2025 STARGA Inc.
-- `merge_kind_order_symmetry.rs` (~961 tok, large) — A merge's signedness must not depend on ARM ORDER.
+- `merge_kind_order_symmetry.rs` (~994 tok, large) — A merge's signedness must not depend on ARM ORDER.
 - `method_call.rs` (~397 tok, medium) — Copyright 2025 STARGA Inc.
 - `mic3_array_store_roundtrip.rs` (~1054 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_break_continue_string_roundtrip.rs` (~1668 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1647,9 +1648,10 @@
 - `fuzz_oracle_failure_seed_deadbeef_prog006.mind` (~157 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 ### `tests/`
 
-- `mindfuzz_cross_substrate.rs` (~15224 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindfuzz_cross_substrate.rs` (~15518 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_cross_substrate/staged/`
 
+- `fuzz_repro_seed_deadbeef_prog000.mind` (~138 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 - `manifest.tsv` (~357 tok, medium) — scalar_arith_step000	f	3735928559	64	5e39820a2a8325417e39057f19ba9bceec01bd2068c
 - `scalar_accum_step000.mind` (~154 tok, small) — MIND-Fuzz seed: scalar accumulator with a return-feeding literal.
 - `scalar_accum_step001.mind` (~162 tok, small) — MIND-Fuzz seed: scalar accumulator with a return-feeding literal.

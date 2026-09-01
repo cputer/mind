@@ -138,28 +138,37 @@ fn require_mindc() -> Option<PathBuf> {
 ///
 /// Fails STALE on any unreadable mtime: an oracle we cannot prove current is exactly
 /// the one that must not be trusted.
-fn is_stale(so: &Path) -> bool {
+fn is_stale(so: &Path, compiler: &Path) -> bool {
     let Ok(so_mtime) = fs::metadata(so).and_then(|m| m.modified()) else {
         return true;
     };
     let root = repo_root();
-    [
+    // The COMPILER is the caller's ACTUAL binary, not a hardcoded
+    // `target/release/mindc`. Hardcoding it forced an exception -- "an unreadable
+    // mindc is normal, so do not count it" -- which made the stated rule ("fails
+    // stale on any input it cannot read") FALSE for one of the four inputs, and left
+    // a real hole: if the compiler that produced the artifact cannot be compared
+    // against it, staleness is undecidable and the artifact must not be trusted.
+    // Using the path the caller already holds removes the exception rather than
+    // documenting it.
+    let src_stale = [
         "examples/mindc_mind/main.mind",
         "examples/mindc_mind/selfhost_driver.mind",
         "Mind.toml",
-        "target/release/mindc",
     ]
     .iter()
     .any(
         |rel| match fs::metadata(root.join(rel)).and_then(|m| m.modified()) {
             Ok(input_mtime) => input_mtime > so_mtime,
-            // An input whose mtime cannot be read cannot clear the artifact, so it
-            // counts as stale. The one exception is `target/release/mindc`: the caller
-            // passes its own binary path and a release build need not exist at all, so
-            // its absence is normal and must not by itself condemn the oracle.
-            Err(_) => !rel.ends_with("mindc"),
+            // Unreadable input -> undecidable -> stale. No exceptions.
+            Err(_) => true,
         },
-    )
+    );
+    let compiler_stale = match fs::metadata(compiler).and_then(|m| m.modified()) {
+        Ok(bin_mtime) => bin_mtime > so_mtime,
+        Err(_) => true,
+    };
+    src_stale || compiler_stale
 }
 
 fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
@@ -180,7 +189,7 @@ fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
         // the other way and is far worse — a bug newly introduced into main.mind is
         // INVISIBLE here, because the gate never loads the code under test. A gate
         // that cannot see the change it exists to gate is not a gate.
-        if committed.exists() && !is_stale(&committed) {
+        if committed.exists() && !is_stale(&committed, bin) {
             if let Ok(bytes) = fs::read(&committed) {
                 if bytes.starts_with(b"\x7fELF") {
                     return Some(committed);
@@ -1005,7 +1014,16 @@ fn g2_1_differential_coverage() {
     // silent green"); this one did not. The floor is deliberately a FLOOR, not an
     // equality: fixtures may legitimately move between categories, but the number
     // actually COMPARED must not collapse.
-    const MIN_MATCH: usize = 1;
+    // Anti-vacuity floor as a RATCHET, not a token 1.
+    //
+    // A floor of 1 sits ~95x below the measured value (97 MATCH), so a 98.9% collapse
+    // of the comparison -- exactly what happened when libtest swallowed the worker
+    // output and every fixture compared as EMPTY -- would still have satisfied it. A
+    // floor that cannot fire on the incident that motivated it is decoration.
+    //
+    // 90 is below the current 97 (room for fixtures legitimately moving to RUST_ONLY
+    // or MIND_UNSUPPORTED) while still failing loudly on a large-scale collapse.
+    const MIN_MATCH: usize = 90;
     assert!(
         n_match >= MIN_MATCH,
         "G2.1 GATE FAILED: only {n_match} fixture(s) MATCHED (floor {MIN_MATCH}) out of {} \

@@ -48,23 +48,26 @@ fn signed_sensitive_ops(mlir: &str) -> Vec<String> {
     found
 }
 
-fn assert_order_symmetric(ty: &str, op: &str, stem: &str) {
-    // The merged value flows DIRECTLY into the operation. It must NOT be bound through
-    // a `let v: u64 = ...` first: that annotation makes `mask_narrow_let` re-apply the
-    // __mind_conv_u64 tag to the merge RESULT, repairing the kind whatever the merge
-    // decided -- so the bound form passes on a BROKEN compiler and tests the annotation
-    // rather than the join. Measured: the first version of this test passed with the
-    // arm-pick bug deliberately reinstated. This form does not.
-    //   arm-pick:    if c {1} else {x} -> shrsi   |  if c {x} else {1} -> shrui
-    //   absorption:  both -> shrui
-    let lit_then = format!(
-        "pub fn f(c: i64, x: {ty}) -> i64 {{\n    return ((if c == 1 {{ 1 }} else {{ x }}) {op}) as i64;\n}}\n"
+fn assert_order_symmetric(ty: &str, other: &str, op: &str, stem: &str) {
+    // BOTH arms are typed PARAMETERS, never a literal.
+    //
+    // The u32 case originally paired `x: u32` against an untyped literal `1`. u32 lowers
+    // to MLIR "i32" and the literal to "i64", so the arms had DIFFERENT MLIR types, the
+    // same-type fast path never fired, and the join under test was never reached: the
+    // assertion held identically on a fixed and a broken compiler. Pairing i32 against
+    // u32 gives two arms that genuinely share "i32" and differ only in signedness, which
+    // is exactly the condition the absorption join exists for.
+    //
+    // Measured under the reverted arm-pick: i32-then -> shrsi, u32-then -> shrui. Under
+    // absorption: both shrui.
+    let a_then = format!(
+        "pub fn f(c: i64, a: {other}, b: {ty}) -> i64 {{\n    return ((if c == 1 {{ a }} else {{ b }}) {op}) as i64;\n}}\n"
     );
-    let lit_else = format!(
-        "pub fn f(c: i64, x: {ty}) -> i64 {{\n    return ((if c == 1 {{ x }} else {{ 1 }}) {op}) as i64;\n}}\n"
+    let b_then = format!(
+        "pub fn f(c: i64, a: {other}, b: {ty}) -> i64 {{\n    return ((if c == 1 {{ b }} else {{ a }}) {op}) as i64;\n}}\n"
     );
-    let a = signed_sensitive_ops(&emit_mlir(&lit_then, &format!("{stem}_then")));
-    let b = signed_sensitive_ops(&emit_mlir(&lit_else, &format!("{stem}_else")));
+    let a = signed_sensitive_ops(&emit_mlir(&a_then, &format!("{stem}_a")));
+    let b = signed_sensitive_ops(&emit_mlir(&b_then, &format!("{stem}_b")));
     assert!(
         !a.is_empty(),
         "{stem}: no signedness-sensitive op was emitted at all -- the fixture does not \
@@ -72,22 +75,22 @@ fn assert_order_symmetric(ty: &str, op: &str, stem: &str) {
     );
     assert_eq!(
         a, b,
-        "arm ORDER changed the emitted signed/unsigned ops for {ty}: \
-         literal-then={a:?} literal-else={b:?}. A merge kind must be a commutative join."
+        "arm ORDER changed the emitted signed/unsigned ops for {ty} vs {other}: \
+         {other}-first={a:?} {ty}-first={b:?}. A merge kind must be a commutative join."
     );
 }
 
 #[test]
 fn u64_merge_is_order_independent_shift() {
-    assert_order_symmetric("u64", ">> 63", "u64_shr");
+    assert_order_symmetric("u64", "i64", ">> 63", "u64_shr");
 }
 
 #[test]
 fn u64_merge_is_order_independent_div() {
-    assert_order_symmetric("u64", "/ 2", "u64_div");
+    assert_order_symmetric("u64", "i64", "/ 2", "u64_div");
 }
 
 #[test]
 fn u32_merge_is_order_independent_shift() {
-    assert_order_symmetric("u32", ">> 31", "u32_shr");
+    assert_order_symmetric("u32", "i32", ">> 3", "u32_shr");
 }

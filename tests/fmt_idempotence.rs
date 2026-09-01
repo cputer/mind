@@ -188,7 +188,29 @@ fn idempotence_stdlib_toml() {
 /// Ratchet floor for `idempotence_examples`: the number of files under examples/
 /// that round-trip through the formatter today. Raising it is free; lowering it is a
 /// deliberate, explained change.
-const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 52; // measured 2026-08-31: 52 pass, 8 skip, 60 total
+// Ratchet floor for `idempotence_examples`, measured in a CLEAN `git worktree`.
+//
+// THE FLOOR IS FEATURE-DEPENDENT and must be, because how many examples PARSE depends on
+// which language surface is compiled in:
+//
+//   --features std-surface …    50 passed,  8 skipped, 58 total
+//   --no-default-features       31 passed, 27 skipped, 58 total   (ci.yml runs this)
+//
+// The 27 extra skips without `std-surface` are not a regression: those files use
+// std-surface constructs that a default build genuinely cannot parse.
+//
+// Two calibration mistakes are baked into this comment so they are not repeated:
+//   1. The first value (52) was measured in a working tree carrying two UNTRACKED fuzzer
+//      artifacts under examples/mindc_mind/mindfuzz_self_host_staged/, inflating the
+//      corpus 58 -> 60. Unreachable from any fresh clone. Calibrate ONLY from a clean
+//      worktree — `git worktree add --detach /tmp/x HEAD`.
+//   2. The second value (50) was measured with the FULL feature set only, and would still
+//      have redded the `--no-default-features` tier at 31. Calibrate EVERY configuration
+//      CI builds, not the one that happens to be in your shell history.
+#[cfg(feature = "std-surface")]
+const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 50;
+#[cfg(not(feature = "std-surface"))]
+const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 31;
 
 #[test]
 fn idempotence_examples() {

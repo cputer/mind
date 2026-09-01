@@ -1011,7 +1011,29 @@ fn toolchain_ready() -> bool {
                  differential determinism fuzzer cannot run. Install the MLIR \
                  toolchain (mlir-opt / mlir-translate / clang) on this runner."
             );
-            println!("mindfuzz_cross_substrate: {tool} not on PATH; skipping");
+            // Emit the gate's OWN skip protocol, not an ad-hoc line.
+            //
+            // scripts/exec_semantics_gate.sh grants environmental tolerance on evidence:
+            // a target's own `SDLC-GATE <name> ran=0` marker. This printed a bespoke
+            // sentence instead, so the tier could not tell "the MLIR toolchain is absent"
+            // from "this fuzzer failed", and the ENV_TOLERATED entry naming this target
+            // had nothing to match against. A skip that the runner cannot parse is, to the
+            // runner, indistinguishable from silence.
+            //
+            // Written with a direct stdout write: libtest DISCARDS println! for a PASSING
+            // test unless --show-output, and this test passes when it skips -- so the
+            // marker would be swallowed exactly when it matters.
+            {
+                use std::io::Write as _;
+                let _ = std::io::stdout().write_all(
+                    format!(
+                        "SDLC-GATE mindfuzz_cross_substrate ran=0 fail=0 SKIPPED \
+                         ({tool} not on PATH)\n"
+                    )
+                    .as_bytes(),
+                );
+                let _ = std::io::stdout().flush();
+            }
             return false;
         }
     }

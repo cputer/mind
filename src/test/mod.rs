@@ -777,6 +777,15 @@ fn eval_asserts_in_stmts(
                         .to_string());
                 }
             }
+            // A `region { .. }` executes ONCE, like a block -- it is not a loop, so its
+            // statements can be walked directly. It had no arm at all, so `_ => {}` skipped
+            // the body and `region { assert 0 == 1 }` reported ok / exit 0. The earlier fix
+            // covered For/While/Match and missed this one; `contains_assert` already knew
+            // about Region, which is what made the omission invisible.
+            #[cfg(feature = "std-surface")]
+            Node::Region { body, .. } => {
+                eval_asserts_in_stmts(body, parent_env)?;
+            }
             Node::Block { stmts: inner, .. } => {
                 eval_asserts_in_stmts(inner, parent_env)?;
             }

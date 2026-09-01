@@ -5737,13 +5737,27 @@ pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
         }
     }
     if n == 10 {
-        // "protection"
+        // "protection" -- ALL TEN bytes. The first version compared only the first
+        // five (p,r,o,t,e) plus the length, so every 10-byte attribute beginning
+        // "prote" was admitted as codegen-inert. An allowlist that matches a PREFIX
+        // is not an allowlist; the whole point of this arm is to fail CLOSED on an
+        // attribute nobody has proven inert.
         if load_byte(buf, lo) == 112 {
             if load_byte(buf, lo + 1) == 114 {
                 if load_byte(buf, lo + 2) == 111 {
                     if load_byte(buf, lo + 3) == 116 {
                         if load_byte(buf, lo + 4) == 101 {
-                            return 1;
+                            if load_byte(buf, lo + 5) == 99 {
+                                if load_byte(buf, lo + 6) == 116 {
+                                    if load_byte(buf, lo + 7) == 105 {
+                                        if load_byte(buf, lo + 8) == 111 {
+                                            if load_byte(buf, lo + 9) == 110 {
+                                                return 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

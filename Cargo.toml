@@ -95,8 +95,20 @@ required-features = ["mlir-build"]
 # Order-symmetry of merge signedness. Needs std-surface: ScalarU64/ScalarU32 do not
 # exist without it, so the property under test is unreachable in a default build.
 [[test]]
+# Drives the `mindc` binary end-to-end, so it needs the full surface the guards live on.
+name = "fail_closed_cli_run"
+required-features = ["std-surface", "mlir-build"]
+
+[[test]]
 name = "merge_kind_order_symmetry"
-required-features = ["std-surface"]
+# BOTH features are load-bearing, and declaring only one broke the required `build_test`
+# job. `std-surface` is what makes ScalarU64/ScalarU32 exist at all -- without it the
+# property under test is unreachable. `mlir-build` is what makes the test's own harness
+# work: it shells out to `mindc --emit-mlir`, which errors with "MLIR emission requires
+# building with the 'mlir-lowering' or 'mlir-build' feature" (src/bin/mindc.rs:1793)
+# otherwise, so every fixture would fail to emit and the test would fail for a reason
+# that has nothing to do with merge signedness.
+required-features = ["std-surface", "mlir-build"]
 
 [[bench]]
 name = "compiler"
