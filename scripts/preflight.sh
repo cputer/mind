@@ -264,20 +264,6 @@ if [ "${1:-}" = "--full" ]; then
     bad "scripts/exec_semantics_gate.sh MISSING — CI runs it; preflight cannot verify it"
   fi
 
-  step "self-host LOOP byte-identity  [examples/mindc_mind/self_host_loop_smoke.py]"
-  # Banked lesson (reference_preflight_missing_loop_gate_reseed): a main.mind/std edit
-  # can pass the local keystone 7/7 and still RED CI on a stale frozen seed. The loop
-  # gate is the one that catches it. Any main.mind/std edit needs --reseed in the SAME change.
-  if [ -f examples/mindc_mind/self_host_loop_smoke.py ]; then
-    if lp_out=$(python3 examples/mindc_mind/self_host_loop_smoke.py 2>&1); then
-      echo "ok (stage1==stage2==stage3 byte-identical)"
-    else
-      bad "self-host LOOP gate FAILED (stale frozen seed? reseed in the SAME change):"; printf '%s\n' "$lp_out" | tail -5
-    fi
-  else
-    bad "self_host_loop_smoke.py MISSING — the loop gate cannot run; do NOT push"
-  fi
-
   step "whole-module mic@3 FLIP  [examples/mindc_mind/mic3_flip_smoke.py]"
   # Banked lesson (reference_mic3_flip_required_local_gate_2026_08_06): REQUIRED for ANY
   # lower.rs / emit / mic@3 change. Keystone cargo-test + oracle-parity do NOT cover the
@@ -350,9 +336,23 @@ python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness
   # exact drift that reddened main after #10 added main.mind helpers with no --reseed.
   # Fix on FAIL:  MINDC_SO=<built .so> python3 examples/mindc_mind/self_host_loop_smoke.py --reseed
   # then commit the re-blessed testdata/selfhost_loop/{stage1.elf,MANIFEST.txt}.
+  # ONE site, deliberately. preflight used to run this smoke TWICE — a duplicate
+  # "self-host LOOP byte-identity" step ran it earlier. That cost a second run of a
+  # minutes-long gate, kept a second copy of the hardcoded "--reseed in the SAME
+  # change" advice 028fcbf4 removed from this one, and had the two sites DISAGREE
+  # about exit 2 (the other FAILed on it; this one skips). Folding them removes all
+  # three at once. The absent-file guard is the deleted site's contribution.
+  if [ ! -f examples/mindc_mind/self_host_loop_smoke.py ]; then
+    bad "self_host_loop_smoke.py MISSING — the loop gate cannot run; do NOT push"
+  fi
   loop_rc=0; python3 examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
   if [ "$loop_rc" = 0 ]; then echo "ok (frozen seed reproduces current source)"
-  elif [ "$loop_rc" = 2 ]; then echo "skip (frozen bootstrap fixture missing — BLOCKED)"
+  elif [ "$loop_rc" = 2 ]; then
+  # exit 2 = BLOCKED, "could not evaluate". The smoke uses it for more than one
+  # cause (absent frozen fixture here; a refused fallback oracle under --reseed),
+  # so print ITS reason rather than asserting one this script cannot know.
+    echo "skip (BLOCKED — the gate could not evaluate; its reason:)"
+    grep -E "BLOCKED" /tmp/preflight-loop.out | tail -2
   else
     # Do NOT prescribe --reseed here. This branch fires for EVERY non-zero exit, but
     # only one of the causes is drift; another is "no fresh oracle could be built"

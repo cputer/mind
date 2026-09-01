@@ -187,12 +187,19 @@ ENV_TOLERATED_exec=(g2_differential_mlir)
 #
 # This is not a weakening: g2 is a real gate in exec, where it is now also exempt from
 # crash-tolerance (a MIND_CRASH escapes tolerance and fails the tier). Here it records
-# an honest environmental skip. The correct long-term fix is a [[test]]
-# required-features = ["mlir-build"] entry in Cargo.toml so cargo does not build it in
-# tiers that cannot run it — reported rather than applied, since changing the test's
-# build shape is a Cargo-level change with its own blast radius.
-ENV_TOLERATED_lowering=(mindfuzz_cross_substrate g2_differential_mlir)
-ENV_TOLERATED_pkg=(mindfuzz_cross_substrate g2_differential_mlir)
+# an honest environmental skip.
+#
+# The long-term fix this comment used to only RECOMMEND has since been APPLIED: both
+# g2_differential_mlir and mindfuzz_cross_substrate now carry
+# `required-features = ["mlir-build"]` in Cargo.toml, so cargo does not build them in
+# tiers that cannot run them. Structural absence beats runtime tolerance.
+#
+# mindfuzz_cross_substrate is therefore no longer listed below for `lowering`/`pkg`:
+# it is not built there at all, so tolerating its failure was dead configuration
+# describing a target those tiers never see. g2 stays listed for `exec`, where it IS
+# built and can fail for the documented environmental reason.
+ENV_TOLERATED_lowering=(g2_differential_mlir)
+ENV_TOLERATED_pkg=(g2_differential_mlir)
 
 # ---------------------------------------------------------------------------
 print_only=0
