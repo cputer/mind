@@ -267,7 +267,34 @@ pub fn preset_for_mlir(mlir: &str) -> &'static str {
         || mlir.contains("tensor.empty")
         || mlir.contains("tensor.extract")
         || (mlir.contains("dense<") && mlir.contains(": tensor<"));
-    if value_tensor { "arith-linalg" } else { "core" }
+    // A tensor-typed SIGNATURE needs the same pipeline even with no tensor OP in
+    // the body. `param_non_i64` (src/eval/abi_gate.rs:107) admits a static-shape
+    // tensor parameter precisely because bufferization converts the boundary to a
+    // memref — but that only happens under `arith-linalg`, whose
+    // `one-shot-bufferize{bufferize-function-boundaries=true}` does the conversion.
+    //
+    // Keying only on operations missed the case where the tensor is a parameter
+    // the body never touches. Measured: `pub fn s(x: tensor<f32[2]>) -> i64 {
+    // return 7 }` emitted `func.func @s(%arg0: tensor<2xf32>) -> i64`, selected
+    // `core`, and died in mlir-translate with "cannot be converted to LLVM IR:
+    // missing `LLVMTranslationDialectInterface` registration" — a raw subprocess
+    // error for a construct the MIND-level ABI gate had deliberately admitted.
+    // The same function WITH a use (`return x[0]`) emits `tensor.extract`, hits
+    // this predicate, and builds fine, which is what made the gap shape-dependent.
+    //
+    // Byte-identity safe: `tensor<` appears in a `func.func` line only when a
+    // signature genuinely carries one. Scalar programs and the `__mind_blas`
+    // Option-C i64 ABI kernels pass opaque i64 handles, so no signature of theirs
+    // matches and they stay on `core` — the keystone bootstrap and the
+    // cross-substrate BLAS workloads select exactly the pipeline they did before.
+    let tensor_in_signature = mlir
+        .lines()
+        .any(|l| l.contains("func.func") && l.contains("tensor<"));
+    if value_tensor || tensor_in_signature {
+        "arith-linalg"
+    } else {
+        "core"
+    }
 }
 
 #[cfg(feature = "mlir-build")]

@@ -103,9 +103,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 # are the payload of the finding, not collateral from it.
 # deferred: each needs its own fix; none is closed by this gate.
 #
-#   tensor_param_fail_loud_run   — same class: `tensor_param_emit_shared_fails_loud`
-#       pins a superseded diagnostic string; the rejection itself still happens
-#       (`lower::non_i64_return`).
 #   std_surface_intrinsics       — `each_intrinsic_lowers_to_func_call_with_private_decl`
 #       expects `func.call @__mind_load_i64(%`; the intrinsic now lowers inline to
 #       `llvm.inttoptr` + `llvm.load`. Stale shape expectation, not a miscompile.
@@ -151,7 +148,6 @@ CRITICAL_pkg=(
 )
 
 QUARANTINE_exec=(
-  tensor_param_fail_loud_run
   std_surface_net_fs_process
 )
 QUARANTINE_lowering=(std_surface_intrinsics)

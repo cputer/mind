@@ -93,14 +93,83 @@ fn tensor_param_emit_shared_fails_loud() {
         !so_written,
         "track15: no `.so` may be written when lowering is refused (would be a silent miscompile)\n{output}"
     );
+    // The tensor RETURN is what is refused now. The two assertions above — the
+    // ones that make this a fail-loud control (non-zero exit, no `.so` written)
+    // — are unchanged and still pass.
+    //
+    // This previously required `lower::non_i64_param`. Commit f9f68e5b ("allow
+    // static-shape tensor param") deliberately split `param_non_i64` out of
+    // `sig_non_i64` (src/eval/abi_gate.rs:107) so a STATIC-SHAPE tensor PARAMETER
+    // lowers through a real memref C ABI. For this fixture the parameter
+    // therefore no longer gates and the RETURN does, so the old assertion pinned
+    // a rejection the compiler had intentionally stopped making.
+    //
+    // Both spellings are accepted rather than only the new one, so a future
+    // change that re-gates the parameter cannot red this control. The shared
+    // prose is asserted SEPARATELY below, so this cannot be satisfied by an
+    // unrelated error that merely happens to be a lowering refusal.
     assert!(
-        output.contains("lower::non_i64_param") && output.contains("tensor-typed parameter/return"),
-        "track15: expected the non_i64_param tensor diagnostic, got:\n{output}"
+        output.contains("lower::non_i64_return") || output.contains("lower::non_i64_param"),
+        "track15: expected a tensor ABI-boundary refusal, got:\n{output}"
+    );
+    assert!(
+        output.contains("tensor-typed parameter/return"),
+        "track15: the refusal must name the tensor construct, got:\n{output}"
     );
     // And the return type is flagged too.
     assert!(
         output.contains("lower::non_i64_return"),
         "track15: expected the non_i64_return tensor diagnostic, got:\n{output}"
+    );
+}
+
+/// A static-shape tensor PARAMETER must lower even when the body never TOUCHES it.
+///
+/// `param_non_i64` (src/eval/abi_gate.rs:107) deliberately admits a static-shape
+/// tensor parameter, on the stated grounds that bufferization converts the
+/// boundary to a memref. That conversion only happens under the `arith-linalg`
+/// preset, and `preset_for_mlir` (src/eval/mlir_build.rs) chose it by scanning the
+/// emitted MLIR for tensor OPERATIONS — `linalg.*`, `tensor.empty`,
+/// `tensor.extract`, a dense tensor constant. A signature carrying `tensor<..>`
+/// with no tensor op in the body matched none of them, fell to the scalar `core`
+/// pipeline, and the tensor argument survived to translation:
+///
+///   error[build]: subprocess mlir-translate failed: cannot be converted to LLVM
+///   IR: missing `LLVMTranslationDialectInterface` registration
+///     func.func @s(%arg0: tensor<2xf32>) -> i64
+///
+/// A raw subprocess error for a construct the MIND-level ABI gate had just
+/// admitted. The gap was SHAPE-DEPENDENT, which is why it survived: the same
+/// function WITH a use emits `tensor.extract`, matches the old predicate, and
+/// builds fine. Both shapes are asserted here so a future predicate that only
+/// notices operations reds immediately.
+#[test]
+fn tensor_param_lowers_whether_or_not_the_body_uses_it() {
+    let mindc = mindc_bin();
+    if !mindc.exists() {
+        println!("track15: mindc not found; skipping");
+        return;
+    }
+
+    // UNUSED — the shape that regressed.
+    let (ok, so_written, output) = emit_shared(
+        "pub fn s(x: tensor<f32[2]>) -> i64 {\n    return 7\n}\n",
+        "param_unused",
+    );
+    assert!(
+        ok && so_written,
+        "track15: a static-shape tensor param must lower even with no tensor op in \
+         the body — the ABI gate admits it, so the pipeline must handle it:\n{output}"
+    );
+
+    // USED — must not regress while fixing the unused case.
+    let (ok2, so2, out2) = emit_shared(
+        "pub fn u(x: tensor<f32[2]>) -> f32 {\n    return x[0]\n}\n",
+        "param_used",
+    );
+    assert!(
+        ok2 && so2,
+        "track15: a USED static-shape tensor param must still lower:\n{out2}"
     );
 }
 
