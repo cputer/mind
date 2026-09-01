@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1431 | **Est. tokens:** ~2,702,124
-**Generated:** 2026-09-01 14:51 UTC
+**Files:** 1432 | **Est. tokens:** ~2,704,873
+**Generated:** 2026-09-01 15:21 UTC
 
 ## Token Budget Guide
 
@@ -103,7 +103,7 @@
 | `src/exec/` | 3 | ~4,592 |
 | `src/ffi/` | 3 | ~5,541 |
 | `src/fmt/` | 3 | ~21,737 |
-| `src/ir/` | 6 | ~77,264 |
+| `src/ir/` | 6 | ~77,683 |
 | `src/ir/compact/` | 3 | ~15,292 |
 | `src/ir/compact/v2/` | 9 | ~45,364 |
 | `src/ir/compact/v3/` | 7 | ~63,340 |
@@ -115,7 +115,7 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 3 | ~12,079 |
+| `src/project/` | 4 | ~14,409 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -1088,7 +1088,7 @@
 - `slhdsa.rs` (~3201 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
-- `evidence.rs` (~12256 tok, huge) — Copyright 2025 STARGA Inc.
+- `evidence.rs` (~12675 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~17810 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1153,6 +1153,7 @@
 - `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
+- `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
 - `python.rs` (~1082 tok, large) — Copyright 2025 STARGA Inc.

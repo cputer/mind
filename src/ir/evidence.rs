@@ -375,12 +375,37 @@ fn collect_extern_symbols(instrs: &[crate::ir::Instr]) -> std::collections::BTre
 /// crosses the artifact boundary: an `extern "C"` symbol that the intrinsic
 /// registry does not explicitly classify as pure.
 ///
-/// `deferred:` the honest end state is RFC 0019 §3.3 decline-to-attest — an
-/// artifact calling an unclassified extern should refuse to make ANY determinism
-/// claim rather than claim nondeterminism. Reporting nondeterministic is the
-/// conservative direction (it can never forge a `deterministic` attestation), so
-/// it is the safe interim; upgrade path is a third `Unknown` verdict threaded
-/// through `ir_declares_deterministic` and the verify surface.
+/// Reporting nondeterministic is the conservative direction — it can never forge a
+/// `deterministic` attestation — so it is the safe behaviour, and today it is also
+/// the SPECIFIED one.
+///
+/// CITATION CORRECTED 2026-09-01. This comment previously read "the honest end
+/// state is RFC 0019 §3.3 decline-to-attest ... upgrade path is a third `Unknown`
+/// verdict". That is not what §3.3 says. Read it
+/// (docs/rfcs/0019-deterministic-agent-substrate.md, "3.3 Determinism claim"): the
+/// field is TWO-VALUED, and its "declines to attest" sentence PRESCRIBES emitting
+/// `"nondeterministic"` — "it declines to attest reproducibility rather than
+/// silently omitting the field". The marker pointed at a spec that mandates the
+/// behaviour it called a stopgap, so anyone implementing "the RFC" would have been
+/// writing net-new wire semantics under a false warrant.
+///
+/// `deferred:` a third verdict is still the right direction, but it is NOT free and
+/// NOT specified. Landing it requires, in order:
+///   1. amend RFC 0019 §3.3 to define the third value and the verifier's duty
+///      toward it — the spec change comes FIRST, not as cleanup;
+///   2. accept that `Unknown` ALONE re-creates the problem it solves. Measured:
+///      std/*.mind declares 484 distinct extern "C" symbols (221 LLVM-C, 209
+///      MLIR-C, 54 libc), of which ~430 are the self-hosted compiler's own
+///      bindings — so a bare third verdict makes every std-using artifact,
+///      including `mindc` itself, permanently unattestable. An honest shrug
+///      forever is not less crippling than a wrong label forever;
+///   3. carry the determinism contract on `ExternFnDecl` INTO mic@3, so the claim
+///      sits inside the trace_hash preimage and is hash-anchored, tamper-evident
+///      and re-derivable by `verify`. A contract that stops at the AST is
+///      worthless: `ast::ExternFn::is_unsafe` is exactly that, and std has ALREADY
+///      drifted 173 `safe fn` declarations (95 in std/llvm.mind, 78 in
+///      std/mlir.mind) away from its documented meaning. Do not build the second
+///      instance of that mistake.
 fn extern_call_is_unclassified(name: &str, externs: &std::collections::BTreeSet<String>) -> bool {
     externs.contains(name)
         && crate::intrinsics::intrinsic_determinism(name) != Some(crate::intrinsics::Det::Pure)
