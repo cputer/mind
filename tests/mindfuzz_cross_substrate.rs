@@ -1282,9 +1282,9 @@ fn mindfuzz_cross_substrate_determinism() {
                 // property of this BUILD, identical for every program that uses the
                 // construct -- not a divergence. Fail loudly, stage nothing.
                 panic!(
-                    "MIND-Fuzz: mic@3 compile refused a construct this BUILD of mindc \\
-                     does not support -- a build-configuration gap, not a divergence.\\n{e}\\n\\
-                     Rebuild with `--features mlir-build,std-surface,cross-module-imports`. \\
+                    "MIND-Fuzz: mic@3 compile refused a construct this BUILD of mindc \
+                     does not support -- a build-configuration gap, not a divergence.\n{e}\n\
+                     Rebuild with `--features mlir-build,std-surface,cross-module-imports`. \
                      No reproducer staged: identical for every program using it."
                 );
             }

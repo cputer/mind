@@ -47,11 +47,20 @@ USED_LEGACY_FALLBACK = False
 def _stamp() -> str:
     """Fingerprint of every input that affects the emitted self-host `.so`."""
     parts = []
+    # EVERY compile input, not just the entry. main.mind imports std.vec / std.map
+    # / std.string / std.io, so a std/ edit changes the emitted .so while leaving
+    # this stamp identical -- and _build_fresh() would then serve the CACHED .so as
+    # "fresh" with USED_LEGACY_FALLBACK False, reintroducing the stale-oracle bug
+    # class through the cache and defeating the very flag that guards it. The whole
+    # of std/ is stamped rather than the four current imports, so adding an import
+    # cannot silently narrow the fingerprint again.
+    std_inputs = sorted((_REPO / "std").glob("*.mind"))
     for p in (
         _MINDC,
         _HERE / "main.mind",
         _HERE / "selfhost_driver.mind",
         _REPO / "Mind.toml",
+        *std_inputs,
     ):
         try:
             st = p.stat()

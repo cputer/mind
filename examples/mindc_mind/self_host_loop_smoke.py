@@ -171,6 +171,23 @@ def do_reseed(combined: bytes, stdin_image: bytes, user_lo: int) -> int:
         print(f"BLOCKED: --reseed needs the Rust seed .so; {SO} not found "
               f"(set MINDC_SO to a driver-capable libmindc_mind.so).")
         return 2
+    # `SO.exists()` is NOT sufficient: the legacy in-tree artifact ALWAYS exists,
+    # so on a box whose mindc lacks `mlir-build` (it cannot emit a cdylib at all)
+    # this path would silently mint the frozen bootstrap from a months-old .so --
+    # freezing the WRONG compiler, which is the one catastrophe this gate exists
+    # to prevent. preflight advises `--reseed` on loop failure unconditionally,
+    # so an operator following that advice is exactly who lands here.
+    if _so_mod.USED_LEGACY_FALLBACK:
+        print(f"BLOCKED: --reseed refuses a FALLBACK oracle. {SO} is the legacy "
+              f"in-tree .so (a fresh `--emit=cdylib` was not possible -- see the "
+              f"WARN above), and its bytes may be arbitrarily old. Seeding the "
+              f"frozen bootstrap from it would freeze whatever compiler that "
+              f"artifact came from. Build a real oracle first:\n"
+              f"  cargo build --release --bin mindc --features "
+              f"mlir-build,std-surface,cross-module-imports\n"
+              f"  <that mindc> build --release --emit=cdylib --out=/tmp/oracle.so\n"
+              f"  MINDC_SO=/tmp/oracle.so python3 {__file__} --reseed")
+        return 2
     stage1 = stage0_emit(combined, user_lo)
     if not is_static_elf(stage1):
         print(f"  FAIL  .so emitted a non-ELF/empty image ({len(stage1)}B) — "
@@ -305,6 +322,18 @@ def main() -> int:
             print(f"  FAIL  [ORACLE] fresh Rust .so output ({hso}) != frozen bootstrap "
                   f"({hf}) — std/main.mind SOURCE drifted; re-freeze with "
                   f"`self_host_loop_smoke.py --reseed` (MINDC_SO set) in THIS change.")
+        return 1
+    if _so_mod.USED_LEGACY_FALLBACK:
+        # The mirror of the FAIL case, and the more dangerous half: stale bytes
+        # that HAPPEN to match an equally stale seed would otherwise print
+        # "fresh Rust .so ... no source drift" and exit 0 while the current
+        # source has genuinely drifted. The oracle leg cannot be satisfied by an
+        # oracle we could not build, so it does not get to pass.
+        print(f"  FAIL  [ORACLE] output matches the frozen bootstrap ({hso}), but "
+              f"this oracle is the LEGACY IN-TREE .so, NOT a fresh build (see the "
+              f"WARN above). A stale oracle agreeing with an equally stale seed "
+              f"proves nothing about current source. Rebuild mindc with "
+              f"`--features mlir-build` and re-run.")
         return 1
     print(f"  PASS  [ORACLE] fresh Rust .so output == frozen bootstrap "
           f"({hso}) — no source drift.")
