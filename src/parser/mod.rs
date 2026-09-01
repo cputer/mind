@@ -31,6 +31,31 @@ mod trivia;
 pub use trivia::{Trivia, TriviaKind, TriviaStream};
 use trivia::{TriviaCollector, strip_comments_with_trivia};
 
+/// Diagnostic for bitwise operators in a build without `std-surface`.
+///
+/// `--no-default-features` is documented in Cargo.toml as "the low-level-only
+/// subset". Bitwise is not in that subset: `ir::BinOp` has no BitAnd/BitOr/
+/// BitXor/Shl/Shr variants there. Refusing in the PARSER keeps the whole
+/// pipeline consistent and turns what was a compiler panic into a diagnostic
+/// carrying a source offset. Naming the operator also consumes the `BitOp`
+/// payload, which is otherwise dead in this cfg.
+#[cfg(not(feature = "std-surface"))]
+fn bitwise_needs_std_surface(op: crate::ast::BitOp, compound: bool) -> String {
+    let sym = match op {
+        crate::ast::BitOp::Or => "|",
+        crate::ast::BitOp::And => "&",
+        crate::ast::BitOp::Xor => "^",
+        crate::ast::BitOp::Shl => "<<",
+        crate::ast::BitOp::Shr => ">>",
+    };
+    let eq = if compound { "=" } else { "" };
+    format!(
+        "bitwise operator `{sym}{eq}` requires the `std-surface` feature; \
+         this build is the low-level-only subset, whose IR has no bitwise \
+         instruction to lower it to"
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub offset: usize,
@@ -1409,6 +1434,12 @@ impl<'a> P<'a> {
         // plain `=`; the LHS expression is cloned to become the binop's left
         // operand. Zero new IR — the desugared node lowers like any assignment.
         if let Some((cop, width)) = self.compound_assign_op(self.pos) {
+            // Same subset boundary as the Pratt arm above; checked before the
+            // cursor advances so the offset points at the operator itself.
+            #[cfg(not(feature = "std-surface"))]
+            if let CompoundOp::Bit(op) = cop {
+                return Err(self.err(bitwise_needs_std_surface(op, true)));
+            }
             self.pos += width;
             self.skip_ws_and_newlines();
             let rhs = self.parse_expr()?;
@@ -3542,12 +3573,22 @@ impl<'a> P<'a> {
                     right: Box::new(right),
                     span,
                 },
+                // Bitwise is a `std-surface` construct end-to-end: `ir::BinOp`'s
+                // BitAnd/BitOr/BitXor/Shl/Shr variants, the `lower_expr` arm and
+                // the MLIR emitter are all gated on it. The operator TABLE
+                // (`peek_binop`) is deliberately ungated so the diagnostic below
+                // can name the construct; without this arm the node reached
+                // `lower_expr`, matched nothing, and the fail-closed guard
+                // PANICKED (exit 101) on source as simple as `a | 1`.
+                #[cfg(feature = "std-surface")]
                 PrattOp::Bit(b) => Node::Bitwise {
                     op: b,
                     left: Box::new(left),
                     right: Box::new(right),
                     span,
                 },
+                #[cfg(not(feature = "std-surface"))]
+                PrattOp::Bit(b) => return Err(self.err(bitwise_needs_std_surface(b, false))),
                 PrattOp::AsCast => unreachable!(),
                 // RFC 0012 Phase B: tensor operators desugar in parse_pratt
                 // to their dedicated AST nodes. lower_expr handles both at

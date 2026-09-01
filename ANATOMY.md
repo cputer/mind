@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1428 | **Est. tokens:** ~2,693,043
-**Generated:** 2026-09-01 03:42 UTC
+**Files:** 1429 | **Est. tokens:** ~2,694,891
+**Generated:** 2026-09-01 08:27 UTC
 
 ## Token Budget Guide
 
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 334 | ~579,032 |
+| `tests/` | 335 | ~580,880 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -1264,6 +1264,7 @@
 - `bare_variant_ambiguity_run.rs` (~1944 tok, huge) — Copyright 2025 STARGA Inc.
 - `bare_variant_ctor_run.rs` (~1000 tok, large) — Copyright 2025 STARGA Inc.
 - `bimap_derive.rs` (~5697 tok, huge) — Copyright 2025 STARGA Inc.
+- `bitwise_no_panic_any_feature.rs` (~1848 tok, huge) — Copyright 2025 STARGA Inc.
 - `blas_smoke.rs` (~6266 tok, huge) — Copyright 2025 STARGA Inc.
 - `blas_vec_q16_smoke.rs` (~5639 tok, huge) — Copyright 2025 STARGA Inc.
 - `blas_vec_smoke.rs` (~2130 tok, huge) — Copyright 2025 STARGA Inc.

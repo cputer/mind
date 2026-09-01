@@ -1,0 +1,15 @@
+// ORACLE FAILURE — a stage did not complete; NOT a proven cross-substrate divergence (issue #72 fuzzer)
+// mic3 compile failed: mindc --emit-mic3 exit 101: 
+thread 'main' (4018727) panicked at src/eval/lower.rs:9880:13:
+lower_expr: no IR lowering for `Bitwise` in value position — refusing to emit a const-0 placeholder (that would be a silent miscompile). Add an explicit lowering arm or handle it upstream.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+// MIND-Fuzz #72 generated program — deterministic, seed 0xDEADBEEF.
+// One AST, three consumers: this source, the in-test oracle, the mic@3 VM.
+pub fn f(a: i64) -> i64 {
+    let v0: i64 = (a / (((a >> 1) << 3) | 1));
+    let v1: i64 = (a << 3);
+    let v2: i64 = if a <= v0 { ((a / (v0 | 1)) / ((v1 / (v1 | 1)) | 1)) } else { 8 };
+    let v3: i64 = 8;
+    return (v3 + v0);
+}
