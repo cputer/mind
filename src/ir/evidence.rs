@@ -740,6 +740,73 @@ mod tests {
     /// witness.
     // `Instr::ExternFnDecl` exists only under `std-surface`; without it a module
     // can declare no externs at all, so the split has nothing to express.
+    /// The split must NOT let genuine world-reading externs ship.
+    ///
+    /// Measured regression: after the veto/attestation split, a program calling
+    /// `clock_gettime` EMITTED with exit 0 — a wall-clock read passing a gate
+    /// whose own doc scopes it to "PRNG / wall-clock / stdin". Before the split
+    /// the unclassified-extern taint had been catching it BY ACCIDENT, so
+    /// removing the taint from the veto removed the only thing stopping it.
+    ///
+    /// The repair is classification, not re-widening the veto: the genuinely
+    /// world-reading libc symbols std declares are now `Det::World` rows, so the
+    /// HARD gate sees them for the right reason. This test pins both directions
+    /// at once — the pure ones must stay shippable, or the fix has re-crippled
+    /// the FFI surface it was written to un-cripple.
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn world_libc_externs_still_veto_shipping_but_pure_ones_do_not() {
+        fn module_calling(sym: &str) -> IRModule {
+            let mut m = IRModule::new();
+            m.instrs.push(Instr::ExternFnDecl {
+                name: sym.to_string(),
+                param_types: vec!["i64".to_string()],
+                ret_type: Some("i64".to_string()),
+                is_varargs: false,
+                vararg_hints: Vec::new(),
+                callconv: crate::ast::CallConv::C,
+            });
+            let a = m.fresh();
+            m.instrs.push(Instr::ConstI64(a, 0));
+            let d = m.fresh();
+            m.instrs.push(Instr::Call {
+                dst: d,
+                name: sym.to_string(),
+                args: vec![a],
+            });
+            m.instrs.push(Instr::Output(d));
+            m
+        }
+
+        // World: each reads a channel the artifact does not name. The SHIPPING
+        // veto must fire, or determinism has been degraded.
+        for sym in [
+            "clock_gettime",
+            "getenv",
+            "read",
+            "recv",
+            "stat",
+            "getsockname",
+            "syscall",
+        ] {
+            assert_eq!(
+                ir_first_hard_nondeterministic_call(&module_calling(sym)).as_deref(),
+                Some(sym),
+                "`{sym}` reads the world; the shipping veto MUST stop it"
+            );
+        }
+
+        // Pure: unblocking these is the entire point of the split. If they veto,
+        // the FFI surface is crippled again.
+        for sym in ["memset", "strlen"] {
+            assert_eq!(
+                ir_first_hard_nondeterministic_call(&module_calling(sym)),
+                None,
+                "`{sym}` is deterministic; vetoing it re-cripples the FFI surface"
+            );
+        }
+    }
+
     #[cfg(feature = "std-surface")]
     #[test]
     fn shipping_veto_and_attestation_split_on_unclassified_externs() {

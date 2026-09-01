@@ -272,6 +272,14 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     ("__mind_store_i8", 2, Det::Pure),
     ("__mind_store_i32", 2, Det::Pure),
     ("__mind_store_i16", 2, Det::Pure),
+    // issue #204 zeroed backing store. `std/vec.mind::vec_zeroed` forwards to it;
+    // runtime-support/mind_intrinsics.c gives it a STRONG definition that the
+    // `--emit-shared` path links into every cdylib, and `Instr::Call` lowers it as a
+    // plain `func.call` (it is not in `classify_intrinsic`'s inline set) exactly like
+    // `__mind_alloc`/`__mind_free`. Unregistered, the E2024 advisory fired and
+    // `pipeline.rs` turned that WARNING into a hard compile abort, so
+    // `mindc std/vec.mind --emit-shared` exited 1 and emitted no .so at all.
+    ("__mind_vec_zeroed", 1, Det::Pure),
     ("__mind_write", 4, Det::Pure),
     // `c.byte()` — the byte (low 8 bits) of a char/int receiver. The method-call
     // type-check validates it as a 1-arg call `byte(recv)`; lowering desugars it
@@ -351,6 +359,54 @@ const UNREGISTERED_WORLD_INTRINSICS: &[&str] = &[
     // repeats the warning over its `now_ns()` wrapper; the classifier now says the
     // same thing.
     "__mind_now_ns",
+    // ---- libc / POSIX symbols the shipped std declares and CALLS ----------
+    //
+    // These are World by the enum's own definition: each reads a channel the
+    // artifact does not name. They are listed because leaving them UNCLASSIFIED
+    // was measured to be a determinism REGRESSION, not merely a labelling gap.
+    //
+    // Before the shipping veto was split from the attestation label, an
+    // unclassified extern blocked artifact emission, so these were caught by
+    // accident. After the split the hard gate consults only genuine World rows,
+    // and a program calling `clock_gettime` EMITTED with exit 0 — a wall-clock
+    // read passing a gate whose own doc scopes it to "PRNG / wall-clock /
+    // stdin". Classifying them restores the block for real nondeterminism
+    // without re-blocking `memset`, which is the whole point of the split.
+    //
+    // Each row names the unnamed channel it reads:
+    "clock_gettime",     // wall / monotonic clock
+    "getenv",            // process environment
+    "getpid",            // OS-assigned process identity
+    "getcwd",            // process working directory
+    "isatty",            // terminal state of a descriptor
+    "sched_getaffinity", // host CPU topology
+    "syscall",           // arbitrary kernel entry — unbounded by construction
+    "mmap",              // kernel-chosen address, and file bytes when fd is real
+    // Descriptor / socket reads: the bytes come from outside the artifact. This
+    // is the discriminator the classification pass named -- `read(fd, buf, n)`
+    // writes through a caller pointer exactly as `memset` does, and the two
+    // differ in the SOURCE of the written bytes, never in the write itself.
+    "read",
+    "recv",
+    "recvfrom",
+    "readdir",
+    "accept",
+    "connect",
+    // `stat`/`lstat` fill a buffer that CONTAINS A TIMESTAMP: std/fs.mind's
+    // `filestat_mtime` reads `st_mtim` back out of it (fs.mind:214). A row
+    // claiming these read only "the filesystem" would omit the clock.
+    "stat",
+    "lstat",
+    // Kernel-assigned identifiers handed back through an out-buffer. The dead
+    // return is a trap: `let _ = getsockname(...)` at std/net.mind:105-117 still
+    // yields a kernel-chosen ephemeral port via the buffer.
+    "getsockname",
+    "socket",
+    "bind",
+    "listen",
+    "ioctl",   // device state
+    "fork",    // returns a pid, and diverges the process
+    "waitpid", // child scheduling outcome
 ];
 
 /// Non-registry `__mind_*` symbols that are pure with respect to declared inputs.
@@ -365,8 +421,7 @@ const UNREGISTERED_PURE_INTRINSICS: &[&str] = &[
     "__mind_argv",
     "__mind_open",
     // Aborts, bounds traps, allocator, generation-checked handles, region
-    // bookkeeping, zeroed-vector helper: effects and arena addresses, not
-    // varying results — the `__mind_load/store` `deferred:` above carries the
+    // bookkeeping: effects and arena addresses, not varying results — the `__mind_load/store` `deferred:` above carries the
     // full argument for the allocator family.
     "__mind_assert_fail",
     "__mind_calloc",
@@ -377,7 +432,6 @@ const UNREGISTERED_PURE_INTRINSICS: &[&str] = &[
     "__mind_region_enter",
     "__mind_region_exit",
     "__mind_region_track",
-    "__mind_vec_zeroed",
 ];
 
 /// Bare non-deterministic SOURCE-level builtin names — PRNG draws that read

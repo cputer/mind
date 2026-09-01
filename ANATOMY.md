@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1432 | **Est. tokens:** ~2,706,422
-**Generated:** 2026-09-01 15:26 UTC
+**Files:** 1432 | **Est. tokens:** ~2,707,856
+**Generated:** 2026-09-01 16:01 UTC
 
 ## Token Budget Guide
 
@@ -87,7 +87,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~33,530 |
+| `src/` | 9 | ~34,286 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -103,7 +103,7 @@
 | `src/exec/` | 3 | ~4,592 |
 | `src/ffi/` | 3 | ~5,541 |
 | `src/fmt/` | 3 | ~21,737 |
-| `src/ir/` | 6 | ~77,683 |
+| `src/ir/` | 6 | ~78,361 |
 | `src/ir/compact/` | 3 | ~15,292 |
 | `src/ir/compact/v2/` | 9 | ~45,364 |
 | `src/ir/compact/v3/` | 7 | ~63,340 |
@@ -1060,7 +1060,7 @@
 - `printer.rs` (~17270 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `intrinsics.rs` (~9364 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsics.rs` (~10120 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/`
 
 - `emit.rs` (~4693 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1088,7 +1088,7 @@
 - `slhdsa.rs` (~3201 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
-- `evidence.rs` (~12675 tok, huge) — Copyright 2025 STARGA Inc.
+- `evidence.rs` (~13353 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~17810 tok, huge) — Copyright 2025 STARGA Inc.
