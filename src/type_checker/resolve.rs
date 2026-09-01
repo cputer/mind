@@ -191,7 +191,7 @@ pub struct Unresolved {
 /// accepted through `call_resolvable`'s blanket `__mind_*` acceptance rather
 /// than a registered, arity-checked `STD_SURFACE_INTRINSICS` entry — today
 /// that's the native-ELF self-host-only intrinsics (`__mind_argc`/
-/// `__mind_argv`/`__mind_open`), but it also catches a genuinely-misspelled
+/// `__mind_argv`), but it also catches a genuinely-misspelled
 /// `__mind_*` name, which otherwise had zero diagnostic coverage at all.
 pub struct SelfHostOnlyCall {
     pub name: String,

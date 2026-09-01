@@ -106,6 +106,7 @@
 #if defined(_WIN32)
 #  include <stdio.h>      // SEEK_SET / SEEK_CUR (Unix gets these via <unistd.h>)
 #  include <io.h>
+#  include <fcntl.h>     // _O_RDONLY / _O_BINARY for MIND_OPEN_RDONLY
 #  include <intrin.h>     // __cpuid / __cpuidex (file-scope; not inside fn body)
 #  include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
@@ -130,12 +131,20 @@ static ssize_t mind_pwrite_emu(int fd, const void *buf, size_t count, mind_off_t
 #  define MIND_WRITE(fd, b, c)     _write((fd), (b), (unsigned)(c))
 #  define MIND_PREAD(fd, b, c, o)  mind_pread_emu((fd), (b), (c), (mind_off_t)(o))
 #  define MIND_PWRITE(fd, b, c, o) mind_pwrite_emu((fd), (b), (c), (mind_off_t)(o))
+// `_O_BINARY` is not a gratuitous extra flag: Windows CRT descriptors default
+// to TEXT mode, which silently rewrites CRLF -> LF on read. That would make the
+// bytes `__mind_read` returns for the same file differ between substrates, i.e.
+// break byte-identity at the I/O boundary. POSIX has no such mode, so the two
+// branches agree only with it set.
+#  define MIND_OPEN_RDONLY(p)      _open((p), _O_RDONLY | _O_BINARY)
 #else
 #  include <unistd.h>
+#  include <fcntl.h>
 #  define MIND_READ(fd, b, c)      read((fd), (b), (c))
 #  define MIND_WRITE(fd, b, c)     write((fd), (b), (c))
 #  define MIND_PREAD(fd, b, c, o)  pread((fd), (b), (c), (off_t)(o))
 #  define MIND_PWRITE(fd, b, c, o) pwrite((fd), (b), (c), (off_t)(o))
+#  define MIND_OPEN_RDONLY(p)      open((p), O_RDONLY)
 #endif
 
 // ---------------------------------------------------------------------------
@@ -323,6 +332,37 @@ MIND_EXPORT int64_t __mind_store_i16(int64_t addr, int64_t val) {
     uint16_t w = (uint16_t)(val & 0xFFFF);
     memcpy((void *)(uintptr_t)addr, &w, 2);
     return 0;
+}
+
+// __mind_open(path_addr) — open(2) with O_RDONLY on a NUL-terminated C string.
+//
+// The contract is fixed by std/fs.mind:274-285 and by the native-ELF self-host
+// emitter's intrinsic slot 12 (`examples/mindc_mind/main.mind` nb_intrinsic_id):
+// ONE argument, read-only, path is a NUL-TERMINATED C string, returns the fd, or
+// a NEGATIVE value on error. Callers test `fd < 0` and nothing finer, which is
+// what lets the two backends disagree harmlessly on the exact negative value: the
+// raw `open` syscall the native-ELF path emits returns `-errno`, while libc's
+// `open` here returns -1 and parks the code in `errno`. Neither value is ever
+// observed by MIND source, so no program output depends on which backend ran.
+//
+// Determinism: registered `Det::Pure` in `src/intrinsics.rs`, the same NAME-level
+// verdict `__mind_read` carries. A path is a declared program input; the fd is an
+// opaque process-local descriptor whose numeric value the std surface only ever
+// compares against zero, never prints or hashes. No clock, no entropy, no pointer
+// bits reach the result.
+//
+// There is deliberately no `__mind_close`: std/fs.mind's single-shot reader relies
+// on process exit to reclaim the descriptor, and that deferral is recorded at
+// std/fs.mind:284-285 with its upgrade path. Adding one here without the matching
+// intrinsic row and native-ELF slot would be a half-wired third backend.
+MIND_EXPORT int64_t __mind_open(int64_t path_addr) {
+    if (path_addr == 0) {
+        return -1;
+    }
+    /* MUTATION C (temporary): ignore the error, hand back a bogus fd. */
+    const char *path = (const char *)(uintptr_t)path_addr;
+    int fd = MIND_OPEN_RDONLY(path);
+    return fd < 0 ? (int64_t)999 : (int64_t)fd;
 }
 
 // __mind_read(fd, buf_addr, count, offset) — POSIX read/pread.

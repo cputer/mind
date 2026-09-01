@@ -13,12 +13,13 @@
 //!   stdlib resolves `use std.fs`, `use std.net`, `use std.process`.
 //!
 //! Section C (gate: `mlir-build cross-module-imports`, unix only):
-//!   10 functional integration tests compiled via `mindc --emit-shared`
+//!   11 functional integration tests compiled via `mindc --emit-shared`
 //!   and exercised through Python ctypes:
 //!     1.  fs_round_trip      — write + read_to_string round-trips a file
 //!     2.  fs_read_dir        — read_dir lists expected entry
 //!     3.  fs_mkdir_p         — mkdir_p creates nested dirs
 //!     4.  fs_canonicalize    — canonicalize resolves /tmp to absolute path
+//!     4b. fs_read_file_native — `__mind_open` + read-to-EOF: content, empty, missing
 //!     5.  proc_getenv        — getenv("PATH") returns non-empty string
 //!     6.  proc_pid           — proc_pid() returns positive i64
 //!     7.  proc_spawn_true    — spawn("true") exits with code 0
@@ -495,6 +496,79 @@ print('ok', canon)
         );
         let result = py(&script);
         assert!(result.starts_with("ok"), "fs_canonicalize: {result}");
+    }
+
+    // ── Test 4b: std.fs read_file_native — the `__mind_open` runtime path ────
+
+    /// The four `fs_*` tests above only need `__mind_open` to be EMITTABLE: none
+    /// of them calls it, so a `__mind_open` whose C body did nothing at all would
+    /// still leave them green. This test closes that vacuity — it exercises the
+    /// intrinsic's runtime behaviour end-to-end through `std.fs::read_file_native`
+    /// (`__mind_open` + a `__mind_read` loop to EOF, no libc `open`/`lseek`/`close`),
+    /// which is also the exact path the native-ELF `check_driver` takes.
+    ///
+    /// Three cases, chosen so the two ways this could be silently wrong both fail:
+    ///   * a real file        — bytes must come back EXACTLY, so an open that
+    ///                          "succeeds" without a usable fd is caught;
+    ///   * an EMPTY file      — must return 0, not -1: opening succeeded and the
+    ///                          first read hit EOF. Collapsing "empty" into the
+    ///                          error sentinel is the obvious off-by-one here;
+    ///   * a MISSING path     — must return -1, so an implementation that returns
+    ///                          a bogus non-negative fd (or ignores the error) is
+    ///                          caught rather than reading from a wrong descriptor.
+    #[test]
+    fn fs_read_file_native() {
+        let src = concat!(include_str!("../std/fs.mind"), "\n");
+        let Some(so) = compile_to_so(src, "fs_read_file_native") else {
+            return;
+        };
+        let so_str = so.to_string_lossy().into_owned();
+        let script = format!(
+            r#"
+import ctypes, os, tempfile
+lib = ctypes.CDLL('{so}')
+lib.__mind_alloc.restype = ctypes.c_int64; lib.__mind_alloc.argtypes = [ctypes.c_int64]
+lib.read_file_native.restype = ctypes.c_int64
+lib.read_file_native.argtypes = [ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
+
+def cstr(s):
+    b = s.encode() + b'\x00'
+    return (ctypes.c_uint8 * len(b))(*b)
+
+d = tempfile.mkdtemp()
+content = b'mind_open_runtime_path\n0123456789'
+full = os.path.join(d, 'full.bin')
+with open(full, 'wb') as f:
+    f.write(content)
+empty = os.path.join(d, 'empty.bin')
+open(empty, 'wb').close()
+missing = os.path.join(d, 'no_such_file.bin')
+
+cap = 4096
+buf = lib.__mind_alloc(cap)
+assert buf != 0, '__mind_alloc returned NULL'
+
+pb = cstr(full)
+n = lib.read_file_native(ctypes.addressof(pb), buf, cap)
+assert n == len(content), f'read_file_native len {{n}} != {{len(content)}}'
+got = bytes((ctypes.c_uint8 * n).from_address(buf))
+assert got == content, f'content mismatch: {{got!r}}'
+
+pb = cstr(empty)
+n0 = lib.read_file_native(ctypes.addressof(pb), buf, cap)
+assert n0 == 0, f'empty file must read 0 bytes, got {{n0}}'
+
+pb = cstr(missing)
+nm = lib.read_file_native(ctypes.addressof(pb), buf, cap)
+assert nm == -1, f'missing path must return -1, got {{nm}}'
+
+os.unlink(full); os.unlink(empty); os.rmdir(d)
+print('ok', n)
+"#,
+            so = so_str,
+        );
+        let result = py(&script);
+        assert!(result.starts_with("ok"), "fs_read_file_native: {result}");
     }
 
     // ── Test 5: process getenv ───────────────────────────────────────────────

@@ -106,12 +106,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 #   std_surface_intrinsics       — `each_intrinsic_lowers_to_func_call_with_private_decl`
 #       expects `func.call @__mind_load_i64(%`; the intrinsic now lowers inline to
 #       `llvm.inttoptr` + `llvm.load`. Stale shape expectation, not a miscompile.
-#   std_surface_net_fs_process   — 4 `mlir_functional::fs_*` tests. std.fs's file-I/O
-#       intrinsics are NOT registered in STD_SURFACE_INTRINSICS, so `mindc --emit-shared`
-#       cannot lower them:
-#         warning[E2024]: `__mind_open` is not registered in mindc's Rust/MLIR intrinsic
-#         table — mindc build's default backends cannot emit this call
-#       A real std-surface completeness gap, not a test defect.
 # CRITICAL_<tier> — per-harness minimums for the gates each tier NAMES as the reason
 # it exists. An AGGREGATE floor cannot protect a SPECIFIC test: measured slack was 14
 # tests against FLOOR_TESTS_exec, and an erased test file still prints
@@ -148,7 +142,6 @@ CRITICAL_pkg=(
 )
 
 QUARANTINE_exec=(
-  std_surface_net_fs_process
 )
 QUARANTINE_lowering=(std_surface_intrinsics)
 QUARANTINE_pkg=()

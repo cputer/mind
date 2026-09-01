@@ -262,6 +262,19 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     ("__mind_load_i8", 1, Det::Pure),
     ("__mind_load_i32", 1, Det::Pure),
     ("__mind_load_i16", 1, Det::Pure),
+    // RFC 0005 Phase 3 / RI-C #228 — `open(2)` with O_RDONLY by path. Arity 1
+    // (path_addr), returns the fd or a negative value on error; the path must be a
+    // NUL-terminated C string (std/fs.mind:274-285 states the same contract, and
+    // the native-ELF self-host emitter has carried it as intrinsic slot 12 since
+    // #228). Registered here so `mindc --emit-shared`'s Rust/MLIR backend can emit
+    // the call at all: before this row it was UNREGISTERED-but-classified, so
+    // `std/fs.mind` type-checked with an E2024 advisory and then failed to build a
+    // cdylib, which is exactly the std-surface completeness gap the exec-semantics
+    // quarantine named. `Det::Pure` is UNCHANGED from its previous
+    // `UNREGISTERED_PURE_INTRINSICS` row — moving a name between the two tables is
+    // not a reclassification, and `registry_and_side_lists_do_not_overlap_or_repeat`
+    // requires it to live in exactly one of them.
+    ("__mind_open", 1, Det::Pure),
     // `Det::Pure` is the NAME-level row only. `__mind_read`'s real verdict is
     // decided per CALL SITE from its `fd` argument — see `fd_dependent_read_arg`
     // / `read_fd_is_world` below: a read of an inherited standard stream, or of a
@@ -415,11 +428,12 @@ const UNREGISTERED_WORLD_INTRINSICS: &[&str] = &[
 /// deterministic (see the module docs).
 const UNREGISTERED_PURE_INTRINSICS: &[&str] = &[
     // Native-ELF self-host-only surface (`src/type_checker/resolve.rs`): the OS
-    // argument vector and `open`. argv and a path are declared program inputs,
-    // classified with the same reasoning as the file-read `deferred:` above.
+    // argument vector. argv is a declared program input, classified with the same
+    // reasoning as the file-read `deferred:` above. (`__mind_open` used to sit here
+    // too; it now has a real STD_SURFACE_INTRINSICS row — same `Det::Pure` verdict —
+    // because the Rust/MLIR backend can emit it.)
     "__mind_argc",
     "__mind_argv",
-    "__mind_open",
     // Aborts, bounds traps, allocator, generation-checked handles, region
     // bookkeeping: effects and arena addresses, not varying results — the `__mind_load/store` `deferred:` above carries the
     // full argument for the allocator family.

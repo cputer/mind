@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1432 | **Est. tokens:** ~2,709,188
-**Generated:** 2026-09-01 19:27 UTC
+**Files:** 1432 | **Est. tokens:** ~2,710,779
+**Generated:** 2026-09-01 19:46 UTC
 
 ## Token Budget Guide
 
@@ -75,8 +75,8 @@
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
 | `.github/workflows/` | 9 | ~26,538 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
-| `runtime-support/` | 1 | ~21,261 |
-| `scripts/` | 19 | ~44,524 |
+| `runtime-support/` | 1 | ~21,838 |
+| `scripts/` | 19 | ~44,409 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,559 |
@@ -87,7 +87,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~34,286 |
+| `src/` | 9 | ~34,565 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -120,11 +120,11 @@
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~8,383 |
-| `src/type_checker/` | 1 | ~15,151 |
+| `src/type_checker/` | 1 | ~15,148 |
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
-| `std/` | 42 | ~202,332 |
-| `tests/` | 336 | ~586,837 |
+| `std/` | 42 | ~202,387 |
+| `tests/` | 336 | ~587,635 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -858,7 +858,7 @@
 - `verification.mind` (~948 tok, large) — Verification plane for inference consistency (LCU)
 ### `runtime-support/`
 
-- `mind_intrinsics.c` (~21261 tok, huge) — Copyright 2025 STARGA Inc.
+- `mind_intrinsics.c` (~21838 tok, huge) — Copyright 2025 STARGA Inc.
 ### `scripts/`
 
 - `anatomy-hook.sh` (~858 tok, large) — STARGA author guard (chained first: a wrong-identity commit must never be created).
@@ -870,7 +870,7 @@
 - `check_no_ai_attribution.sh` (~995 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~6750 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~6635 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -1060,7 +1060,7 @@
 - `printer.rs` (~17270 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `intrinsics.rs` (~10120 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsics.rs` (~10399 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/`
 
 - `emit.rs` (~4693 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1183,7 +1183,7 @@
 - `mod.rs` (~8383 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
-- `resolve.rs` (~15151 tok, huge) — Copyright 2025 STARGA Inc.
+- `resolve.rs` (~15148 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/types/`
 
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1203,13 +1203,13 @@
 - `cli.mind` (~3211 tok, huge) — std/cli.mind — RFC 0013 Tier 1 Phase 1: argv-parsing surface.
 - `detmath.mind` (~4059 tok, huge) — std.detmath — deterministic transcendental tier (roadmap Phase 17.6).
 - `ecdsa_p256.mind` (~6517 tok, huge) — std/ecdsa_p256.mind — ECDSA signature VERIFICATION on NIST P-256
-- `fs.mind` (~5019 tok, huge) — std/fs.mind — Task #268: POSIX filesystem surface in pure MIND.
+- `fs.mind` (~5043 tok, huge) — std/fs.mind — Task #268: POSIX filesystem surface in pure MIND.
 - `hkdf.mind` (~1547 tok, huge) — std/hkdf.mind — HMAC-SHA256 (RFC 2104) + HKDF (RFC 5869) in pure MIND.
 - `hpack.mind` (~9694 tok, huge) — std/hpack.mind — HPACK header-compression DECODING (RFC 7541) in pure MIND.
 - `http2_frame.mind` (~4191 tok, huge) — std/http2_frame.mind — HTTP/2 framing layer (RFC 9113 §3.4, §4.1, §6) in
 - `http.mind` (~6682 tok, huge) — std/http.mind — HTTP/1.1 client over std.net (task #XXX).
 - `io_canon.mind` (~2624 tok, huge) — std.io_canon — canonical completion ordering for deterministic I/O.
-- `io.mind` (~1688 tok, huge) — std/io.mind — RFC 0005 Phase 2: pure-MIND I/O surface.
+- `io.mind` (~1719 tok, huge) — std/io.mind — RFC 0005 Phase 2: pure-MIND I/O surface.
 - `iouring.mind` (~18767 tok, huge) — std.iouring — minimal io_uring binding (Linux). The physical-I/O reap source
 - `json.mind` (~15391 tok, huge) — std/json.mind -- RFC 8259 / ECMA-404 subset parser (task #269, cargo-retirement track).
 - `keccak.mind` (~3926 tok, huge) — std/keccak.mind — Keccak / SHA-3 + SHAKE (FIPS 202) in pure MIND.
@@ -1963,7 +1963,7 @@
 - `std_surface_logical_ops.rs` (~1183 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_map_module.rs` (~2015 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_method_call.rs` (~2939 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_net_fs_process.rs` (~7566 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_net_fs_process.rs` (~8364 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_c_stdlib_bundle.rs` (~1466 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_d_env_override.rs` (~1597 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_promotion_compose.rs` (~5551 tok, huge) — Copyright 2025 STARGA Inc.

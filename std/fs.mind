@@ -277,10 +277,11 @@ pub fn try_read_to_string(path_addr: i64) -> i64 {
 // reclaim the fd; there is no `__mind_close` intrinsic yet). The path MUST be a
 // NUL-terminated C string — an argv[i] pointer from `__mind_argv` already is; a
 // std.string String's backing bytes are not, so NUL-terminate before passing one.
-// This module is NOT imported by the self-hosted compiler (main.mind imports only
-// vec/map/string/io), so adding `__mind_open` calls here does not require the
-// Rust type-checker's intrinsic table to know it — the native-ELF emitter
-// (main.mind nb_intrinsic_id) recognises it directly.
+// `__mind_open` is wired through BOTH backends that can compile this module: the
+// native-ELF emitter recognises it directly (main.mind nb_intrinsic_id slot 12),
+// and it carries a STD_SURFACE_INTRINSICS row (arity 1, Det::Pure) with a C
+// definition in runtime-support/mind_intrinsics.c, so `mindc --emit-shared` emits
+// a plain `func.call @__mind_open` that links into the cdylib.
 // deferred: add a `__mind_close` intrinsic + close here for long-running readers
 // that open many files (upgrade path: mirror __mind_open with SYS_close=3).
 // ---------------------------------------------------------------------------

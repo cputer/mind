@@ -4,9 +4,11 @@
 // `__mind_read` / `__mind_write` already speak.  Today it wraps the
 // POSIX file-descriptor space (0/1/2 for stdin/stdout/stderr), but
 // callers must not assume that — treat the inner `fd` field as
-// opaque.  Higher-level surfaces (open/close, path-based file I/O)
-// land once the seventh intrinsic `__mind_open` is wired (RFC 0005
-// Phase 3); the four-arg read/write contract here is what mind-nerve's
+// opaque.  `__mind_open` (RFC 0005 Phase 3) is now wired on both the
+// native-ELF and Rust/MLIR backends and is used by std.fs's
+// `read_file_native`; a `__mind_close` counterpart is still deferred
+// (see std/fs.mind), so no open/close surface is exposed HERE yet.
+// The four-arg read/write contract below is what mind-nerve's
 // streaming-tokens path needs first, so it ships at Phase 2.
 //
 // Intrinsic contract (mirrors POSIX `pread`/`pwrite`):
