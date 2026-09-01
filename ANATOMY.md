@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1429 | **Est. tokens:** ~2,698,538
-**Generated:** 2026-09-01 13:30 UTC
+**Files:** 1431 | **Est. tokens:** ~2,699,094
+**Generated:** 2026-09-01 14:28 UTC
 
 ## Token Budget Guide
 
@@ -169,6 +169,7 @@
 | `tests/mindcraft/lint/q16_overflow/` | 3 | ~191 |
 | `tests/mindcraft/lint/shadowing/` | 2 | ~87 |
 | `tests/mindcraft/lint/unused_import/` | 2 | ~99 |
+| `tests/mindfuzz_cross_substrate/known_environmental/` | 2 | ~556 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2,832 |
 | `tests/runtime/` | 2 | ~135 |
@@ -1644,6 +1645,10 @@
 - `mindc.rs` (~1851 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
+### `tests/mindfuzz_cross_substrate/known_environmental/`
+
+- `README.md` (~314 tok, medium) — Known-environmental fuzzer artifacts
+- `seed_deadbeef_prog000_e1001_bitwise.mind` (~242 tok, medium) — NOT A DIVERGENCE — misfiled build-capability refusal (issue #72 fuzzer).
 ### `tests/mindfuzz_cross_substrate/reproducers/`
 
 - `fuzz_oracle_failure_seed_deadbeef_prog000.mind` (~218 tok, medium) — ORACLE FAILURE — a stage did not complete; NOT a proven cross-substrate divergence (issue #72 fuzzer)
