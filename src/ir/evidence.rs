@@ -121,11 +121,38 @@ use crate::intrinsics::callee_is_nondeterministic;
 /// re-opened the extern default-ADMIT hole `collect_extern_symbols` closes —
 /// an unclassified `extern "C"` callee would classify as deterministic. Every
 /// entry point must pass the module's real extern set.
+/// Whether an unclassified `extern "C"` callee counts as nondeterministic.
+///
+/// The two consumers of this traversal want DIFFERENT answers, and conflating them
+/// was a shipping regression (see `ir_first_hard_nondeterministic_call`).
+///
+/// Deliberately an enum threaded through the recursion rather than "pass an empty
+/// extern set". An empty set would make `extern_call_is_unclassified` vacuously
+/// false and produce the same result — but it is exactly the shape the doc on
+/// `find_nondeterministic_call_ext` warns about, and a future reader could not tell
+/// a deliberate policy choice from the re-opened default-ADMIT hole.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExternPolicy {
+    /// An unclassified extern taints the module. Correct for ATTESTATION: the
+    /// callee's body is outside the artifact, so nothing in the module can witness
+    /// what it does, and claiming `deterministic` would be a forgeable overclaim.
+    Taint,
+    /// An unclassified extern is UNKNOWN, not nondeterministic. Correct for the
+    /// SHIPPING veto, whose stated scope is hard unseeded nondeterminism only.
+    Ignore,
+}
+
 fn find_nondeterministic_call_ext(
     instrs: &[crate::ir::Instr],
     externs: &std::collections::BTreeSet<String>,
+    policy: ExternPolicy,
 ) -> Option<String> {
-    scan_scope(instrs, externs, &ScopeConsts::for_scope(instrs, &[]))
+    scan_scope(
+        instrs,
+        externs,
+        &ScopeConsts::for_scope(instrs, &[]),
+        policy,
+    )
 }
 
 /// Classify one instruction stream WITHIN an already-built namespace. `If` /
@@ -135,13 +162,15 @@ fn scan_scope(
     instrs: &[crate::ir::Instr],
     externs: &std::collections::BTreeSet<String>,
     consts: &ScopeConsts,
+    policy: ExternPolicy,
 ) -> Option<String> {
     use crate::ir::Instr;
     for instr in instrs {
         let hit = match instr {
             Instr::Call { name, args, .. }
                 if callee_is_nondeterministic(name)
-                    || extern_call_is_unclassified(name, externs)
+                    || (policy == ExternPolicy::Taint
+                        && extern_call_is_unclassified(name, externs))
                     || call_reads_world_stream(name, args, consts) =>
             {
                 Some(name.clone())
@@ -150,22 +179,27 @@ fn scan_scope(
             Instr::FnDef { params, body, .. } => {
                 let param_ids: Vec<crate::ir::ValueId> =
                     params.iter().map(|(_name, id)| *id).collect();
-                scan_scope(body, externs, &ScopeConsts::for_scope(body, &param_ids))
+                scan_scope(
+                    body,
+                    externs,
+                    &ScopeConsts::for_scope(body, &param_ids),
+                    policy,
+                )
             }
             #[cfg(feature = "std-surface")]
             Instr::While {
                 cond_instrs, body, ..
-            } => scan_scope(cond_instrs, externs, consts)
-                .or_else(|| scan_scope(body, externs, consts)),
+            } => scan_scope(cond_instrs, externs, consts, policy)
+                .or_else(|| scan_scope(body, externs, consts, policy)),
             #[cfg(feature = "std-surface")]
             Instr::If {
                 cond_instrs,
                 then_instrs,
                 else_instrs,
                 ..
-            } => scan_scope(cond_instrs, externs, consts)
-                .or_else(|| scan_scope(then_instrs, externs, consts))
-                .or_else(|| scan_scope(else_instrs, externs, consts)),
+            } => scan_scope(cond_instrs, externs, consts, policy)
+                .or_else(|| scan_scope(then_instrs, externs, consts, policy))
+                .or_else(|| scan_scope(else_instrs, externs, consts, policy)),
             // RFC 0010 Phase J-A region body carries a FULL nested instruction
             // stream (`src/ir/mod.rs`). A nondeterministic `now()`/`rand()` call
             // inside `region { }` must NOT be invisible to the attestation
@@ -174,7 +208,7 @@ fn scan_scope(
             // `Instr::Region { body, .. }` recursion already in `verify.rs` (SSA)
             // and `fp_mode.rs` (strict-FP taint).
             #[cfg(feature = "std-surface")]
-            Instr::Region { body, .. } => scan_scope(body, externs, consts),
+            Instr::Region { body, .. } => scan_scope(body, externs, consts, policy),
             // Remaining instructions carry NO nested instruction stream and are
             // not themselves a builtin call, so they cannot introduce a
             // nondeterministic callee. Enumerated EXHAUSTIVELY (no blanket `_`)
@@ -237,7 +271,31 @@ fn scan_scope(
 /// an unsigned artifact.
 pub fn ir_first_nondeterministic_call(module: &IRModule) -> Option<String> {
     let externs = collect_extern_symbols(&module.instrs);
-    find_nondeterministic_call_ext(&module.instrs, &externs)
+    find_nondeterministic_call_ext(&module.instrs, &externs, ExternPolicy::Taint)
+}
+
+/// HARD unseeded nondeterminism only — PRNG / wall-clock / stdin / world streams.
+/// An unclassified `extern "C"` callee is UNKNOWN and does NOT hit this.
+///
+/// Exists because the two consumers of the classifier need different answers, and
+/// 038f7010 gave them the same one. That commit added the extern taint to
+/// [`ir_first_nondeterministic_call`] for ATTESTATION honesty — correct, and its
+/// own doc calls it "the safe interim" pending RFC 0019 §3.3 decline-to-attest.
+/// But `mindc.rs` uses that SAME function as the artifact-emission veto, so the
+/// attestation stance silently became shipping policy: measured, ANY program
+/// calling ANY `extern "C"` symbol could no longer emit `--emit-obj` /
+/// `--emit-shared` / `--emit-evidence`. `strlen()` and `memset()` were both
+/// reported as "introduces unseeded nondeterminism", and the advice printed was
+/// "use a seeded generator such as `Random(seed = 42)`". It blocked std/net.mind,
+/// and with it the whole std-surface HTTP stack.
+///
+/// The split restores each consumer to its documented scope. The veto covers what
+/// `mindc.rs` says it covers ("a HARD non-deterministic builtin (PRNG /
+/// wall-clock / stdin)"); attestation stays conservative and can still never forge
+/// a `deterministic` label for an unclassified extern.
+pub fn ir_first_hard_nondeterministic_call(module: &IRModule) -> Option<String> {
+    let externs = collect_extern_symbols(&module.instrs);
+    find_nondeterministic_call_ext(&module.instrs, &externs, ExternPolicy::Ignore)
 }
 
 /// Every `extern "C"` symbol declared anywhere in the module.
@@ -639,6 +697,83 @@ mod tests {
         );
         assert_eq!(ir_first_nondeterministic_call(&m), None);
     }
+
+    /// The two consumers of the classifier must DISAGREE about an unclassified
+    /// `extern "C"` callee, and AGREE about hard nondeterminism.
+    ///
+    /// 038f7010 gave them the same answer: it added the extern taint for
+    /// attestation honesty, and because `mindc.rs` vetoes artifact emission with
+    /// the SAME function, every program calling any `extern "C"` symbol stopped
+    /// being able to emit. `strlen()` and `memset()` were both reported as
+    /// "introduces unseeded nondeterminism"; it blocked std/net.mind and the
+    /// std-surface HTTP stack.
+    ///
+    /// Both directions are asserted. Only checking that the extern no longer
+    /// vetoes would let a fix that simply DELETED the taint pass — and that would
+    /// silently restore the default-ADMIT hole `collect_extern_symbols` closes,
+    /// letting an artifact attest `deterministic` while calling a body it cannot
+    /// witness.
+    // `Instr::ExternFnDecl` exists only under `std-surface`; without it a module
+    // can declare no externs at all, so the split has nothing to express.
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn shipping_veto_and_attestation_split_on_unclassified_externs() {
+        // A module that DECLARES and CALLS an unclassified extern "C" symbol.
+        let mut m = IRModule::new();
+        m.instrs.push(Instr::ExternFnDecl {
+            name: "strlen".to_string(),
+            param_types: vec!["i64".to_string()],
+            ret_type: Some("i64".to_string()),
+            is_varargs: false,
+            vararg_hints: Vec::new(),
+            callconv: crate::ast::CallConv::C,
+        });
+        let a = m.fresh();
+        m.instrs.push(Instr::ConstI64(a, 0));
+        let d = m.fresh();
+        m.instrs.push(Instr::Call {
+            dst: d,
+            name: "strlen".to_string(),
+            args: vec![a],
+        });
+        m.instrs.push(Instr::Output(d));
+
+        assert_eq!(
+            ir_first_hard_nondeterministic_call(&m),
+            None,
+            "an unclassified extern is UNKNOWN, not hard nondeterminism — it must \
+             not veto artifact emission (this is the 038f7010 regression)"
+        );
+        assert_eq!(
+            ir_first_nondeterministic_call(&m).as_deref(),
+            Some("strlen"),
+            "attestation must STAY conservative: an unclassified extern can never \
+             be labelled deterministic, or the label is forgeable"
+        );
+
+        // Hard nondeterminism: both consumers must still fire.
+        let mut n = IRModule::new();
+        let t = n.fresh();
+        n.instrs.push(Instr::Call {
+            dst: t,
+            name: "now".to_string(),
+            args: vec![],
+        });
+        n.instrs.push(Instr::Output(t));
+        assert_eq!(
+            ir_first_hard_nondeterministic_call(&n).as_deref(),
+            Some("now"),
+            "the shipping veto must still reject a wall-clock read"
+        );
+        assert_eq!(
+            ir_first_nondeterministic_call(&n).as_deref(),
+            Some("now"),
+            "attestation must still reject a wall-clock read"
+        );
+    }
+
+    #[allow(dead_code)]
+    fn __split_test_anchor() {}
 
     /// Control (unchanged behavior): a top-level `now()` and an FnDef-nested
     /// `now()` were already detected before the fix and must still be.

@@ -782,7 +782,9 @@ fn main() {
         || cli.compile.emit_shared.is_some()
         || cli.compile.emit_evidence.is_some();
     if produces_artifact && !cli.compile.allow_nondeterministic {
-        if let Some(offender) = libmind::ir::ir_first_nondeterministic_call(&products.ir) {
+        // HARD-only: an unclassified `extern "C"` callee is UNKNOWN, not nondeterministic.
+        // Attestation stays conservative via ir_first_nondeterministic_call.
+        if let Some(offender) = libmind::ir::ir_first_hard_nondeterministic_call(&products.ir) {
             eprintln!("error[determinism]: `{offender}()` introduces unseeded nondeterminism");
             eprintln!();
             eprintln!("MIND programs are deterministic by default. Use a seeded generator such as");
