@@ -847,7 +847,7 @@ fn main() {
     }
 
     emit_obj_if_requested(&cli.compile, &products);
-    emit_shared_if_requested(&cli.compile, &products);
+    emit_shared_if_requested(&cli.compile, &products, &source);
 }
 
 /// RI-D Option A (task #110): bridge `mindc build --backend native` to the frozen
@@ -3180,8 +3180,23 @@ fn emit_obj_if_requested(cli: &CompileArgs, _products: &libmind::pipeline::Compi
     }
 }
 
+/// Emit `--emit-shared <out.so>`.
+///
+/// Links the substrate objects for every `std` substrate module the entry
+/// imports (transitively). Without that the emitted `.so` carries the imported
+/// module's symbols as UNDEFINED and `dlopen` fails at load — measured as
+/// `libio_canon.so: undefined symbol: sha256`, because `std/io_canon.mind`
+/// imports `std.sha256` and this flat path (unlike `mindc build --emit=cdylib`)
+/// ran no cross-module link walk at all. The walk is shared with the manifest
+/// cdylib path via `libmind::project::substrate_link`; an entry importing no
+/// substrate module yields an empty object set, leaving the link byte-identical
+/// to the historical single-entry path.
 #[cfg(feature = "mlir-build")]
-fn emit_shared_if_requested(cli: &CompileArgs, products: &libmind::pipeline::CompileProducts) {
+fn emit_shared_if_requested(
+    cli: &CompileArgs,
+    products: &libmind::pipeline::CompileProducts,
+    source: &str,
+) {
     let shared_path = match &cli.emit_shared {
         Some(path) => path,
         None => return,
@@ -3213,7 +3228,44 @@ fn emit_shared_if_requested(cli: &CompileArgs, products: &libmind::pipeline::Com
         target_triple: None,
     };
 
-    match libmind::eval::mlir_build::build_all(&mlir.primal_mlir, &tools, &opts) {
+    // Cross-module substrate objects. Fail-loud: a substrate module that will
+    // not compile must abort the build, never yield an `.so` whose symbol is
+    // still undefined at `dlopen`.
+    #[cfg(feature = "cross-module-imports")]
+    let extra_objects: Vec<std::path::PathBuf> = {
+        let obj_dir = Path::new(shared_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        match libmind::project::substrate_link::substrate_objects_for_entry(
+            source,
+            &obj_dir,
+            libmind::runtime::types::BackendTarget::Cpu,
+            &tools,
+        ) {
+            Ok(objs) => objs,
+            Err(err) => {
+                eprintln!("error[build]: {err}");
+                process::exit(1);
+            }
+        }
+    };
+    #[cfg(not(feature = "cross-module-imports"))]
+    let extra_objects: Vec<std::path::PathBuf> = {
+        // No embedded stdlib without `cross-module-imports`, so no substrate
+        // module can be imported and the object set is necessarily empty —
+        // byte-identical to the historical single-entry link.
+        let _ = source;
+        Vec::new()
+    };
+
+    match libmind::eval::mlir_build::build_all_with_objects(
+        &mlir.primal_mlir,
+        &tools,
+        &opts,
+        &extra_objects,
+    ) {
         Ok(_) => {
             eprintln!("Wrote shared library: {}", shared_path);
         }
@@ -3225,7 +3277,11 @@ fn emit_shared_if_requested(cli: &CompileArgs, products: &libmind::pipeline::Com
 }
 
 #[cfg(not(feature = "mlir-build"))]
-fn emit_shared_if_requested(cli: &CompileArgs, _products: &libmind::pipeline::CompileProducts) {
+fn emit_shared_if_requested(
+    cli: &CompileArgs,
+    _products: &libmind::pipeline::CompileProducts,
+    _source: &str,
+) {
     if cli.emit_shared.is_some() {
         eprintln!("error[build]: --emit-shared requires building with the 'mlir-build' feature");
         process::exit(1);

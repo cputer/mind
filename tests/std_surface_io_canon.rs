@@ -242,6 +242,144 @@ mod mlir_functional {
         }
     }
 
+    /// The evidence anchor, through the FLAT `mindc <file> --emit-shared`
+    /// path — the path that shipped an un-`dlopen`-able `.so` (`undefined
+    /// symbol: sha256`) because it ran no cross-module substrate link walk.
+    ///
+    /// Three independent assertions, because "it loads now" is not "it hashes
+    /// right" and `std.io_canon` is the module closest to the evidence chain:
+    ///
+    ///  1. `canon_anchor` == `sha256(canon_drain(...))` computed through the
+    ///     SAME `.so` — the composition the RFC 0022 reactor boundary relies
+    ///     on, and proof the linked `sha256` is reached from `canon_anchor`.
+    ///  2. The anchor is arrival-order independent: two physical push orders
+    ///     of one completion multiset produce the SAME 32 bytes.
+    ///  3. The anchor equals a FIPS-180-4 known answer pinned as a literal.
+    ///     Derivation: the canonical drain of the multiset below is the 160
+    ///     bytes of five 32-byte little-endian `(conn, req, op, result)`
+    ///     records in canonical order — (1,1,9,0) (1,2,9,0) (2,0,9,0)
+    ///     (2,1,9,0) (3,5,9,0) — whose SHA-256 is the constant. A wrong-hash
+    ///     defect here fails nothing loudly anywhere else in the tree, so it
+    ///     is pinned to a VALUE, never merely to "non-zero".
+    #[test]
+    fn canon_anchor_over_flat_emit_shared_matches_fips_kat() {
+        let mindc = mindc_bin();
+        if !mindc.exists() {
+            println!("io_canon anchor: mindc not found; skipping");
+            return;
+        }
+        let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("std_surface_io_canon_anchor");
+        std::fs::create_dir_all(&out_dir).expect("create output dir");
+        let so_path = out_dir.join("libio_canon.so");
+        let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("std")
+            .join("io_canon.mind");
+        let status = Command::new(&mindc)
+            .args([
+                src_path.to_str().unwrap(),
+                "--emit-shared",
+                so_path.to_str().unwrap(),
+            ])
+            .status()
+            .expect("run mindc");
+        if !status.success() {
+            println!("io_canon anchor: mindc compile failed; skipping");
+            return;
+        }
+
+        // `sha256` must be DEFINED in the flat-emitted .so, not undefined:
+        // this is the substrate-link property, checked before dlopen so a
+        // regression reports the cause rather than an opaque loader error.
+        let nm = Command::new("nm")
+            .arg("-D")
+            .arg(&so_path)
+            .output()
+            .expect("nm");
+        let text = String::from_utf8_lossy(&nm.stdout);
+        assert!(
+            !text.lines().any(|l| l.contains(" U sha256")),
+            "sha256 is UNDEFINED in the flat --emit-shared .so -- the \
+             cross-module substrate link walk did not run:\n{text}"
+        );
+
+        unsafe {
+            let lib = libloading::Library::new(&so_path).expect("dlopen libio_canon.so");
+            type New = unsafe extern "C" fn(i64) -> i64;
+            type Push = unsafe extern "C" fn(i64, i64, i64, i64, i64) -> i64;
+            type Drain = unsafe extern "C" fn(i64, i64, i64) -> i64;
+            type Anchor = unsafe extern "C" fn(i64, i64) -> i64;
+            type Sha256 = unsafe extern "C" fn(i64, i64, i64) -> i64;
+
+            let canon_new = lib.get::<New>(b"canon_new\0").unwrap();
+            let canon_push = lib.get::<Push>(b"canon_push\0").unwrap();
+            let canon_drain = lib.get::<Drain>(b"canon_drain\0").unwrap();
+            let canon_anchor = lib.get::<Anchor>(b"canon_anchor\0").unwrap();
+            let sha256 = lib.get::<Sha256>(b"sha256\0").unwrap();
+
+            let anchor_of = |events: &[(i64, i64, i64, i64)]| -> ([u8; 32], Vec<u8>) {
+                let h = canon_new(16);
+                assert!(h != 0, "canon_new failed");
+                for &(c, r, o, res) in events {
+                    assert_eq!(canon_push(h, c, r, o, res), 1, "canon_push failed");
+                }
+                let mut drained = vec![0u8; events.len() * 32];
+                let n = canon_drain(h, drained.as_mut_ptr() as i64, drained.len() as i64);
+                assert_eq!(n, drained.len() as i64, "canon_drain byte count");
+                let mut anchor = [0u8; 32];
+                let k = canon_anchor(h, anchor.as_mut_ptr() as i64);
+                assert_eq!(k, events.len() as i64, "canon_anchor event count");
+                (anchor, drained)
+            };
+
+            let order_a: [(i64, i64, i64, i64); 5] = [
+                (2, 1, 9, 0),
+                (1, 2, 9, 0),
+                (1, 1, 9, 0),
+                (2, 0, 9, 0),
+                (3, 5, 9, 0),
+            ];
+            // Same multiset, different physical arrival order.
+            let order_b: [(i64, i64, i64, i64); 5] = [
+                (3, 5, 9, 0),
+                (1, 1, 9, 0),
+                (2, 1, 9, 0),
+                (2, 0, 9, 0),
+                (1, 2, 9, 0),
+            ];
+            let (anchor_a, drained_a) = anchor_of(&order_a);
+            let (anchor_b, _) = anchor_of(&order_b);
+
+            // 1. anchor == sha256(drained) through the same .so.
+            let mut direct = [0u8; 32];
+            let rc = sha256(
+                drained_a.as_ptr() as i64,
+                drained_a.len() as i64,
+                direct.as_mut_ptr() as i64,
+            );
+            assert_eq!(rc, 0, "sha256 must report success");
+            assert_eq!(
+                anchor_a, direct,
+                "canon_anchor must equal sha256 over the drained canonical sequence"
+            );
+
+            // 2. Arrival-order independence of the evidence anchor.
+            assert_eq!(
+                anchor_a, anchor_b,
+                "the evidence anchor must not depend on physical arrival order"
+            );
+
+            // 3. FIPS-180-4 known answer over the canonical 160-byte sequence.
+            let hex: String = anchor_a.iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(
+                hex, "d8211d529918b3c75dab463cf002234a9f1a3b61e64083ef70247cd0ac02ad15",
+                "canon_anchor digest changed -- a wrong-hash defect in the module \
+                 closest to the evidence chain"
+            );
+        }
+    }
+
     #[test]
     fn canon_anchor_links_sha256_transitively_via_manifest() {
         // An entry that imports ONLY std.io_canon (NOT std.sha256) and calls

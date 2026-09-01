@@ -118,8 +118,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 #   std_surface_cdylib_link      — the emitted cdylib carries an undefined
 #       `_Exit@GLIBC_2.2.5`, which the link gate rejects. `_Exit` is how the
 #       deterministic bounds trap exits; the gate's allowed-undefined set predates it.
-#   std_surface_io_canon         — `undefined symbol: sha256` when dlopening
-#       libio_canon.so; the runtime-support object does not provide it.
 #   std_surface_self_emit_shared — `vec_module_emits_self_contained_shared`: the vec
 #       module's emitted .so is not self-contained.
 # CRITICAL_<tier> — per-harness minimums for the gates each tier NAMES as the reason
@@ -161,7 +159,6 @@ QUARANTINE_exec=(
   tensor_param_fail_loud_run
   std_surface_net_fs_process
   std_surface_cdylib_link
-  std_surface_io_canon
   std_surface_self_emit_shared
 )
 QUARANTINE_lowering=(std_surface_intrinsics)

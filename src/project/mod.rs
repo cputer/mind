@@ -33,6 +33,12 @@ mod link;
 #[cfg(any(feature = "cross-module-imports", feature = "std-surface"))]
 pub mod stdlib;
 
+/// Native cross-module substrate linking (`std.sha256`, `std.io_canon`, …)
+/// for shared-library emission. Shared by the manifest cdylib path below and
+/// the flat `mindc <file> --emit-shared` path in `src/bin/mindc.rs`.
+#[cfg(all(feature = "cross-module-imports", feature = "mlir-build"))]
+pub mod substrate_link;
+
 /// RFC 0008 §3 — `[test]` table in `Mind.toml`.
 /// All fields default; an absent table is equivalent to default.
 #[derive(Debug, Deserialize, Clone)]
@@ -1369,135 +1375,26 @@ fn build_cdylib_from_entry(
         // stays byte-identical to the historical single-entry path.
         #[cfg(feature = "cross-module-imports")]
         {
-            use std::collections::BTreeSet;
-            // Substrate modules whose `.o` we compile + link when imported.
-            fn scan_substrate_imports(src: &str) -> Vec<&'static str> {
-                const SUBSTRATE: &[&str] = &[
-                    "std.arena",
-                    "std.io_canon",
-                    "std.iouring",
-                    "std.reactor",
-                    "std.ring",
-                    "std.sha256",
-                    "std.time",
-                ];
-                let mut found = Vec::new();
-                if let Ok(ast) = crate::parser::parse(src) {
-                    for item in &ast.items {
-                        if let crate::ast::Node::Import { path, .. } = item {
-                            let key = path.join(".");
-                            for &name in SUBSTRATE {
-                                if key == name {
-                                    found.push(name);
-                                }
-                            }
-                        }
-                    }
-                }
-                found
-            }
-            // BFS the import graph: collect substrate modules imported by the
-            // entry AND transitively by any imported substrate module (e.g.
-            // io_canon importing std.sha256 pulls sha256.o even when the entry
-            // only imports io_canon). Without the transitive walk a substrate
-            // module's own substrate imports would link-fail with undefined
-            // symbols. An empty set still leaves the link byte-identical to the
-            // single-entry path (the keystone imports no substrate module).
-            let mut imported: BTreeSet<&'static str> = BTreeSet::new();
-            // Seed from the UNION of every project source's substrate imports,
-            // not just the entry: a non-entry module importing a substrate
-            // module (e.g. `sha256.hash(x)` rewritten to a bare `hash` symbol)
-            // needs that module's `.o` linked even when the entry never imports
-            // it. Empty set ⇒ byte-identical single-entry link (keystone-safe).
-            let mut worklist: Vec<&'static str> = Vec::new();
-            for src_path in sources {
-                if let Ok(text) = fs::read_to_string(src_path) {
-                    worklist.extend(scan_substrate_imports(&text));
-                }
-            }
-            while let Some(modname) = worklist.pop() {
-                if imported.insert(modname) {
-                    if let Some((_, src)) = crate::project::stdlib::STDLIB_MIND_SOURCES
-                        .iter()
-                        .find(|(n, _)| *n == modname)
-                    {
-                        for dep in scan_substrate_imports(src) {
-                            if !imported.contains(dep) {
-                                worklist.push(dep);
-                            }
-                        }
-                    }
-                }
-            }
-            let sub_opts = CompileOptions {
-                func: None,
-                enable_autodiff: false,
-                target,
-                manifest_exports: Vec::new(),
-                ..Default::default()
-            };
+            // The substrate walk itself lives in `project::substrate_link` so
+            // the flat `mindc <file> --emit-shared` emitter runs the SAME
+            // closure + object build (it previously had none, which is how a
+            // single-file `std/io_canon.mind` emit shipped an `.so` with an
+            // undefined `sha256`). Seed from the UNION of every project
+            // source's substrate imports, not just the entry: a non-entry
+            // module importing a substrate module needs that module's `.o`
+            // linked even when the entry never imports it. Empty closure ⇒
+            // byte-identical single-entry link (keystone-safe).
+            let texts: Vec<String> = sources
+                .iter()
+                .filter_map(|p| fs::read_to_string(p).ok())
+                .collect();
+            let closure = substrate_link::substrate_closure(texts.iter().map(|s| s.as_str()));
             let obj_dir = output
                 .parent()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| PathBuf::from("."));
-            let mut objs: Vec<PathBuf> = Vec::new();
-            for modname in imported {
-                if let Some((_, src)) = crate::project::stdlib::STDLIB_MIND_SOURCES
-                    .iter()
-                    .find(|(n, _)| *n == modname)
-                {
-                    let prod =
-                        compile_source_with_name(src, Some(modname), &sub_opts).map_err(|e| {
-                            // Render the real diagnostics (file:line:col + message) instead of
-                            // the opaque CompileError Display, matching the cdylib build path.
-                            let diags = e.into_diagnostics(Some(modname));
-                            let rendered = diags
-                                .iter()
-                                .map(|d| crate::diagnostics::render(src, d))
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            if rendered.trim().is_empty() {
-                                anyhow!("substrate compile failed for {modname}")
-                            } else {
-                                anyhow!("substrate compile failed for {modname}:\n{rendered}")
-                            }
-                        })?;
-                    #[cfg(feature = "autodiff")]
-                    let sub_mlir = lower_to_mlir(&prod.ir, prod.grad.as_ref())
-                        .map_err(|e| anyhow!("substrate MLIR lowering for {modname}: {e}"))?;
-                    #[cfg(not(feature = "autodiff"))]
-                    let sub_mlir = lower_to_mlir(&prod.ir)
-                        .map_err(|e| anyhow!("substrate MLIR lowering for {modname}: {e}"))?;
-                    let short = modname.rsplit('.').next().unwrap_or(modname);
-                    let obj_path = obj_dir.join(format!("__std_{short}.o"));
-                    let sub_bo = mlir_build::BuildOptions {
-                        preset: mlir_build::preset_for_mlir(&sub_mlir.primal_mlir),
-                        emit_mlir_file: None,
-                        emit_llvm_file: None,
-                        emit_obj_file: Some(&obj_path),
-                        emit_shared: None,
-                        opt_pipeline: None,
-                        target_triple: None,
-                    };
-                    mlir_build::build_all(&sub_mlir.primal_mlir, &tools, &sub_bo)
-                        .map_err(|e| anyhow!("substrate object build for {modname}: {e}"))?;
-                    // The MLIR emit gives every module object a synthetic `main`;
-                    // localize it in substrate objects so it does not collide with
-                    // the consumer entry's `main` at link time (the substrate
-                    // module's public `canon_*`/`ring_*`/… symbols stay global).
-                    let st = std::process::Command::new("objcopy")
-                        .arg("--localize-symbol=main")
-                        .arg(&obj_path)
-                        .status()
-                        .map_err(|e| anyhow!("objcopy spawn failed for {modname}: {e}"))?;
-                    if !st.success() {
-                        return Err(anyhow!(
-                            "objcopy --localize-symbol=main failed for {modname}"
-                        ));
-                    }
-                    objs.push(obj_path);
-                }
-            }
+            let mut objs =
+                substrate_link::compile_substrate_objects(&closure, &obj_dir, target, &tools)?;
             // #302 layer 2 (sibling body linking): compile every NON-entry
             // project sibling module the entry imports (transitively) to its own
             // LIBRARY object (`@main` suppressed) and link it, so a
