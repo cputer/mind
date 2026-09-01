@@ -1132,6 +1132,42 @@ fn staged_dir() -> PathBuf {
 
 /// Write a minimal reproducer for a divergent program so it becomes a permanent
 /// regression fixture. Named by seed + program index for reproducibility.
+/// True when a compile failure is a property of THIS BUILD of `mindc` rather than
+/// of the generated program — e.g. "cdylib emit requires the 'mlir-build' feature".
+///
+/// Such a failure hits every program identically, so staging a per-program
+/// "DIVERGENCE REPRODUCER" for it files an environmental miss as a compiler bug.
+/// Measured: seed 0xDEADBEEF prog000 was staged with the header "emit-shared
+/// failed: --emit-shared requires building with the 'mlir-build' feature" — a
+/// reproducer that reproduces nothing about the program it names.
+fn is_build_capability_error(e: &str) -> bool {
+    let e = e.to_ascii_lowercase();
+    e.contains("requires building with") || (e.contains("requires the '") && e.contains("feature"))
+}
+
+#[test]
+fn build_capability_errors_are_not_divergences() {
+    // The exact string this build actually produced (seed 0xDEADBEEF prog000).
+    assert!(is_build_capability_error(
+        "error[build]: --emit-shared requires building with the 'mlir-build' feature"
+    ));
+    assert!(is_build_capability_error(
+        "error[build]: cdylib emit requires the 'mlir-build' feature (the \
+         runtime-support link path is gated behind it)"
+    ));
+    // Real findings must stay classified as findings, or this guard would
+    // suppress the very reproducers the fuzzer exists to stage.
+    assert!(!is_build_capability_error(
+        "EXECUTION DIVERGENCE: f(3): compiled=7 oracle=9"
+    ));
+    assert!(!is_build_capability_error(
+        "mic3 compile failed: mindc --emit-mic3 exit 101: panicked at lower.rs"
+    ));
+    assert!(!is_build_capability_error(
+        "mic@3 re-parse failed: TruncatedHeader"
+    ));
+}
+
 fn stage_reproducer(idx: usize, header: &str, src: &str) -> PathBuf {
     let dir = staged_dir();
     let _ = fs::create_dir_all(&dir);
@@ -1334,6 +1370,18 @@ fn mindfuzz_cross_substrate_determinism() {
         // --- Oracle 2: lowered ELF execution == substrate-invariant interpreter ---
         let so_path = tmp.join(format!("prog{idx:03}.so"));
         emit_shared(&bin, &src_path, &so_path).unwrap_or_else(|e| {
+            if is_build_capability_error(&e) {
+                // Environmental: this `mindc` cannot emit a cdylib at all, so the
+                // failure says nothing about this program. Fail loudly -- CI builds
+                // the binary with the required features -- but do NOT stage a
+                // reproducer that misattributes a build-config gap to generated code.
+                panic!(
+                    "MIND-Fuzz: --emit-shared is unavailable in THIS BUILD of mindc, \
+                     a build-configuration gap rather than a divergence.\n{e}\n\
+                     Rebuild with `--features mlir-build,std-surface,cross-module-imports`. \
+                     No reproducer staged: this failure is identical for every program."
+                );
+            }
             let repro = stage_reproducer(idx, &format!("emit-shared failed: {e}"), &src);
             panic!(
                 "MIND-Fuzz PROG {idx} (seed 0x{FUZZ_SEED:08X}): --emit-shared did not \
