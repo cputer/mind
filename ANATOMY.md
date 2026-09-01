@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1429 | **Est. tokens:** ~2,697,515
-**Generated:** 2026-09-01 10:53 UTC
+**Files:** 1428 | **Est. tokens:** ~2,697,434
+**Generated:** 2026-09-01 10:55 UTC
 
 ## Token Budget Guide
 
@@ -28,7 +28,7 @@
 | `.arch-mind/` | 2 | ~644 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
-| `bench/` | 5 | ~7,460 |
+| `bench/` | 5 | ~7,574 |
 | `benches/` | 28 | ~83,676 |
 | `bench/fft/` | 8 | ~8,060 |
 | `benchmarks/` | 12 | ~20,412 |
@@ -170,7 +170,7 @@
 | `tests/mindcraft/lint/shadowing/` | 2 | ~87 |
 | `tests/mindcraft/lint/unused_import/` | 2 | ~99 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
-| `tests/mindfuzz_cross_substrate/staged/` | 16 | ~3,027 |
+| `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2,832 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 148 | ~9,289 |
 | `tests/selfhost_gaps/never_wrong/` | 9 | ~184 |
@@ -362,7 +362,7 @@
 - `matmul_det_bench.mind` (~1079 tok, large) — bench/matmul_det_bench.mind — first pure-MIND runtime benchmark for the
 - `RESULTS-beat-clang-igemm-2026-08-21.md` (~839 tok, large) — MIND vs clang -O3 — int8 GEMM head-to-head (2026-08-21)
 - `RESULTS-int8-2026-06-08.md` (~693 tok, large) — MIND int8 VNNI GEMM — single-core vs OpenBLAS f32 (2026-06-08)
-- `turboquant.mind` (~4355 tok, huge) — bench/turboquant.mind — KV-cache quantization pipeline in pure MIND.
+- `turboquant.mind` (~4469 tok, huge) — bench/turboquant.mind — KV-cache quantization pipeline in pure MIND.
 ### `.cargo/`
 
 - `config.toml` (~130 tok, small) — [registries]
@@ -1652,7 +1652,6 @@
 - `mindfuzz_cross_substrate.rs` (~16542 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_cross_substrate/staged/`
 
-- `fuzz_repro_seed_deadbeef_prog000.mind` (~195 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 - `manifest.tsv` (~357 tok, medium) — scalar_arith_step000	f	3735928559	64	5e39820a2a8325417e39057f19ba9bceec01bd2068c
 - `scalar_accum_step000.mind` (~154 tok, small) — MIND-Fuzz seed: scalar accumulator with a return-feeding literal.
 - `scalar_accum_step001.mind` (~162 tok, small) — MIND-Fuzz seed: scalar accumulator with a return-feeding literal.

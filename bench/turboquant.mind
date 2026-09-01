@@ -41,13 +41,19 @@
 // gives one rounding rule on both signs.  Every reduction is an explicit
 // left-fold in source order, so no reassociation is possible.
 //
-// THE GATE.  `mindc build` is currently NOT fail-closed: a module that fails
-// type-check is embedded as a runtime-JIT fallback with a [WARN] and exit 0
-// (issue #244).  A bench that merely compiles therefore proves nothing.  This
-// module instead CHECKS ITS OWN NUMERICS at run time against independently
-// derived expected values and returns nonzero on mismatch, which the harness
-// surfaces as BENCHMARK FAILED.  Compiling is not passing; the assertions
-// passing is.
+// THE GATE.  A bench that merely compiles proves nothing, so this module CHECKS
+// ITS OWN NUMERICS at run time against independently derived expected values and
+// returns nonzero on mismatch.  Compiling is not passing; the assertions passing
+// is.  EXECUTED 2026-09-01: built standalone to a 54232 B native binary and run
+// -- exit 0, "TURBOQUANT PIPELINE PASS", stages 1-3 with snr_x1000=26464.
+//
+// (The header previously said `mindc build` is NOT fail-closed and cited issue
+// #244.  That is stale: the guards landed in src/build/mod.rs, and `mindc bench`
+// gained the same two checks, so BOTH now refuse a runtime-JIT fallback instead
+// of exiting 0.  Building this file inside the repo project is in fact BLOCKED by
+// that guard today -- not because of this module, but because its sibling
+// bench/matmul_det_bench.mind calls the deliberately-unregistered World intrinsic
+// `__mind_now_ns` and cannot compile natively.)
 
 // ---------------------------------------------------------------------------
 // Q16.16 fixed-point substrate.
