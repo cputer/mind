@@ -115,11 +115,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 #         warning[E2024]: `__mind_open` is not registered in mindc's Rust/MLIR intrinsic
 #         table — mindc build's default backends cannot emit this call
 #       A real std-surface completeness gap, not a test defect.
-#   std_surface_cdylib_link      — the emitted cdylib carries an undefined
-#       `_Exit@GLIBC_2.2.5`, which the link gate rejects. `_Exit` is how the
-#       deterministic bounds trap exits; the gate's allowed-undefined set predates it.
-#   std_surface_self_emit_shared — `vec_module_emits_self_contained_shared`: the vec
-#       module's emitted .so is not self-contained.
 # CRITICAL_<tier> — per-harness minimums for the gates each tier NAMES as the reason
 # it exists. An AGGREGATE floor cannot protect a SPECIFIC test: measured slack was 14
 # tests against FLOOR_TESTS_exec, and an erased test file still prints
@@ -158,8 +153,6 @@ CRITICAL_pkg=(
 QUARANTINE_exec=(
   tensor_param_fail_loud_run
   std_surface_net_fs_process
-  std_surface_cdylib_link
-  std_surface_self_emit_shared
 )
 QUARANTINE_lowering=(std_surface_intrinsics)
 QUARANTINE_pkg=()

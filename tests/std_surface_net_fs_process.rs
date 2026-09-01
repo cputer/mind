@@ -269,11 +269,25 @@ mod mlir_functional {
         let src_path = dir.join(format!("{tag}.mind"));
         let so_path = dir.join(format!("{tag}.so"));
         std::fs::write(&src_path, src).expect("write .mind source");
+        // `--allow-nondeterministic` is REQUIRED here and is not a weakening. Every
+        // `mlir_functional::*` fixture compiled through this helper genuinely reads the
+        // world — a pid, an environment variable, a directory listing, a UDP socket — so
+        // the determinism-by-default gate correctly refuses to emit a runnable artifact
+        // without explicit authorisation. That is the flag's purpose, and it is what a
+        // real user compiling an I/O program passes. Such artifacts are attested
+        // `nondeterministic`, so the evidence chain stays honest rather than bypassed.
+        //
+        // Before the world-reading libc externs were classified (`read`, `stat`,
+        // `getenv`, `socket`, `getsockname`, ...) these compiled by ACCIDENT: those
+        // symbols were unclassified, so the gate had nothing to fire on. Compiling an
+        // I/O program silently as if it were deterministic was the bug; needing the flag
+        // is the fix working.
         let status = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
+                "--allow-nondeterministic",
             ])
             .status()
             .expect("spawn mindc");
