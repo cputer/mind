@@ -106,6 +106,9 @@ examples/*/target/
 /a.out
 .wrangler/
 examples/mindc_mind/mindfuzz_self_host_staged/
+# mind-mem's local recall index (a SQLite cache built from this checkout on
+# demand). Machine-local and regenerable; it is not an input to any gate.
+/.mind-mem-index/
 
 # preflight builds mindc CI-style (--no-default-features) here so it cannot
 # clobber the working ./target/release/mindc — see scripts/preflight.sh
