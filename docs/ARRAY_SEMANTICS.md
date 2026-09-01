@@ -187,11 +187,11 @@ normative target; `GAP` = distance; `EVIDENCE` = citation/observation.
 - EVIDENCE = probe `alias_fixed_i64` RUST_MLIR exit=1 (copy); native COMPILE_FAIL.
 
 ### Q11 — Runtime OOB — **THREE-way fork (confirmed)**
-- CURRENT_RUST_MLIR = **CLAMP** to `[0, len-1]` (`arith.maxsi`/`minsi`, `src/mlir/lowering.rs:4534-4556`; empty rejected at `4529`). Probe: `a[-1]`→`a[0]`=10; `a[5]`→`a[len-1]`=30.
+- CURRENT_RUST_MLIR = **TRAP** `_exit(77)` — aligned with the native backend by `80cb1f73` ("array OOB is a deterministic bounds trap, not a clamp"), which removed the `arith.maxsi`/`minsi` clamp to `[0, len-1]`. Probe: `a[-1]`→77; `a[5]`→77; in-bounds unchanged. (Until 2026-09-01 this line still described the removed clamp, and `tests/array_load_bounds_and_dtype.rs` still asserted it — the test was quarantined and had never run.)
 - CURRENT_SELFHOST = **TRAP** `_exit(77)`. Probe: `a[-1]`→77; `a[5]`→77; `a[2]` in-bounds→30 (`e0a1dcc1`).
 - CURRENT_EVALUATOR = **HARD ERROR**: "unsupported: array index -1 out of bounds (len 3)".
 - CANONICAL_DECISION = **`ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP`**. Remove the MLIR clamp; every runtime OOB is a deterministic trap. Compile-provable OOB may fail at compile time. `_exit(77)` is the current native *ABI* for the observable trap in differential tests — NOT the eternal language semantics (a future version may surface a typed panic/Result).
-- GAP = three different observable behaviors for the same program; the wedge cannot tolerate this.
+- GAP = the evaluator still HARD ERRORs where both compiled backends trap; MLIR and native now agree (trap), so the three-way fork is down to a two-way one between the interpreter and the compiled substrates.
 - EVIDENCE = probes `oob_neg`/`oob_high`/`oob_inbounds`; clamp `lowering.rs:4534-4556`; native `e0a1dcc1`; evaluator error text.
 
 ### Q12 — Compile-time-provable OOB

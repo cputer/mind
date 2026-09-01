@@ -103,13 +103,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 # are the payload of the finding, not collateral from it.
 # deferred: each needs its own fix; none is closed by this gate.
 #
-#   array_load_bounds_and_dtype  — `oob_index_is_deterministic_clamp` asserts the CLAMP
-#       semantics (at(-1)==first, at(100)==last) that commit 80cb1f73 deliberately
-#       replaced with a deterministic bounds TRAP. docs/ARRAY_SEMANTICS.md:193 pins
-#       CANONICAL_DECISION = ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP ("Remove the
-#       MLIR clamp"). The test predates that decision (2026-08-12 vs 2026-08-15) and was
-#       never updated because it never ran. Upgrade path: reassert against the trap
-#       (exit 77), the way tests/array_oob_trap_run.rs already does.
 #   f64_abi_negative_control     — asserts the EXACT MLIR-lowering diagnostic "expects
 #       different type than prior uses: 'f64' vs 'i64'". The type checker now rejects
 #       the same program EARLIER and more precisely with `E2027: no implicit int<->float
@@ -172,7 +165,6 @@ CRITICAL_pkg=(
 )
 
 QUARANTINE_exec=(
-  array_load_bounds_and_dtype
   f64_abi_negative_control
   tensor_param_fail_loud_run
   std_surface_net_fs_process

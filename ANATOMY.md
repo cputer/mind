@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1429 | **Est. tokens:** ~2,697,800
-**Generated:** 2026-09-01 11:56 UTC
+**Files:** 1429 | **Est. tokens:** ~2,698,351
+**Generated:** 2026-09-01 13:28 UTC
 
 ## Token Budget Guide
 
@@ -41,7 +41,7 @@
 | `benchmarks/pytorch_comparison/` | 5 | ~4,828 |
 | `.cargo/` | 1 | ~130 |
 | `config/` | 1 | ~1,465 |
-| `docs/` | 35 | ~90,883 |
+| `docs/` | 35 | ~90,975 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 4 | ~11,498 |
@@ -76,7 +76,7 @@
 | `.github/workflows/` | 9 | ~26,538 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,261 |
-| `scripts/` | 19 | ~44,929 |
+| `scripts/` | 19 | ~44,775 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,559 |
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 335 | ~581,904 |
+| `tests/` | 335 | ~582,517 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -373,7 +373,7 @@
 ### `docs/`
 
 - `architecture.md` (~965 tok, large) — Architecture
-- `ARRAY_SEMANTICS.md` (~7417 tok, huge) — MIND array semantics — normative architecture record
+- `ARRAY_SEMANTICS.md` (~7509 tok, huge) — MIND array semantics — normative architecture record
 - `autodiff.md` (~595 tok, large) — Static autodiff (public)
 ### `docs/backends/`
 
@@ -870,7 +870,7 @@
 - `check_no_ai_attribution.sh` (~995 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~7196 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~7042 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -1241,7 +1241,7 @@
 - `aggshape_reject.rs` (~1842 tok, huge) — Copyright 2025 STARGA Inc.
 - `alias_miscompile_run.rs` (~1338 tok, large) — Copyright 2025 STARGA Inc.
 - `array_ctor_push_get_run.rs` (~907 tok, large) — Copyright 2025 STARGA Inc.
-- `array_load_bounds_and_dtype.rs` (~1394 tok, large) — Copyright 2025 STARGA Inc.
+- `array_load_bounds_and_dtype.rs` (~2007 tok, huge) — Copyright 2025 STARGA Inc.
 - `array_oob_trap_run.rs` (~2030 tok, huge) — Copyright 2025 STARGA Inc.
 - `array_store_run.rs` (~2173 tok, huge) — Copyright 2026 STARGA Inc.
 - `array_surface_run.rs` (~875 tok, large) — Copyright 2025 STARGA Inc.
