@@ -24,6 +24,20 @@
 # leaves the file's required `cross-module-imports` off).
 #
 # Exits non-zero if any gate fails; prints exactly what to run to fix it.
+#
+# AGGREGATE, NEVER FAIL-FAST. Every gate runs; failures accumulate in `fail` via
+# `bad` and the script exits non-zero at the END with all of them reported. Four
+# gates used to `exit 1` inline instead, and the cost was measured: the RI-D1
+# readiness ratchet sits at line ~314 of ~376 and is RED on any branch lacking the
+# RI-D1 work (it is a ratchet for capability that lives on
+# feat/native-float-narrow-codegen). Its inline exit turned the remaining ~60% of
+# this script into dead code -- so the self-host LOOP gate and the criterion BENCH
+# gate never ran, and a genuinely broken bootstrap seed (stage1 != frozen seed,
+# main.mind changed in 6a59af63 with no --reseed) rode the branch invisibly.
+#
+# A known-red early gate must never be able to hide an unknown red later one. If a
+# gate has a REAL dependency on an earlier one, skip its dependents and SAY they
+# were skipped -- never exit silently.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -299,7 +313,7 @@ if [ "${1:-}" = "--full" ]; then
 # deleted a security ENFORCEMENT line while its enum variant, Display arm, error
 # mapping AND its test all survived, so nothing failed to compile and the test kept
 # passing over a rule that no longer existed.
-python3 scripts/sdlc/lost_by_merge.py HEAD || { echo "preflight: lost-by-merge gate FAILED"; exit 1; }
+python3 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
 
 # DTK register-allocator cross-implementation parity. The pure-MIND planner SHIPS
 # inside the frozen stage1.elf, so a divergence between it and the Rust reference is
@@ -308,12 +322,12 @@ python3 scripts/sdlc/lost_by_merge.py HEAD || { echo "preflight: lost-by-merge g
 # rather than skipping.
 MINDC_SO="${MINDC_SO:-$(ls examples/mindc_mind/libmindc_mind.so 2>/dev/null || echo /tmp/libmindc_mind_self_host.so)}" \
 MIND_DTK_SKIP_RUST_REGEN=1 python3 examples/mindc_mind/testdata/dtk_plan_parity_smoke.py \
-  || { echo "preflight: DTK regalloc parity FAILED"; exit 1; }
-python3 scripts/sdlc/enforcement_bijection.py || { echo "preflight: enforcement/test pairing FAILED"; exit 1; }
+  || bad "DTK regalloc parity FAILED"
+python3 scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
 
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
 # Verified green at 9d3d5d41; a regression here must block a push, not surface at flip time.
-python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || { echo "preflight: RI-D1 readiness gate FAILED"; exit 1; }
+python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"
 
   if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then
     if mp_out=$(MINDC_SO="${MINDC_SO:-/tmp/libmindc_mind_self_host.so}" \
