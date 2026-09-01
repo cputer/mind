@@ -13,7 +13,7 @@ tracing + byte-diff + run-parity.
 
 | # | Field | Status | Exact consumer | Exact blocker | Exact test | Dependency cut when |
 |---|-------|--------|----------------|---------------|------------|---------------------|
-| 1 | SELF_REPRO_CLOSURE | **PASS** | self-host loop | — | `self_host_loop_smoke.py` (stage1==stage2==stage3) | done (scalar subset) |
+| 1 | SELF_REPRO_CLOSURE | **PASS** | self-host loop | — | `self_host_loop_smoke.py` — BOTH legs: PRIMARY (stage1==stage2==stage3==**frozen seed**) and ORACLE (a **freshly built** Rust `.so` emits those same bytes) | done (scalar subset) |
 | 2 | PURE_MIND_NATIVE_ELF_COMPILER | **PASS** | `testdata/selfhost_loop/stage1.elf` | — | any `--backend=native` build | done |
 | 3 | PRODUCTION_NATIVE_DISPATCH | **PARTIAL** | `mindc build --backend=native` (opt-in) | default backend still MLIR | RI-D0 E2E (below) | RI-D1: flip default for supported subset |
 | 4 | MLIR_OPT_DEPENDENCY | **PARTIAL** | default `mindc build` | opt-in native path already 0 | `strace -e execve … --backend=native` → 0 mlir-opt | RI-D1 default flip |
