@@ -353,7 +353,17 @@ python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness
   loop_rc=0; python3 examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
   if [ "$loop_rc" = 0 ]; then echo "ok (frozen seed reproduces current source)"
   elif [ "$loop_rc" = 2 ]; then echo "skip (frozen bootstrap fixture missing — BLOCKED)"
-  else bad "self-host loop drift — main.mind/std changed but the frozen seed was NOT re-blessed; --reseed in this change (see /tmp/preflight-loop.out)"; tail -3 /tmp/preflight-loop.out; fi
+  else
+    # Do NOT prescribe --reseed here. This branch fires for EVERY non-zero exit, but
+    # only one of the causes is drift; another is "no fresh oracle could be built"
+    # (a default-feature mindc cannot emit a cdylib, so the smoke falls back to a
+    # possibly months-old in-tree .so). Re-blessing the frozen bootstrap from a stale
+    # oracle freezes the WRONG compiler -- and an operator following this line is
+    # exactly who would do it. The smoke already prints the correct, cause-specific
+    # advice; surface THAT rather than overriding it with a guess.
+    bad "self-host loop gate FAILED — see the smoke's own verdict below and follow the advice it prints (/tmp/preflight-loop.out)"
+    grep -E "FAIL|BLOCKED|WARN\[_selfhost_so\]" /tmp/preflight-loop.out | tail -4
+  fi
 
   step "bench gate (frozen low-level frontend)  [bench-gate.yml, --no-default-features]"
   base=$(ls -t .bench-baseline-*correctness*.txt 2>/dev/null | head -1)
