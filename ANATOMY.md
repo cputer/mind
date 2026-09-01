@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1428 | **Est. tokens:** ~2,697,434
-**Generated:** 2026-09-01 11:06 UTC
+**Files:** 1429 | **Est. tokens:** ~2,697,649
+**Generated:** 2026-09-01 11:41 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~27,472 |
+| `./` | 34 | ~27,687 |
 | `agents/` | 1 | ~436 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
@@ -198,13 +198,14 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `bounties.md` (~888 tok, large) — MIND Bounty Board
 - `build.rs` (~234 tok, medium) — Copyright 2025 STARGA Inc.
-- `Cargo.toml` (~2855 tok, huge) — [package]
+- `Cargo.toml` (~3064 tok, huge) — [package]
 - `clippy.toml` (~25 tok, tiny)
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
 - `CONTRIBUTING.md` (~1553 tok, huge) — Contributing to MIND
 - `deny.toml` (~89 tok, small) — [advisories]
 - `.editorconfig` (~51 tok, small) — root = true
+- `FAST-FORWARD,` (~6 tok, tiny) — YES - zero conflicts
 - `.gitattributes` (~130 tok, small) — # Enforce LF line endings for all text so byte-exact tests (fmt idempotence,
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `.gitignore` (~813 tok, large) — # Rust
