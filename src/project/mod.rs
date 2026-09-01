@@ -3302,6 +3302,21 @@ pub fn test_project(opts: &TestOptions) -> Result<i32> {
             &format!("entry = \"{}\"", manifest.build.entry),
             &format!("entry = \"{}\"", test_entry),
         );
+        // An exact-string replace that matches NOTHING leaves the manifest at its
+        // original entry, so the build silently compiles the APP entry and the
+        // result is reported under this test's name. Formatting drift in
+        // Mind.toml (no spaces around `=`, a different quote style) is enough to
+        // trigger it. Prove the swap took effect rather than assuming it.
+        if patched == orig_manifest {
+            return Err(anyhow!(
+                "Mind.toml entry swap did not apply: no `entry = \"{}\"` line found \
+                 to redirect to `{}`. Refusing to run a test against the \
+                 unmodified project entry, which would report the wrong program's \
+                 result under this test's name.",
+                manifest.build.entry,
+                test_entry
+            ));
+        }
         fs::write(&test_manifest_path, &patched)?;
 
         let result = build_project(&build_opts);
@@ -3389,6 +3404,18 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
         .collect();
 
     if bench_files.is_empty() {
+        // A project with no benchmarks is fine. A FILTER that matched nothing is
+        // not: the operator asked for specific benchmarks, none ran, and exit 0
+        // reports that as success -- so `mindc bench --filter typo` reads exactly
+        // like a filter naming a benchmark that passed. Distinguish the two
+        // rather than collapsing both to green.
+        if let Some(ref filter) = opts.filter {
+            return Err(anyhow!(
+                "no benchmark in {} matched filter {filter:?}. Refusing to \
+                 report success for a run in which nothing executed.",
+                bench_dir.display()
+            ));
+        }
         println!("No benchmark files found.");
         return Ok(0);
     }
@@ -3429,6 +3456,21 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
             &format!("entry = \"{}\"", manifest.build.entry),
             &format!("entry = \"{}\"", bench_entry),
         );
+        // An exact-string replace that matches NOTHING leaves the manifest at its
+        // original entry, so the build silently compiles the APP entry and the
+        // result is reported under this bench's name. Formatting drift in
+        // Mind.toml (no spaces around `=`, a different quote style) is enough to
+        // trigger it. Prove the swap took effect rather than assuming it.
+        if patched == orig_manifest {
+            return Err(anyhow!(
+                "Mind.toml entry swap did not apply: no `entry = \"{}\"` line found \
+                 to redirect to `{}`. Refusing to run a bench against the \
+                 unmodified project entry, which would report the wrong program's \
+                 result under this bench's name.",
+                manifest.build.entry,
+                bench_entry
+            ));
+        }
         fs::write(&test_manifest_path, &patched)?;
 
         let result = build_project(&build_opts);
