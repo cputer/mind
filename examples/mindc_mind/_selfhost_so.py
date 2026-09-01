@@ -38,6 +38,11 @@ _REPO = _HERE.parents[1]
 _LEGACY_SO = _HERE / "libmindc_mind.so"
 _MINDC = _REPO / "target" / "release" / "mindc"
 
+#: True once `resolve_so()` has fallen back to the legacy in-tree `.so` because a
+#: fresh build was impossible. Callers that draw a CONCLUSION from the resolved
+#: `.so` must qualify it: stale bytes cannot distinguish real drift from age.
+USED_LEGACY_FALLBACK = False
+
 
 def _stamp() -> str:
     """Fingerprint of every input that affects the emitted self-host `.so`."""
@@ -85,6 +90,9 @@ def _build_fresh() -> pathlib.Path | None:
 
 def resolve_so() -> pathlib.Path:
     """Resolve the self-host `.so` path (see module docstring for the order)."""
+    # Declared once for the whole function: BOTH fallback routes below assign it,
+    # and Python rejects a `global` that follows an assignment in the same scope.
+    global USED_LEGACY_FALLBACK
     env = os.environ.get("MINDC_SO")
     if env:
         # Fail CLOSED on an explicit-but-missing MINDC_SO. Setting it is a promise
@@ -105,6 +113,20 @@ def resolve_so() -> pathlib.Path:
             )
         return p
     if os.environ.get("MINDC_SO_NOBUILD") or not _MINDC.exists():
+        # Second route to the legacy artifact (explicit escape hatch, or no
+        # release mindc to build with). The REASON differs from the build-failure
+        # route below, but the consequence is identical: these bytes may be
+        # arbitrarily old, so any caller drawing a conclusion from them must
+        # qualify it. Instrumenting only one of the two routes left the flag
+        # False on this path and the unqualified verdict was still printed.
+        USED_LEGACY_FALLBACK = True
         return _LEGACY_SO
     fresh = _build_fresh()
-    return fresh if fresh is not None else _LEGACY_SO
+    if fresh is not None:
+        return fresh
+    # Fell back to the legacy in-tree artifact. It WARNs above, but a caller that
+    # goes on to assert a verdict from these bytes cannot tell "source drifted"
+    # from "this .so is months old" -- so record the fallback and let the caller
+    # qualify its conclusion. See self_host_loop_smoke.py's ORACLE leg.
+    USED_LEGACY_FALLBACK = True
+    return _LEGACY_SO

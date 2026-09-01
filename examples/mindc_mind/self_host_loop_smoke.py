@@ -73,6 +73,7 @@ _DEFAULT_SO = _HERE / "libmindc_mind.so"  # legacy in-tree path (fallback only)
 # MINDC_SO (CI) verbatim; else build the self-host .so FRESH — never trust a
 # stale in-tree libmindc_mind.so (a cargo build does not regenerate it).
 sys.path.insert(0, str(_HERE))
+import _selfhost_so as _so_mod  # noqa: E402
 from _selfhost_so import resolve_so  # noqa: E402
 
 SO = resolve_so()
@@ -287,9 +288,23 @@ def main() -> int:
         return 1
     hso = hashlib.sha256(so_stage1).hexdigest()
     if so_stage1 != frozen:
-        print(f"  FAIL  [ORACLE] fresh Rust .so output ({hso}) != frozen bootstrap "
-              f"({hf}) — std/main.mind SOURCE drifted; re-freeze with "
-              f"`self_host_loop_smoke.py --reseed` (MINDC_SO set) in THIS change.")
+        if _so_mod.USED_LEGACY_FALLBACK:
+            # The resolver could not build a fresh oracle and fell back to the
+            # legacy in-tree .so (it WARNs above). Those bytes cannot distinguish
+            # real source drift from an artifact months old, so the normal advice
+            # -- "--reseed" -- must NOT be given here: re-blessing the frozen
+            # bootstrap from a stale oracle freezes the WRONG compiler, which is
+            # the one outcome this gate exists to prevent.
+            print(f"  FAIL  [ORACLE] output ({hso}) != frozen bootstrap ({hf}) — but "
+                  f"this oracle is the LEGACY IN-TREE .so, NOT a fresh build (see the "
+                  f"WARN above). Stale bytes cannot tell real drift from an old "
+                  f"artifact, so DO NOT --reseed on this evidence. Rebuild mindc with "
+                  f"`--features mlir-build` so a fresh oracle can be emitted, then "
+                  f"re-run; only then is a drift verdict trustworthy.")
+        else:
+            print(f"  FAIL  [ORACLE] fresh Rust .so output ({hso}) != frozen bootstrap "
+                  f"({hf}) — std/main.mind SOURCE drifted; re-freeze with "
+                  f"`self_host_loop_smoke.py --reseed` (MINDC_SO set) in THIS change.")
         return 1
     print(f"  PASS  [ORACLE] fresh Rust .so output == frozen bootstrap "
           f"({hso}) — no source drift.")
