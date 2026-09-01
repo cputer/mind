@@ -55,10 +55,19 @@ pub fn make_and_push(v: Vec, x: i64) -> Vec {
 ///
 /// The test binary locates mindc at `target/debug/mindc` relative to the
 /// manifest dir; `cargo test` ensures the binary is built before tests run.
-fn build_test_so() -> PathBuf {
+/// `tag` MUST be unique per test. libtest runs the tests in this binary on
+/// PARALLEL THREADS and every one of them calls this helper; with a single shared
+/// `/tmp/mind_cdylib_link_test.so` the writers race the readers, so a test that
+/// `nm`s or `stat`s the file while a sibling is mid-write sees a truncated or
+/// half-linked artifact. That produced a genuinely NONDETERMINISTIC red — this
+/// target passed 4/4 and then failed 3/1 on the same tree — which is
+/// disqualifying for a ratcheted gate, and it is why the target was
+/// de-quarantined prematurely on a lucky green. Per-test paths remove the
+/// sharing rather than serialising the tests.
+fn build_test_so(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir();
-    let src_path = dir.join("mind_cdylib_link_test.mind");
-    let so_path = dir.join("mind_cdylib_link_test.so");
+    let src_path = dir.join(format!("mind_cdylib_link_{tag}.mind"));
+    let so_path = dir.join(format!("mind_cdylib_link_{tag}.so"));
 
     std::fs::write(&src_path, SRC).expect("write test .mind source");
 
@@ -84,14 +93,14 @@ fn build_test_so() -> PathBuf {
 
 #[test]
 fn cdylib_is_produced_and_nonzero() {
-    let so = build_test_so();
+    let so = build_test_so("produced");
     let meta = std::fs::metadata(&so).expect("stat .so");
     assert!(meta.len() > 0, ".so file is empty");
 }
 
 #[test]
 fn cdylib_has_no_undefined_mind_symbols() {
-    let so = build_test_so();
+    let so = build_test_so("undefined_syms");
 
     let nm_out = Command::new("nm")
         .arg("-D")
@@ -133,6 +142,47 @@ fn cdylib_has_no_undefined_mind_symbols() {
         "clock_gettime",
         "__cpu_indicator_init",
         "__cpu_model",
+        // `_Exit` is how the DETERMINISTIC BOUNDS TRAP terminates: `__mind_oob_check`
+        // calls it on an out-of-bounds index, which is the ARRAY_OOB_CONTRACT=
+        // DETERMINISTIC_BOUNDS_TRAP decision (docs/ARRAY_SEMANTICS.md Q11) that
+        // replaced the old silent clamp. The allowed-undefined set predates that
+        // decision, so the trap's own exit path was being rejected by the link gate.
+        //
+        // Admitting it grants the loader nothing new: `_Exit` is libc process
+        // termination, exactly like `abort` already on this list, and neither can
+        // alter MIND SEMANTICS. The invariant this list protects is that no
+        // MIND-semantic symbol may be externally supplied — a substitutable
+        // `__mind_oob_check` or `vec_push` would let a preload turn a bounds trap
+        // into a no-op; a substitutable `_Exit` only grants what the platform
+        // already grants any dynamically linked C program.
+        "_Exit",
+        // `open` is pulled in by `__mind_open` (runtime-support/mind_intrinsics.c),
+        // the intrinsic that gives std.fs path-based file I/O on the Rust/MLIR
+        // backend. Same capability class as `read`/`write`/`pread`/`pwrite` already
+        // on this list — POSIX file I/O reached through the runtime-support shim,
+        // not a MIND-semantic symbol. Added when that intrinsic landed; the gate
+        // caught it immediately, which is the list working as intended.
+        "open",
+        // THREADING — the deterministic multi-threaded BLAS kernels
+        // (`__mind_blas_mt_dispatch`) spawn owner-computes thread bands, and
+        // `sysconf` reads the CPU count to size them. Grouped and admitted as one
+        // capability class rather than symbol-by-symbol, because that is the
+        // question the list exists to force: what new power does the loader gain?
+        // Here, none that matters — these are libc threading primitives, and a
+        // substituted `pthread_mutex_lock` can stall or crash the process but
+        // cannot change a COMPUTED VALUE. The band decomposition is
+        // owner-computes with a fixed reduction order, so the byte-identity
+        // invariant does not depend on scheduling, and the cross-substrate
+        // canaries (26/26) pin exactly that.
+        "pthread_create",
+        "pthread_join",
+        "pthread_once",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
+        "pthread_cond_wait",
+        "pthread_cond_signal",
+        "pthread_cond_broadcast",
+        "sysconf",
     ];
 
     for sym_line in &undefined {
@@ -203,7 +253,7 @@ fn runtime_support_defines_print_helpers() {
 
 #[test]
 fn cdylib_dlopens_via_python() {
-    let so = build_test_so();
+    let so = build_test_so("dlopen");
 
     // Use the system Python3 to dlopen the .so.  This is the same
     // mechanism the bootstrap_smoke.py harness uses and verifies

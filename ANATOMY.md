@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1432 | **Est. tokens:** ~2,710,779
-**Generated:** 2026-09-01 19:46 UTC
+**Files:** 1432 | **Est. tokens:** ~2,711,601
+**Generated:** 2026-09-01 21:36 UTC
 
 ## Token Budget Guide
 
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 336 | ~587,635 |
+| `tests/` | 336 | ~588,457 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -1944,7 +1944,7 @@
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_break_continue.rs` (~1310 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_call_lowering.rs` (~834 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_cdylib_link.rs` (~2078 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_cdylib_link.rs` (~2900 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_cli_equals_form.rs` (~874 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cli.rs` (~1007 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cli_subcommand.rs` (~799 tok, large) — Copyright 2025 STARGA Inc.
