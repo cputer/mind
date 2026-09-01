@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1429 | **Est. tokens:** ~2,696,419
-**Generated:** 2026-09-01 10:32 UTC
+**Files:** 1429 | **Est. tokens:** ~2,696,829
+**Generated:** 2026-09-01 10:33 UTC
 
 ## Token Budget Guide
 
@@ -124,7 +124,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,332 |
-| `tests/` | 335 | ~581,495 |
+| `tests/` | 335 | ~581,905 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -1649,7 +1649,7 @@
 - `fuzz_oracle_failure_seed_deadbeef_prog006.mind` (~157 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 ### `tests/`
 
-- `mindfuzz_cross_substrate.rs` (~16133 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindfuzz_cross_substrate.rs` (~16543 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_cross_substrate/staged/`
 
 - `fuzz_repro_seed_deadbeef_prog000.mind` (~195 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)

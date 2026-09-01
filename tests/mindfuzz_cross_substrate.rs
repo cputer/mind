@@ -1141,8 +1141,14 @@ fn staged_dir() -> PathBuf {
 /// failed: --emit-shared requires building with the 'mlir-build' feature" — a
 /// reproducer that reproduces nothing about the program it names.
 fn is_build_capability_error(e: &str) -> bool {
-    let e = e.to_ascii_lowercase();
-    e.contains("requires building with") || (e.contains("requires the '") && e.contains("feature"))
+    // Normalise the quote character before matching. The compiler quotes feature
+    // names inconsistently -- `error[build]` uses 'single quotes', `error[parse]`
+    // uses `backticks` -- and a matcher keyed on one of them silently misses the
+    // other. Measured: the first version of this function matched the emit-shared
+    // message but MISSED "bitwise operator `>>` requires the `std-surface`
+    // feature", so that refusal was still staged as a divergence reproducer.
+    let e = e.to_ascii_lowercase().replace(['`', '\'', '"'], "");
+    e.contains("requires building with") || (e.contains("requires the ") && e.contains("feature"))
 }
 
 #[test]
@@ -1154,6 +1160,13 @@ fn build_capability_errors_are_not_divergences() {
     assert!(is_build_capability_error(
         "error[build]: cdylib emit requires the 'mlir-build' feature (the \
          runtime-support link path is gated behind it)"
+    ));
+    // BACKTICK-quoted, from the parser rather than the build driver. The first
+    // version of the classifier missed exactly this and staged it as a divergence.
+    assert!(is_build_capability_error(
+        "error[parse][E1001]: bitwise operator `>>` requires the `std-surface` \
+         feature; this build is the low-level-only subset, whose IR has no bitwise \
+         instruction to lower it to"
     ));
     // Real findings must stay classified as findings, or this guard would
     // suppress the very reproducers the fuzzer exists to stage.
@@ -1264,6 +1277,17 @@ fn mindfuzz_cross_substrate_determinism() {
         let mic3_a = tmp.join(format!("prog{idx:03}_a.mic3"));
         let mic3_b = tmp.join(format!("prog{idx:03}_b.mic3"));
         let bytes_a = emit_mic3(&bin, &src_path, &mic3_a).unwrap_or_else(|e| {
+            if is_build_capability_error(&e) {
+                // A feature-subset refusal (e.g. bitwise outside `std-surface`) is a
+                // property of this BUILD, identical for every program that uses the
+                // construct -- not a divergence. Fail loudly, stage nothing.
+                panic!(
+                    "MIND-Fuzz: mic@3 compile refused a construct this BUILD of mindc \\
+                     does not support -- a build-configuration gap, not a divergence.\\n{e}\\n\\
+                     Rebuild with `--features mlir-build,std-surface,cross-module-imports`. \\
+                     No reproducer staged: identical for every program using it."
+                );
+            }
             let repro = stage_reproducer(idx, &format!("mic3 compile failed: {e}"), &src);
             panic!(
                 "MIND-Fuzz PROG {idx} (seed 0x{FUZZ_SEED:08X}): a generated program \
