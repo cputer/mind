@@ -106,6 +106,13 @@ required-features = ["mlir-build"]
 name = "mindfuzz_cross_substrate"
 required-features = ["mlir-build"]
 
+# The TurboQuant kernel gate builds and RUNS bench/turboquant.mind, so it needs the
+# emission path `mlir-build` provides. Declared rather than left to a runtime skip,
+# for the same reason as the two gates above.
+[[test]]
+name = "turboquant_kernel_run"
+required-features = ["mlir-build"]
+
 # Order-symmetry of merge signedness. Needs std-surface: ScalarU64/ScalarU32 do not
 # exist without it, so the property under test is unreachable in a default build.
 [[test]]
