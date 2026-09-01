@@ -3438,6 +3438,48 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
 
         match result {
             Ok(build_result) if build_result.success => {
+                // `success` alone is NOT enough to run this artifact. When the entry (or
+                // any module) fails to compile natively it is embedded as a runtime-JIT
+                // fallback, and the emitted file is a LAUNCHER deferring to the installed
+                // mind-runtime -- which, when the syntax exceeds its parser scope, prints a
+                // notice and exits 0. `mindc bench` then recorded a pass for a benchmark that
+                // never executed a single instruction.
+                //
+                // Measured on this tree before the fix: both bench files reported
+                // "[mind-runtime] Module loaded but syntax exceeds parser scope" and `mindc
+                // bench` still exited 0 -- so a bench-based gate could not fail.
+                //
+                // `build` (src/build/mod.rs) and `run_project` already refuse on these two
+                // flags (#244); the bench path computed them and dropped them. Same two
+                // checks, same order, same fail-closed polarity.
+                //
+                // deferred: this guard is currently exercised only because BOTH bench files in
+                // this repo happen to fall back. When they are fixed, that coverage disappears
+                // silently -- upgrade path: a synthetic temp-project fixture (Mind.toml + a
+                // bench entry that cannot compile natively) asserting `mindc bench` exits
+                // non-zero, so the gate keeps a negative twin of its own.
+                if !build_result.entry_native_compiled {
+                    println!(
+                        "  BENCHMARK FAILED: entry module was not natively compiled (embedded \
+                         as a runtime-JIT fallback -- see the [WARN] above). Refusing to \
+                         report a timing for a launcher that may exit 0 without executing the \
+                         benchmark.\n"
+                    );
+                    any_fail = true;
+                    continue;
+                }
+                if !build_result.fallback_sources.is_empty() {
+                    println!(
+                        "  BENCHMARK FAILED: module(s) not natively compiled (embedded as a \
+                         runtime-JIT fallback -- see the [WARN] above): {}. The natively \
+                         compiled entry can call their launcher-stub symbols and reach the \
+                         installed mind-runtime at execution, which may exit 0 without running \
+                         that code.\n",
+                        build_result.fallback_sources.join(", ")
+                    );
+                    any_fail = true;
+                    continue;
+                }
                 let mut cmd = Command::new(&build_result.output_path);
                 if let Some(iters) = opts.iterations {
                     cmd.arg(format!("--iterations={}", iters));
