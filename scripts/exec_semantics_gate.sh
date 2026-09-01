@@ -103,13 +103,6 @@ REQUIRE_TOOLCHAIN_pkg=0
 # are the payload of the finding, not collateral from it.
 # deferred: each needs its own fix; none is closed by this gate.
 #
-#   f64_abi_negative_control     — asserts the EXACT MLIR-lowering diagnostic "expects
-#       different type than prior uses: 'f64' vs 'i64'". The type checker now rejects
-#       the same program EARLIER and more precisely with `E2027: no implicit int<->float
-#       conversion (RFC 0011)`. The control's real contract ("the negative is rejected AT
-#       the f64 call-argument ABI boundary, and not as a parse or a link error") still
-#       holds. Upgrade path: accept either diagnostic, keeping the not-parse / not-link
-#       non-vacuity assertions that make this control non-vacuous.
 #   tensor_param_fail_loud_run   — same class: `tensor_param_emit_shared_fails_loud`
 #       pins a superseded diagnostic string; the rejection itself still happens
 #       (`lower::non_i64_return`).
@@ -165,7 +158,6 @@ CRITICAL_pkg=(
 )
 
 QUARANTINE_exec=(
-  f64_abi_negative_control
   tensor_param_fail_loud_run
   std_surface_net_fs_process
   std_surface_cdylib_link

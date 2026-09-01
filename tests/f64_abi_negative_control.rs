@@ -21,8 +21,10 @@
 //!         + links; proves the negative's failure is NOT a parse / structural one.
 //!   NEGATIVE  `fn driver(n: i64) -> f64 { scale(n) }`
 //!       * `mindc --emit-shared` FAILS at MLIR lowering with the EXACT scalar-ABI
-//!         type-conflict diagnostic `expects different type than prior uses:
-//!         'f64' vs 'i64'` — rejected AT the f64 call-argument ABI boundary.
+//!         type-conflict diagnostic — EITHER the MLIR-lowering form `expects
+//!         different type than prior uses: 'f64' vs 'i64'` OR the earlier, more
+//!         precise type-checker form `E2027: no implicit int↔float conversion
+//!         (RFC 0011)` — rejected AT the int/float call-argument ABI boundary.
 //!       * its stderr carries NO parse-error marker (not-parse) and NO linker
 //!         marker (link never reached).
 //!
@@ -99,11 +101,29 @@ fn f64_abi_negative_control_and_positive() {
     // rewording): load-bearing gate is BOTH types present + this marker set + the
     // pos/neg discriminator, NOT a single exact human phrase. ABI_DIAG kept as one
     // accepted marker so the exact-prose signal still counts when present.
-    let type_conflict = nstderr.contains(ABI_DIAG)
+    // TWO accepted rejection sites, because the compiler moved the check EARLIER.
+    //
+    //  (a) MLIR-lowering: `expects different type than prior uses: 'f64' vs 'i64'`
+    //      -- the original ABI-boundary diagnostic, named in the module doc above.
+    //  (b) Type checker:  `error[type-check][E2027]: no implicit int<->float
+    //      conversion (RFC 0011): argument is an integer value but the parameter is
+    //      declared a float value` -- earlier AND more precise.
+    //
+    // Note (b) never contains the literal tokens "f64"/"i64"; it says "integer
+    // value" / "float value". The old assertion grepped for those literals, so it
+    // failed on the BETTER diagnostic. What this control actually exists to prove
+    // is unchanged and is asserted below: the negative is rejected, at the
+    // int/float call-argument ABI boundary, and NOT as a parse or a link error.
+    let mlir_form = (nstderr.contains(ABI_DIAG)
         || nlow.contains("different type")
         || nlow.contains("type mismatch")
         || nlow.contains("incompatible type")
-        || nlow.contains("expects");
+        || nlow.contains("expects"))
+        && nstderr.contains("f64")
+        && nstderr.contains("i64");
+    let typeck_form =
+        nstderr.contains("E2027") || (nlow.contains("no implicit int") && nlow.contains("float"));
+    let type_conflict = mlir_form || typeck_form;
 
     assert!(
         !nout.status.success(),
@@ -112,9 +132,11 @@ fn f64_abi_negative_control_and_positive() {
     );
     // EXACT reason: the f64/i64 scalar-ABI type conflict (not a vacuous exit!=0).
     assert!(
-        nstderr.contains("f64") && nstderr.contains("i64") && type_conflict,
-        "NEGATIVE must fail with the EXACT f64 call-ABI type-conflict diagnostic \
-         (`{ABI_DIAG} … 'f64' vs 'i64'`), not some unrelated error:\n{nstderr}"
+        type_conflict,
+        "NEGATIVE must fail with the int/float call-ABI type-conflict diagnostic — \
+         either the MLIR form (`{ABI_DIAG} … 'f64' vs 'i64'`) or the type-checker \
+         form (`E2027: no implicit int↔float conversion`) — not some unrelated \
+         error:\n{nstderr}"
     );
     // Not a parse failure (the POSITIVE, structurally identical, parsed + built).
     assert!(
