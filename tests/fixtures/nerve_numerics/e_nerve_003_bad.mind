@@ -1,0 +1,7 @@
+// NEGATIVE fixture for E_NERVE_003 (numerics.md@v1 §4, §6 rule 3).
+// A hand-rolled fixed-point multiply: the `>> 16` scale correction with no
+// saturation clamp, adopting a rounding policy that is not `q16_mul`'s.
+#[determinism(BitIdentical)]
+fn scale(a: i64, b: i64) -> i64 {
+    return (a * b) >> 16
+}

@@ -1,0 +1,7 @@
+// POSITIVE fixture for E_NERVE_004: inference internals stay in Q16.16.
+#[invariant(no_float_ops)]
+#[determinism(BitIdentical)]
+fn preselect(raw: i64) -> i64 {
+    let score: i64 = 2
+    return raw + score
+}

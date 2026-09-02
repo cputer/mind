@@ -1,0 +1,10 @@
+// POSITIVE fixture for E_NERVE_001: the whole reachable closure is annotated.
+#[determinism(BitIdentical)]
+fn preselect(x: i64) -> i64 {
+    return helper(x)
+}
+
+#[determinism(BitIdentical)]
+fn helper(x: i64) -> i64 {
+    return x + 1
+}

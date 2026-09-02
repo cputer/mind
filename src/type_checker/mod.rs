@@ -12,6 +12,8 @@
 
 // Part of the MIND project (Machine Intelligence Native Design).
 
+pub mod nerve_lint;
+mod nerve_walk;
 mod resolve;
 
 use std::collections::BTreeSet;
@@ -4735,6 +4737,13 @@ fn check_module_types_in_file_impl(
             }
         }
     }
+
+    // Q16.16 reduction-order lint (E_NERVE_001..005). Opt-in: the pass returns
+    // on its first statement unless the file carries `#[determinism(BitIdentical)]`
+    // or `#[invariant(no_float_ops)]`, so every module that does not claim the
+    // fixed-point bit-identity contract is unaffected and no diagnostic can be
+    // produced for it. See `nerve_lint` for the rule-by-rule rationale.
+    nerve_lint::check_nerve_numerics(module, src, file, &mut errs);
 
     // Single prologue pass: classify + collect all per-category data in one
     // walk instead of four separate passes (repr_c_struct_names, fn_tensor_sigs,

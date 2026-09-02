@@ -1,0 +1,16 @@
+// POSITIVE fixture for E_NERVE_005: the fold is pinned in source, so its
+// composition order is a property of this file rather than of the backend.
+#[determinism(BitIdentical)]
+#[reduction_strategy(sequential)]
+fn q16_sum(x: i64) -> i64 {
+    let mut acc: i64 = 0
+    for i in 0..8 {
+        acc = acc + i
+    }
+    return acc + x
+}
+
+#[determinism(BitIdentical)]
+fn total(x: i64) -> i64 {
+    return q16_sum(x)
+}

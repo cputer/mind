@@ -1,0 +1,10 @@
+// POSITIVE fixture for E_NERVE_002: the same fold, schedule declared.
+#[determinism(BitIdentical)]
+#[reduction_strategy(sequential)]
+fn q16_sum(x: i64) -> i64 {
+    let mut acc: i64 = x
+    for i in 0..8 {
+        acc = acc + i
+    }
+    return acc
+}

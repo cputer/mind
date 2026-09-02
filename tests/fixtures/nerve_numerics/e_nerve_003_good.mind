@@ -1,0 +1,11 @@
+// POSITIVE fixture for E_NERVE_003: the one sanctioned multiply owns the
+// rounding + saturation policy; every other site routes through it.
+#[determinism(BitIdentical)]
+fn q16_mul(a: i64, b: i64) -> i64 {
+    return (a * b) >> 16
+}
+
+#[determinism(BitIdentical)]
+fn scale(a: i64, b: i64) -> i64 {
+    return q16_mul(a, b)
+}

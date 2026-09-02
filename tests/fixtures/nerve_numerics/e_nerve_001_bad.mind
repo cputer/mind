@@ -1,0 +1,11 @@
+// NEGATIVE fixture for E_NERVE_001 (numerics.md@v1 §6 rule 1).
+// `helper` is reachable from a `#[determinism(BitIdentical)]` root but carries
+// no determinism annotation of its own, so nothing attests its arithmetic order.
+#[determinism(BitIdentical)]
+fn preselect(x: i64) -> i64 {
+    return helper(x)
+}
+
+fn helper(x: i64) -> i64 {
+    return x + 1
+}

@@ -1,0 +1,8 @@
+// NEGATIVE fixture for E_NERVE_004 (numerics.md@v1 §1, §6 rule 4).
+// An IEEE-754 binding inside a unit that declares `no_float_ops`.
+#[invariant(no_float_ops)]
+#[determinism(BitIdentical)]
+fn preselect(raw: i64) -> i64 {
+    let score: f64 = 2.0
+    return raw
+}

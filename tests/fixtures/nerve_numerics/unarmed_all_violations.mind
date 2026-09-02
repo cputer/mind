@@ -1,0 +1,35 @@
+// INERTNESS fixture: every violation above, with the opt-in annotations
+// stripped. mindc is a general-purpose compiler — a unit that never claims the
+// fixed-point bit-identity contract must not be judged by it, so none of the
+// five codes may fire here.
+extern "C" {
+    fn reduce_sum(x: i64) -> i64
+}
+
+fn helper(x: i64) -> i64 {
+    return x + 1
+}
+
+fn preselect(x: i64) -> i64 {
+    return helper(x)
+}
+
+fn unsafe_sum(x: i64) -> i64 {
+    let mut acc: i64 = x
+    for i in 0..8 {
+        acc = acc + i
+    }
+    return acc
+}
+
+fn scale(a: i64, b: i64) -> i64 {
+    return (a * b) >> 16
+}
+
+fn widen(x: f64) -> f64 {
+    return x * 2.0
+}
+
+fn total(x: i64) -> i64 {
+    return reduce_sum(x)
+}
