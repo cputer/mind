@@ -43,6 +43,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Full history: the commit-message gate below reads `git log` over the
+          # pushed range, and the default shallow clone (depth 1) cannot resolve
+          # a range at all — it would fail closed on every run.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -60,6 +65,62 @@ jobs:
 
       - name: JSON is never an evidence-hash preimage (wedge integrity)
         run: bash scripts/check_json_not_evidence.sh
+
+      - name: No model/tool credit in commit MESSAGES (history is permanent)
+        # Companion to the file gate above, sharing ONE pattern definition
+        # (scripts/ai_attribution_patterns.sh) so the two cannot drift. It lives
+        # in THIS job deliberately: adding a step to an already-required job keeps
+        # .github/required-ci-jobs.tsv correct, whereas a new job would need a row
+        # there or it would be advisory-only (verify with
+        # python3 scripts/check_release_gating.py).
+        #
+        # Until this existed, commit messages were checked by NOTHING — no
+        # commit-msg hook, no CI step reading git log — so the same credit the
+        # file gate rejects in a comment could enter a PUBLIC repo's permanent
+        # history in the message beside it. A file can be fixed by the next
+        # commit; a message cannot be fixed without rewriting every descendant.
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          zero=0000000000000000000000000000000000000000
+          case "$EVENT" in
+            pull_request)
+              git fetch --no-tags --quiet origin "$BASE_REF" 2>/dev/null || true
+              RANGE="origin/${BASE_REF}..HEAD"
+              ;;
+            push)
+              # A brand-new branch (or a force-push whose before-sha no longer
+              # exists) reports the all-zero before-sha; a range built from it
+              # cannot resolve, so fall back to the branch-point against main.
+              if [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "$zero" ] \
+                 || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+                RANGE="origin/main..HEAD"
+                # On a push to main that fallback is EMPTY (origin/main is the
+                # pushed tip), and an empty range asserts nothing. Scan the
+                # pushed commit itself instead rather than report a vacuous pass.
+                if [ "$(git rev-list --count "$RANGE" 2>/dev/null || echo 0)" = 0 ]; then
+                  RANGE="${HEAD_SHA}~1..${HEAD_SHA}"
+                fi
+              else
+                RANGE="${BEFORE}..${HEAD_SHA}"
+              fi
+              ;;
+            *)
+              # workflow_dispatch (and any other trigger): against main this range is
+              # always empty, which would be a permanently vacuous pass. Fall back to the
+              # commit under test exactly as the push arm does.
+              RANGE="origin/main..HEAD"
+              if [ "$(git rev-list --count "$RANGE" 2>/dev/null || echo 0)" = 0 ]; then
+                RANGE="${HEAD_SHA}~1..${HEAD_SHA}"
+              fi
+              ;;
+          esac
+          echo "event=$EVENT range=$RANGE"
+          bash scripts/check_commit_messages.sh "$RANGE"
 
       - name: Release gating contract (release.yml may only publish CI-green commits)
         # Whole-tree invariant like the two above, and it belongs on THIS

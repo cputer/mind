@@ -12,39 +12,32 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# Attribution-shaped patterns. `fable` (= an internal model codename) is never a
-# legitimate integration target in these repos, so it is flagged bare (word-
-# bounded, to spare "affable"/"ineffable"). Other vendors are flagged only when
-# adjacent to an authorship/review verb, so legitimate words ("grok" the verb,
-# "opus", a "Gemini CLI" integration line) do not false-positive.
-PATTERN='\bfable\b|copilot|chatgpt|[0-9]+[- ]llm consensus|claude/[a-z-]+-[A-Za-z0-9]{4,}|\b(deepseek|mistral|grok|gemini|gpt|opus|sonnet|haiku|kimi|qwen|nemotron|glm|moonshot|zhipu|anthropic|openai)[- ]?(audit|panel|review|finding|consensus|converged|driven|flagged|authored)\b'
+# The patterns live in ONE file, sourced by the three consumers that must agree
+# about them: this whole-tree file gate, scripts/check_commit_messages.sh (commit
+# MESSAGES over a rev-range) and scripts/commit-msg-hook.sh (the message being
+# written). Read scripts/ai_attribution_patterns.sh for the reasoning behind each
+# pattern and for what must be measured before widening one. Sourcing FAILS
+# CLOSED: a missing definitions file is an error, never an empty pattern that
+# silently matches nothing and prints PASS.
+# Repo-root-relative, deliberately: the `cd` above already put us there, and a
+# $0-relative path breaks when this gate is invoked from a subdirectory.
+PATTERNS_FILE="scripts/ai_attribution_patterns.sh"
+if [ ! -f "$PATTERNS_FILE" ]; then
+  echo "::error::missing $PATTERNS_FILE - the gate has no patterns to apply and"
+  echo "         cannot pass. Restore it; do not inline a second copy."
+  exit 1
+fi
+# shellcheck source=scripts/ai_attribution_patterns.sh
+. "$PATTERNS_FILE"
+if [ -z "${PATTERN:-}" ] || [ -z "${PATTERN_CREDIT:-}" ]; then
+  echo "::error::$PATTERNS_FILE defined no PATTERN/PATTERN_CREDIT - refusing to"
+  echo "         pass on an empty pattern set."
+  exit 1
+fi
 
-# Second pattern: PROVENANCE-shaped credits, which the verb-adjacency rule above
-# structurally cannot see. That rule requires the vendor token to sit IMMEDIATELY
-# before an authorship verb ([- ]? separator), so a credit written as a noun
-# phrase -- "<vendor> PR #216 Finding 2", "(<vendor> corr-audit #3)", "reviewed
-# by <vendor>-5" -- read as clean. Eight such credits were live in .rs/.py source
-# when this rule was added. It therefore:
-#   * matches in BOTH orders (vendor -> credit-word and credit-word -> vendor),
-#   * tolerates a SHORT gap (up to two <=4-letter filler words, e.g. "by"), which
-#     is what catches the parenthesised "(<vendor> Finding 2)" shape and the
-#     trailing "reviewed by <vendor>" shape with one rule,
-#   * adds the review-NOUN vocabulary the first pattern lacks: finding(s), pr,
-#     corr-audit, sweep, scan, reviewed, verified, found.
-# The gap is deliberately short and admits no long word: that is precisely what
-# keeps the ALLOWED integration lines clean -- the coding-agent client list in
-# scripts/anatomy.sh, the shelled-out CLI backend in tools/mindfuzz, the
-# "<vendor>-style token count" heuristics in benchmarks/, the "<vendor> announced
-# the Model Hardware Standard" third-party-fact lines in docs/, and the plugin
-# install section in README.md. Widening the gap starts flagging those; measure
-# against them (git grep -inE the AI_NAMES list alone) before touching it.
-AI_NAMES='codex|claude|deepseek|mistral|grok|gemini|gpt|opus|sonnet|haiku|kimi|qwen|nemotron|glm|moonshot|zhipu|anthropic|openai|llama|fable|copilot|chatgpt'
-CREDIT_WORDS='corr-audit|audit|panel|review|reviews|reviewer|reviewed|verified|found|finding|findings|sweep|scan|consensus|converged|driven|flagged|authored|pr'
-CREDIT_GAP='([^[:alnum:]]{1,3}[a-z]{1,4}){0,2}[^[:alnum:]]{0,3}'
-PATTERN_CREDIT="\b(${AI_NAMES})\b${CREDIT_GAP}\b(${CREDIT_WORDS})\b|\b(${CREDIT_WORDS})\b${CREDIT_GAP}\b(${AI_NAMES})\b"
-
-# Excludes: vendored node_modules, the generated file index, and THIS file
-# (which necessarily contains the example patterns above).
+# Excludes: vendored node_modules, the generated file index, and the two files
+# that necessarily CONTAIN the example patterns (this one and the sourced
+# definitions file) - a gate that flags its own rulebook can never pass.
 #
 # deferred: SCAN SCOPE is narrower than the tree — .ts (23 files), .yml (10),
 # .js (9), .c (7) and .mojo (4) are tracked but never scanned, so an attribution
@@ -58,7 +51,7 @@ PATTERN_CREDIT="\b(${AI_NAMES})\b${CREDIT_GAP}\b(${CREDIT_WORDS})\b|\b(${CREDIT_
 PATHSPEC=(
   '*.md' '*.rs' '*.py' '*.mind' '*.sh' '*.toml' '*.rst' '*.txt'
   ':!node_modules' ':!**/node_modules' ':!ANATOMY.md'
-  ':!scripts/check_no_ai_attribution.sh'
+  ':!scripts/check_no_ai_attribution.sh' ':!scripts/ai_attribution_patterns.sh'
 )
 
 # Vacuity floor. `git grep` exits 1 on NO MATCH, and the old `2>/dev/null || true`

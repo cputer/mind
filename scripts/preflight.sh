@@ -182,6 +182,30 @@ else
   bad "examples/mindc_mind/stdlib_manifest_lint.py MISSING — CI runs it; preflight cannot verify it"
 fi
 
+step "commit-message hygiene main..HEAD  [docs-claims.yml — no model/tool credit in HISTORY]"
+# Text-only (git log + grep), seconds, and in the FAST path for the same reason
+# the cfg-gate lint is: it is the cheapest catch for the one failure class that
+# CANNOT be fixed after the fact. A file can be corrected by the next commit; a
+# MESSAGE on a public repo cannot be corrected without rewriting every descendant
+# commit. Until this gate existed nothing checked messages at all — no commit-msg
+# hook, no CI step reading `git log` — so the credit the file gate rejects inside
+# a comment rode into permanent history in the message beside it.
+# Shares ONE pattern definition with the file gate (scripts/ai_attribution_patterns.sh),
+# so the two cannot drift. GATE-EVIDENCE: the script prints the commit COUNT it
+# scanned and reports an empty range as empty, never as a silent pass.
+if [ ! -f scripts/check_commit_messages.sh ]; then
+  bad "scripts/check_commit_messages.sh MISSING — CI runs it; preflight cannot verify it"
+elif ! git rev-parse --verify -q main >/dev/null; then
+  bad "no local 'main' ref — cannot derive the unpushed range; fetch it, do not skip (a skipped message gate is how a credit reaches public history)"
+else
+  if cm_out=$(bash scripts/check_commit_messages.sh main..HEAD 2>&1); then
+    printf '%s\n' "$cm_out" | grep -E '^commit-message gate:' | tail -1
+  else
+    bad "commit-message gate FAILED — a commit message credits a model or a tool. Fix by AMENDING/REBASING the messages BEFORE pushing:"
+    printf '%s\n' "$cm_out" | grep -E '^(::error::|    msg:)' | head -12
+  fi
+fi
+
 if [ "${1:-}" = "--full" ]; then
   step "no-features test parity  [ci.yml Build & Test 'Test' steps — the fail-close regression class]"
   # A test that feeds lower_to_ir free operands / hits a gated path lowered to a

@@ -34,7 +34,22 @@ cargo test --no-default-features
 # from a clone automatically). Runs the same hygiene gates as CI, before you
 # push rather than after.
 git config core.hooksPath .githooks
+
+# ...and the commit-MESSAGE hook, which git only looks for under that same
+# hooks path. It blocks a message that credits a model or a tool with authoring
+# or reviewing the work (also: any co-authorship trailer — this project is
+# single-author by policy — and a "Generated with" footer). Same rules, same
+# pattern file, as the CI check over the pushed range.
+ln -sf ../scripts/commit-msg-hook.sh .githooks/commit-msg
+# If your clone already points core.hooksPath at another directory (for example
+# .git/hooks with the shared pre-commit/post-commit hooks installed), link the
+# commit-msg hook into THAT directory instead of switching hooksPath, or the
+# other hooks silently stop running.
 ```
+
+A commit message is the one artifact a later commit cannot correct: on a public
+repo it can only be changed by rewriting every descendant commit. Install the
+hook.
 
 ## Development Workflow
 
@@ -60,12 +75,18 @@ All PRs must pass these checks:
 | No AI-attribution | `bash scripts/check_no_ai_attribution.sh` |
 | JSON-not-evidence | `bash scripts/check_json_not_evidence.sh` |
 | Gate wiring | `python3 scripts/check_gate_wiring.py` |
+| No credit in commit messages | `bash scripts/check_commit_messages.sh origin/main..HEAD` |
 
-The last four run in the `Docs Claims` workflow on **every** push and PR. They
-inspect the whole tracked tree, not just your diff, so they are deliberately
-unfiltered — see the header comment in `.github/workflows/docs-claims.yml`.
+The last five run in the `Docs Claims` workflow on every pull request and on every push to `main`. The
+first four of those inspect the whole tracked tree, not just your diff, so they
+are deliberately unfiltered — see the header comment in `.github/workflows/docs-claims.yml`.
 `git config core.hooksPath .githooks` (see Setup) runs them locally at commit
-time so a violation never reaches the public repo.
+time so a violation never reaches the public repo. The commit-message check runs
+over the pushed range instead (it reads `git log`, not the tree) and is mirrored
+locally by the `commit-msg` hook and by `scripts/preflight.sh`, which checks
+`main..HEAD` before you push. All three read one pattern definition,
+`scripts/ai_attribution_patterns.sh`, so the file gate and the message gate
+cannot drift apart.
 
 ### Running Tests
 
