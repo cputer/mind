@@ -2220,15 +2220,18 @@ the design decisions taken and the hazards each must not fall into:
       be protected before the first ceremony (a `v*` tag ruleset and required reviewers
       on the `release` environment are repo settings the runbook applies with `gh api`).
       Runbook: `docs/release/SIGNING_CEREMONY.md`.
-- [ ] **B. Published trust anchor with an independent distribution path.** Full anchor
+- [ ] **B. Published trust anchor with independent distribution paths.** Full anchor
       in-repo at `trust/mind-release-signing.toml` and at
-      `https://mindlang.dev/.well-known/mind-trust-anchor.toml`; the fingerprint on a
-      second control plane: DNS `TXT _mind-trust.mindlang.dev`
-      `"v=mindtrust1; epoch=N; scheme=…; key_id=<hex>"` (decision 2026-09-02: DNS TXT
-      on mindlang.dev). A pubkey of 2 592 bytes does not belong in DNS; the TXT record
-      pins the `key_id`, the anchor file carries the keys, and a verifier cross-checks
-      the two. Recommended third leg, zero code: record the anchor file's SHA-256 in a
-      public append-only transparency log so a swapped anchor leaves a trace.
+      `https://mindlang.dev/.well-known/mind-trust-anchor.toml`. Independence comes
+      from control planes nobody at the artifact origin owns: (1) PRIMARY — a public
+      append-only transparency log: the anchor file's SHA-256, and later every release
+      `SHA256SUMS.sig`, is recorded as a Rekor entry (anonymous upload, no secret) and
+      the finalize gate verifies the INCLUSION PROOF, so a swapped anchor or a
+      re-signed manifest cannot erase its history; (2) SECONDARY — DNS
+      `TXT _mind-trust.mindlang.dev` `"v=mindtrust1; epoch=N; scheme=…; key_id=<hex>"`
+      (decision 2026-09-02) pins the fingerprint on a second control plane. A pubkey of
+      2 592 bytes does not belong in DNS; the anchor file carries the keys, the log and
+      the TXT record carry the fingerprint, and a verifier cross-checks all three.
 - [ ] **C. Signed-reproduction release gate.** Releases ship tarballs, so the signed
       object is the release manifest: `mindc sign-manifest SHA256SUMS` (offline, by the
       operator) and `mindc verify-manifest SHA256SUMS SHA256SUMS.sig --trust-anchor …`
@@ -2239,6 +2242,7 @@ the design decisions taken and the hazards each must not fall into:
       substrate and fails (never skips) on any byte difference, and publishes a DRAFT
       with `SHA256SUMS`; the operator signs offline and uploads `SHA256SUMS.sig`; a
       `release-finalize` workflow verifies the signature against the in-repo anchor,
+      checks the anchor's and the signature's transparency-log inclusion proofs,
       re-verifies every asset against the manifest, and only then publishes. Verifying
       the manifest and asserting the rebuilt bytes match it is exactly "verify the
       signature over the rebuilt bytes". Hazards written into the gate: no PQC feature
