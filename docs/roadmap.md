@@ -2191,34 +2191,65 @@ unsigned members is tamper-evident, not attributable.
 
 ## Phase 19.1 — Signing: the operational last mile
 
-**Status: capability shipped, operations not.** Recorded here because the gap is
-small in engineering terms and large in what may honestly be claimed.
+**Status: capability shipped, operations not — scoped 2026-09-02 (architecture seat), in flight.**
 
-What ships today: RFC 0016 Phase C, crypto-agile (Ed25519 / ML-DSA-65 / hybrid),
-extended by #327 to PQC-hybrid ML-DSA-87 + SLH-DSA-256s. Opt-in via key-seed env
-var, **never signed-by-default**; unsigned artifacts stay byte-identical with no
-`mic@N` bump. `mindc verify --require-signed` is wired and fail-closed.
+What ships today: RFC 0016 Phase C with the flagship scheme
+`pqc-hybrid-ml-dsa-87-slh-dsa-256s` (ML-DSA-87 AND SLH-DSA-SHAKE-256s, both legs must
+verify, non-degradable verifier). Seeds enter only through `MIND_EVIDENCE_MLDSA87_KEY`
+and `MIND_EVIDENCE_SLHDSA_KEY`; signing is deterministic (no RNG at sign time); the
+signature is metadata after the MAP sentinel, so unsigned artifacts stay byte-identical
+and the keystone gate never compiles a PQC crate (`evidence-mldsa` / `evidence-slhdsa`
+are off by default). `mindc verify --require-signed` and the pinned-signer allowlist
+(`--signer-pubkey`, both legs required for the hybrid) are fail-closed.
 
-What does not ship, and is the entire reason the honest phrasing is still
-*"signed (opt-in)"* rather than *"STARGA releases are signed"*:
+What does not ship is process and CI, not cryptography. The three deliverables, with
+the design decisions taken and the hazards each must not fall into:
 
-- [ ] **Offline keygen + key custody** — a documented procedure producing a
-      signing key that has never touched a networked machine, with a stated
-      rotation and revocation story. Absent this, a signature attests a build
-      host, not an organization.
-- [ ] **Published public key** with an independent distribution path. A pubkey
-      served only from the same origin as the artifact adds nothing an attacker
-      who owns that origin cannot forge.
-- [ ] **Signed-reproduction CI gate** — a job that rebuilds a release artifact
-      from source on a second substrate, confirms byte-identity, and verifies the
-      signature over the rebuilt bytes. This is the step that converts the claim
-      from "we signed it" to "anyone can check we signed the thing we say we
-      built."
+- [ ] **A. Offline keygen + custody** — `mindc keygen --scheme pqc-hybrid-ml-dsa-87-slh-dsa-256s`
+      draws the two seeds from the OS CSPRNG (the single place randomness is permitted;
+      offline machine only) and writes the seeds (mode 0600, never overwritten) plus the
+      PUBLIC anchor `trust-anchor.toml` (`schema`, `scheme`, `epoch`, `key_id` =
+      SHA-256(scheme‖ML-DSA-87 pk‖SLH-DSA pk), both pubkeys, `created`, `supersedes`).
+      Key derivation stays in the one Rust crate that already derives pubkeys — no
+      second implementation in a script. Custody: split seed in physical custody, two
+      encrypted offline copies; `mindc keygen --anchor-from-env` re-derives the anchor
+      from restored seeds and must byte-match. Rotation = a new epoch whose anchor names
+      `supersedes`; archived anchors stay in `trust/archive/` so old signatures remain
+      verifiable; revocation = a `revoked` date on the archived anchor plus the DNS
+      record update (machine-checkable, not a prose statement). The tag namespace must
+      be protected before the first ceremony (a `v*` tag ruleset and required reviewers
+      on the `release` environment are repo settings the runbook applies with `gh api`).
+      Runbook: `docs/release/SIGNING_CEREMONY.md`.
+- [ ] **B. Published trust anchor with an independent distribution path.** Full anchor
+      in-repo at `trust/mind-release-signing.toml` and at
+      `https://mindlang.dev/.well-known/mind-trust-anchor.toml`; the fingerprint on a
+      second control plane: DNS `TXT _mind-trust.mindlang.dev`
+      `"v=mindtrust1; epoch=N; scheme=…; key_id=<hex>"` (decision 2026-09-02: DNS TXT
+      on mindlang.dev). A pubkey of 2 592 bytes does not belong in DNS; the TXT record
+      pins the `key_id`, the anchor file carries the keys, and a verifier cross-checks
+      the two. Recommended third leg, zero code: record the anchor file's SHA-256 in a
+      public append-only transparency log so a swapped anchor leaves a trace.
+- [ ] **C. Signed-reproduction release gate.** Releases ship tarballs, so the signed
+      object is the release manifest: `mindc sign-manifest SHA256SUMS` (offline, by the
+      operator) and `mindc verify-manifest SHA256SUMS SHA256SUMS.sig --trust-anchor …`
+      over a domain-separated preimage (`MIND-RELEASE-MANIFEST-v1`), AND-combined,
+      `key_id` and `scheme` must equal the anchor's. Two-phase release: CI builds every
+      target reproducibly (pinned toolchain, `SOURCE_DATE_EPOCH`, path remapping,
+      deterministic tar), a `reproduce` job rebuilds each target on a DIFFERENT runner
+      substrate and fails (never skips) on any byte difference, and publishes a DRAFT
+      with `SHA256SUMS`; the operator signs offline and uploads `SHA256SUMS.sig`; a
+      `release-finalize` workflow verifies the signature against the in-repo anchor,
+      re-verifies every asset against the manifest, and only then publishes. Verifying
+      the manifest and asserting the rebuilt bytes match it is exactly "verify the
+      signature over the rebuilt bytes". Hazards written into the gate: no PQC feature
+      on the keystone/cross-substrate jobs (own workflow, own feature set); no self-skip
+      (missing runner, missing anchor, missing `.sig` = red, and a placeholder anchor is
+      rejected by construction); no gate inside `release.yml`'s tag-push path beyond the
+      draft. Rules R7–R9 in `scripts/check_release_gating.py` pin the wiring.
 
-**Claim discipline:** until all three land, say *"signed (opt-in)"* for the
-capability. Do **not** claim STARGA releases are signed.
-
----
+**Claim discipline:** until A, B and C land and the first release passes finalize, say
+*"signed (opt-in)"* for the capability. Do **not** claim STARGA releases are signed.
+Order A → B → C; B blocks C's finalize gate.
 
 ## Phase 19.2 — Third-party verifier path (determinism an adversary can check)
 
