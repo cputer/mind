@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1436 | **Est. tokens:** ~2,720,937
-**Generated:** 2026-09-02 12:33 UTC
+**Files:** 1445 | **Est. tokens:** ~2,748,695
+**Generated:** 2026-09-02 12:36 UTC
 
 ## Token Budget Guide
 
@@ -22,16 +22,17 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 34 | ~31,887 |
+| `./` | 33 | ~29,016 |
 | `agents/` | 1 | ~436 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
 | `bench/` | 5 | ~7,574 |
-| `benches/` | 28 | ~83,676 |
+| `benches/` | 28 | ~84,218 |
+| `benches/common/` | 1 | ~668 |
 | `bench/fft/` | 8 | ~8,060 |
-| `benchmarks/` | 12 | ~20,412 |
+| `benchmarks/` | 13 | ~28,497 |
 | `benchmarks/autograd_comparison/` | 8 | ~9,411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7,733 |
 | `benchmarks/determinism/` | 3 | ~4,601 |
@@ -40,8 +41,8 @@
 | `benchmarks/mojo/` | 8 | ~4,300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4,828 |
 | `.cargo/` | 1 | ~130 |
-| `config/` | 1 | ~1,465 |
-| `docs/` | 35 | ~90,975 |
+| `config/` | 2 | ~2,531 |
+| `docs/` | 35 | ~91,087 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 4 | ~11,498 |
@@ -70,13 +71,13 @@
 | `examples/typecheck/` | 5 | ~14,553 |
 | `examples/zoo/` | 6 | ~12,518 |
 | `experiments/global-vs-local/` | 7 | ~6,487 |
-| `.githooks/` | 1 | ~434 |
-| `.github/` | 4 | ~601 |
+| `.githooks/` | 4 | ~1,755 |
+| `.github/` | 4 | ~847 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~27,333 |
+| `.github/workflows/` | 9 | ~27,614 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 22 | ~48,807 |
+| `scripts/` | 23 | ~57,656 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,559 |
@@ -105,7 +106,7 @@
 | `src/fmt/` | 3 | ~21,737 |
 | `src/ir/` | 6 | ~78,361 |
 | `src/ir/compact/` | 3 | ~15,292 |
-| `src/ir/compact/v2/` | 9 | ~45,364 |
+| `src/ir/compact/v2/` | 9 | ~45,363 |
 | `src/ir/compact/v3/` | 7 | ~63,340 |
 | `src/lint/` | 2 | ~4,001 |
 | `src/lint/rules/` | 6 | ~9,880 |
@@ -115,7 +116,7 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 4 | ~14,409 |
+| `src/project/` | 5 | ~18,066 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -124,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 336 | ~588,459 |
+| `tests/` | 338 | ~594,262 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -199,23 +200,22 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `bounties.md` (~888 tok, large) — MIND Bounty Board
 - `build.rs` (~234 tok, medium) — Copyright 2025 STARGA Inc.
-- `Cargo.toml` (~3137 tok, huge) — [package]
+- `Cargo.toml` (~3348 tok, huge) — [package]
 - `clippy.toml` (~25 tok, tiny)
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
-- `CONTRIBUTING.md` (~1891 tok, huge) — Contributing to MIND
+- `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
 - `deny.toml` (~89 tok, small) — [advisories]
 - `.editorconfig` (~51 tok, small) — root = true
 - `.gitattributes` (~130 tok, small) — # Enforce LF line endings for all text so byte-exact tests (fmt idempotence,
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `.gitignore` (~813 tok, large) — # Rust
-- `HANDOFF-2026-09-01.md` (~3795 tok, huge) — Handoff — MIND compiler, branch `fix/tc-let-null-annotation`
 - `incompatible` (~0 tok, tiny)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
 - `plugin.json` (~62 tok, small) — Keys: name, description, version, skills, agents
-- `README.md` (~6174 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~6518 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `rustfmt.toml` (~23 tok, tiny) — max_width = 100
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
@@ -262,6 +262,11 @@
 - `bench_x25519.rs` (~2469 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `bench_x509.rs` (~3990 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `cerebras_stencil.rs` (~831 tok, large) — Copyright 2025-2026 STARGA Inc.
+### `benches/common/`
+
+- `mod.rs` (~668 tok, large) — Shared self-skip probe for criterion bench targets.
+### `benches/`
+
 - `compiler.rs` (~3782 tok, huge) — Small program: Simple matrix multiplication
 - `cross_module.rs` (~609 tok, large) — Copyright 2025 STARGA Inc.
 - `det_gemv_q16_mt.rs` (~3294 tok, huge) — Copyright 2025-2026 STARGA Inc.
@@ -270,11 +275,11 @@
 - `det_matmul_q16_mt.rs` (~4049 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_q16.rs` (~4972 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `fft_q16.rs` (~5352 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `mindcraft_fmt.rs` (~908 tok, large) — File readers
-- `operations.rs` (~1076 tok, large) — Element-wise operations
+- `mindcraft_fmt.rs` (~1079 tok, large) — File readers
+- `operations.rs` (~1200 tok, large) — Element-wise operations
 - `parser_throughput.rs` (~916 tok, large) — Copyright 2025 STARGA Inc.
-- `shapes.rs` (~1208 tok, large) — Simple broadcasting scenarios
-- `simple_benchmarks.rs` (~707 tok, large) — Mirror mindc's allocator so this compile-speed bench measures the same heap
+- `shapes.rs` (~1368 tok, large) — Simple broadcasting scenarios
+- `simple_benchmarks.rs` (~794 tok, large) — Mirror mindc's allocator so this compile-speed bench measures the same heap
 - `std_surface.rs` (~1067 tok, large) — Copyright 2025 STARGA Inc.
 ### `bench/fft/`
 
@@ -298,7 +303,8 @@
 - `requirements.txt` (~7 tok, tiny) — torch>=1.0.0
 ### `benchmarks/`
 
-- `BENCHMARK_RESULTS.md` (~4311 tok, huge) — MIND Benchmark Results
+- `BENCHMARK_RESULTS.md` (~4997 tok, huge) — MIND Benchmark Results
+- `criterion_ci_sweep.txt` (~4173 tok, huge) — CRITERION CI-EQUIVALENT SWEEP — recorded output
 ### `benchmarks/cupy_comparison/`
 
 - `leg1_determinism.py` (~2586 tok, huge)
@@ -314,7 +320,7 @@
 - `README.md` (~1311 tok, large) — MIND Determinism Proof Benchmark
 ### `benchmarks/`
 
-- `format_benchmark.py` (~2617 tok, huge)
+- `format_benchmark.py` (~2434 tok, huge)
 ### `benchmarks/inference/`
 
 - `benchmark_inference.py` (~2423 tok, huge)
@@ -331,9 +337,9 @@
 ### `benchmarks/`
 
 - `mic_benchmark.py` (~1473 tok, large)
-- `MIC_MAP_BENCHMARK_README.md` (~335 tok, medium) — MIC/MAP Patent Reference Benchmark
-- `mic_map_benchmark_results.json` (~851 tok, large) — Keys: metadata, measurements, paper_figures_verified, claim_checks, all_claims_verified
-- `mic_map_benchmark_v2.py` (~3150 tok, huge)
+- `MIC_MAP_BENCHMARK_README.md` (~676 tok, large) — MIC/MAP Patent Reference Benchmark
+- `mic_map_benchmark_results.json` (~1506 tok, huge) — Keys: metadata, measurements, paper_figures_verified, claim_checks, cost_model
+- `mic_map_benchmark_v2.py` (~5563 tok, huge)
 ### `benchmarks/mojo/`
 
 - `benchmark_mojo_compilation.py` (~1533 tok, huge)
@@ -370,7 +376,8 @@
 - `config.toml` (~130 tok, small) — [registries]
 ### `config/`
 
-- `capabilities.toml` (~1465 tok, large) — [ir]
+- `capabilities.toml` (~1559 tok, huge) — [ir]
+- `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
 - `architecture.md` (~965 tok, large) — Architecture
@@ -412,7 +419,7 @@
 - `install.md` (~1012 tok, large) — Installing mindc
 - `ir.md` (~451 tok, medium) — MIND IR core
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
-- `ir-stability.md` (~1485 tok, large) — IR stability contract
+- `ir-stability.md` (~1565 tok, huge) — IR stability contract
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
@@ -482,7 +489,7 @@
 - `type-system.md` (~1082 tok, large) — Type System
 - `VERIFICATION_APPARATUS.md` (~7783 tok, huge) — Self-Host Port Verification Apparatus & SOTA Roadmap
 - `versioning.md` (~804 tok, large) — MIND Core Stability & Versioning
-- `version-matrix.md` (~1796 tok, huge) — MIND Ecosystem — Version Matrix
+- `version-matrix.md` (~1828 tok, huge) — MIND Ecosystem — Version Matrix
 - `whitepaper.md` (~2788 tok, huge) — MIND: The Native Language for Intelligent Systems
 ### `examples/`
 
@@ -826,7 +833,10 @@
 - `topo.py` (~696 tok, large)
 ### `.githooks/`
 
-- `pre-commit` (~434 tok, medium) — #!/usr/bin/env bash
+- `commit-msg` (~239 tok, medium) — #!/usr/bin/env bash
+- `post-commit` (~410 tok, medium) — #!/usr/bin/env bash
+- `post-merge` (~408 tok, medium) — #!/usr/bin/env bash
+- `pre-commit` (~698 tok, large) — #!/usr/bin/env bash
 ### `.github/`
 
 - `CODEOWNERS` (~9 tok, tiny) — *       @star-ga
@@ -839,14 +849,14 @@
 
 - `PULL_REQUEST_TEMPLATE.md` (~55 tok, small) — Summary
 - `release-drafter.yml` (~85 tok, small) — name-template: 'v$NEXT_PATCH_VERSION'
-- `required-ci-jobs.tsv` (~452 tok, medium) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
+- `required-ci-jobs.tsv` (~698 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
 - `bench-gate.yml` (~2168 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~229 tok, medium) — name: Cargo Deny
 - `ci.yml` (~17109 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1454 tok, large) — name: Crypto Vectors
-- `docs-claims.yml` (~1571 tok, huge) — name: Docs Claims
+- `docs-claims.yml` (~1852 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
 - `mindcraft.yml` (~910 tok, large) — name: Mindcraft Check
 - `release-drafter.yml` (~91 tok, small) — name: Release Drafter
@@ -863,16 +873,16 @@
 ### `scripts/`
 
 - `ai_attribution_patterns.sh` (~1536 tok, huge) — shellcheck shell=bash
-- `anatomy-hook.sh` (~858 tok, large) — STARGA author guard (chained first: a wrong-identity commit must never be created).
+- `anatomy-hook.sh` (~1391 tok, large) — STARGA author guard (chained first: a wrong-identity commit must never be created).
 - `anatomy.sh` (~2011 tok, huge) — anatomy — Generate ANATOMY.md for any repo
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
-- `check_claims.py` (~2779 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
+- `check_claims.py` (~5223 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~2310 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~4893 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~1221 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
-- `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
-- `commit-msg-hook.sh` (~803 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
+- `check_release_gating.py` (~3942 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
+- `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
 - `exec_semantics_gate.sh` (~6635 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -898,7 +908,8 @@
 - `lost_by_merge.py` (~1245 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `verify_ci_green.py` (~3197 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
+- `test_gate_wiring.py` (~2271 tok, huge) — Regression test for scripts/check_gate_wiring.py.
+- `verify_ci_green.py` (~3651 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
 - `workflow_scan.py` (~1069 tok, large) — workflow_scan.py — dependency-free structural reader for the GitHub Actions
 ### `sdk/ts/mic-map/dist/`
 
@@ -1072,7 +1083,7 @@
 - `parse.rs` (~8124 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/v2/`
 
-- `binary.rs` (~8845 tok, huge) — Copyright 2025 STARGA Inc.
+- `binary.rs` (~8844 tok, huge) — Copyright 2025 STARGA Inc.
 - `emit.rs` (~2445 tok, huge) — Copyright 2025 STARGA Inc.
 - `evidence.rs` (~10501 tok, huge) — Copyright 2025 STARGA Inc.
 - `map_limits.rs` (~1823 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1158,6 +1169,7 @@
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
+- `toolchain_pin.rs` (~3657 tok, huge) — The `[mind]` table is the ONLY *declared* cross-repo compatibility contract
 ### `src/`
 
 - `python.rs` (~1082 tok, large) — Copyright 2025 STARGA Inc.
@@ -1284,6 +1296,7 @@
 - `cerebras_stencil_tile.rs` (~1929 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `chacha20_poly1305_smoke.rs` (~2222 tok, huge) — Copyright 2025 STARGA Inc.
 - `char_literal_run.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
+- `check_claims_cost_gate_test.py` (~2691 tok, huge) — Gate test: the published MIC cost figure must be DERIVED, not typed.
 - `cli_buffers.rs` (~459 tok, medium) — Copyright 2025 STARGA Inc.
 - `cli_build.rs` (~648 tok, large) — Copyright 2025 STARGA Inc.
 - `cli_eval.rs` (~502 tok, large) — Copyright 2025 STARGA Inc.
@@ -1541,6 +1554,7 @@
 - `lint_infrastructure.rs` (~2540 tok, huge) — Copyright 2025 STARGA Inc.
 - `loop_run.rs` (~764 tok, large) — Copyright 2025 STARGA Inc.
 - `loud_fail_non_i64.rs` (~852 tok, large) — Release-readiness P1.1 — the runnable-artifact ABI gate.
+- `manifest_pin_enforcement.rs` (~3112 tok, huge) — The `[mind]` table (`mindc-min` / `mindc-max` / `ir-format` /
 - `map_get_inference_run.rs` (~713 tok, large) — Copyright 2025 STARGA Inc.
 - `map_runtime_run.rs` (~843 tok, large) — Copyright 2025 STARGA Inc.
 - `map_surface_run.rs` (~949 tok, large) — Copyright 2025 STARGA Inc.

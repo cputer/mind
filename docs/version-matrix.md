@@ -14,7 +14,7 @@
 |---|---|---|---|---|---|---|
 | **mind** | `~/mind` | `Cargo.toml` | **0.10.0** | self (the compiler) | mic@1 (text), mic@3 (binary); NATIVE-ELF (normative self-host, `src/native`) | Public repo `star-ga/mind`. Native-ELF self-host fixed point closed 2026-06-25. |
 | **mind-mem** | `~/mind-mem` | `pyproject.toml` | **4.0.15** | n/a (Python package) | uses `mic_map.py` (MICB_VERSION=0x02 / mic@2) | PyPI `mind-mem 4.0.15`. `__version__ = "4.0.15"`. MICB_VERSION pin is mic@2 — see drift flag. |
-| **mind-nerve** | `~/mind-nerve` | `Mind.toml` | **0.1.0-alpha.2** | mindc ≥0.5.0, <0.8.0 | mic@1 (ir-format = "mic@1") | Python package: `pyproject.toml` uses dynamic version via `mind_nerve.__version__`; `__version__ = "0.3.0b8"`. See drift flag. |
+| **mind-nerve** | `~/mind-nerve` | `Mind.toml` | **0.1.0-alpha.2** | mindc ≥0.10.2, <0.11.0 (`[mind]` pin, now ENFORCED) | mic@2 (`ir-format = "mic@2"`) | Python package: `pyproject.toml` uses dynamic version via `mind_nerve.__version__`; `__version__ = "0.3.0b8"`. The `ir-format` pin is REFUSED by mindc: no invocation emits mic@2 (see `docs/ir-stability.md`). See drift flag. |
 | **mind-inference** | `~/mind-inference` | `Mind.toml` | **0.2.0** | not pinned (see drift flag) | mic@1 (standard pipeline) | STARGA Commercial license. No CI verified as of last audit. |
 | **512-mind** | `~/512-mind` | CHANGELOG.md | **1.10.1** | mindc 0.2.5 (CHANGELOG §v1.10.1) | MIC-B / mic@2 (`canonical_ir.serialize_mic_b`) | DIFC governance framework. 65+ .mind source modules. See drift flag on mindc target. |
 | **mindlang.dev** | `~/mindlang.dev` | `package.json` | **0.1.0** | n/a (Next.js / Cloudflare Pages) | n/a | Site name in package.json is `"v2"`, version `"0.1.0"`. TypeScript/Next.js. |

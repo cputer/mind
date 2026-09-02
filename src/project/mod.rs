@@ -6,7 +6,7 @@
 
 //! Project management for MIND - reads Mind.toml and builds projects.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -38,6 +38,10 @@ pub mod stdlib;
 /// the flat `mindc <file> --emit-shared` path in `src/bin/mindc.rs`.
 #[cfg(all(feature = "cross-module-imports", feature = "mlir-build"))]
 pub mod substrate_link;
+
+/// RFC-era `[mind]` toolchain pin — the declared cross-repo compatibility
+/// window. See `toolchain_pin` for why enforcement lives in one place.
+pub mod toolchain_pin;
 
 /// RFC 0008 §3 — `[test]` table in `Mind.toml`.
 /// All fields default; an absent table is equivalent to default.
@@ -89,6 +93,16 @@ pub struct WorkspaceConfig {
 }
 
 /// Project manifest from Mind.toml
+///
+/// Top-level keys the compiler does not model are CAPTURED (see
+/// [`ProjectManifest::unrecognized`]) rather than dropped, so `load_manifest`
+/// can report them instead of accepting them in silence. They are captured and
+/// not refused on purpose: `Mind.toml` is also read by downstream tooling
+/// (`[determinism]`, `[bit-identity]`, `[protection]` tables live in shipped
+/// ecosystem manifests), so a hard refusal here would stop builds over
+/// declarations that are unknown to the compiler but not wrong. The one table
+/// the compiler OWNS — `[mind]`, the toolchain pin — is strict: see
+/// [`toolchain_pin::MindSection`].
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProjectManifest {
     pub package: PackageInfo,
@@ -114,6 +128,18 @@ pub struct ProjectManifest {
     /// RFC 0008 §3 — `[workspace]` table. Absent = single-package project.
     #[serde(default)]
     pub workspace: Option<WorkspaceConfig>,
+    /// `[mind]` — the declared toolchain compatibility window. Enforced in
+    /// [`load_manifest`]; see [`toolchain_pin`].
+    #[serde(default)]
+    pub mind: toolchain_pin::MindSection,
+    /// Every top-level key this struct does not model, captured verbatim.
+    ///
+    /// Deliberately a catch-all rather than a hand-maintained list of known
+    /// table names: a second list would drift from the fields above, and the
+    /// drift would be invisible. `BTreeMap` (not `HashMap`) so the reported
+    /// order is deterministic.
+    #[serde(flatten)]
+    pub unrecognized: BTreeMap<String, toml::Value>,
 }
 
 /// RFC 0007 (Mindcraft) — `[mindcraft]` configuration block in
@@ -776,8 +802,29 @@ pub fn load_manifest(project_root: &Path) -> Result<ProjectManifest> {
     let content = fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
+    // Flatten the TOML error into the message rather than hanging it off the
+    // context chain: `mindc build` renders only the OUTERMOST error, so a
+    // `with_context` wrapper here would show an operator "Failed to parse
+    // Mind.toml" and hide the one fact they need — WHICH key the compiler did
+    // not recognise.
     let manifest: ProjectManifest = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse {}", manifest_path.display()))?;
+        .map_err(|e| anyhow!("Failed to parse {}: {e}", manifest_path.display()))?;
+
+    // Enforce the declared `[mind]` window HERE, at the single point every
+    // build path loads a manifest through, rather than at each call site — a
+    // contract checked in some callers and not others is the fail-open shape
+    // this gate exists to close.
+    toolchain_pin::enforce(
+        &manifest.mind,
+        toolchain_pin::RUNNING_TOOLCHAIN_VERSION,
+        &manifest_path,
+    )?;
+
+    // An unmodelled top-level key is not a build stop (see the struct docs),
+    // but it must not be SILENT either: the project declared something the
+    // compiler will not act on, and only the operator can tell whether that is
+    // a typo or a table meant for other tooling.
+    toolchain_pin::report_unrecognized_keys(&manifest.unrecognized, &manifest_path);
 
     Ok(manifest)
 }

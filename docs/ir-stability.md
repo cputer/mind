@@ -41,7 +41,11 @@ and will not change in incompatible ways without a major-version bump:
 
 - `mic@2` text and `MIC-B` binary formats: stable within 0.x but produce
   the lighter-weight `Graph` type, not `IRModule`. Use them via
-  `compact::v2::parse_mic2` / `compact::v2::parse_micb`.
+  `compact::v2::parse_mic2` / `compact::v2::parse_micb`. These are a **library
+  surface only** — no `mindc` invocation EMITS mic@2 or MIC-B. A `Mind.toml`
+  declaring `ir-format = "mic@2"` is therefore refused by the toolchain pin
+  (`src/project/toolchain_pin.rs`): the compiler cannot produce the format that
+  manifest claims compatibility with. Parsing stays supported.
 - `mic@2.1` adds a trailing canonical **MAP** epilogue (key/value metadata,
   e.g. `evidence_chain.*` per RFC 0016, and Ed25519 `signature.*`) on top of
   `mic@2`/`MIC-B`. Back-compatible by omission: a `Graph` with an empty MAP

@@ -60,7 +60,7 @@ pub fn emit_micb<W: Write>(graph: &Graph, w: &mut W) -> Result<(), MicbError> {
 
 /// Parse MIC-B v2 binary format into a Graph.
 ///
-/// DoS-bounded: the reader is capped at [`MAX_MICB_INPUT`] bytes, and the total
+/// DoS-bounded: the reader is capped at `MAX_MICB_INPUT` bytes, and the total
 /// bytes of decoded string clones are capped relative to the string table, so
 /// untrusted input cannot drive unbounded memory use. Both limits are far above
 /// any legitimate artifact and never fire on valid input.
@@ -374,7 +374,7 @@ const MICB_CLONE_AMPLIFICATION_FACTOR: usize = 64;
 /// needs its own change with the round-trip byte-identity corpus re-run.
 const MICB_MIN_CLONE_BUDGET: usize = 64 * 1024 * 1024;
 
-/// A `Read` adapter that refuses to yield more than [`MAX_MICB_INPUT`] bytes.
+/// A `Read` adapter that refuses to yield more than `MAX_MICB_INPUT` bytes.
 ///
 /// `parse_micb` accepts a generic `R: Read` with no known total length, so the
 /// mic@3 trick of checking `data.len()` up front is unavailable.  Counting at
