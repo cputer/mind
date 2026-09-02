@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# post-merge — dispatcher for machine-local hooks.
+#
+# core.hooksPath selects exactly ONE directory, so pointing it at .githooks
+# (as CONTRIBUTING documents) previously DROPPED every hook a maintainer had
+# installed under .git/hooks: the identity guard, the ANATOMY refresh, and the
+# local index refreshers. Silently, because git reports nothing when a hook is
+# simply absent.
+#
+# The fix is one directory that runs everything: the tracked, shared gates live
+# here, and anything machine-specific (absolute paths, local tooling, private
+# sibling checkouts) stays UNTRACKED under the local hooks directory below and
+# is chained from here. Nothing machine-specific belongs in a tracked file of a
+# public repository.
+#
+#   default:  .git/hooks.local/post-merge
+#   override: git config mind.localHooksPath <dir>
+#
+# A missing local hook is normal and silent; a present one that fails is
+# reported but does not fail the commit, because post-merge runs after the commit
+# object already exists and there is nothing left to refuse.
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+GITDIR="$(git rev-parse --git-common-dir 2>/dev/null || echo "$ROOT/.git")"
+case "$GITDIR" in /*) ;; *) GITDIR="$ROOT/$GITDIR" ;; esac
+LOCAL_DIR="$(git config --get mind.localHooksPath 2>/dev/null || true)"
+[ -n "$LOCAL_DIR" ] || LOCAL_DIR="$GITDIR/hooks.local"
+case "$LOCAL_DIR" in /*) ;; *) LOCAL_DIR="$ROOT/$LOCAL_DIR" ;; esac
+LOCAL_HOOK="$LOCAL_DIR/post-merge"
+if [ -x "$LOCAL_HOOK" ]; then
+  "$LOCAL_HOOK" "$@" || echo "post-merge: local hook $LOCAL_HOOK exited $? (not fatal)" >&2
+fi
+exit 0

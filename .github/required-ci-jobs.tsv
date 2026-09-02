@@ -20,7 +20,20 @@
 # the whole workflow run to have concluded `success`, which is what proves every
 # matrix leg passed, not just the one that matched.
 #
+# A row may name the workflow the job lives in, as `<workflow file>:<job id>`.
+# An unqualified row means ci.yml, so every row written before this existed keeps
+# its meaning byte-for-byte. The qualifier exists because not every release-gating
+# job is in ci.yml: the public-artifact hygiene gates (no model/tool credit in a
+# FILE, and the same rule over commit MESSAGES, which are permanent) all live in
+# docs-claims.yml, which runs unfiltered on its own trigger. While that workflow
+# had no row here, verify_ci_green.py only asked whether it was RED -- and a
+# workflow that never ran is not red, so a release could be cut from a commit
+# those gates had never examined. check_release_gating.py R5 now compares each row
+# against the workflow it names, in both directions, and scripts/check_gate_wiring.py
+# fails when a row's job, or one of its gate STEPS, is missing.
+#
 # Format: <ci.yml job id> TAB <check-run name prefix>
+#     or: <workflow file>:<job id> TAB <check-run name prefix>
 build_test	Build & Test
 cross_substrate_identity	Cross-substrate bit-identity (
 mindfuzz_cross_runner_identity	Fuzzer cross-runner mic@3 identity (avx2 == neon)
@@ -31,3 +44,4 @@ executable_miscompile_gate	Executable miscompile gate (compile + run + assert)
 executable_semantics_tier	Executable-semantics test tier (mlir-build)
 mindcraft_check	Mindcraft check (RFC 0007 Phase 6)
 sdlc_integrity	SDLC gate integrity (merge + enforcement pairing)
+docs-claims.yml:docs-claims	Docs claims gate

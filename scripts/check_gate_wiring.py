@@ -11,10 +11,25 @@ so a named-model attribution landing in any source file never started the
 workflow, and the json-not-evidence gate (which scans ONLY *.mind) could never
 fire on the file class capable of breaking it.
 
-This lint fails if that drift is reintroduced. It checks three things:
-  1. the workflow still invokes both gate scripts;
+This lint fails if that drift is reintroduced. It checks five things:
+  1. every gate STEP the workflow must run is present, as code and not as prose,
+     inside the job the release manifest names;
   2. no push/pull_request paths filter excludes any path class they scan;
-  3. the tracked pre-commit hook runs them too (local defence-in-depth).
+  3. every row of .github/required-ci-jobs.tsv resolves to a real job, with a
+     matching check-run name prefix and a non-empty step list, in the workflow
+     it names -- and the workflow carrying these gates HAS a row, so a release
+     cannot be cut from a commit where they never ran;
+  4. the tracked hooks directory runs them too (local defence-in-depth);
+  5. that directory carries every hook a maintainer needs, because
+     core.hooksPath selects ONE directory and silently drops the rest.
+
+Check 3 is the reason this file grew a manifest reader. docs-claims.yml owns the
+gates that keep a named-model credit out of a PUBLIC repo -- in file contents AND
+in commit messages, which no later commit can correct -- yet it had no row in the
+release manifest, which mirrored ci.yml alone. verify_ci_green.py therefore only
+asked whether docs-claims was RED for the released commit, and a workflow that
+never ran is not red. Deleting the commit-message step, or the whole workflow,
+weakened the release contract with every gate still green.
 
 Dependency-free (no PyYAML): the `on:` block is parsed by indentation, and the
 scan scope is read out of the scripts themselves so the two can never disagree
@@ -28,7 +43,25 @@ import subprocess
 import sys
 from pathlib import Path
 
-WORKFLOW = ".github/workflows/docs-claims.yml"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repo tracks no Python build products and .gitignore has no __pycache__
+# rule; importing a sibling module would create one on every local run.
+sys.dont_write_bytecode = True
+
+from workflow_scan import (  # noqa: E402
+    blocks,
+    job_display_name,
+    name_prefix,
+    workflow_jobs,
+)
+
+WORKFLOW_DIR = ".github/workflows"
+GATE_WORKFLOW = "docs-claims.yml"
+GATE_JOB = "docs-claims"
+WORKFLOW = f"{WORKFLOW_DIR}/{GATE_WORKFLOW}"
+MANIFEST = ".github/required-ci-jobs.tsv"
+# An unqualified manifest row means this workflow (see the manifest header).
+DEFAULT_WORKFLOW = "ci.yml"
 HOOK = ".githooks/pre-commit"
 GATES = (
     "scripts/check_no_ai_attribution.sh",
@@ -36,6 +69,36 @@ GATES = (
 )
 # Events whose trigger must cover the whole tree. workflow_dispatch is manual.
 GATED_EVENTS = ("push", "pull_request")
+
+# (workflow file, job id) -> scripts that job MUST invoke as a step.
+# Checked against the job body with comment lines removed: a workflow that
+# merely mentions a gate in prose is not a workflow that runs it, and that is
+# precisely how a deleted step would otherwise keep passing a substring test.
+REQUIRED_STEPS: dict[tuple[str, str], tuple[str, ...]] = {
+    (GATE_WORKFLOW, GATE_JOB): (
+        "scripts/check_gate_wiring.py",
+        "scripts/test_gate_wiring.py",
+        "scripts/check_claims.py",
+        "scripts/check_no_ai_attribution.sh",
+        "scripts/check_json_not_evidence.sh",
+        # The commit-message gate. A file can be corrected by the next commit;
+        # a message cannot be corrected without rewriting every descendant, so
+        # its step is the one whose deletion costs the most and shows the least.
+        "scripts/check_commit_messages.sh",
+        "scripts/check_release_gating.py",
+    ),
+}
+
+# core.hooksPath points at exactly ONE directory, and git reports nothing when a
+# hook is simply absent -- so a hooks directory missing an entry looks identical
+# to one that ran clean. Every hook the documented install promises must exist
+# here, and each must reach the script that holds the rules.
+REQUIRED_HOOKS: dict[str, tuple[str, ...]] = {
+    ".githooks/pre-commit": GATES + ("scripts/anatomy-hook.sh",),
+    ".githooks/commit-msg": ("scripts/commit-msg-hook.sh",),
+    ".githooks/post-commit": ("hooks.local",),
+    ".githooks/post-merge": ("hooks.local",),
+}
 
 
 def repo_root() -> Path:
@@ -162,6 +225,174 @@ def triggers(path: str, filt: dict[str, list[str]]) -> bool:
     return True  # no filter -> always runs
 
 
+
+def code(text: str) -> str:
+    """`text` with comment lines dropped.
+
+    Every check below asks what a workflow or a hook DOES. A YAML comment that
+    names a gate is documentation, not an invocation, and a substring test that
+    cannot tell them apart lets a step be deleted while a comment above it keeps
+    the lint green -- the exact shape this file exists to refuse.
+    """
+    return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def steps_of(job_body: str) -> list[str]:
+    """The `- ...` entries of a job's `steps:` list, as raw text blocks."""
+    body = blocks(job_body, 4).get("steps", "")
+    out: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("      - "):
+            out.append(line)
+        elif out:
+            out[-1] += "\n" + line
+    return out
+
+
+def parse_manifest(root: Path, failures: list[str]) -> list[tuple[str, str, str]]:
+    """Rows as (workflow file, job id, check-run name prefix).
+
+    An unqualified job id means DEFAULT_WORKFLOW, so rows written before the
+    qualifier existed keep their meaning byte-for-byte.
+    """
+    path = root / MANIFEST
+    if not path.is_file():
+        failures.append(f"missing {MANIFEST} - the release-required set is unreadable")
+        return []
+    rows: list[tuple[str, str, str]] = []
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        parts = raw.split("\t")
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            failures.append(f"{MANIFEST}:{lineno}: expected '<job id>TAB<name prefix>', got {raw!r}")
+            continue
+        jid, prefix = parts[0].strip(), parts[1]
+        workflow, sep, tail = jid.partition(":")
+        if not sep:
+            workflow, tail = DEFAULT_WORKFLOW, jid
+        rows.append((workflow, tail, prefix))
+    if not rows:
+        failures.append(f"{MANIFEST} declares no required jobs - the release gate would be vacuous")
+    return rows
+
+
+def check_manifest(root: Path, failures: list[str]) -> None:
+    """Every required row must resolve to a real, non-empty job."""
+    rows = parse_manifest(root, failures)
+
+    # The whole point of the finding: the workflow that owns the attribution
+    # gates must itself be in the release-required set. Without a row, a release
+    # is verified only against "docs-claims is not RED", which a workflow that
+    # never ran satisfies trivially.
+    if rows and not any(wf == GATE_WORKFLOW for wf, _, _ in rows):
+        failures.append(
+            f"{MANIFEST} has no row for {GATE_WORKFLOW} - the public-artifact "
+            "hygiene gates (file contents AND commit messages) sit OUTSIDE the "
+            "release-required set, so a release can be cut from a commit where "
+            "they never ran"
+        )
+
+    for workflow, jid, prefix in rows:
+        wf_path = root / WORKFLOW_DIR / workflow
+        if not wf_path.is_file():
+            failures.append(f"{MANIFEST} names workflow {workflow!r}, which does not exist")
+            continue
+        jobs = workflow_jobs(wf_path)
+        if jid not in jobs:
+            failures.append(
+                f"{MANIFEST} requires job {jid!r} of {workflow}, which has no such job "
+                f"(it declares {sorted(jobs) or '(none)'}) - the release verifier would "
+                "look for a check-run that is never produced"
+            )
+            continue
+        body = jobs[jid]
+        declared = name_prefix(job_display_name(body) or jid)
+        if declared != prefix:
+            failures.append(
+                f"{workflow} job {jid!r}: manifest prefix {prefix!r} != workflow name "
+                f"prefix {declared!r}"
+            )
+        if not steps_of(body):
+            failures.append(
+                f"{workflow} job {jid!r} declares no steps - a required gate that runs "
+                "nothing is a green check-run asserting nothing"
+            )
+
+
+def check_required_steps(root: Path, failures: list[str]) -> None:
+    """Each named gate must be invoked by a step of its job, as code."""
+    for (workflow, jid), scripts in REQUIRED_STEPS.items():
+        wf_path = root / WORKFLOW_DIR / workflow
+        if not wf_path.is_file():
+            failures.append(f"missing {WORKFLOW_DIR}/{workflow}")
+            continue
+        jobs = workflow_jobs(wf_path)
+        if jid not in jobs:
+            failures.append(f"{workflow} has no job {jid!r} to carry its gate steps")
+            continue
+        bodies = [code(s) for s in steps_of(jobs[jid])]
+        for script in scripts:
+            if not any(script in s for s in bodies):
+                failures.append(
+                    f"{workflow} job {jid!r} no longer runs {script} in any step "
+                    "(a comment naming it does not count)"
+                )
+
+
+def index_mode(root: Path, rel: str) -> str | None:
+    """The file mode git has RECORDED for `rel`, or None when it is untracked."""
+    out = subprocess.run(
+        ["git", "ls-files", "-s", "--", rel],
+        capture_output=True, text=True, cwd=root, check=True,
+    ).stdout.split()
+    return out[0] if out else None
+
+
+def require_executable(root: Path, rel: str, failures: list[str]) -> None:
+    """git execs a hook; without the executable bit it is skipped in silence.
+
+    Asserted against the INDEX, not this disk: `core.fileMode=false` (set in
+    some clones, including the one this was written in) hides a local chmod from
+    git entirely, so a file can be executable here and land as 100644 for
+    everyone else.
+    """
+    mode = index_mode(root, rel)
+    if mode is not None and not mode.endswith("755"):
+        failures.append(
+            f"{rel} is mode {mode} in the index, not 100755 - git will not "
+            f"execute it (fix: git update-index --chmod=+x {rel})"
+        )
+
+
+def check_hooks(root: Path, failures: list[str]) -> None:
+    """One tracked hooks directory that runs everything the install promises."""
+    for hook, needles in REQUIRED_HOOKS.items():
+        path = root / hook
+        if not path.is_file():
+            failures.append(
+                f"missing {hook} - `git config core.hooksPath .githooks` selects ONE "
+                "directory, so a hook absent from it is silently not run"
+            )
+            continue
+        require_executable(root, hook, failures)
+        text = code(path.read_text(encoding="utf-8"))
+        for needle in needles:
+            if needle not in text:
+                failures.append(f"{hook} does not reach {needle}")
+            # The payload a hook chains, read OUT of the requirement above
+            # rather than hand-listed here: a second list is the drift this
+            # lint exists to catch. A wrapper invokes it through `bash`, so its
+            # bit is irrelevant THERE -- but an older clone symlinks the payload
+            # straight into the hooks directory (that install was documented
+            # until this lint replaced it, and is still live in clones made
+            # before), git resolves the symlink, and skips a target without the
+            # executable bit. 100644 on a payload is a hook that looks
+            # installed and runs nothing.
+            elif needle.startswith("scripts/"):
+                require_executable(root, needle, failures)
+
+
 def main() -> int:
     root = repo_root()
     wf_path = root / WORKFLOW
@@ -170,10 +401,8 @@ def main() -> int:
     wf_text = wf_path.read_text(encoding="utf-8")
     failures: list[str] = []
 
-    # (1) the workflow must still invoke both gates.
-    for gate in GATES:
-        if gate not in wf_text:
-            failures.append(f"{WORKFLOW} no longer runs {gate}")
+    # (1) every gate STEP must still be there, as code rather than as prose.
+    check_required_steps(root, failures)
 
     # (2) trigger coverage must be a superset of what the gates scan.
     events = parse_on_block(wf_text)
@@ -200,15 +429,11 @@ def main() -> int:
                             f"-- filter={filt or '{}'}"
                         )
 
-    # (3) local defence-in-depth: the tracked hook runs them too.
-    hook_path = root / HOOK
-    if not hook_path.is_file():
-        failures.append(f"missing {HOOK}")
-    else:
-        hook_text = hook_path.read_text(encoding="utf-8")
-        for gate in GATES:
-            if gate not in hook_text:
-                failures.append(f"{HOOK} does not run {gate}")
+    # (3) every release-required row resolves to a real, non-empty job.
+    check_manifest(root, failures)
+
+    # (4) local defence-in-depth: one tracked hooks directory runs them too.
+    check_hooks(root, failures)
 
     if failures:
         print("::error::gate wiring is broken - a whole-tree gate is not reachable:")

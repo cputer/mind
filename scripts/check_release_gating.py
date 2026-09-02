@@ -39,9 +39,11 @@ WHAT IS CHECKED
       version that the workflow turns into a tag.
   R4  `contents: write` is not granted workflow-wide; only the publishing job
       may hold it (the builders and the gate run read-only).
-  R5  .github/required-ci-jobs.tsv and ci.yml agree in both directions, so a
-      deleted or renamed gate cannot silently drop out of what a release is
-      verified against.
+  R5  .github/required-ci-jobs.tsv and every workflow it names agree in both
+      directions, so a deleted or renamed gate cannot silently drop out of what
+      a release is verified against. A row may qualify its job id as
+      `<workflow file>:<job id>`; an unqualified row means ci.yml, which is why
+      every pre-existing row keeps its meaning unchanged.
   R6  scripts/verify_ci_green.py exists and reads that same manifest.
 
 Usage:
@@ -70,7 +72,10 @@ from workflow_scan import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_YML = ROOT / ".github" / "workflows" / "release.yml"
-CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+CI_YML = WORKFLOW_DIR / "ci.yml"
+# A manifest row without a `<workflow>:` qualifier names a job of this workflow.
+DEFAULT_WORKFLOW = "ci.yml"
 MANIFEST = ROOT / ".github" / "required-ci-jobs.tsv"
 VERIFIER = ROOT / "scripts" / "verify_ci_green.py"
 
@@ -107,8 +112,15 @@ def code(body: str) -> str:
     )
 
 
-def parse_manifest() -> list[tuple[str, str]]:
-    rows: list[tuple[str, str]] = []
+def parse_manifest() -> list[tuple[str, str, str]]:
+    """Rows as (workflow file, job id, check-run name prefix).
+
+    Not every release-gating job lives in ci.yml: the public-artifact hygiene
+    gates run in docs-claims.yml, on that workflow's own unfiltered trigger. A
+    row may therefore qualify its job id as `<workflow file>:<job id>`. An
+    unqualified id still means DEFAULT_WORKFLOW, so no existing row changes.
+    """
+    rows: list[tuple[str, str, str]] = []
     for lineno, raw in enumerate(
         MANIFEST.read_text(encoding="utf-8").splitlines(), start=1
     ):
@@ -120,7 +132,11 @@ def parse_manifest() -> list[tuple[str, str]]:
             raise SystemExit(
                 f"{MANIFEST}:{lineno}: expected '<job id>\\t<name prefix>', got: {line!r}"
             )
-        rows.append((parts[0].strip(), parts[1]))
+        jid = parts[0].strip()
+        workflow, sep, tail = jid.partition(":")
+        if not sep:
+            workflow, tail = DEFAULT_WORKFLOW, jid
+        rows.append((workflow, tail, parts[1]))
     return rows
 
 
@@ -257,48 +273,72 @@ def check_release_workflow(errors: list[str]) -> None:
             )
 
 
-def check_manifest_matches_ci(errors: list[str], show: bool) -> None:
+def check_manifest_matches_workflows(errors: list[str], show: bool) -> None:
     rows = parse_manifest()
-    ci_jobs = workflow_jobs(CI_YML)
-    ci_by_id = {}
-    for jid, body in ci_jobs.items():
-        display = job_display_name(body) or jid
-        ci_by_id[jid] = name_prefix(display)
+
+    # One map per workflow the manifest names. Both directions are enforced for
+    # EVERY such workflow, not just ci.yml: once a workflow is part of what a
+    # release is verified against, a new job inside it that nobody listed is the
+    # same silent gap as a new ci.yml job with no row.
+    by_workflow: dict[str, dict[str, str]] = {}
+    for workflow, _, _ in rows:
+        if workflow in by_workflow:
+            continue
+        path = WORKFLOW_DIR / workflow
+        if not path.is_file():
+            _fail(
+                errors,
+                "R5",
+                f"{MANIFEST.relative_to(ROOT)} names workflow {workflow!r}, which does "
+                "not exist under .github/workflows/.",
+            )
+            by_workflow[workflow] = {}
+            continue
+        by_workflow[workflow] = {
+            jid: name_prefix(job_display_name(body) or jid)
+            for jid, body in workflow_jobs(path).items()
+        }
 
     if show:
-        print("ci.yml jobs -> required check-run name prefix")
-        for jid, prefix in ci_by_id.items():
-            print(f"  {jid:34s} {prefix!r}")
+        for workflow, jobs in by_workflow.items():
+            print(f"{workflow} jobs -> required check-run name prefix")
+            for jid, prefix in jobs.items():
+                print(f"  {jid:34s} {prefix!r}")
         print(f"\n{MANIFEST.relative_to(ROOT)} rows")
-        for jid, prefix in rows:
-            print(f"  {jid:34s} {prefix!r}")
+        for workflow, jid, prefix in rows:
+            print(f"  {workflow}:{jid:34s} {prefix!r}")
 
-    declared = {jid: prefix for jid, prefix in rows}
-    for jid in ci_by_id:
-        if jid not in declared:
-            _fail(
-                errors,
-                "R5",
-                f"ci.yml job '{jid}' has no row in {MANIFEST.relative_to(ROOT)} — a new "
-                "gate that no release is verified against. Add it (or justify the gap).",
-            )
-    for jid in declared:
-        if jid not in ci_by_id:
-            _fail(
-                errors,
-                "R5",
-                f"{MANIFEST.relative_to(ROOT)} requires job '{jid}', which no longer "
-                "exists in ci.yml. A gate was deleted or renamed; re-decide explicitly.",
-            )
-    for jid, prefix in declared.items():
-        if jid in ci_by_id and ci_by_id[jid] != prefix:
-            _fail(
-                errors,
-                "R5",
-                f"job '{jid}': manifest prefix {prefix!r} != ci.yml name prefix "
-                f"{ci_by_id[jid]!r}. The gate would look for a check-run name that "
-                "is never produced.",
-            )
+    declared: dict[str, dict[str, str]] = {}
+    for workflow, jid, prefix in rows:
+        declared.setdefault(workflow, {})[jid] = prefix
+
+    for workflow, jobs in by_workflow.items():
+        for jid in jobs:
+            if jid not in declared.get(workflow, {}):
+                _fail(
+                    errors,
+                    "R5",
+                    f"{workflow} job '{jid}' has no row in "
+                    f"{MANIFEST.relative_to(ROOT)} — a new gate that no release is "
+                    "verified against. Add it (or justify the gap).",
+                )
+        for jid, prefix in declared.get(workflow, {}).items():
+            if jid not in jobs:
+                _fail(
+                    errors,
+                    "R5",
+                    f"{MANIFEST.relative_to(ROOT)} requires job '{jid}', which no longer "
+                    f"exists in {workflow}. A gate was deleted or renamed; re-decide "
+                    "explicitly.",
+                )
+            elif jobs[jid] != prefix:
+                _fail(
+                    errors,
+                    "R5",
+                    f"job '{jid}': manifest prefix {prefix!r} != {workflow} name prefix "
+                    f"{jobs[jid]!r}. The gate would look for a check-run name that "
+                    "is never produced.",
+                )
 
     # R6 — the runtime verifier exists and consumes this same manifest.
     if not VERIFIER.exists():
@@ -319,7 +359,7 @@ def main(argv: list[str]) -> int:
     show = "--print" in argv
     errors: list[str] = []
     check_release_workflow(errors)
-    check_manifest_matches_ci(errors, show)
+    check_manifest_matches_workflows(errors, show)
 
     if errors:
         print("release gating contract: FAIL", file=sys.stderr)
@@ -337,7 +377,7 @@ def main(argv: list[str]) -> int:
     print("  R2 publish + build gated on the CI-green verifier")
     print("  R3 dispatch takes an existing tag, not a free-text version")
     print("  R4 contents:write scoped to the publishing job")
-    print("  R5 required-ci-jobs.tsv == ci.yml jobs (both directions)")
+    print("  R5 required-ci-jobs.tsv == every workflow it names (both directions)")
     print("  R6 verify_ci_green.py present and reading that manifest")
     return 0
 

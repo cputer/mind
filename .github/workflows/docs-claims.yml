@@ -57,6 +57,15 @@ jobs:
       - name: Gate wiring (these gates must be reachable at all)
         run: python3 scripts/check_gate_wiring.py
 
+      - name: Gate-wiring lint must fail CLOSED on a deleted gate step
+        # scripts/test_gate_wiring.py mutates a scratch copy of the wiring and
+        # asserts the lint above goes RED for each: the commit-message step
+        # deleted, a gate named only in a comment, the docs-claims row removed
+        # from .github/required-ci-jobs.tsv, a manifest job id that no longer
+        # exists, and a hook missing from .githooks. A lint no mutation can
+        # redden is not gating anything, and this job is where that is proved.
+        run: python3 scripts/test_gate_wiring.py
+
       - name: Check claims against capability manifest
         run: python3 scripts/check_claims.py
 

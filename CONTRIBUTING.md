@@ -30,22 +30,45 @@ cd mind
 cargo build --no-default-features
 cargo test --no-default-features
 
-# Enable the repo's tracked pre-commit hooks (opt-in: git never installs hooks
-# from a clone automatically). Runs the same hygiene gates as CI, before you
-# push rather than after.
+# Enable the repo's tracked hooks (opt-in: git never installs hooks from a
+# clone automatically). ONE command, ONE directory — `.githooks/` holds every
+# hook, and each runs the same script CI runs:
+#
+#   pre-commit   identity guard, `cargo fmt --check` when Rust is staged, the
+#                ANATOMY.md refresh, the capability-manifest claims gate, and
+#                the two whole-tree hygiene gates (no model/tool credit in a
+#                file; JSON is never an evidence-hash preimage).
+#   commit-msg   the same attribution rules over the MESSAGE you just wrote —
+#                a co-authorship trailer, a "Generated with" footer, or a
+#                model/tool credited with the work. A file can be corrected by
+#                the next commit; a message cannot be corrected without
+#                rewriting every descendant.
+#   post-commit  } dispatchers for machine-local hooks (see below). Nothing
+#   post-merge   } machine-specific belongs in a tracked file of a public repo.
 git config core.hooksPath .githooks
-
-# ...and the commit-MESSAGE hook, which git only looks for under that same
-# hooks path. It blocks a message that credits a model or a tool with authoring
-# or reviewing the work (also: any co-authorship trailer — this project is
-# single-author by policy — and a "Generated with" footer). Same rules, same
-# pattern file, as the CI check over the pushed range.
-ln -sf ../scripts/commit-msg-hook.sh .githooks/commit-msg
-# If your clone already points core.hooksPath at another directory (for example
-# .git/hooks with the shared pre-commit/post-commit hooks installed), link the
-# commit-msg hook into THAT directory instead of switching hooksPath, or the
-# other hooks silently stop running.
 ```
+
+`core.hooksPath` selects **exactly one** directory, and git says nothing when a
+hook is merely absent — so pointing it at `.githooks` used to drop whatever you
+had installed under `.git/hooks`, silently. Keep machine-specific hooks (index
+refreshers, local tooling, absolute paths) as executables in `.git/hooks.local/`
+and the tracked `post-commit` / `post-merge` will chain them:
+
+```bash
+mkdir -p .git/hooks.local
+# example: move an existing local hook across, then make it executable
+mv .git/hooks/post-commit .git/hooks.local/post-commit 2>/dev/null || true
+chmod +x .git/hooks.local/* 2>/dev/null || true
+# a different directory, if you prefer:
+# git config mind.localHooksPath /path/to/dir
+```
+
+`python3 scripts/check_gate_wiring.py` fails if a hook goes missing from
+`.githooks`, if a gate step disappears from `.github/workflows/docs-claims.yml`,
+or if that workflow loses its row in `.github/required-ci-jobs.tsv` — the row
+that makes these gates part of what a release is verified against rather than
+advisory. `python3 scripts/test_gate_wiring.py` proves that lint goes red for
+each of those mutations.
 
 A commit message is the one artifact a later commit cannot correct: on a public
 repo it can only be changed by rewriting every descendant commit. Install the
@@ -75,12 +98,15 @@ All PRs must pass these checks:
 | No AI-attribution | `bash scripts/check_no_ai_attribution.sh` |
 | JSON-not-evidence | `bash scripts/check_json_not_evidence.sh` |
 | Gate wiring | `python3 scripts/check_gate_wiring.py` |
+| Gate wiring fails closed | `python3 scripts/test_gate_wiring.py` |
 | No credit in commit messages | `bash scripts/check_commit_messages.sh origin/main..HEAD` |
 
-The last five run in the `Docs Claims` workflow on every pull request and on every push to `main`. The
+The last six run in the `Docs Claims` workflow on every pull request and on every push to `main`. The
 first four of those inspect the whole tracked tree, not just your diff, so they
 are deliberately unfiltered — see the header comment in `.github/workflows/docs-claims.yml`.
-`git config core.hooksPath .githooks` (see Setup) runs them locally at commit
+That workflow has a row in `.github/required-ci-jobs.tsv`, so a release is
+verified against it having actually run green, not merely against it not being
+red. `git config core.hooksPath .githooks` (see Setup) runs them locally at commit
 time so a violation never reaches the public repo. The commit-message check runs
 over the pushed range instead (it reads `git log`, not the tree) and is mirrored
 locally by the `commit-msg` hook and by `scripts/preflight.sh`, which checks

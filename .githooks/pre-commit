@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# pre-commit — the ONE tracked hooks directory.
+#
+# core.hooksPath selects a single directory. While the shared gates lived here
+# and the identity guard / rustfmt gate / ANATOMY refresh lived only in a
+# maintainer's .git/hooks, the documented `git config core.hooksPath .githooks`
+# install SILENTLY dropped the second set: git says nothing when a hook is
+# merely absent, so the loss looked exactly like success. Both sets now run from
+# here, chained in the order their failure modes demand -- identity first,
+# because a commit created under the wrong author cannot be un-created.
+#
+# scripts/anatomy-hook.sh is invoked rather than inlined: it is the same script
+# a maintainer may still have symlinked at .git/hooks/pre-commit, and a second
+# copy of its logic would drift from the first.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+if [ -f "$ROOT/scripts/anatomy-hook.sh" ]; then
+  if ! bash "$ROOT/scripts/anatomy-hook.sh"; then
+    echo "pre-commit: scripts/anatomy-hook.sh failed - commit blocked." >&2
+    exit 1
+  fi
+fi
+
 # arch-mind sidecar-scan on commit. Log-only (no regression gate yet).
 # Self-contained: looks for arch-mind on PATH; silently no-ops if absent.
 ARCH_MIND="$(command -v arch-mind 2>/dev/null)"

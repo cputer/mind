@@ -4,7 +4,10 @@
 #
 # Install (the repo's hooks are opt-in; git never installs hooks from a clone):
 #   git config core.hooksPath .githooks
-#   ln -sf ../scripts/commit-msg-hook.sh .githooks/commit-msg
+# That is the whole install: .githooks/commit-msg is a tracked wrapper that
+# chains this script, so there is nothing to symlink by hand. The hand step was
+# the one people skipped -- and, because this file was 100644 in the index, a
+# symlink to it was a hook git SKIPPED, in the same silence as a missing one.
 # See CONTRIBUTING.md § Setup. The same three rules run in CI over the pushed
 # range (.github/workflows/docs-claims.yml -> scripts/check_commit_messages.sh),
 # so skipping the hook delays the failure, it does not avoid it — but by then the

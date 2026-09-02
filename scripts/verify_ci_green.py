@@ -38,9 +38,10 @@ WHAT COUNTS AS A QUALIFYING RUN
   * `status` is `completed` and `conclusion` is `success`. In flight is not
     green.
 
-Additionally, every OTHER first-party workflow (bench gate, crypto vectors,
-docs claims, cargo-deny, mindcraft) that has a *completed* run for this SHA must
-not have failed.  Those workflows are path-filtered, so requiring them
+Every workflow the manifest names is checked this way, not just ci.yml: a row
+may read `<workflow file>:<job id>`. Additionally, every OTHER first-party
+workflow (bench gate, crypto vectors, cargo-deny, mindcraft) that has a
+*completed* run for this SHA must not have failed.  Those workflows are path-filtered, so requiring them
 unconditionally would block legitimate releases; requiring that they are not RED
 when they did run costs nothing and closes "release from a SHA whose bench gate
 is red".
@@ -95,13 +96,27 @@ def gh_api(path: str) -> object:
     return json.loads(proc.stdout)
 
 
-def required_jobs(manifest: Path) -> list[tuple[str, str]]:
-    rows: list[tuple[str, str]] = []
+def required_jobs(manifest: Path, default_workflow: str) -> list[tuple[str, str, str]]:
+    """Rows as (workflow file, job id, check-run name prefix).
+
+    A row may qualify its job id as `<workflow file>:<job id>`; an unqualified
+    id means `default_workflow`, so rows written before the qualifier existed
+    keep their meaning. The qualifier exists because the public-artifact hygiene
+    gates -- no model/tool credit in a FILE, and the same rule over commit
+    MESSAGES, which are permanent -- run in docs-claims.yml, not ci.yml. While
+    they had no row, the only question asked about them was "did a run of that
+    workflow fail", and a workflow that never ran has not failed.
+    """
+    rows: list[tuple[str, str, str]] = []
     for raw in manifest.read_text(encoding="utf-8").splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         jid, _, prefix = raw.partition("\t")
-        rows.append((jid.strip(), prefix))
+        jid = jid.strip()
+        workflow, sep, tail = jid.partition(":")
+        if not sep:
+            workflow, tail = default_workflow, jid
+        rows.append((workflow, tail, prefix))
     if not rows:
         raise Blocked(
             f"{manifest} declares no required jobs. An empty manifest would make "
@@ -177,6 +192,7 @@ def pick_qualifying_run(runs: list[dict], repo: str, workflow: str, sha: str) ->
 
 
 def check_required_jobs(repo: str, run: dict, rows: list[tuple[str, str]]) -> None:
+    """`rows` is (job id, name prefix) for ONE workflow run."""
     data = gh_api(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")
     jobs = list(data["jobs"])  # type: ignore[index]
     total = data.get("total_count", len(jobs))  # type: ignore[union-attr]
@@ -209,7 +225,7 @@ def check_required_jobs(repo: str, run: dict, rows: list[tuple[str, str]]) -> No
         )
 
 
-def check_no_red_sibling_workflows(repo: str, sha: str, workflow: str) -> None:
+def check_no_red_sibling_workflows(repo: str, sha: str, gated: set[str]) -> None:
     data = gh_api(f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100")
     runs = list(data["workflow_runs"])  # type: ignore[index]
     total = data.get("total_count", len(runs))  # type: ignore[union-attr]
@@ -228,7 +244,10 @@ def check_no_red_sibling_workflows(repo: str, sha: str, workflow: str) -> None:
         # not evidence about this tree.
         if not path.startswith(".github/workflows/"):
             continue
-        if path.endswith(f"/{workflow}"):
+        # Workflows with rows in the manifest already got the stronger check
+        # above (a qualifying green run, containing every required job); a
+        # "not red" restatement here would only add noise.
+        if any(path.endswith(f"/{w}") for w in gated):
             continue
         if run.get("status") == "completed" and run.get("conclusion") in RED:
             reds.append(f"{path} (run {run['id']}: {run['conclusion']})")
@@ -259,20 +278,30 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
 
     try:
-        rows = required_jobs(Path(args.required_jobs))
+        rows = required_jobs(Path(args.required_jobs), args.workflow)
         sha, tag = resolve_ref(args.repo, args.ref)
         label = f"{tag} -> {sha}" if tag else sha
         print(f"release candidate: {label}")
-        run = pick_qualifying_run(
-            ci_runs(args.repo, args.workflow, sha), args.repo, args.workflow, sha
-        )
-        print(
-            f"green {args.workflow} run: {run['id']} "
-            f"(event={run['event']}, branch={run.get('head_branch')!r}) "
-            f"{run.get('html_url', '')}"
-        )
-        check_required_jobs(args.repo, run, rows)
-        check_no_red_sibling_workflows(args.repo, sha, args.workflow)
+        # Every workflow the manifest names must have its own qualifying green
+        # run for this commit. The primary gating workflow is checked first so
+        # its verdict leads the log; the rest follow in manifest order.
+        by_workflow: dict[str, list[tuple[str, str]]] = {}
+        for workflow, jid, prefix in rows:
+            by_workflow.setdefault(workflow, []).append((jid, prefix))
+        order = ([args.workflow] if args.workflow in by_workflow else []) + [
+            w for w in by_workflow if w != args.workflow
+        ]
+        for workflow in order:
+            run = pick_qualifying_run(
+                ci_runs(args.repo, workflow, sha), args.repo, workflow, sha
+            )
+            print(
+                f"green {workflow} run: {run['id']} "
+                f"(event={run['event']}, branch={run.get('head_branch')!r}) "
+                f"{run.get('html_url', '')}"
+            )
+            check_required_jobs(args.repo, run, by_workflow[workflow])
+        check_no_red_sibling_workflows(args.repo, sha, set(by_workflow))
     except Blocked as exc:
         # Flush first: the progress lines above and this verdict must interleave
         # in the order they happened when a CI log merges the two streams.

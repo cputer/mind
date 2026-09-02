@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# commit-msg — refuse a message that credits a model or a tool with authoring or
+# reviewing the work. Thin wrapper: the rules, the pattern file and the
+# diagnostics all live in scripts/commit-msg-hook.sh, which is the same script
+# the CI range gate shares a pattern definition with. Keeping the wrapper empty
+# of logic is deliberate — a hook that re-states the rules is a second copy that
+# drifts.
+#
+# This file exists so `git config core.hooksPath .githooks` installs the
+# message gate along with everything else in this directory. Before it, the
+# message gate had to be symlinked in by hand (CONTRIBUTING said so), and the
+# hand step was the one people skipped.
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+HOOK="$ROOT/scripts/commit-msg-hook.sh"
+if [ ! -f "$HOOK" ]; then
+  echo "commit-msg: missing $HOOK - blocking rather than checking nothing." >&2
+  exit 1
+fi
+exec bash "$HOOK" "$@"
