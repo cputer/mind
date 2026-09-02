@@ -2220,18 +2220,26 @@ the design decisions taken and the hazards each must not fall into:
       be protected before the first ceremony (a `v*` tag ruleset and required reviewers
       on the `release` environment are repo settings the runbook applies with `gh api`).
       Runbook: `docs/release/SIGNING_CEREMONY.md`.
-- [ ] **B. Published trust anchor with independent distribution paths.** Full anchor
-      in-repo at `trust/mind-release-signing.toml` and at
-      `https://mindlang.dev/.well-known/mind-trust-anchor.toml`. Independence comes
-      from control planes nobody at the artifact origin owns: (1) PRIMARY — a public
-      append-only transparency log: the anchor file's SHA-256, and later every release
-      `SHA256SUMS.sig`, is recorded as a Rekor entry (anonymous upload, no secret) and
-      the finalize gate verifies the INCLUSION PROOF, so a swapped anchor or a
-      re-signed manifest cannot erase its history; (2) SECONDARY — DNS
-      `TXT _mind-trust.mindlang.dev` `"v=mindtrust1; epoch=N; scheme=…; key_id=<hex>"`
-      (decision 2026-09-02) pins the fingerprint on a second control plane. A pubkey of
-      2 592 bytes does not belong in DNS; the anchor file carries the keys, the log and
-      the TXT record carry the fingerprint, and a verifier cross-checks all three.
+- [ ] **B. Published trust anchor with independent distribution paths.** The trust
+      root belongs to the entity, not to a product site: signer identity
+      `starga-inc/mind-signing/epoch-N`, anchor served from `star.ga`, never from the
+      artifact origin (GitHub Releases). Three paths, checked together, mismatch =
+      failure: (1) PRIMARY — a public append-only transparency log: the anchor file's
+      SHA-256, and later every release `SHA256SUMS.sig`, is recorded as a Rekor entry
+      (anonymous upload, no secret; the PQC signature is logged as an opaque blob and
+      verified by `mindc`, since ML-DSA/SLH-DSA are not first-class there) and the
+      finalize gate verifies the INCLUSION PROOF, so a swapped anchor or a re-signed
+      manifest cannot erase its history and every signing event is third-party
+      timestamped; (2) CANONICAL STATEMENT —
+      `https://star.ga/.well-known/mind-signing-keys.json` over TLS, its SHA-256 also
+      committed as `trust/mind-release-signing.toml` in-repo so both must be forged
+      together; (3) FINGERPRINT — DNS `TXT star.ga`
+      `"v=mindtrust1; epoch=N; scheme=…; key_id=<hex>"` (a 2 592-byte pubkey does not
+      belong in DNS; the record pins the `key_id` only; DNSSEC coverage of `.ga` is
+      checked and recorded in the runbook). Precondition the ceremony must verify and
+      record: `star.ga` DNS/hosting and the `star-ga` GitHub org must not share a
+      credential root — if they do, the log is load-bearing and the other two are
+      cosmetic. Decision 2026-09-02 (architecture seat + operator).
 - [ ] **C. Signed-reproduction release gate.** Releases ship tarballs, so the signed
       object is the release manifest: `mindc sign-manifest SHA256SUMS` (offline, by the
       operator) and `mindc verify-manifest SHA256SUMS SHA256SUMS.sig --trust-anchor …`
