@@ -1,0 +1,75 @@
+# Token-pricing inputs for the PUBLISHED MIC-vs-JSON cost claim.
+#
+# Why this file exists
+# --------------------
+# README.md once published "MIC saves $6,780/year per million IR operations vs
+# JSON" while the methodology it cited yielded $396 from the same reference IR.
+# The 17.1x gap back-solved to a $0.030/1K token price that appeared in NO file
+# in the tree, so the headline could not be reproduced, audited, or refreshed —
+# and nothing in CI compared it against the benchmark it claimed to summarise.
+#
+# The rule now: every input to the published figure is HERE, the token counts
+# come from a real tokenizer (never a chars/4 heuristic), and
+# `scripts/check_claims.py` recomputes the arithmetic and fails the build if any
+# declared surface disagrees. The number in README is therefore produced by a
+# command anyone can re-run, not typed by hand.
+
+[pricing]
+# Price of ONE thousand INPUT tokens. Used for both the JSON baseline and MIC:
+# the claim is a difference, so the price cancels out of the ratio and scales
+# the dollar figure linearly.
+input_usd_per_1k_tokens = 0.00175
+currency = "USD"
+# Date this value was last reviewed. The claim sentence restates BOTH the price
+# and this date inline, so the figure can never be read without its assumption.
+as_of = "2026-02-17"
+# HONESTY: this is a MODELLING ASSUMPTION carried forward from the repo's own
+# published methodology (benchmarks/BENCHMARK_RESULTS.md, "Cost Impact"), not a
+# vendor quote. Model pricing is vendor-specific and volatile; treat the figure
+# as "cost at this stated price", never as a market rate.
+source = "benchmarks/BENCHMARK_RESULTS.md, section 'Cost Impact (LLM Token Pricing)'"
+source_kind = "repo-internal-assumption"
+# Upgrade path: replace `source`/`source_kind` with a dated vendor price sheet
+# reference and bump `as_of`; the gate then forces every surface to follow.
+
+[workload]
+# What "per million IR operations" means: one IR document of the reference shape
+# is sent to a model once per operation, and the workload runs that volume over
+# a year. No output tokens, no retries, no context repetition are modelled — the
+# figure is a floor on the serialization saving alone, not a total-cost estimate.
+ir_operations_per_year = 1000000
+volume_human = "million"
+
+[measurement]
+# Machine-readable benchmark output the figure is derived FROM.
+results_json = "benchmarks/mic_map_benchmark_results.json"
+# Re-run this to refresh the measurement; it rewrites results_json in place.
+refresh_command = "python3 benchmarks/mic_map_benchmark_v2.py"
+# Real BPE tokenizer. `token_field` names the tokenizer-measured column; the
+# chars/4 column (`tokens_approx`) is an ESTIMATE and must never back a price.
+tokenizer = "cl100k_base"
+tokenizer_library = "tiktoken"
+token_field = "tokens_tiktoken"
+# Rows of results_json["measurements"] to compare.
+baseline_label = "json_indent2_pretty"
+candidate_label = "mic_v1"
+
+[claim]
+# The one sentence every declared surface must carry VERBATIM. Both the
+# benchmark and the gate render it from this template, so there is exactly one
+# spelling of the claim in the repo.
+template = "At ${price_per_1k}/1K input tokens ({price_as_of}), MIC saves ${annual_savings}/year per {volume_human} IR operations vs JSON"
+surfaces = ["README.md", "benchmarks/BENCHMARK_RESULTS.md"]
+
+# Display label -> benchmark measurement label. Any MARKDOWN TABLE ROW on a
+# declared surface that names one of these AND carries a dollar amount is a
+# published cost row: the gate requires its token count and its annual figure to
+# be the derived ones. Without this, only the headline sentence was derived and
+# the table beneath it could still drift by hand — which is how the tables came
+# to publish a chars/4 estimate while calling the column measured.
+[claim.table_labels]
+"JSON" = "json_indent2_pretty"
+"TOML" = "toml"
+"TOON" = "toon"
+"mic@1" = "mic_v1"
+"mic@2" = "mic_v2"

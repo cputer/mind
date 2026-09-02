@@ -69,6 +69,14 @@ jobs:
       - name: Check claims against capability manifest
         run: python3 scripts/check_claims.py
 
+      - name: Published cost figure is derived, not typed (mutation proof)
+        # check_claims.py above only reports that the figure currently agrees with
+        # the benchmark. This step proves the comparison BITES: it mutates the
+        # price input, the token counts, the surface text and the benchmark's own
+        # cost block in turn, and fails unless the gate goes red for each. Without
+        # it, a cost check that silently stopped comparing would ride green.
+        run: python3 tests/check_claims_cost_gate_test.py
+
       - name: No AI-attribution in public artifacts
         run: bash scripts/check_no_ai_attribution.sh
 

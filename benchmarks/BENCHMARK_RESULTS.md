@@ -184,29 +184,34 @@ All 4 tests passed with 100% bit-identical SHA256 hashes across 10 runs each:
 
 ## Executive Summary
 
-| Format | Tokens | vs JSON | Reduction | Parse Speed |
-|--------|--------|---------|-----------|-------------|
-| JSON | 278 | 1.0x | baseline | 5.31 us |
-| TOML | 151 | 1.8x | 46% | 137.06 us |
-| TOON | 67 | 4.1x | 76% | 2.67 us |
-| mic@1 | 52 | 5.3x | 81% | 2.26 us |
-| **mic@2** | **27** | **10.3x** | **90%** | **—** |
+| Format | Tokens (`cl100k_base`) | vs JSON | Reduction | Parse Speed |
+|--------|------------------------|---------|-----------|-------------|
+| JSON | 400 | 1.0x | baseline | 5.31 us |
+| TOML | 259 | 1.5x | 35% | 137.06 us |
+| TOON | 144 | 2.8x | 64% | 2.67 us |
+| mic@1 | 119 | 3.4x | 70% | 2.26 us |
+| **mic@2** | **71** | **5.6x** | **82%** | **—** |
 
-**mic@2 is the most token-efficient text format; mic@3 (binary IRModule) is 90 bytes — 12.4x fewer bytes than JSON's 1,117. MIC is also the fastest to parse.**
+**mic@2 is the most token-efficient text format; the reference binary encoding of the
+same IR is 90 bytes — 12.4x fewer bytes than JSON's 1,117.**
+
+Parse speed above is a Python reference-parser micro-benchmark: JSON is parsed by the
+C `json` module, MIC/TOON by pure-Python reference parsers. It is indicative of format
+shape, not a like-for-like parser comparison, and no claim below rests on it.
 
 ---
 
 ## Token Efficiency Chart
 
 ```
-Tokens (fewer = better)
+Tokens (fewer = better, cl100k_base)
 
-JSON     ████████████████████████████████████████████████████████  283
-TOML     ██████████████████████████████                            151
-TOON     █████████████                                              67
-MIC      ██████████                                                 52
-         ├─────────┼─────────┼─────────┼─────────┼─────────┼─────────┤
-         0        50       100       150       200       250       300
+JSON     ████████████████████████████████████████████████████████  400
+TOML     ████████████████████████████████████                      259
+TOON     ████████████████████                                      144
+MIC      ████████████████                                          119
+         ├─────────┼─────────┼─────────┼─────────┼─────────┼─────────┼─────────┤
+         0        50       100       150       200       250       300       400
 ```
 
 ## Size Comparison Chart (bytes)
@@ -214,10 +219,10 @@ MIC      ██████████                                         
 ```
 Size in Bytes (smaller = better)
 
-JSON     ████████████████████████████████████████████████████████  1133
-TOML     ██████████████████████████████                             607
+JSON     ████████████████████████████████████████████████████████  1117
+TOML     ██████████████████████████████                             606
 TOON     █████████████                                              269
-MIC      ██████████                                                 209
+MIC      ██████████                                                 210
          ├─────────┼─────────┼─────────┼─────────┼─────────┼─────────┤
          0       200       400       600       800      1000      1200
 ```
@@ -225,12 +230,12 @@ MIC      ██████████                                         
 ## Reduction vs JSON Chart
 
 ```
-Token Reduction vs JSON (higher = better)
+Token Reduction vs JSON (higher = better, cl100k_base)
 
 JSON     ▓                                                          1.0x
-TOML     ▓▓▓▓▓▓▓▓▓▓                                                 1.9x
-TOON     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                                      4.2x
-MIC      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                                5.4x
+TOML     ▓▓▓▓▓▓▓                                                    1.5x
+TOON     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓                                             2.8x
+MIC      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                                          3.4x
          ├─────────┼─────────┼─────────┼─────────┼─────────┼─────────┤
          0x       1x        2x        3x        4x        5x        6x
 ```
@@ -447,43 +452,79 @@ EOF
 
 ## Cost Impact (LLM Token Pricing)
 
-At $0.00175/1K tokens (input):
+Every input to this section is committed and the arithmetic is re-derived by a
+gate, because it previously was not: README published an annual saving of $6,780
+while this page said $396 for the same reference IR — a 17.1x gap that back-solved to
+a $0.030/1K token price stated in no file in the tree, and the two numbers rested
+on a 4-chars-per-token estimate rather than a tokenizer. Both are now measured
+with `cl100k_base` and priced from `config/token_pricing.toml`.
+
+Price input: **$0.00175 per 1K input tokens** (`config/token_pricing.toml`, reviewed
+2026-02-17). That value is a modelling assumption carried forward from this page,
+not a vendor quote — the published sentence restates it inline so the figure can
+never be read without its assumption.
+
+Workload: one reference IR document sent to a model once per operation, one
+million operations per year. No output tokens, retries or context repetition are
+modelled, so the figure is a floor on the serialization saving alone.
 
 ```
-Annual Cost per 1M IR Operations (lower = better)
+Annual Cost per 1M IR Operations (lower = better, cl100k_base tokens)
 
-JSON     ████████████████████████████████████████████████████████  $487
-TOML     ███████████████████████████████                           $264
-TOON     ██████████████                                            $117
-MIC      ███████████                                               $91
-         ├─────────┼─────────┼─────────┼─────────┼─────────┼────────┤
-         $0      $100      $200      $300      $400      $500
+JSON     ████████████████████████████████████████████████████████  $700
+TOML     ████████████████████████████████████                      $453
+TOON     ████████████████████                                      $252
+MIC      ████████████████                                          $208
+         ├─────────┼─────────┼─────────┼─────────┼─────────┼─────────┼────────┤
+         $0      $100      $200      $300      $400      $500      $600   $700
 ```
 
 | Format | Tokens/IR | Cost/1K IRs | Annual (1M IRs) | Savings vs JSON |
 |--------|-----------|-------------|-----------------|-----------------|
-| JSON | 278 | $0.49 | $487 | - |
-| TOML | 151 | $0.26 | $264 | $223 (46%) |
-| TOON | 67 | $0.12 | $117 | $370 (76%) |
-| **MIC** | **52** | **$0.09** | **$91** | **$396 (81%)** |
+| JSON | 400 | $0.70 | $700 | - |
+| TOML | 259 | $0.45 | $453 | $247 (35%) |
+| TOON | 144 | $0.25 | $252 | $448 (64%) |
+| **`mic@1`** | **119** | **$0.21** | **$208** | **$492 (70%)** |
 
-**MIC saves $396/year per million IR operations vs JSON.**
+**At $0.00175/1K input tokens (2026-02-17), MIC saves $492/year per million IR operations vs JSON.**
 
 ---
 
 ## Methodology
 
-- Token count: ~4 characters per token (GPT-style estimation)
+- Token count: real `cl100k_base` BPE tokenization (`tiktoken`). The older
+  `len(text) // 4` estimate is still reported by the benchmark as a secondary
+  column, clearly labelled — it must never back a dollar figure, because it
+  overstates MIC's advantage (5.3x estimated vs 3.4x measured).
+- Price: `config/token_pricing.toml`, with its source and review date.
 - Test data: 6-node neural network layer (param, matmul, add, relu)
 - All formats encode identical IR structure
-- Benchmark script: `benchmarks/format_benchmark.py`
+- Benchmark script: `benchmarks/mic_map_benchmark_v2.py` (writes
+  `benchmarks/mic_map_benchmark_results.json`, including the `cost_model` block
+  the published sentence is rendered from)
+- Gate: `scripts/check_claims.py` recomputes the saving from the price config and
+  the benchmark's token counts and fails the build if any declared surface carries
+  a different figure. Proof that the comparison bites:
+  `python3 tests/check_claims_cost_gate_test.py`.
 
 ## Reproduction
 
 ```bash
-cd mind-main
-python benchmarks/format_benchmark.py
+pip install 'tiktoken>=0.7.0'
+python3 benchmarks/mic_map_benchmark_v2.py   # refreshes the measurement + cost model
+python3 scripts/check_claims.py              # fails if a surface disagrees
 ```
+
+The Rust-Criterion side is recorded separately. The CI-equivalent sweep
+
+```bash
+cargo bench --no-default-features -- --output-format bencher --measurement-time 8
+```
+
+is captured verbatim in [`criterion_ci_sweep.txt`](criterion_ci_sweep.txt), which
+also lists every bench input the run could **not** measure and why — a fixture
+that needs a feature this build lacks is skipped by name, never silently dropped
+and never allowed to abort the sweep.
 
 ---
 

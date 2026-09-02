@@ -1,7 +1,24 @@
 #!/usr/bin/env python3
 """
-MIC/MAP vs JSON/TOML/TOON Benchmark
-Compares token efficiency, file size, and parse speed
+MIC/MAP vs JSON/TOML/TOON Benchmark — SHAPE ONLY, NOT THE PUBLISHED FIGURES
+==========================================================================
+
+Compares file size, a 4-chars-per-token ESTIMATE, and reference-parser speed.
+
+The token column here is an estimate, and it overstates MIC's advantage (5.3x
+estimated vs 3.4x measured with a real BPE tokenizer). Nothing published may be
+derived from it: the maintained benchmark is
+
+    benchmarks/mic_map_benchmark_v2.py
+
+which measures real `cl100k_base` tokens, applies the committed price input from
+config/token_pricing.toml, and writes the cost model that scripts/check_claims.py
+re-derives the README headline from. That separation exists because a $6,780/year
+headline was once published off this script's estimate while the methodology it
+cited said $396.
+
+The reference payloads (TOML/TOON encodings and the MAP / JSON-RPC sessions) are
+imported from that benchmark so the two scripts can never measure different bytes.
 """
 
 import json
@@ -65,88 +82,10 @@ N4 add N3 N2 T3
 N5 relu N4 T3
 O N5"""
 
-# MAP protocol session vs JSON-RPC
-MAP_SESSION = """@1 hello mic=1 map=1
-=1 ok version=1.0 features=[patch,check,dump]
-@2 load <<EOF
-mic@1
-T0 f32
-N0 const.f32 1.0 T0
-N1 const.f32 2.0 T0
-N2 add N0 N1 T0
-O N2
-EOF
-=2 ok nodes=3
-@3 check
-=3 ok valid=true
-@4 dump
-=4 ok mic@1...
-@5 bye
-=5 ok"""
-
-JSON_RPC_SESSION = """{
-  "jsonrpc": "2.0",
-  "method": "hello",
-  "params": {"mic_version": 1, "map_version": 1},
-  "id": 1
-}
-{
-  "jsonrpc": "2.0",
-  "result": {"version": "1.0", "features": ["patch", "check", "dump"]},
-  "id": 1
-}
-{
-  "jsonrpc": "2.0",
-  "method": "load",
-  "params": {
-    "module": {
-      "version": 1,
-      "types": [{"id": 0, "dtype": "f32"}],
-      "nodes": [
-        {"id": 0, "op": "const.f32", "value": 1.0, "type": 0},
-        {"id": 1, "op": "const.f32", "value": 2.0, "type": 0},
-        {"id": 2, "op": "add", "inputs": [0, 1], "type": 0}
-      ],
-      "outputs": [2]
-    }
-  },
-  "id": 2
-}
-{
-  "jsonrpc": "2.0",
-  "result": {"nodes": 3},
-  "id": 2
-}
-{
-  "jsonrpc": "2.0",
-  "method": "check",
-  "id": 3
-}
-{
-  "jsonrpc": "2.0",
-  "result": {"valid": true},
-  "id": 3
-}
-{
-  "jsonrpc": "2.0",
-  "method": "dump",
-  "id": 4
-}
-{
-  "jsonrpc": "2.0",
-  "result": {"module": "..."},
-  "id": 4
-}
-{
-  "jsonrpc": "2.0",
-  "method": "bye",
-  "id": 5
-}
-{
-  "jsonrpc": "2.0",
-  "result": "ok",
-  "id": 5
-}"""
+# MAP protocol session vs JSON-RPC. Defined once in mic_map_benchmark_v2.py --
+# the maintained benchmark whose real-tokenizer counts back the published
+# protocol figures -- so the two scripts can never measure different payloads.
+from mic_map_benchmark_v2 import JSON_RPC_SESSION, MAP_SESSION  # noqa: E402
 
 # ============================================================
 # UTILITIES
@@ -201,83 +140,9 @@ def benchmark(name, text):
         "lines": len(text.strip().split("\n")),
     }
 
-# TOON format (Token-Oriented Object Notation)
-SAMPLE_TOON = """version: 1
-symbols[4]: input,weight,bias,output
-outputs[1]: 5
-types[4]{id,dtype,shape}:
-  0,f32,B:784
-  1,f32,784:256
-  2,f32,256
-  3,f32,B:256
-nodes[6]{id,op,inputs,type_id}:
-  0,param,S0,0
-  1,param,S1,1
-  2,param,S2,2
-  3,matmul,N0:N1,3
-  4,add,N3:N2,3
-  5,relu,N4,3"""
-
-# TOML format
-SAMPLE_TOML = """version = 1
-symbols = ["input", "weight", "bias", "output"]
-outputs = [5]
-
-[[types]]
-id = 0
-dtype = "f32"
-shape = ["B", 784]
-
-[[types]]
-id = 1
-dtype = "f32"
-shape = [784, 256]
-
-[[types]]
-id = 2
-dtype = "f32"
-shape = [256]
-
-[[types]]
-id = 3
-dtype = "f32"
-shape = ["B", 256]
-
-[[nodes]]
-id = 0
-op = "param"
-symbol = 0
-type_id = 0
-
-[[nodes]]
-id = 1
-op = "param"
-symbol = 1
-type_id = 1
-
-[[nodes]]
-id = 2
-op = "param"
-symbol = 2
-type_id = 2
-
-[[nodes]]
-id = 3
-op = "matmul"
-inputs = [0, 1]
-type_id = 3
-
-[[nodes]]
-id = 4
-op = "add"
-inputs = [3, 2]
-type_id = 3
-
-[[nodes]]
-id = 5
-op = "relu"
-inputs = [4]
-type_id = 3"""
+# TOON and TOML encodings of the same reference IR. Defined once in
+# mic_map_benchmark_v2.py (see the protocol-payload import above).
+from mic_map_benchmark_v2 import SAMPLE_TOML, SAMPLE_TOON  # noqa: E402
 
 def toon_parse(text):
     """Parse TOON format (simplified)"""
@@ -408,14 +273,15 @@ print("  Key Advantages")
 print("=" * 70)
 print("""
 MIC Format:
-  - 2.9x fewer tokens than JSON
+  - 3.4x fewer tokens than JSON (real cl100k_base measurement; the estimate above
+    reads 5.3x, which is why the estimate does not back any published figure)
   - Line-oriented (git-friendly diffs)
   - Stable IDs for safe patching
   - No nested brackets/braces
   - Human readable
 
 MAP Protocol:
-  - 4.0x fewer tokens than JSON-RPC
+  - 3.8x fewer tokens than JSON-RPC (real cl100k_base measurement)
   - Single-line requests/responses
   - Sequence numbers for correlation
   - Heredoc support for large payloads

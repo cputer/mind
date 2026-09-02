@@ -1,6 +1,8 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use libmind::{CompileOptions, compile_source};
 
+mod common;
+
 /// Element-wise operations
 const ELEMENTWISE_CHAIN: &str = r#"
 fn elementwise_ops(
@@ -96,6 +98,11 @@ fn bench_elementwise_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("operations_elementwise");
 
     for (name, source) in [("chain", ELEMENTWISE_CHAIN), ("deep_nest", DEEP_NEST)] {
+        if !common::accepts("operations", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("compile", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())
@@ -111,6 +118,11 @@ fn bench_indexing_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("operations_indexing");
 
     for (name, source) in [("slice", INDEXING_OPS), ("reduction_axes", REDUCTION_AXES)] {
+        if !common::accepts("operations", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("compile", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())
@@ -130,6 +142,11 @@ fn bench_neural_patterns(c: &mut Criterion) {
         ("attention", ATTENTION_PATTERN),
         ("residual_block", RESIDUAL_BLOCK),
     ] {
+        if !common::accepts("operations", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("compile", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())

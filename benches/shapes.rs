@@ -1,6 +1,8 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use libmind::{CompileOptions, compile_source};
 
+mod common;
+
 /// Simple broadcasting scenarios
 const BROADCAST_SIMPLE: &str = r#"
 fn broadcast_add(a: Tensor<F32, [128, 1]>, b: Tensor<F32, [1, 256]>) -> Tensor<F32, [128, 256]> {
@@ -102,6 +104,11 @@ fn bench_shape_inference_broadcast(c: &mut Criterion) {
         ("complex", BROADCAST_COMPLEX),
         ("high_rank", HIGH_RANK),
     ] {
+        if !common::accepts("shapes", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("broadcast", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())
@@ -117,6 +124,11 @@ fn bench_shape_inference_reductions(c: &mut Criterion) {
     let mut group = c.benchmark_group("shape_inference_reductions");
 
     for (name, source) in [("chain", REDUCTIONS), ("transforms", SHAPE_TRANSFORMS)] {
+        if !common::accepts("shapes", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("reduction", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())
@@ -136,6 +148,11 @@ fn bench_shape_inference_matmul(c: &mut Criterion) {
         ("128x256", MATMUL_MEDIUM),
         ("1024x2048", MATMUL_LARGE),
     ] {
+        if !common::accepts("shapes", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("matmul", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())
@@ -151,6 +168,11 @@ fn bench_shape_inference_conv(c: &mut Criterion) {
     let mut group = c.benchmark_group("shape_inference_conv");
 
     for (name, source) in [("3x3_stride1", CONV_3X3), ("5x5_stride2", CONV_5X5)] {
+        if !common::accepts("shapes", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(BenchmarkId::new("conv2d", name), source, |b, src| {
             b.iter(|| {
                 compile_source(black_box(src), &CompileOptions::default())

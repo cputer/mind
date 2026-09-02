@@ -7,7 +7,7 @@
     "methodology_1": "JSON indent=2 baseline + len(text)//4 token approximation (paper original)",
     "methodology_2": "Real cl100k_base tokenization (cross-verification)",
     "tiktoken_version": "0.12.0",
-    "python_version": "3.12.3"
+    "python_version": "3.14.4"
   },
   "measurements": [
     {
@@ -26,6 +26,24 @@
       "tokens_tiktoken": 187,
       "sha256": "d646739e54456433d93b802a1a2c60b8251f60e8136d0a3b6914121091daa557",
       "first_bytes_hex": "7b2276657273696f6e223a312c2273796d626f6c73223a5b22696e707574222c22776569676874222c2262696173222c",
+      "is_binary": false
+    },
+    {
+      "label": "toml",
+      "bytes": 606,
+      "tokens_approx": 151,
+      "tokens_tiktoken": 259,
+      "sha256": "ce9dfc01c45a6d04a95c5febdbce6c24299e2be9a63bc15c7e2b16663cdc6846",
+      "first_bytes_hex": "76657273696f6e203d20310a73796d626f6c73203d205b22696e707574222c2022776569676874222c20226269617322",
+      "is_binary": false
+    },
+    {
+      "label": "toon",
+      "bytes": 269,
+      "tokens_approx": 67,
+      "tokens_tiktoken": 144,
+      "sha256": "381627a3253e37748e59d215a3e92a12b83b704cb38b2e54a0da3e19a9f7f7b1",
+      "first_bytes_hex": "76657273696f6e3a20310a73796d626f6c735b345d3a20696e7075742c7765696768742c626961732c6f75747075740a",
       "is_binary": false
     },
     {
@@ -54,6 +72,24 @@
       "sha256": "007912807e2f8ba61cf28e4abd7d0b09a2098fbd8de6302758172be0dbe7d1a2",
       "first_bytes_hex": "4d494342020705696e707574067765696768740462696173066f7574707574044e6f6e65033738340332353604000102",
       "is_binary": true
+    },
+    {
+      "label": "jsonrpc_session",
+      "bytes": 1004,
+      "tokens_approx": 251,
+      "tokens_tiktoken": 442,
+      "sha256": "ef9c910f466ca6e9b66fe7df388ac86cd54e3132fa4b9172c1df6ceaaed29b5e",
+      "first_bytes_hex": "7b0a2020226a736f6e727063223a2022322e30222c0a2020226d6574686f64223a202268656c6c6f222c0a2020227061",
+      "is_binary": false
+    },
+    {
+      "label": "map_session",
+      "bytes": 234,
+      "tokens_approx": 58,
+      "tokens_tiktoken": 116,
+      "sha256": "80c950f39d3e6a0776fa2ba6c438aa378c22e0bb5b57f8c1f6b903c27423b52e",
+      "first_bytes_hex": "40312068656c6c6f206d69633d31206d61703d310a3d31206f6b2076657273696f6e3d312e302066656174757265733d",
+      "is_binary": false
     }
   ],
   "paper_figures_verified": {
@@ -98,5 +134,43 @@
       "detail": "measured: 12.41x"
     }
   ],
+  "cost_model": {
+    "pricing_config": "config/token_pricing.toml",
+    "price_usd_per_1k_input_tokens": 0.00175,
+    "price_as_of": "2026-02-17",
+    "price_source_kind": "repo-internal-assumption",
+    "ir_operations_per_year": 1000000,
+    "tokenizer": "cl100k_base",
+    "token_field": "tokens_tiktoken",
+    "baseline_label": "json_indent2_pretty",
+    "candidate_label": "mic_v1",
+    "baseline_tokens_per_ir": 400,
+    "candidate_tokens_per_ir": 119,
+    "token_reduction_ratio": 3.3613,
+    "baseline_annual_usd": 700.0,
+    "candidate_annual_usd": 208.25,
+    "annual_savings_usd": 491.75,
+    "per_format_annual_usd": {
+      "json_indent2_pretty": 700.0,
+      "json_minified": 327.25,
+      "toml": 453.25,
+      "toon": 252.0,
+      "mic_v1": 208.25,
+      "mic_v2": 124.25,
+      "jsonrpc_session": 773.5,
+      "map_session": 203.0
+    },
+    "per_format_tokens": {
+      "json_indent2_pretty": 400,
+      "json_minified": 187,
+      "toml": 259,
+      "toon": 144,
+      "mic_v1": 119,
+      "mic_v2": 71,
+      "jsonrpc_session": 442,
+      "map_session": 116
+    },
+    "claim_sentence": "At $0.00175/1K input tokens (2026-02-17), MIC saves $492/year per million IR operations vs JSON"
+  },
   "all_claims_verified": true
 }

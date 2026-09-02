@@ -414,31 +414,46 @@ anchors on. `mic@2`/`mic@2.1` are a legacy `Graph` dataflow lane, demoted to
 
 **Text serialization** — LLM token efficiency vs JSON:
 
-| Format | Tokens | vs JSON | Parse Speed | Annual Cost (1M IRs) |
-|--------|--------|---------|-------------|----------------------|
-| JSON | 278 | baseline | 5.31 us | $8,340 |
-| TOML | 151 | 1.8x | 137.06 us | $4,530 |
-| TOON | 67 | 4.1x | 2.67 us | $2,010 |
-| **`mic@1`** (canonical text) | **52** | **5.3x** | **2.26 us** | **$1,560** |
-| `mic@2` (legacy Graph, demoted) | 27 | 10.3x | — | $810 |
+| Format | Tokens (`cl100k_base`) | vs JSON | Parse Speed | Annual Cost (1M IRs) |
+|--------|------------------------|---------|-------------|----------------------|
+| JSON | 400 | baseline | 5.31 us | $700 |
+| TOML | 259 | 1.5x | 137.06 us | $453 |
+| TOON | 144 | 2.8x | 2.67 us | $252 |
+| **`mic@1`** (canonical text) | **119** | **3.4x** | **2.26 us** | **$208** |
+| `mic@2` (legacy Graph, demoted) | 71 | 5.6x | — | $124 |
 
-**Binary serialization** — canonical compiled-artifact wire format (byte size, full `IRModule`):
+**Binary serialization** — reference-model encoding of the same 6-node IR (byte size, full module):
 
 | Format | Size | vs JSON | Status |
 |--------|------|---------|--------|
 | JSON (text) | 1,117 B | baseline | — |
-| **`mic@3`** (binary `IRModule`) | **90 B** | **12.4x smaller** | **current — `trace_hash` anchor** |
+| **binary `IRModule`** | **90 B** | **12.4x smaller** | reference encoder in `benchmarks/mic_map_benchmark_v2.py`; the shipping canonical binary form is `mic@3` (the `trace_hash` anchor), emitted by `mindc --emit-mic3` |
 | `mic@4` | — | target: smaller + faster than `mic@3` | roadmap — successor wire format ([Roadmap](docs/roadmap.md)) |
 
-> Compile-frontend and format numbers above are Rust-Criterion measured; they are
-> refreshed each release cycle (see [`benchmarks/BENCHMARK_RESULTS.md`](benchmarks/BENCHMARK_RESULTS.md)).
+| Protocol | Tokens (`cl100k_base`) | vs JSON-RPC |
+|----------|------------------------|-------------|
+| JSON-RPC | 442 | baseline |
+| **MAP** | **116** | **3.8x fewer** |
 
-| Protocol | Tokens | vs JSON-RPC |
-|----------|--------|-------------|
-| JSON-RPC | 251 | baseline |
-| **MAP** | **58** | **4.3x fewer** |
+> **How each column is measured** — the labels differ on purpose.
+> *Compile-frontend timings* are Rust-Criterion measured: `cargo bench --bench compiler`
+> (which also times the canonical `emit_mic3` encoder) and `--bench simple_benchmarks`.
+> *Sizes and token counts* come from `python3 benchmarks/mic_map_benchmark_v2.py` over a
+> fixed 6-node reference IR — byte sizes exact, token counts real `cl100k_base`
+> tokenizations (the earlier tables used a 4-chars-per-token estimate, which
+> overstated MIC's advantage). *Parse speed* is a Python reference-parser
+> micro-benchmark (`benchmarks/format_benchmark.py`) in which JSON uses the C
+> `json` module and MIC/TOON use pure-Python reference parsers: indicative, not a
+> like-for-like parser comparison. All are refreshed each release cycle (see
+> [`benchmarks/BENCHMARK_RESULTS.md`](benchmarks/BENCHMARK_RESULTS.md)).
 
-**MIC saves $6,780/year per million IR operations vs JSON.** See [`benchmarks/BENCHMARK_RESULTS.md`](benchmarks/BENCHMARK_RESULTS.md) for full methodology.
+**At $0.00175/1K input tokens (2026-02-17), MIC saves $492/year per million IR operations vs JSON**
+— 400 → 119 `cl100k_base` tokens per IR document. Every input to that figure is committed: the
+price and workload in [`config/token_pricing.toml`](config/token_pricing.toml) (with its source and
+date), the token counts in `benchmarks/mic_map_benchmark_results.json`. Re-derive it with
+`python3 benchmarks/mic_map_benchmark_v2.py`; `python3 scripts/check_claims.py` recomputes the
+arithmetic and fails the build if this sentence and the benchmark output ever disagree. See
+[`benchmarks/BENCHMARK_RESULTS.md`](benchmarks/BENCHMARK_RESULTS.md) for full methodology.
 
 ## Proof of Systems
 

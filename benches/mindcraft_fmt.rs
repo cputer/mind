@@ -3,6 +3,8 @@ use libmind::fmt::format_source;
 use libmind::project::MindcraftFormatConfig;
 use std::path::Path;
 
+mod common;
+
 // ---------------------------------------------------------------------------
 // File readers
 // ---------------------------------------------------------------------------
@@ -10,6 +12,21 @@ use std::path::Path;
 fn read_mind_file(path: &str) -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
         .unwrap_or_else(|e| panic!("cannot read {path}: {e}"))
+}
+
+/// The corpus, or `None` if this build cannot format it (reason printed).
+///
+/// `examples/mindc_mind/main.mind` uses the bitwise `&` operator, which the
+/// parser gates behind `std-surface`, so under `--no-default-features` the
+/// formatter refuses it. See `benches/common/mod.rs` for why a refusal must not
+/// abort the sweep.
+fn formattable_corpus(path: &str, cfg: &MindcraftFormatConfig) -> Option<String> {
+    let src = read_mind_file(path);
+    if common::accepts("mindcraft_fmt", path, || format_source(&src, cfg)) {
+        Some(src)
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,8 +77,10 @@ fn synthetic_1000_loc() -> String {
 // ---------------------------------------------------------------------------
 
 fn bench_fmt_vec_mind(c: &mut Criterion) {
-    let src = read_mind_file("std/vec.mind");
     let cfg = MindcraftFormatConfig::default();
+    let Some(src) = formattable_corpus("std/vec.mind", &cfg) else {
+        return;
+    };
 
     c.bench_with_input(
         BenchmarkId::new("mindcraft_fmt", "vec.mind"),
@@ -73,8 +92,10 @@ fn bench_fmt_vec_mind(c: &mut Criterion) {
 }
 
 fn bench_fmt_mindc_mind(c: &mut Criterion) {
-    let src = read_mind_file("examples/mindc_mind/main.mind");
     let cfg = MindcraftFormatConfig::default();
+    let Some(src) = formattable_corpus("examples/mindc_mind/main.mind", &cfg) else {
+        return;
+    };
 
     c.bench_with_input(
         BenchmarkId::new("mindcraft_fmt", "mindc_mind/main.mind"),

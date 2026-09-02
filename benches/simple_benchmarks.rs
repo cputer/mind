@@ -1,6 +1,8 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use libmind::{CompileOptions, compile_source};
 
+mod common;
+
 // Mirror mindc's allocator so this compile-speed bench measures the same heap
 // mindc actually ships with (the library no longer registers it globally).
 #[global_allocator]
@@ -65,6 +67,11 @@ fn bench_compile_small(c: &mut Criterion) {
     let mut group = c.benchmark_group("compile_small");
 
     for &(name, source) in &PROGRAMS[0..3] {
+        if !common::accepts("simple_benchmarks", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(
             BenchmarkId::new("parse_check_lower", name),
             &source,
@@ -84,6 +91,11 @@ fn bench_compile_medium(c: &mut Criterion) {
     let mut group = c.benchmark_group("compile_medium");
 
     for &(name, source) in &PROGRAMS[3..] {
+        if !common::accepts("simple_benchmarks", name, || {
+            compile_source(source, &CompileOptions::default())
+        }) {
+            continue;
+        }
         group.bench_with_input(
             BenchmarkId::new("parse_check_lower", name),
             &source,

@@ -52,6 +52,11 @@ high_assurance = "commercial"
 ir          = ["anchored on mic@1 trace hash", "mic@2 (Current)", "MIC-B v2 (Binary)"]
 autodiff    = ["autodiff support is experimental", "autodiff is experimental"]
 runtime     = ["Native CPU Execution"]
+# The published cost figure is derived by scripts/check_claims.py from
+# config/token_pricing.toml + the benchmark output. This entry is the belt to that
+# braces: the specific hand-typed headline that rode green for months, back-solved
+# to a $0.030/1K token price stated in no file while the cited methodology said $396.
+cost_headline = ["saves $6,780", "saves $396/year"]
 # Signing (RFC 0016 Phase C: Ed25519/ML-DSA) is SHIPPED but opt-in and off by
 # default — an unsigned evidence chain is tamper-evident, not signed (release-CI
 # auto-signing is the one remaining deferred leg). A 2026-07-09

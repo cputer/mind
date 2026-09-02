@@ -10,6 +10,11 @@ each was fixed, and this gate stops them from silently drifting back:
   3. [counts] (OPTIONAL) — numbers in the docs re-derived from the real tree, FLAGGED
      on drift. Floor + tolerance keep the false-positive rate low; a missing source
      path SKIPS the entry instead of crashing.
+  4. cost claim — the published "MIC saves $N/year" figure RE-DERIVED from the price
+     input in config/token_pricing.toml and the tokenizer-measured counts in the
+     benchmark output, then required verbatim on every declared surface. It is the
+     one check that fails CLOSED on a missing input: a dollar figure whose inputs
+     cannot be read is exactly the drift this gate exists to stop.
 
 Run from the mind repo root (CI + pre-commit). Exit non-zero on drift.
 Low false-positive by design: it only flags exact known-bad phrases and counts that
@@ -55,6 +60,7 @@ shared manifest can carry mind-specific [counts] without breaking other repos.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -237,6 +243,202 @@ def check_counts() -> tuple[list[str], list[str]]:
     return drift, info
 
 
+# --------------------------------------------------------------------------------
+# Published cost claim. The dollar figure on a public surface must be the ARITHMETIC
+# RESULT of two committed inputs — the price in config/token_pricing.toml and the
+# tokenizer-measured counts in the benchmark's machine-readable output — never a
+# hand-typed number.
+#
+# The defect this exists to stop: README published "$6,780/year per million IR
+# operations" while the methodology it cited yielded $396 from the same reference
+# IR. The gap back-solved to a $0.030/1K price stated in no file, and nothing
+# compared the headline against the benchmark, so it drifted unchallenged.
+#
+# Fail-closed by construction: every input this check needs is either present and
+# checkable, or the check FAILS. The one silent path is a sibling repo with no
+# config/token_pricing.toml at all (it publishes no cost claim, so there is
+# nothing to verify).
+#
+# Drift from this check is tagged `[cost-claim]`, deliberately distinct from the
+# `[cost_headline]` forbidden-phrase category in capabilities.toml. They catch the
+# same historical headline by two independent mechanisms, and an overlapping tag
+# let the gate test's "failed for the right reason" assertion pass on the phrase
+# hit alone — i.e. stay green with this arithmetic check deleted.
+# --------------------------------------------------------------------------------
+
+_PRICING_PATH = ROOT / "config" / "token_pricing.toml"
+
+# Any "$N/year" figure on a declared surface. Every match must equal the derived
+# saving; a second, stale figure elsewhere in the file is drift too.
+_ANNUAL_FIGURE_RX = re.compile(r"\$([\d,]+(?:\.\d+)?)\s*/\s*year")
+
+
+def _table_label(line: str) -> str | None:
+    """Normalised first cell of a markdown table row, or None if not a row.
+
+    "| **`mic@1`** (canonical text) | 119 | ... |" -> "mic@1". Emphasis, backticks
+    and a parenthetical gloss are display sugar; the label underneath is what the
+    pricing config maps to a benchmark measurement.
+    """
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        return None
+    cells = stripped.split("|")
+    if len(cells) < 3:
+        return None
+    cell = cells[1].strip().strip("*").strip().strip("`").strip()
+    return cell.split(" (")[0].strip()
+
+
+def _number_in(line: str, value: str) -> bool:
+    """True if `value` appears as a standalone number, comma-grouped or not."""
+    plain = value.replace(",", "")
+    grouped = f"{int(plain):,}" if plain.isdigit() else value
+    alts = "|".join(re.escape(v) for v in dict.fromkeys((value, plain, grouped)))
+    return re.search(rf"(?<![\d.]){alts}(?![\d.])", line) is not None
+
+
+def _check_cost_tables(text: str, rel: str, pricing: dict, cost: dict) -> list[str]:
+    """Published cost TABLE rows must carry the derived numbers, not hand-typed ones.
+
+    Scope, deliberately narrow: a markdown table row whose first cell is a mapped
+    format label AND which carries a dollar amount. Token-only rows are left to the
+    [counts] gate; ASCII charts are not table rows. Without this the headline
+    sentence was derived while the table under it could still drift by hand.
+    """
+    labels = pricing["claim"].get("table_labels", {})
+    if not labels:
+        return []
+    tokens = cost.get("per_format_tokens", {})
+    annual = cost.get("per_format_annual_usd", {})
+    drift: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if "$" not in line:
+            continue
+        label = _table_label(line)
+        meas_label = labels.get(label) if label else None
+        if meas_label is None:
+            continue
+        if meas_label not in tokens or meas_label not in annual:
+            drift.append(
+                f"DRIFT [cost-claim] {rel}:{lineno}: row {label!r} maps to "
+                f"{meas_label!r}, which the benchmark output does not measure"
+            )
+            continue
+        want_tokens = str(tokens[meas_label])
+        want_annual = f"{annual[meas_label]:,.0f}"
+        if not _number_in(line, want_tokens):
+            drift.append(
+                f"DRIFT [cost-claim] {rel}:{lineno}: row {label!r} does not carry the "
+                f"measured token count {want_tokens} ({pricing['measurement']['tokenizer']})"
+            )
+        if not _number_in(line, want_annual):
+            drift.append(
+                f"DRIFT [cost-claim] {rel}:{lineno}: row {label!r} does not carry the "
+                f"derived annual cost ${want_annual}"
+            )
+    return drift
+
+
+def _derive_cost_claim(pricing: dict) -> tuple[str, float, dict]:
+    """Recompute the annual saving and render the canonical claim sentence.
+
+    Raises ValueError with a human-readable reason on any unusable input; the
+    caller turns that into drift (never into a skip).
+    """
+    meas = pricing["measurement"]
+    results_path = ROOT / meas["results_json"]
+    if not results_path.is_file():
+        raise ValueError(
+            f"benchmark output {meas['results_json']} is missing — "
+            f"re-run: {meas.get('refresh_command', '(no refresh_command declared)')}"
+        )
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    rows = {r.get("label"): r for r in results.get("measurements", [])}
+    field = meas["token_field"]
+    counts: dict[str, int] = {}
+    for role in ("baseline_label", "candidate_label"):
+        label = meas[role]
+        row = rows.get(label)
+        if row is None:
+            raise ValueError(f"benchmark output has no measurement labelled {label!r}")
+        value = row.get(field)
+        if not isinstance(value, int):
+            raise ValueError(
+                f"measurement {label!r} has no {field!r} count "
+                f"(tokenizer {meas.get('tokenizer')!r} did not run) — a chars/4 "
+                f"estimate must never back a price"
+            )
+        counts[role] = value
+
+    saved_tokens = counts["baseline_label"] - counts["candidate_label"]
+    if saved_tokens <= 0:
+        raise ValueError(
+            f"{meas['candidate_label']} is not cheaper than {meas['baseline_label']} "
+            f"({counts['candidate_label']} vs {counts['baseline_label']} tokens)"
+        )
+    price = float(pricing["pricing"]["input_usd_per_1k_tokens"])
+    volume = int(pricing["workload"]["ir_operations_per_year"])
+    saving = saved_tokens * volume / 1000.0 * price
+
+    # A cost block written by the benchmark is a convenience, not an authority:
+    # it must agree with this independent recomputation.
+    declared = results.get("cost_model", {}).get("annual_savings_usd")
+    if declared is not None and abs(float(declared) - saving) > 0.005:
+        raise ValueError(
+            f"benchmark output states annual_savings_usd={declared} but its own "
+            f"token counts and config/token_pricing.toml give {saving:.2f}"
+        )
+
+    sentence = pricing["claim"]["template"].format(
+        price_per_1k=f"{price:g}",
+        price_as_of=pricing["pricing"]["as_of"],
+        annual_savings=f"{saving:,.0f}",
+        volume_human=pricing["workload"]["volume_human"],
+    )
+    per_format = results.get("cost_model", {})
+    return sentence, saving, per_format
+
+
+def check_cost_claim() -> tuple[list[str], list[str]]:
+    """Return (drift_messages, info_messages) for the published cost figure."""
+    if not _PRICING_PATH.is_file():
+        return [], ["cost: no config/token_pricing.toml — no cost claim to verify"]
+    try:
+        pricing = tomllib.loads(_PRICING_PATH.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as err:
+        return [f"DRIFT [cost-claim] config/token_pricing.toml is unreadable: {err}"], []
+
+    try:
+        sentence, saving, cost = _derive_cost_claim(pricing)
+    except (ValueError, KeyError, TypeError, OSError, json.JSONDecodeError) as err:
+        return [f"DRIFT [cost-claim] cannot derive the published figure: {err}"], []
+
+    drift: list[str] = []
+    info = [f"cost: derived ${saving:,.2f}/year — {sentence!r}"]
+    expected_figure = f"{saving:,.0f}"
+    for rel in pricing["claim"].get("surfaces", []):
+        path = ROOT / rel
+        if not path.is_file():
+            drift.append(f"DRIFT [cost-claim] declared surface {rel} does not exist")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if sentence not in text:
+            drift.append(
+                f"DRIFT [cost-claim] {rel}: does not carry the derived claim.\n"
+                f"           expected verbatim: {sentence}\n"
+                f"           refresh with: {pricing['measurement'].get('refresh_command', '?')}"
+            )
+        drift.extend(_check_cost_tables(text, rel, pricing, cost))
+        for found in _ANNUAL_FIGURE_RX.findall(text):
+            if found != expected_figure:
+                drift.append(
+                    f"DRIFT [cost-claim] {rel}: stale annual figure ${found}/year "
+                    f"(the benchmark and config derive ${expected_figure}/year)"
+                )
+    return drift, info
+
+
 def main() -> int:
     files = surfaces()
     if not files:
@@ -251,6 +453,15 @@ def main() -> int:
     missing = check_canonical(files)
     if missing:
         print(f"DRIFT [ir]: canonical IR version(s) absent from docs: {missing}")
+        ok = False
+
+    # The cost claim runs in BOTH modes: it is a claim check, not a tree-shape
+    # count, so a sibling repo that publishes the figure is held to it too.
+    cost_drift, cost_info = check_cost_claim()
+    for line in cost_info:
+        print(line)
+    for line in cost_drift:
+        print(line)
         ok = False
 
     if _PHRASES_ONLY:

@@ -63,14 +63,32 @@ sha2 = "0.10"
 [lib]
 name = "libmind"
 crate-type = ["cdylib", "rlib"]
+# `bench = false` on the lib and the two bins so a bare `cargo bench` selects ONLY
+# the criterion targets below. Without it cargo runs the libtest harness first,
+# which rejects criterion's own flags — the documented CI-equivalent sweep
+# (`cargo bench --no-default-features -- --output-format bencher --measurement-time 8`)
+# died on "error: Unrecognized option: 'output-format'" after a 9-minute build,
+# having benchmarked nothing. There are no `#[bench]` functions in the lib or bins,
+# so nothing is lost; every per-target invocation (`--bench compiler`, etc.) is
+# unaffected.
+bench = false
 
 [[bin]]
 name = "mind"
 path = "src/main.rs"
+bench = false
 
 [[bin]]
 name = "mindc"
 path = "src/bin/mindc.rs"
+bench = false
+
+# Declared only to carry `bench = false`; it would otherwise be auto-discovered
+# from src/bin/ with bench = true and stall the sweep the same way.
+[[bin]]
+name = "mind-ai"
+path = "src/bin/mind-ai.rs"
+bench = false
 
 # The statement-keyword recogniser equivalence/determinism gate exercises the
 # std-surface-gated statements (while / loop / region / break / continue), so it
