@@ -264,13 +264,13 @@ TEMPLATES = [
     ("match_guard", ["match bnd {", "    _ if @@HOLE@@ => 1,", "    _ => 2,", "}"]),
     # Match-arm BODY value position (`=> <atom>`). `=>` lexes as tk_eq+tk_gt in
     # the self-host lexer, so a folded keyword here was invisible to the
-    # value-atom classifier (codex Finding 2, 2026-07-24): live parses the arm
+    # value-atom classifier (external review finding 2, 2026-07-24): live parses the arm
     # body as Lit(Ident) and fires E2002 on use/pub/else/import/fn/let.
     ("match_arm_val", ["match bnd {", "    _ => @@HOLE@@,", "}"]),
     # Match-arm BODY assign l-value (`=> x = 5`). A BARE arm body (l-value
     # directly after `=>`) — live attributes the E2009 diagnostic to the arm-
     # PATTERN column (`_`), NOT the l-value token, so the port must DECLINE at
-    # the l-value here (codex Finding 2, 2026-07-24). Distinct from a BLOCK arm
+    # the l-value here (external review finding 2, 2026-07-24). Distinct from a BLOCK arm
     # `_ => { x = 5 }`, where live DOES fire E2009 at the l-value and the port
     # keeps firing — the two are separated by the l-value's prev token (`=>`
     # vs `{`).
@@ -301,7 +301,7 @@ def nested_templates(rng):
 
 def deep_binding_cases(rng):
     """Deep-scope stress: programs with 251..N flat local bindings then a use
-    of an EARLY or LATE one — the scope-table cap class (codex Finding 1, the
+    of an EARLY or LATE one — the scope-table cap class (external review finding 1, the
     old fixed 250-entry buffer false-fired E2002 on valid code past 250 locals).
 
     A BOUND name must resolve clean (live no-fire) at every depth: this is the

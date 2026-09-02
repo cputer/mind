@@ -2492,7 +2492,7 @@ fn mask_narrow_assign(ir: &mut IRModule, name: &str, val: ValueId) -> ValueId {
     }
 }
 
-/// Codex PR #216 Finding 2 — resolve the DECLARED `TypeAnn` of a numeric
+/// PR #216 review finding 2 — resolve the DECLARED `TypeAnn` of a numeric
 /// tuple-index receiver expression, recursively, so a CHAINED index `t.0.1`
 /// resolves its element type.
 ///
@@ -8133,7 +8133,7 @@ fn lower_expr(
         // Gated to `std-surface` — default builds never reach this arm.
         #[cfg(feature = "std-surface")]
         ast::Node::While { cond, body, .. } => {
-            // Task #270 / Codex PR #216 Finding 1 — snapshot/restore NARROW_LOCALS
+            // Task #270 / PR #216 review finding 1 — snapshot/restore NARROW_LOCALS
             // across the loop body, mirroring the `Node::Block` arm's guard. A
             // wide re-let inside the body (`let x: i64 = …`) that SHADOWS an outer
             // `u8`/`u16` local clears that outer's narrow metadata via
@@ -9461,7 +9461,7 @@ fn lower_expr(
             let mut body_env = env.clone();
             let mut alloc_ids: Vec<crate::ir::ValueId> = Vec::new();
 
-            // Codex PR #216 broader sweep — snapshot/restore NARROW_LOCALS across
+            // PR #216 review broader sweep — snapshot/restore NARROW_LOCALS across
             // the region body, mirroring the `Node::Block`/`Node::While` guards.
             // `lower_stmt_seq` calls `record_narrow_let` for a body-local narrow
             // `let` (and its shadow-clear arm for a wide re-let shadowing an outer

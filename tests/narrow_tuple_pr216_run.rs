@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 // Part of the MIND project (Machine Intelligence Native Design).
 
-//! Codex PR #216 correctness regression gate — two confirmed silent-miscompile /
+//! PR #216 review correctness regression gate — two confirmed silent-miscompile /
 //! fail-to-compile bugs in the narrow-int + tuple-index lowering, plus the
 //! broader-sweep coverage.
 //!

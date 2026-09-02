@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 // Part of the MIND project (Machine Intelligence Native Design).
 
-//! F3 (codex corr-audit #3) — ambiguous BARE enum-payload patterns silently
+//! F3 (external correctness review #3) — ambiguous BARE enum-payload patterns silently
 //! dispatch on the FIRST enum's tag order.
 //!
 //! When two enums declare the same variant NAMES in DIFFERENT orders, a bare
