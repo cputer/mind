@@ -221,6 +221,82 @@ def case_runner_keeps_a_per_case_skip_classification() -> None:
     check("runner keeps a per-case skip classification (rc)", rc, 0)
 
 
+# ── the same contract for a NON-Python gate ────────────────────────────────
+# A `.py` gate is executed THROUGH gate_assert.py, so its count is the shim's
+# verdict and a gate that prints the contract line itself is caught as forgery.
+# A `.sh` gate has no shim: the runner counts its verdict lines directly. That
+# asymmetry was a hole — the runner read a self-published `asserted=<N>` line
+# from ANY gate and believed it, so
+#   #!/bin/bash
+#   echo "asserted=42"
+# graded `run_gate: PASS ... asserted=42` having checked nothing. Two `.sh`
+# gates are routed today (scripts/check_no_ai_attribution.sh,
+# scripts/check_json_not_evidence.sh); both report their verdict on STDOUT, so
+# the count is derived from stdout verdict lines only and a printed contract
+# line on EITHER stream is forgery — the same rule the shim applies, not a
+# second, weaker one.
+
+def _runner_shell(src: str, *args: str) -> tuple[int, str]:
+    """Run a synthetic `.sh` gate through run_gate.py; return (rc, output)."""
+    with tempfile.TemporaryDirectory() as td:
+        gate = Path(td) / "synthetic_gate.sh"
+        gate.write_text(src, encoding="utf-8")
+        gate.chmod(0o755)
+        proc = subprocess.run(
+            [sys.executable, str(RUNNER), *args, str(gate)],
+            capture_output=True, text=True, cwd=str(REPO), timeout=120,
+        )
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def case_runner_rejects_a_forged_shell_count() -> None:
+    """A `.sh` gate publishing the contract line must not be believed."""
+    rc, out = _runner_shell('#!/bin/bash\necho "asser""ted=42"\nexit 0\n')
+    check("runner rejects a forged shell count (rc)", rc, 1)
+    check("runner names the shell forgery", "published its own" in out, True)
+    # (the runner ECHOES gate output, so the forged line is present in `out`;
+    # what must be absent is the runner BELIEVING it)
+    check("runner did not grade the forged gate green",
+          "run_gate: FAIL" in out, True)
+
+
+def case_runner_rejects_a_forged_shell_count_on_stderr() -> None:
+    """Same rule on the other stream: the shim fails closed on a forged line
+    written to stderr, and the non-Python path may not be weaker."""
+    src = ('#!/bin/bash\necho "[PASS] a real leg"\n'
+           'echo "asser""ted=42" >&2\n')
+    rc, out = _runner_shell(src)
+    check("runner rejects a forged shell count on stderr (rc)", rc, 1)
+    check("runner names the stderr forgery", "published its own" in out, True)
+
+
+def case_runner_counts_shell_verdict_lines() -> None:
+    """The honest shape: N reported verdicts on stdout count as N."""
+    src = ('#!/bin/bash\necho "[PASS] leg one"\necho "[PASS] leg two"\n'
+           'echo "[PASS] leg three"\n')
+    rc, out = _runner_shell(src)
+    check("runner accepts a shell gate with 3 verdicts (rc)", rc, 0)
+    check("runner counts the shell verdicts", "asserted=3" in out, True)
+
+
+def case_runner_ignores_shell_verdicts_on_stderr() -> None:
+    """The count is read from the stdout stream only. Folding stderr in is what
+    let a gate's own line land last in the concatenation and win."""
+    rc, out = _runner_shell('#!/bin/bash\necho "[PASS] wrong stream" >&2\n')
+    check("runner rejects a shell gate that reported nothing on stdout (rc)",
+          rc, 1)
+    check("runner names the empty count", "checked nothing" in out, True)
+
+
+def case_runner_still_reads_a_skip_from_either_shell_stream() -> None:
+    """Unchanged: the announced-skip rule spans stdout AND stderr."""
+    src = ('#!/bin/bash\necho "[PASS] a real leg"\n'
+           'echo "SK""IP  mindc not built" >&2\n')
+    rc, out = _runner_shell(src)
+    check("runner rejects a shell skip on stderr (rc)", rc, 1)
+    check("runner names the announced skip", "unasserted invariant" in out, True)
+
+
 def case_runner_enforces_the_min_asserted_floor() -> None:
     """The floor a two-leg gate is wired with must actually bite."""
     rc, out = _runner('print("[PASS] only one leg")\n', "--min-asserted", "2")

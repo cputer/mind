@@ -34,9 +34,11 @@ A gate PASSES only when ALL of these hold:
 Python gates get (2) for free: they are executed through `gate_assert.py`, which
 counts evaluated `assert` statements and printed verdict lines and emits the
 line unconditionally — including on an early `return 0` skip, where the count is
-0 and the gate goes red. Non-Python gates are counted by the same verdict-line
-rule applied to their output. A gate may NEVER print the contract line itself:
-the shim treats that as forgery and forces the count to zero.
+0 and the gate goes red. Non-Python gates have no shim, so the RUNNER applies
+the same verdict-line rule to their stdout itself. A gate may NEVER print the
+contract line itself — for a Python gate the shim treats that as forgery and
+forces the count to zero, and for every other gate the runner does, so the rule
+has one strength and not two.
 
 USAGE
   python3 scripts/run_gate.py <gate> [args...]     # run one gate under contract
@@ -99,7 +101,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from gate_assert import ASSERTED_PREFIX, VERDICT_RE, is_skip_line  # noqa: E402
+from gate_assert import (ASSERTED_PREFIX, FORGED_RE, VERDICT_RE,  # noqa: E402
+                         is_skip_line)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SMOKE_DIR = ROOT / "examples" / "mindc_mind"
@@ -212,16 +215,30 @@ def run_one(gate: str, args: list[str], *, min_asserted: int = 1,
     # STDOUT ONLY. The shim prints the contract line on stdout after restoring
     # the real stream; reading the stderr half too let a gate's own
     # `asserted=99` on stderr land AFTER it in the concatenation and win.
-    n = _parse_asserted(proc.stdout)
-    if n is None and p.suffix != ".py":
-        # Non-Python gates are counted by the same verdict-line rule rather than
-        # a second, differently-shaped mechanism.
-        n = sum(1 for line in out.splitlines() if VERDICT_RE.search(line))
+    forged = False
+    if p.suffix == ".py":
+        n = _parse_asserted(proc.stdout)
+    else:
+        # A non-Python gate is NOT executed through the shim, so nothing
+        # publishes the contract line on its behalf and nothing was stopping it
+        # from publishing its own: reading `asserted=<N>` out of ANY gate's
+        # output made `echo "asserted=42"; exit 0` grade PASS having checked
+        # nothing — the exact forgery the shim refuses for Python gates. The
+        # count is therefore derived HERE, from the same verdict-line rule, over
+        # the runner-owned stream (stdout — both routed `.sh` gates report their
+        # verdict there), and a printed contract line on EITHER stream is
+        # forgery. One rule for both kinds of gate, not a weaker second one.
+        forged = any(FORGED_RE.match(line) for line in out.splitlines())
+        n = 0 if forged else sum(1 for line in proc.stdout.splitlines()
+                                 if VERDICT_RE.search(line))
 
     skipped = _has_skip(out)
     reason = ""
     if rc != 0:
         reason = f"exit {rc}"
+    elif forged:
+        reason = (f"the gate published its own {ASSERTED_PREFIX}line — "
+                  "the contract line is the runner's verdict, not the gate's")
     elif n is None:
         reason = f"no `{ASSERTED_PREFIX}<N>` line in output (gate published no count)"
     elif n < min_asserted:

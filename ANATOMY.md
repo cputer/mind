@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1466 | **Est. tokens:** ~2,805,541
-**Generated:** 2026-09-03 08:50 UTC
+**Files:** 1438 | **Est. tokens:** ~2,723,766
+**Generated:** 2026-09-03 08:57 UTC
 
 ## Token Budget Guide
 
@@ -22,17 +22,16 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29,094 |
+| `./` | 35 | ~32,388 |
 | `agents/` | 1 | ~436 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
 | `bench/` | 5 | ~7,574 |
-| `benches/` | 28 | ~84,218 |
-| `benches/common/` | 1 | ~668 |
+| `benches/` | 28 | ~83,676 |
 | `bench/fft/` | 8 | ~8,060 |
-| `benchmarks/` | 13 | ~28,497 |
+| `benchmarks/` | 12 | ~20,412 |
 | `benchmarks/autograd_comparison/` | 8 | ~9,411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7,733 |
 | `benchmarks/determinism/` | 3 | ~4,601 |
@@ -41,8 +40,8 @@
 | `benchmarks/mojo/` | 8 | ~4,300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4,828 |
 | `.cargo/` | 1 | ~130 |
-| `config/` | 2 | ~3,147 |
-| `docs/` | 35 | ~91,087 |
+| `config/` | 1 | ~1,465 |
+| `docs/` | 36 | ~93,303 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 4 | ~11,498 |
@@ -61,7 +60,7 @@
 | `examples/grammar_mask/` | 2 | ~4,636 |
 | `examples/halbach_q16/` | 2 | ~7,856 |
 | `examples/lexer/` | 6 | ~8,888 |
-| `examples/mindc_mind/` | 165 | ~411,869 |
+| `examples/mindc_mind/` | 165 | ~403,111 |
 | `examples/mindc_mind/testdata/` | 3 | ~4,159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -71,16 +70,16 @@
 | `examples/typecheck/` | 5 | ~14,553 |
 | `examples/zoo/` | 6 | ~12,518 |
 | `experiments/global-vs-local/` | 7 | ~6,487 |
-| `.githooks/` | 4 | ~1,755 |
-| `.github/` | 4 | ~847 |
+| `.githooks/` | 1 | ~434 |
+| `.github/` | 4 | ~601 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~31,521 |
+| `.github/workflows/` | 9 | ~27,333 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 27 | ~77,654 |
+| `scripts/` | 22 | ~48,807 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
-| `scripts/sdlc/` | 2 | ~2,756 |
+| `scripts/sdlc/` | 2 | ~2,559 |
 | `sdk/ts/mic-map/` | 6 | ~16,202 |
 | `sdk/ts/mic-map/dist/` | 36 | ~29,044 |
 | `sdk/ts/mic-map/scripts/` | 1 | ~499 |
@@ -106,7 +105,7 @@
 | `src/fmt/` | 3 | ~21,737 |
 | `src/ir/` | 6 | ~78,361 |
 | `src/ir/compact/` | 3 | ~15,292 |
-| `src/ir/compact/v2/` | 9 | ~45,363 |
+| `src/ir/compact/v2/` | 9 | ~45,364 |
 | `src/ir/compact/v3/` | 7 | ~63,340 |
 | `src/lint/` | 2 | ~4,001 |
 | `src/lint/rules/` | 6 | ~9,880 |
@@ -116,16 +115,16 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 5 | ~18,066 |
+| `src/project/` | 4 | ~14,409 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~8,383 |
-| `src/type_checker/` | 3 | ~24,986 |
+| `src/type_checker/` | 1 | ~15,148 |
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 342 | ~606,748 |
+| `tests/` | 336 | ~588,459 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -159,7 +158,6 @@
 | `tests/cross_substrate_identity/u64-ops/` | 2 | ~1,054 |
 | `tests/fixtures/` | 6 | ~228 |
 | `tests/fixtures/f64_abi_negative/` | 3 | ~192 |
-| `tests/fixtures/nerve_numerics/` | 11 | ~968 |
 | `tests/ir_verification/` | 2 | ~108 |
 | `tests/lexical/` | 3 | ~191 |
 | `tests/mindcraft/` | 1 | ~408 |
@@ -201,22 +199,24 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `bounties.md` (~888 tok, large) — MIND Bounty Board
 - `build.rs` (~234 tok, medium) — Copyright 2025 STARGA Inc.
-- `Cargo.toml` (~3348 tok, huge) — [package]
+- `Cargo.toml` (~3137 tok, huge) — [package]
 - `clippy.toml` (~25 tok, tiny)
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
-- `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
+- `CONTRIBUTING.md` (~1891 tok, huge) — Contributing to MIND
 - `deny.toml` (~89 tok, small) — [advisories]
 - `.editorconfig` (~51 tok, small) — root = true
 - `.gitattributes` (~130 tok, small) — # Enforce LF line endings for all text so byte-exact tests (fmt idempotence,
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `.gitignore` (~813 tok, large) — # Rust
+- `HANDOFF-2026-09-01.md` (~3795 tok, huge) — Handoff — MIND compiler, branch `fix/tc-let-null-annotation`
+- `HANDOFF-2026-09-02-S1-GLIBC.md` (~501 tok, large) — Handoff for CLAUDE (compiler owner) — S1 Pure-MIND ABI blocker
 - `incompatible` (~0 tok, tiny)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
 - `plugin.json` (~62 tok, small) — Keys: name, description, version, skills, agents
-- `README.md` (~6596 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~6174 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `rustfmt.toml` (~23 tok, tiny) — max_width = 100
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
@@ -263,11 +263,6 @@
 - `bench_x25519.rs` (~2469 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `bench_x509.rs` (~3990 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `cerebras_stencil.rs` (~831 tok, large) — Copyright 2025-2026 STARGA Inc.
-### `benches/common/`
-
-- `mod.rs` (~668 tok, large) — Shared self-skip probe for criterion bench targets.
-### `benches/`
-
 - `compiler.rs` (~3782 tok, huge) — Small program: Simple matrix multiplication
 - `cross_module.rs` (~609 tok, large) — Copyright 2025 STARGA Inc.
 - `det_gemv_q16_mt.rs` (~3294 tok, huge) — Copyright 2025-2026 STARGA Inc.
@@ -276,11 +271,11 @@
 - `det_matmul_q16_mt.rs` (~4049 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_q16.rs` (~4972 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `fft_q16.rs` (~5352 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `mindcraft_fmt.rs` (~1079 tok, large) — File readers
-- `operations.rs` (~1200 tok, large) — Element-wise operations
+- `mindcraft_fmt.rs` (~908 tok, large) — File readers
+- `operations.rs` (~1076 tok, large) — Element-wise operations
 - `parser_throughput.rs` (~916 tok, large) — Copyright 2025 STARGA Inc.
-- `shapes.rs` (~1368 tok, large) — Simple broadcasting scenarios
-- `simple_benchmarks.rs` (~794 tok, large) — Mirror mindc's allocator so this compile-speed bench measures the same heap
+- `shapes.rs` (~1208 tok, large) — Simple broadcasting scenarios
+- `simple_benchmarks.rs` (~707 tok, large) — Mirror mindc's allocator so this compile-speed bench measures the same heap
 - `std_surface.rs` (~1067 tok, large) — Copyright 2025 STARGA Inc.
 ### `bench/fft/`
 
@@ -304,8 +299,7 @@
 - `requirements.txt` (~7 tok, tiny) — torch>=1.0.0
 ### `benchmarks/`
 
-- `BENCHMARK_RESULTS.md` (~4997 tok, huge) — MIND Benchmark Results
-- `criterion_ci_sweep.txt` (~4173 tok, huge) — CRITERION CI-EQUIVALENT SWEEP — recorded output
+- `BENCHMARK_RESULTS.md` (~4311 tok, huge) — MIND Benchmark Results
 ### `benchmarks/cupy_comparison/`
 
 - `leg1_determinism.py` (~2586 tok, huge)
@@ -321,7 +315,7 @@
 - `README.md` (~1311 tok, large) — MIND Determinism Proof Benchmark
 ### `benchmarks/`
 
-- `format_benchmark.py` (~2434 tok, huge)
+- `format_benchmark.py` (~2617 tok, huge)
 ### `benchmarks/inference/`
 
 - `benchmark_inference.py` (~2423 tok, huge)
@@ -338,9 +332,9 @@
 ### `benchmarks/`
 
 - `mic_benchmark.py` (~1473 tok, large)
-- `MIC_MAP_BENCHMARK_README.md` (~676 tok, large) — MIC/MAP Patent Reference Benchmark
-- `mic_map_benchmark_results.json` (~1506 tok, huge) — Keys: metadata, measurements, paper_figures_verified, claim_checks, cost_model
-- `mic_map_benchmark_v2.py` (~5563 tok, huge)
+- `MIC_MAP_BENCHMARK_README.md` (~335 tok, medium) — MIC/MAP Patent Reference Benchmark
+- `mic_map_benchmark_results.json` (~851 tok, large) — Keys: metadata, measurements, paper_figures_verified, claim_checks, all_claims_verified
+- `mic_map_benchmark_v2.py` (~3150 tok, huge)
 ### `benchmarks/mojo/`
 
 - `benchmark_mojo_compilation.py` (~1533 tok, huge)
@@ -377,8 +371,7 @@
 - `config.toml` (~130 tok, small) — [registries]
 ### `config/`
 
-- `capabilities.toml` (~2175 tok, huge) — [ir]
-- `token_pricing.toml` (~972 tok, large) — [pricing]
+- `capabilities.toml` (~1465 tok, large) — [ir]
 ### `docs/`
 
 - `architecture.md` (~965 tok, large) — Architecture
@@ -420,7 +413,7 @@
 - `install.md` (~1012 tok, large) — Installing mindc
 - `ir.md` (~451 tok, medium) — MIND IR core
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
-- `ir-stability.md` (~1565 tok, huge) — IR stability contract
+- `ir-stability.md` (~1485 tok, large) — IR stability contract
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
@@ -478,6 +471,7 @@
 - `RI_DEPENDENCY_MATRIX.md` (~6115 tok, huge) — Rust-Independence (RI) Dependency Matrix
 - `runs-burndown-roadmap.md` (~3203 tok, huge) — MIND RUNS Burndown Roadmap
 - `security.md` (~1492 tok, large) — Security Guide
+- `self-evolution.md` (~2328 tok, huge) — Self-Evolution in MIND
 - `self-host-trace-hash-port.md` (~1406 tok, large) — #17 — Self-compute the native PT_NOTE (pure-MIND trace-hash port)
 - `shapes.md` (~478 tok, medium) — Tensor shape semantics
 - `sparse-tensor-types.md` (~740 tok, large) — Sparse Tensor Types
@@ -490,7 +484,7 @@
 - `type-system.md` (~1082 tok, large) — Type System
 - `VERIFICATION_APPARATUS.md` (~7783 tok, huge) — Self-Host Port Verification Apparatus & SOTA Roadmap
 - `versioning.md` (~804 tok, large) — MIND Core Stability & Versioning
-- `version-matrix.md` (~1828 tok, huge) — MIND Ecosystem — Version Matrix
+- `version-matrix.md` (~1796 tok, huge) — MIND Ecosystem — Version Matrix
 - `whitepaper.md` (~2788 tok, huge) — MIND: The Native Language for Intelligent Systems
 ### `examples/`
 
@@ -589,12 +583,12 @@
 - `mandelbrot_strict.mind` (~982 tok, large) — Strict-f64 Mandelbrot escape-count checksum — a determinism-wedge demo.
 ### `examples/mindc_mind/`
 
-- `backend_native_bridge_smoke.py` (~3256 tok, huge) — RI-D slice 1 gate (task #110): `mindc build --backend native` is a byte-faithful
+- `backend_native_bridge_smoke.py` (~3142 tok, huge) — RI-D slice 1 gate (task #110): `mindc build --backend native` is a byte-faithful
 - `bootstrap_smoke.py` (~2473 tok, huge)
 - `branch_shadow_crossbackend_smoke.py` (~2039 tok, huge) — #318 — branch-local `let` shadow must not leak across backends (the WEDGE gate).
 - `check_driver.mind` (~9782 tok, huge) — ===========================================================================
 - `closure_netverify.py` (~1423 tok, large) — # Canonical independent net-verify harness for CLOSURES / FN-VALUES / UNRESOLVED
-- `collect_field_strings_smoke.py` (~1215 tok, large)
+- `collect_field_strings_smoke.py` (~1161 tok, large)
 - `cutover_coverage_measure.py` (~2238 tok, huge)
 - `div_shift_cmp_edge_smoke.py` (~1846 tok, huge)
 - `enum_netverify.py` (~1957 tok, huge) — # Canonical independent net-verify harness for C-LIKE ENUMS in the native-ELF backend.
@@ -609,16 +603,16 @@
 - `general_float_netverify.py` (~1986 tok, huge) — general_float_netverify.py — GENERAL-path f64 value battery (B0 gate lift).
 - `.gitignore` (~5 tok, tiny) — __pycache__/
 - `lockstep_lint.py` (~4127 tok, huge) — lockstep_lint.py -- native-ELF walker lockstep linter for the pure-MIND self-host compiler.
-- `match_struct_smoke.py` (~1350 tok, large)
-- `method_callee_smoke.py` (~1390 tok, large)
-- `method_calls_smoke.py` (~1334 tok, large)
+- `match_struct_smoke.py` (~1311 tok, large)
+- `method_callee_smoke.py` (~1350 tok, large)
+- `method_calls_smoke.py` (~1294 tok, large)
 - `mic3_flip_smoke.py` (~1150 tok, large)
-- `mic3_oracle_smoke.py` (~1060 tok, large) — mic@3 self-host convergence — Phase 0 gate: the Rust oracle.
-- `mic3_primitives_smoke.py` (~22604 tok, huge) — mic@3 self-host convergence — Phase 1 gate: pure-MIND ULEB128 / zigzag.
+- `mic3_oracle_smoke.py` (~764 tok, large) — mic@3 self-host convergence — Phase 0 gate: the Rust oracle.
+- `mic3_primitives_smoke.py` (~22537 tok, huge) — mic@3 self-host convergence — Phase 1 gate: pure-MIND ULEB128 / zigzag.
 - `mindfuzz_self_host.py` (~11539 tok, huge)
 - `mod_operator_smoke.py` (~2871 tok, huge)
-- `multi_let_smoke.py` (~1539 tok, huge)
-- `now_ns_smoke.py` (~1008 tok, large) — # Copyright 2025 STARGA Inc.
+- `multi_let_smoke.py` (~1499 tok, large)
+- `now_ns_smoke.py` (~678 tok, large) — # Copyright 2025 STARGA Inc.
 - `option_netverify.py` (~2321 tok, huge) — # Canonical independent net-verify harness for SINGLE-PAYLOAD ENUMS (the
 - `oracle_parity_lint.py` (~4516 tok, huge)
 - `param_types_smoke.py` (~1273 tok, large)
@@ -637,10 +631,10 @@
 - `self_host_args_from_os_smoke.py` (~1356 tok, large)
 - `selfhost_argv_driver.mind` (~1187 tok, large) — ===========================================================================
 - `self_host_argv_smoke.py` (~1136 tok, large)
-- `self_host_array_smoke.py` (~1425 tok, large)
+- `self_host_array_smoke.py` (~1367 tok, large)
 - `self_host_arridx_mic3_smoke.py` (~1864 tok, huge)
 - `self_host_body_smoke.py` (~3055 tok, huge)
-- `self_host_carry_cap_smoke.py` (~1169 tok, large) — Cap-guard smoke for the self-host loop-carry / loop-frame scratch tables.
+- `self_host_carry_cap_smoke.py` (~1088 tok, large) — Cap-guard smoke for the self-host loop-carry / loop-frame scratch tables.
 - `self_host_cast_mic3_smoke.py` (~1776 tok, huge)
 - `self_host_check_driver_smoke.py` (~2879 tok, huge)
 - `self_host_continue_smoke.py` (~1384 tok, large) — Regression gate for #308 (closes #286's break/continue fixtures): the pure-MIND
@@ -648,27 +642,27 @@
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).
 - `self_host_else_if_smoke.py` (~1715 tok, huge)
 - `self_host_failclosed_smoke.py` (~9331 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
-- `self_host_float_lit_exact_smoke.py` (~1149 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
+- `self_host_float_lit_exact_smoke.py` (~1069 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
 - `self_host_for_smoke.py` (~3191 tok, huge) — Permanent battery for the self-host range-`for` loop.
-- `self_host_if_region_carry_smoke.py` (~4632 tok, huge) — Native-ELF smoke: i64 loop-carry through BRANCHED regions (Sub-step C).
+- `self_host_if_region_carry_smoke.py` (~4552 tok, huge) — Native-ELF smoke: i64 loop-carry through BRANCHED regions (Sub-step C).
 - `self_host_ifret_chain_mic3_smoke.py` (~1725 tok, huge)
-- `self_host_letpath_failclose_smoke.py` (~2243 tok, huge) — Self-host LET-PATH fail-closed smoke — pins the S1-collapse fail-open wall.
-- `self_host_lockstep_smoke.py` (~2241 tok, huge) — SUB-STEP A lockstep smoke: the loop-carry frame COUNT and the loop-carry EMIT are
-- `self_host_loop_smoke.py` (~4958 tok, huge)
+- `self_host_letpath_failclose_smoke.py` (~2202 tok, huge) — Self-host LET-PATH fail-closed smoke — pins the S1-collapse fail-open wall.
+- `self_host_lockstep_smoke.py` (~2161 tok, huge) — SUB-STEP A lockstep smoke: the loop-carry frame COUNT and the loop-carry EMIT are
+- `self_host_loop_smoke.py` (~4361 tok, huge)
 - `self_host_matchscalar_mic3_smoke.py` (~1725 tok, huge)
 - `self_host_match_smoke.py` (~1893 tok, huge)
 - `self_host_mic3_float_valueif_smoke.py` (~1768 tok, huge)
 - `self_host_mlir_smoke.py` (~1954 tok, huge)
 - `self_host_narrow_let_mic3_smoke.py` (~1612 tok, huge)
-- `self_host_narrow_param_smoke.py` (~11275 tok, huge) — Native-ELF smoke for narrow-width (i8/i16/i32) function PARAMETERS carried by a loop.
+- `self_host_narrow_param_smoke.py` (~11195 tok, huge) — Native-ELF smoke for narrow-width (i8/i16/i32) function PARAMETERS carried by a loop.
 - `self_host_native_autowrap_smoke.py` (~2442 tok, huge) — Roadmap C2 declared-width AUTO-WRAP driver — narrow-int (i8/i16/i32) `let` and
-- `self_host_native_avx2_dot_f32_smoke.py` (~1663 tok, huge) — RI-B2-S13 (#108) — native-ELF PACKED-f32 SIMD via 256-bit AVX2 (VEX/YMM) STRICT-FP DOT.
+- `self_host_native_avx2_dot_f32_smoke.py` (~1559 tok, huge) — RI-B2-S13 (#108) — native-ELF PACKED-f32 SIMD via 256-bit AVX2 (VEX/YMM) STRICT-FP DOT.
 - `self_host_native_blas_dot_i16_smoke.py` (~2879 tok, huge)
 - `self_host_native_blas_dot_q16_smoke.py` (~1774 tok, huge)
-- `self_host_native_cast_conv_smoke.py` (~1373 tok, large) — RI-B2 scalar-cast-conv rung (#108) — native-ELF int<->float `as`-cast chain.
-- `self_host_native_diag_smoke.py` (~1104 tok, large) — RI-D1a gate (task #313): `mindc build --backend=native` must FAIL-CLOSED with an
-- `self_host_native_dot_f32_smoke.py` (~1436 tok, large) — RI-B2-S8 STEP C (#108) — native-ELF scalar STRICT-FP f32 DOT-PRODUCT.
-- `self_host_native_dot_l1_q16_smoke.py` (~1188 tok, large) — RI-B2 L1-Q16 rung (#108) — native-ELF Q16.16 L1 distance.
+- `self_host_native_cast_conv_smoke.py` (~1267 tok, large) — RI-B2 scalar-cast-conv rung (#108) — native-ELF int<->float `as`-cast chain.
+- `self_host_native_diag_smoke.py` (~1100 tok, large) — RI-D1a gate (task #313): `mindc build --backend=native` must FAIL-CLOSED with an
+- `self_host_native_dot_f32_smoke.py` (~1334 tok, large) — RI-B2-S8 STEP C (#108) — native-ELF scalar STRICT-FP f32 DOT-PRODUCT.
+- `self_host_native_dot_l1_q16_smoke.py` (~1088 tok, large) — RI-B2 L1-Q16 rung (#108) — native-ELF Q16.16 L1 distance.
 - `self_host_native_elf_alignment_smoke.py` (~1902 tok, huge) — Self-host NATIVE-ELF ABI-alignment smoke (FIX #169).
 - `self_host_native_elf_smoke.py` (~10885 tok, huge)
 - `self_host_native_fp_binop_smoke.py` (~1095 tok, large) — RI-B1 nb_expr FLOAT-op-FLOAT arithmetic routing gate (zero MLIR/LLVM).
@@ -678,26 +672,26 @@
 - `self_host_native_fp_let_smoke.py` (~1208 tok, large) — RI-B1 (#107 follow-up) FLOAT dtype propagation ACROSS a LET binding (zero MLIR/LLVM).
 - `self_host_native_fp_param_smoke.py` (~1403 tok, large) — RI-D2 S-B: FLOAT fn-param dtype classification + SysV SSE-spill ABI (zero MLIR/LLVM).
 - `self_host_native_fp_smoke.py` (~1142 tok, large) — RI-B1 native-ELF scalar-f64 gate (zero MLIR/LLVM).
-- `self_host_native_gemm_i8_smoke.py` (~1154 tok, large) — RI-B2-S7 (#108) — native-ELF scalar int8 GEMM (matrix x matrix), byte-identity rung.
-- `self_host_native_gemm_q16_smoke.py` (~1157 tok, large) — RI-B2-S7 (#108) — native-ELF scalar GEMM Q16.16 (matrix x matrix), byte-identity rung.
-- `self_host_native_gemv_i16_smoke.py` (~1148 tok, large) — RI-B2-S6 (#108) — native-ELF scalar GEMV int16 (matrix x vector), byte-identity rung.
-- `self_host_native_gemv_q16_smoke.py` (~1142 tok, large) — RI-B2-S6 (#108) — native-ELF scalar GEMV Q16.16 (matrix x vector), byte-identity rung.
+- `self_host_native_gemm_i8_smoke.py` (~1051 tok, large) — RI-B2-S7 (#108) — native-ELF scalar int8 GEMM (matrix x matrix), byte-identity rung.
+- `self_host_native_gemm_q16_smoke.py` (~1053 tok, large) — RI-B2-S7 (#108) — native-ELF scalar GEMM Q16.16 (matrix x matrix), byte-identity rung.
+- `self_host_native_gemv_i16_smoke.py` (~1044 tok, large) — RI-B2-S6 (#108) — native-ELF scalar GEMV int16 (matrix x vector), byte-identity rung.
+- `self_host_native_gemv_q16_smoke.py` (~1037 tok, large) — RI-B2-S6 (#108) — native-ELF scalar GEMV Q16.16 (matrix x vector), byte-identity rung.
 - `self_host_native_genf32_smoke.py` (~1066 tok, large) — RI-B2-S8 STEP B (#108) — isolate the LCG f32 rounding BEFORE the dot.
-- `self_host_native_intdot_i16_smoke.py` (~1121 tok, large) — RI-B2-S2 (#108) — native-ELF scalar int16 DOT-PRODUCT, FIRST byte-identity rung.
-- `self_host_native_intdot_q16_smoke.py` (~1111 tok, large) — RI-B2-S4 (#108) — native-ELF scalar Q16.16 DOT-PRODUCT, byte-identity rung.
+- `self_host_native_intdot_i16_smoke.py` (~1018 tok, large) — RI-B2-S2 (#108) — native-ELF scalar int16 DOT-PRODUCT, FIRST byte-identity rung.
+- `self_host_native_intdot_q16_smoke.py` (~1008 tok, large) — RI-B2-S4 (#108) — native-ELF scalar Q16.16 DOT-PRODUCT, byte-identity rung.
 - `self_host_native_intdot_smoke.py` (~1165 tok, large) — RI-B2-S1 (#108) scalar i64 DOT-PRODUCT reduction native-ELF (zero MLIR/LLVM).
-- `self_host_native_matmul_f32_v_smoke.py` (~1718 tok, huge) — RI-B2-S9 (#108) — native-ELF scalar STRICT-FP f32 GEMV (matmul-f32-v).
+- `self_host_native_matmul_f32_v_smoke.py` (~1611 tok, huge) — RI-B2-S9 (#108) — native-ELF scalar STRICT-FP f32 GEMV (matmul-f32-v).
 - `self_host_native_narrow_add_i8_smoke.py` (~2260 tok, huge) — C2 — native-ELF NARROW-INT (i8) WRAP ARITHMETIC, zero MLIR/LLVM.
 - `self_host_native_narrow_arith_batch_smoke.py` (~2554 tok, huge) — C2 — native-ELF NARROW-INT WRAP ARITHMETIC batch: {sub,mul}xi8 + {add,mul}xi16.
 - `self_host_native_narrowint_smoke.py` (~1656 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 truncating
-- `self_host_native_narrow_paramret_smoke.py` (~2029 tok, huge) — Byte-behavior smoke for narrow-int (i8/i16/i32) PARAM + RETURN auto-wrap in the
+- `self_host_native_narrow_paramret_smoke.py` (~1949 tok, huge) — Byte-behavior smoke for narrow-int (i8/i16/i32) PARAM + RETURN auto-wrap in the
 - `self_host_native_narrowwrap_smoke.py` (~1673 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 two's-complement
-- `self_host_native_scalar_f32_smoke.py` (~1548 tok, huge) — Phase C1-remainder f32 rung — native-ELF scalar SINGLE-precision chain.
-- `self_host_native_scalar_f64_smoke.py` (~1301 tok, large) — RI-B2 f64 rung (#108) — native-ELF scalar STRICT-FP f64 CHAIN.
+- `self_host_native_scalar_f32_smoke.py` (~1342 tok, large) — Phase C1-remainder f32 rung — native-ELF scalar SINGLE-precision chain.
+- `self_host_native_scalar_f64_smoke.py` (~1201 tok, large) — RI-B2 f64 rung (#108) — native-ELF scalar STRICT-FP f64 CHAIN.
 - `self_host_native_scalar_narrow_smoke.py` (~1800 tok, huge) — RI-D / #10 native-float SLICE 1a — native-ELF SATURATING f64 -> signed NARROW
 - `self_host_native_scast_smoke.py` (~1694 tok, huge)
-- `self_host_native_simd_dot_f32_smoke.py` (~1606 tok, huge) — RI-B2-S11 (#108) — native-ELF PACKED-f32 SIMD (SSE, 128-bit) STRICT-FP DOT-PRODUCT.
-- `self_host_native_simd_dot_i16_smoke.py` (~1234 tok, large) — RI-B2-S12 (#108) — native-ELF PACKED-int16 SIMD DOT-PRODUCT, byte-identity rung.
+- `self_host_native_simd_dot_f32_smoke.py` (~1502 tok, huge) — RI-B2-S11 (#108) — native-ELF PACKED-f32 SIMD (SSE, 128-bit) STRICT-FP DOT-PRODUCT.
+- `self_host_native_simd_dot_i16_smoke.py` (~1130 tok, large) — RI-B2-S12 (#108) — native-ELF PACKED-int16 SIMD DOT-PRODUCT, byte-identity rung.
 - `self_host_native_simd_dot_q16_smoke.py` (~1486 tok, large) — RI-B2-S10 (#108) — native-ELF PACKED-SIMD Q16.16 DOT-PRODUCT, byte-identity rung.
 - `self_host_native_string_smoke.py` (~2275 tok, huge)
 - `self_host_native_tensor_batchsum_smoke.py` (~2372 tok, huge) — C4-T6 — native-ELF 3-D BATCHED SUM (i64), zero MLIR/LLVM. The FIRST N-D
@@ -717,40 +711,40 @@
 - `self_host_native_ucast_smoke.py` (~1444 tok, large)
 - `self_host_native_write8_smoke.py` (~929 tok, large) — RI-B2-S2 STEP A (#108) — de-risk the C1 "emit 8 LE bytes to stdout + hash" gate.
 - `self_host_native_write_f32_smoke.py` (~815 tok, large) — RI-B2-S8 STEP A (#108) — de-risk the raw-f32-bytes harness on a KNOWN f32.
-- `self_host_not_smoke.py` (~1481 tok, large)
+- `self_host_not_smoke.py` (~1441 tok, large)
 - `self_host_open_smoke.py` (~1310 tok, large)
-- `self_host_param_mutation_smoke.py` (~1323 tok, large) — CPU-as-oracle smoke for the param-mutation fix (nb_expr ident arm: consult the
-- `_selfhost_so.py` (~2139 tok, huge) — Shared self-host `.so` resolver for the examples/mindc_mind smokes.
+- `self_host_param_mutation_smoke.py` (~1243 tok, large) — CPU-as-oracle smoke for the param-mutation fix (nb_expr ident arm: consult the
+- `_selfhost_so.py` (~1672 tok, huge) — Shared self-host `.so` resolver for the examples/mindc_mind smokes.
 - `self_host_standalone_driver_smoke.py` (~3253 tok, huge)
 - `self_host_struct_return_smoke.py` (~4122 tok, huge) — self_host_struct_return_smoke.py — regression lock for STRUCT-BY-VALUE
-- `self_host_tc_classify_error_code_smoke.py` (~2238 tok, huge) — CPU-as-oracle smoke for the pure-MIND classify_error_code router.
-- `self_host_tc_class_mismatch_smoke.py` (~920 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 int<->float class-mismatch rule.
-- `self_host_tc_class_rules_smoke.py` (~1641 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2010/E2011/E2013/E2016 class rules.
-- `self_host_tc_decl_names_smoke.py` (~3404 tok, huge) — CPU-as-oracle smoke for the pure-MIND D1 module DECL-NAME SET.
-- `self_host_tc_fixed_bytes_into_vec_smoke.py` (~1191 tok, large) — CPU-as-oracle smoke for the pure-MIND E2006 FIXED_BYTES_INTO_VEC rule (Bug #38).
-- `self_host_tc_fn_value_call_smoke.py` (~7057 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D4 CAPSTONE — the FULL E2012 rule.
-- `self_host_tc_let_class_mismatch_smoke.py` (~1072 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 LET_CLASS_MISMATCH let/assign rule.
-- `self_host_tc_let_infer_ident_smoke.py` (~2882 tok, huge) — self_host_tc_let_infer_ident_smoke — three-leg gate for the T2 port.
-- `self_host_tc_let_infer_smoke.py` (~2132 tok, huge) — self_host_tc_let_infer_smoke — three-leg gate for the T1 type-inference port.
+- `self_host_tc_classify_error_code_smoke.py` (~2158 tok, huge) — CPU-as-oracle smoke for the pure-MIND classify_error_code router.
+- `self_host_tc_class_mismatch_smoke.py` (~840 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 int<->float class-mismatch rule.
+- `self_host_tc_class_rules_smoke.py` (~1560 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2010/E2011/E2013/E2016 class rules.
+- `self_host_tc_decl_names_smoke.py` (~3329 tok, huge) — CPU-as-oracle smoke for the pure-MIND D1 module DECL-NAME SET.
+- `self_host_tc_fixed_bytes_into_vec_smoke.py` (~1110 tok, large) — CPU-as-oracle smoke for the pure-MIND E2006 FIXED_BYTES_INTO_VEC rule (Bug #38).
+- `self_host_tc_fn_value_call_smoke.py` (~6982 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D4 CAPSTONE — the FULL E2012 rule.
+- `self_host_tc_let_class_mismatch_smoke.py` (~991 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 LET_CLASS_MISMATCH let/assign rule.
+- `self_host_tc_let_infer_ident_smoke.py` (~2802 tok, huge) — self_host_tc_let_infer_ident_smoke — three-leg gate for the T2 port.
+- `self_host_tc_let_infer_smoke.py` (~2052 tok, huge) — self_host_tc_let_infer_smoke — three-leg gate for the T1 type-inference port.
 - `self_host_tc_narrowing_smoke.py` (~1042 tok, large)
-- `self_host_tc_scope_frame_smoke.py` (~5509 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
-- `self_host_tc_self_host_only_call_smoke.py` (~1908 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
-- `self_host_tc_shape_annot_compat_smoke.py` (~1695 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
-- `self_host_tc_shape_rules_smoke.py` (~1901 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
-- `self_host_tc_std_export_smoke.py` (~3253 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
-- `self_host_tc_undeclared_assign_smoke.py` (~6994 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2009 rule — undeclared assign.
-- `self_host_tc_unknown_call_smoke.py` (~8534 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2003 rule — unknown call.
-- `self_host_tc_unknown_ident_smoke.py` (~11127 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2002 rule — unknown identifier.
-- `self_host_tc_unknown_variant_smoke.py` (~1986 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2008 unknown-enum-variant rule.
+- `self_host_tc_scope_frame_smoke.py` (~5434 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
+- `self_host_tc_self_host_only_call_smoke.py` (~1833 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
+- `self_host_tc_shape_annot_compat_smoke.py` (~1615 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
+- `self_host_tc_shape_rules_smoke.py` (~1820 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
+- `self_host_tc_std_export_smoke.py` (~3178 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
+- `self_host_tc_undeclared_assign_smoke.py` (~6919 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2009 rule — undeclared assign.
+- `self_host_tc_unknown_call_smoke.py` (~8459 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2003 rule — unknown call.
+- `self_host_tc_unknown_ident_smoke.py` (~11052 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2002 rule — unknown identifier.
+- `self_host_tc_unknown_variant_smoke.py` (~1911 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2008 unknown-enum-variant rule.
 - `self_host_value_if_expr_smoke.py` (~1557 tok, huge)
-- `sha256_hash_smoke.py` (~1284 tok, large) — # Copyright 2025 STARGA Inc.
-- `smoke_wiring_lint.py` (~5521 tok, huge) — smoke_wiring_lint.py — machine-checked contract for WHERE each
+- `sha256_hash_smoke.py` (~1166 tok, large) — # Copyright 2025 STARGA Inc.
+- `smoke_wiring_lint.py` (~2910 tok, huge) — smoke_wiring_lint.py — machine-checked contract for WHERE each
 - `SMOKE_WIRING.tsv` (~3294 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
 - `stdlib_manifest_lint.py` (~2418 tok, huge) — stdlib_manifest_lint.py — machine-checked contract for WHICH std/*.mind
 - `_stdlib_manifest.py` (~1129 tok, large) — Shared reader for the committed std/*.mind manifest.
 - `struct_fields_smoke.py` (~1076 tok, large)
 - `struct_lit_smoke.py` (~2240 tok, huge)
-- `tc_differential_fuzz.py` (~13332 tok, huge) — tcdiff — differential fuzzer for the self-host source-position tc-rule ports.
+- `tc_differential_fuzz.py` (~13250 tok, huge) — tcdiff — differential fuzzer for the self-host source-position tc-rule ports.
 ### `examples/mindc_mind/testdata/backend_native_bridge/`
 
 - `add.elf` (~123 tok, small) — ELF> @@@8
@@ -778,8 +772,8 @@
 - `stdlib_manifest.txt` (~831 tok, large) — # std/*.mind MANIFEST — the single committed source of truth for "which std
 ### `examples/mindc_mind/`
 
-- `unified_dispatch_smoke.py` (~1598 tok, huge)
-- `validate_real_fns_smoke.py` (~2734 tok, huge)
+- `unified_dispatch_smoke.py` (~1553 tok, huge)
+- `validate_real_fns_smoke.py` (~2674 tok, huge)
 - `while_struct_smoke.py` (~1031 tok, large)
 ### `examples/`
 
@@ -834,10 +828,7 @@
 - `topo.py` (~696 tok, large)
 ### `.githooks/`
 
-- `commit-msg` (~239 tok, medium) — #!/usr/bin/env bash
-- `post-commit` (~410 tok, medium) — #!/usr/bin/env bash
-- `post-merge` (~408 tok, medium) — #!/usr/bin/env bash
-- `pre-commit` (~698 tok, large) — #!/usr/bin/env bash
+- `pre-commit` (~434 tok, medium) — #!/usr/bin/env bash
 ### `.github/`
 
 - `CODEOWNERS` (~9 tok, tiny) — *       @star-ga
@@ -850,18 +841,18 @@
 
 - `PULL_REQUEST_TEMPLATE.md` (~55 tok, small) — Summary
 - `release-drafter.yml` (~85 tok, small) — name-template: 'v$NEXT_PATCH_VERSION'
-- `required-ci-jobs.tsv` (~698 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
+- `required-ci-jobs.tsv` (~452 tok, medium) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
-- `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
-- `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~19757 tok, huge) — name: CI
-- `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
-- `docs-claims.yml` (~2526 tok, huge) — name: Docs Claims
+- `bench-gate.yml` (~2168 tok, huge) — name: Bench gate
+- `cargo-deny.yml` (~229 tok, medium) — name: Cargo Deny
+- `ci.yml` (~17109 tok, huge) — name: CI
+- `crypto-vectors.yml` (~1454 tok, large) — name: Crypto Vectors
+- `docs-claims.yml` (~1571 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
 - `mindcraft.yml` (~910 tok, large) — name: Mindcraft Check
 - `release-drafter.yml` (~91 tok, small) — name: Release Drafter
-- `release.yml` (~3681 tok, huge) — name: Release
+- `release.yml` (~3572 tok, huge) — name: Release
 ### `mind/std/cognitive/`
 
 - `batch_scheduler.mind` (~850 tok, large) — Batch scheduling for inference workloads
@@ -874,20 +865,18 @@
 ### `scripts/`
 
 - `ai_attribution_patterns.sh` (~1536 tok, huge) — shellcheck shell=bash
-- `anatomy-hook.sh` (~1811 tok, huge) — STARGA author guard (chained first: a wrong-identity commit must never be created).
-- `anatomy.sh` (~2451 tok, huge) — anatomy — Generate ANATOMY.md for any repo
+- `anatomy-hook.sh` (~858 tok, large) — STARGA author guard (chained first: a wrong-identity commit must never be created).
+- `anatomy.sh` (~2011 tok, huge) — anatomy — Generate ANATOMY.md for any repo
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
-- `check_claims.py` (~7043 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
+- `check_claims.py` (~2779 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~4995 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~2310 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
-- `check_no_ai_attribution.sh` (~1628 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
-- `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
-- `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
+- `check_no_ai_attribution.sh` (~1221 tok, large) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
+- `check_release_gating.py` (~3441 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
+- `commit-msg-hook.sh` (~803 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
 - `exec_semantics_gate.sh` (~6635 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
-- `gate_assert.py` (~3298 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
-- `gate_runner_wiring_lint.py` (~3165 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -901,20 +890,17 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~7515 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~6654 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~1376 tok, large) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~1932 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
-- `run_gate.py` (~6266 tok, huge) — run_gate.py — the shared gate runner that makes a VACUOUS PASS structurally fail.
 ### `scripts/sdlc/`
 
-- `enforcement_bijection.py` (~1415 tok, large) — A test must never outlive the rule it asserts.
-- `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
+- `enforcement_bijection.py` (~1314 tok, large) — A test must never outlive the rule it asserts.
+- `lost_by_merge.py` (~1245 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `test_gate_wiring.py` (~2271 tok, huge) — Regression test for scripts/check_gate_wiring.py.
-- `test_no_ai_attribution.py` (~2818 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
-- `verify_ci_green.py` (~3651 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
+- `verify_ci_green.py` (~3197 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
 - `workflow_scan.py` (~1069 tok, large) — workflow_scan.py — dependency-free structural reader for the GitHub Actions
 ### `sdk/ts/mic-map/dist/`
 
@@ -1088,7 +1074,7 @@
 - `parse.rs` (~8124 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/v2/`
 
-- `binary.rs` (~8844 tok, huge) — Copyright 2025 STARGA Inc.
+- `binary.rs` (~8845 tok, huge) — Copyright 2025 STARGA Inc.
 - `emit.rs` (~2445 tok, huge) — Copyright 2025 STARGA Inc.
 - `evidence.rs` (~10501 tok, huge) — Copyright 2025 STARGA Inc.
 - `map_limits.rs` (~1823 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1174,7 +1160,6 @@
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
-- `toolchain_pin.rs` (~3657 tok, huge) — The `[mind]` table is the ONLY *declared* cross-repo compatibility contract
 ### `src/`
 
 - `python.rs` (~1082 tok, large) — Copyright 2025 STARGA Inc.
@@ -1204,8 +1189,6 @@
 - `mod.rs` (~8383 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
-- `nerve_lint.rs` (~7630 tok, huge) — Copyright 2025 STARGA Inc.
-- `nerve_walk.rs` (~2208 tok, huge) — Copyright 2025 STARGA Inc.
 - `resolve.rs` (~15148 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/types/`
 
@@ -1303,8 +1286,6 @@
 - `cerebras_stencil_tile.rs` (~1929 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `chacha20_poly1305_smoke.rs` (~2222 tok, huge) — Copyright 2025 STARGA Inc.
 - `char_literal_run.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
-- `check_claims_cost_gate_test.py` (~2785 tok, huge) — Gate test: the published MIC cost figure must be DERIVED, not typed.
-- `check_claims_surface_count_gate_test.py` (~2158 tok, huge) — Gate test: a count PRINTED on a public surface must equal the derived count.
 - `cli_buffers.rs` (~459 tok, medium) — Copyright 2025 STARGA Inc.
 - `cli_build.rs` (~648 tok, large) — Copyright 2025 STARGA Inc.
 - `cli_eval.rs` (~502 tok, large) — Copyright 2025 STARGA Inc.
@@ -1500,21 +1481,6 @@
 
 - `invalid_broadcast.mind` (~17 tok, tiny)
 - `invalid.mind` (~6 tok, tiny)
-### `tests/fixtures/nerve_numerics/`
-
-- `e_nerve_001_bad.mind` (~89 tok, small) — NEGATIVE fixture for E_NERVE_001 (numerics.md@v1 §6 rule 1).
-- `e_nerve_001_good.mind` (~60 tok, small) — POSITIVE fixture for E_NERVE_001: the whole reachable closure is annotated.
-- `e_nerve_002_bad.mind` (~88 tok, small) — NEGATIVE fixture for E_NERVE_002 (numerics.md@v1 §6 rule 2).
-- `e_nerve_002_good.mind` (~63 tok, small) — POSITIVE fixture for E_NERVE_002: the same fold, schedule declared.
-- `e_nerve_003_bad.mind` (~78 tok, small) — NEGATIVE fixture for E_NERVE_003 (numerics.md@v1 §4, §6 rule 3).
-- `e_nerve_003_good.mind` (~82 tok, small) — POSITIVE fixture for E_NERVE_003: the one sanctioned multiply owns the
-- `e_nerve_004_bad.mind` (~67 tok, small) — NEGATIVE fixture for E_NERVE_004 (numerics.md@v1 §1, §6 rule 4).
-- `e_nerve_004_good.mind` (~53 tok, small) — POSITIVE fixture for E_NERVE_004: inference internals stay in Q16.16.
-- `e_nerve_005_bad.mind` (~109 tok, small) — NEGATIVE fixture for E_NERVE_005 (numerics.md@v1 §2, §6 rule 5).
-- `e_nerve_005_good.mind` (~104 tok, small) — POSITIVE fixture for E_NERVE_005: the fold is pinned in source, so its
-- `unarmed_all_violations.mind` (~175 tok, small) — INERTNESS fixture: every violation above, with the opt-in annotations
-### `tests/fixtures/`
-
 - `simple.mind` (~3 tok, tiny)
 - `test_phase_b_all_pass.mind` (~67 tok, small) — RFC 0008 Phase B test fixture — both tests pass.
 - `test_phase_b_one_fail.mind` (~80 tok, small) — RFC 0008 Phase B test fixture — one pass, one fail.
@@ -1522,7 +1488,7 @@
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_idempotence.rs` (~3658 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_ir_preservation.rs` (~2552 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_ir_preservation.rs` (~2030 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
 - `fn_value_call_reject.rs` (~761 tok, large) — Copyright 2025 STARGA Inc.
@@ -1531,8 +1497,6 @@
 - `for_each_run.rs` (~859 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1442 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `g2_differential_mlir.rs` (~10959 tok, huge) — Copyright 2025 STARGA Inc.
-- `gate_assert_count_contract_test.py` (~3866 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
-- `gate_runner_cargo_scope_test.py` (~1767 tok, huge) — Gate test: the wiring lint must SEE a `cargo test` gate, or say it cannot.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3678 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1579,7 +1543,6 @@
 - `lint_infrastructure.rs` (~2540 tok, huge) — Copyright 2025 STARGA Inc.
 - `loop_run.rs` (~764 tok, large) — Copyright 2025 STARGA Inc.
 - `loud_fail_non_i64.rs` (~852 tok, large) — Release-readiness P1.1 — the runnable-artifact ABI gate.
-- `manifest_pin_enforcement.rs` (~3112 tok, huge) — The `[mind]` table (`mindc-min` / `mindc-max` / `ir-format` /
 - `map_get_inference_run.rs` (~713 tok, large) — Copyright 2025 STARGA Inc.
 - `map_runtime_run.rs` (~843 tok, large) — Copyright 2025 STARGA Inc.
 - `map_surface_run.rs` (~949 tok, large) — Copyright 2025 STARGA Inc.
@@ -1748,7 +1711,6 @@
 - `narrow_tuple_pr216_run.rs` (~1454 tok, large) — Copyright 2025 STARGA Inc.
 - `narrow_unsigned_div_zero_run.rs` (~1228 tok, large) — Copyright 2025 STARGA Inc.
 - `native_opt_wiring.rs` (~1953 tok, huge) — Copyright 2025 STARGA Inc.
-- `nerve_numerics_lint.rs` (~4079 tok, huge) — Copyright 2025 STARGA Inc.
 - `nested_block_surface_run.rs` (~1036 tok, large) — Copyright 2025 STARGA Inc.
 - `nested_collection_run.rs` (~818 tok, large) — Copyright 2025 STARGA Inc.
 - `nested_mut_thread_run.rs` (~1550 tok, huge) — Copyright 2025 STARGA Inc.
