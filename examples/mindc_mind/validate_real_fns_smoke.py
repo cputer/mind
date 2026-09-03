@@ -217,7 +217,7 @@ def main() -> int:
             failures += not ok
             tag = (f"BYTE-EXACT ({len(got)}B == oracle)" if ok
                    else f"REGRESSED got {len(got)}B vs oracle {len(live)}B")
-            print(f"  [GREEN {'OK' if ok else 'XX'}] {label:<28} {tag}")
+            print(f"  [GREEN {'PASS' if ok else 'FAIL'}] {label:<28} {tag}")
         else:
             wall_total += 1
             # WALL = the emit must fail closed (empty buf), never mis-emit bytes.
@@ -226,17 +226,17 @@ def main() -> int:
             failures += not closed
             tag = ("fail-closed (empty buf) — cutover frontier" if closed
                    else f"LEAKED {len(got)}B (fail-closed contract broken!)")
-            print(f"  [WALL  {'OK' if closed else 'XX'}] {label:<28} {tag}")
+            print(f"  [WALL  {'PASS' if closed else 'FAIL'}] {label:<28} {tag}")
 
     print(f"\n  GREEN byte-exact {green_exact}/{green_total}  |  "
           f"WALL fail-closed {wall_closed}/{wall_total}")
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
-    # be able to report success through an exit code alone.
-    print(f"\nALL cases behaved as classified (green byte-exact, walls fail-closed)"
-          f"  (ran={green_total + wall_total})")
+    # The per-case [GREEN PASS]/[WALL PASS] lines above ARE the count
+    # scripts/run_gate.py reads; a case whose oracle was unavailable prints no
+    # verdict and is correctly not counted, and an empty case list reports zero.
+    print("\nALL cases behaved as classified (green byte-exact, walls fail-closed)")
     return 0
 
 

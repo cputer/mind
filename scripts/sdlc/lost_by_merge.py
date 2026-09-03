@@ -82,6 +82,12 @@ def main() -> int:
     if warned:
         print(f"  ({len(warned)} non-enforcement line(s) dropped by the merge — review, not blocking)")
 
+    # The verdict line scripts/gate_assert.py counts: with `checked == 0` the
+    # gate examined nothing and reports nothing, which is the honest reading of
+    # the marker below (and why preflight runs this gate with --min-asserted 0).
+    if checked:
+        print(f"[{'FAIL' if findings else 'PASS'}] lost-by-merge: {checked} "
+              f"file(s) present in both parents")
     print(f"SDLC-GATE lost-by-merge ran={checked} fail={len(findings)}")
     if findings:
         print(f"\nFAIL: this merge DROPPED {len(findings)} enforcement line(s) present in BOTH parents.\n",

@@ -509,6 +509,20 @@ jobs:
         run: python3 scripts/run_gate.py examples/mindc_mind/smoke_wiring_lint.py
         working-directory: ${{ github.workspace }}
 
+      - name: Gate-assert count contract (tests/gate_assert_count_contract_test.py)
+        # Guards the number every other gate is judged by. `asserted=<N>` used to
+        # be derivable from a line a gate PRINTED: any `ran=<n>` anywhere in the
+        # output replaced all other evidence, so a smoke publishing
+        # `(ran={len(CASES)})` reported the length of a list — emptying its case
+        # loop still said 8 — and a gate writing `asserted=99` to stderr outranked
+        # the shim's own verdict. This test pins the repaired contract: markers are
+        # read only in the two shapes the repo already publishes, a marker never
+        # manufactures evidence, a self-published contract line fails closed, and
+        # the lint refuses a gate source that prints those shapes by hand. Pure
+        # Python, no build artifacts — runs beside the wiring lint, fails fast.
+        run: python3 scripts/run_gate.py tests/gate_assert_count_contract_test.py
+        working-directory: ${{ github.workspace }}
+
       - name: Gate-vacuity sweep (run_gate.py --vacuity-sweep)
         # THE POSITIVE CONTROL for every gate in this repo. Runs the whole smoke
         # corpus TWICE, once per way of taking the compiler away, and REQUIRES

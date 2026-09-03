@@ -73,7 +73,8 @@ def main() -> int:
         finally:
             os.unlink(p)
     ok = (ec == 0 and art is not None and art[:4] == b"\x7fELF" and ran == 42)
-    print(f"  {'PASS' if ok else 'FAIL'}  scalar: exit={ec} elf={'YES' if art else 'NO'} ran={ran}(want 42)")
+    print(f"  {'PASS' if ok else 'FAIL'}  scalar: exit={ec} "
+          f"elf={'YES' if art else 'NO'} result={ran}(want 42)")
     fails += 0 if ok else 1
 
     # (2) UNSUPPORTED tensor -> non-zero, no artifact, stderr names the construct

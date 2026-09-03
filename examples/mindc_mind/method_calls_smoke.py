@@ -87,7 +87,7 @@ def main() -> int:
             continue
 
         if present == 0:
-            print(f"ok   case {idx}: no method call (as expected)  src={src!r}")
+            print(f"[PASS] case {idx}: no method call (as expected)  src={src!r}")
             continue
 
         name_lo = lib.selftest_method_name_lo(addr, n)
@@ -117,7 +117,7 @@ def main() -> int:
             ok = False
 
         if ok:
-            print(f"ok   case {idx}: {got_name.decode()}(argc={got_argc}) "
+            print(f"[PASS] case {idx}: {got_name.decode()}(argc={got_argc}) "
                   f"recv@{recv_lo}  src={src!r}")
         else:
             failures += 1
@@ -125,9 +125,9 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
-    # be able to report success through an exit code alone.
-    print(f"\nALL {len(CASES)} method-call parse cases passed  (ran={len(CASES)})")
+    # The per-case [PASS] lines above ARE the count scripts/run_gate.py reads;
+    # an empty case loop reports zero rather than the length of the list.
+    print(f"\nALL {len(CASES)} method-call parse cases passed")
     return 0
 
 

@@ -886,8 +886,8 @@ def run_e2015(args, port, oracle, rng):
         return 3
     if not floor_ok:
         return 1
-    print("RESULT: 0 divergences — E2015 port agrees with live mindc on every "
-          "parseable ANNxRHS case")
+    print("RESULT: PASS — 0 divergences; the E2015 port agrees with live "
+          "mindc on every parseable ANNxRHS case")
     return 0
 
 
@@ -1073,8 +1073,8 @@ def run_e2004(args, port, oracle):
         return 3
     if not floor_ok:
         return 1
-    print("RESULT: 0 divergences — E2004 port agrees with live mindc on every "
-          "parseable ann-pair case")
+    print("RESULT: PASS — 0 divergences; the E2004 port agrees with live "
+          "mindc on every parseable ann-pair case")
     return 0
 
 
@@ -1185,8 +1185,8 @@ def main():
         elif not floor_ok:
             exit_code = 1
         else:
-            print("RESULT: 0 divergences — port agrees with live mindc "
-                  "on every parseable generated case")
+            print("RESULT: PASS — 0 divergences; the port agrees with live "
+                  "mindc on every parseable generated case")
     # deferred: nightly batch mode (N unique-named single-fn modules concatenated
     # behind one `mindc check` to amortize subprocess cost 10-50x, §2.1) — not
     # needed at the current ~40ms/case scale; upgrade path: batch gen_cases

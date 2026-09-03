@@ -43,6 +43,7 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -135,6 +136,103 @@ def actual_wiring() -> dict[str, set[str]]:
     return wiring
 
 
+# ── count-marker contract ──────────────────────────────────────────────────
+# scripts/gate_assert.py publishes the ONE number scripts/run_gate.py trusts.
+# It reads a count marker only in the two shapes this repo already published
+# (`SDLC-GATE <name> ran=<n> fail=<k>`, `... scored=<n> divergences=<k>`), and
+# never lets a marker stand in for missing evidence. Nothing stopped a gate
+# author from printing a THIRD spelling by hand, which is how seven smokes came
+# to publish `(ran={len(CASES)})` — the length of a list, not the number of
+# cases executed — and how one diagnostic line published `ran={result}(want 42)`
+# as 42 assertions. This lint is the missing half: a gate source may not print
+# those shapes at all, and may never print the contract line itself.
+#
+# Detection is over PRINT CALLS in the parsed source, not raw text, so a
+# docstring or comment describing a marker (this file, gate_assert.py,
+# run_gate.py) is not mistaken for a gate emitting one.
+MARKER_SCAN_DIRS = (SMOKE_DIR, ROOT / "scripts")
+BARE_MARKER_RE = re.compile(r"\b(?:ran|scored)=")
+SANCTIONED_RES = (
+    re.compile(r"^\s*SDLC-GATE \S+ ran=(?:\{\}|\d+) fail=(?:\{\}|\d+)"),
+    re.compile(r"\bscored=(?:\{\}|\d+) divergences=(?:\{\}|\d+)"),
+)
+FORGED_MARKER_RE = re.compile(r"^\s*asserted=")
+
+
+def _template(node: ast.AST) -> str | None:
+    """The literal text of a printed argument, `{}` for each interpolation."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for v in node.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                parts.append(v.value)
+            else:
+                parts.append("{}")
+        return "".join(parts)
+    return None
+
+
+def _printed_templates(tree: ast.AST) -> list[str]:
+    """Every string a `print(...)` / `sys.std*.write(...)` call emits."""
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        is_print = isinstance(fn, ast.Name) and fn.id == "print"
+        is_write = isinstance(fn, ast.Attribute) and fn.attr == "write"
+        if not (is_print or is_write):
+            continue
+        parts = [t for t in (_template(a) for a in node.args) if t is not None]
+        if parts:
+            out.append(" ".join(parts))
+    return out
+
+
+def marker_violations(path: Path, src: str) -> list[str]:
+    """Count-marker contract violations in one gate source."""
+    try:
+        tree = ast.parse(src, filename=str(path))
+    except SyntaxError as err:
+        return [f"{path}: unparseable ({err})"]
+    bad: list[str] = []
+    for text in _printed_templates(tree):
+        for line in text.splitlines():
+            if FORGED_MARKER_RE.match(line):
+                bad.append(
+                    f"{path}: prints the gate_assert contract line itself "
+                    f"({line.strip()!r}). That line is the shim's verdict about "
+                    f"the gate; a gate printing one is forging its own count."
+                )
+                continue
+            if not BARE_MARKER_RE.search(line):
+                continue
+            if any(rx.search(line) for rx in SANCTIONED_RES):
+                continue
+            bad.append(
+                f"{path}: prints a hand-made count marker ({line.strip()!r}). "
+                f"scripts/gate_assert.py reads a count only as "
+                f"`SDLC-GATE <name> ran=<n> fail=<k>` or "
+                f"`scored=<n> divergences=<k>`; report one verdict line per "
+                f"case instead and let the shim count them."
+            )
+    return bad
+
+
+def scan_marker_violations() -> list[str]:
+    """The contract applied to every gate source under the scanned roots."""
+    bad: list[str] = []
+    for d in MARKER_SCAN_DIRS:
+        for f in sorted(d.rglob("*.py")):
+            if "__pycache__" in f.parts:
+                continue
+            rel = f.relative_to(ROOT)
+            bad += marker_violations(rel, f.read_text(encoding="utf-8"))
+    return bad
+
+
 def parse_manifest() -> tuple[dict[str, tuple[set[str], str, str]], list[str]]:
     """-> ({name: (runners, class, note)}, raw_lines)"""
     rows: dict[str, tuple[set[str], str, str]] = {}
@@ -204,6 +302,7 @@ def main() -> int:
         return 0
 
     errors: list[str] = []
+    errors += scan_marker_violations()
 
     for name in sorted(set(actual) - set(rows)):
         errors.append(

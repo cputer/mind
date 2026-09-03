@@ -106,11 +106,18 @@ def check_forbidden(files: list[Path]) -> list[tuple[Path, int, str, str]]:
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
         low = text.lower()
+        hits: list[tuple[Path, int, str, str]] = []
         for cat, ph in phrases:
             idx = low.find(ph.lower())
             if idx != -1:
                 line = text.count("\n", 0, idx) + 1
-                violations.append((f, line, cat, ph))
+                hits.append((f, line, cat, ph))
+        # One verdict line per surface ACTUALLY read. scripts/gate_assert.py
+        # derives this gate's assertion count from these lines, so a surface
+        # glob that resolved to nothing now reports zero instead of a total
+        # this function typed out of `len(files)`.
+        print(f"[{'FAIL' if hits else 'PASS'}] surface {f.relative_to(ROOT)}")
+        violations.extend(hits)
     return violations
 
 
@@ -230,7 +237,7 @@ def check_counts() -> tuple[list[str], list[str]]:
                     f"but tree has {actual} ({spec.get('surface', '?')})"
                 )
             else:
-                info.append(f"counts[{name}]: OK floor {declared}+ <= {actual}")
+                info.append(f"[PASS] counts[{name}]: floor {declared}+ <= {actual}")
         else:  # exact
             tol = int(spec.get("tolerance", 0))
             if abs(declared - actual) > tol:
@@ -239,7 +246,7 @@ def check_counts() -> tuple[list[str], list[str]]:
                     f"(±{tol}) but tree has {actual} ({spec.get('surface', '?')})"
                 )
             else:
-                info.append(f"counts[{name}]: OK exact {declared} ~= {actual} (±{tol})")
+                info.append(f"[PASS] counts[{name}]: exact {declared} ~= {actual} (±{tol})")
     return drift, info
 
 
@@ -476,15 +483,12 @@ def main() -> int:
             print(line)
             ok = False
 
-    # The assertion count, in the repo's existing `ran=<n>` marker convention, so
-    # scripts/run_gate.py can refuse a run that checked nothing. `exit 0` alone
-    # cannot distinguish "86 surfaces agreed with the manifest" from "the surface
-    # glob resolved to a corpus this gate never looked at" — and this checker's
-    # counts are FLOOR comparisons, which stay green while the tree and the
-    # manifest drift apart above the floor. Publishing the number makes the size
-    # of the evidence visible to the runner instead of implied by an exit code.
-    print(f"check_claims: ran={len(files) + counts_checked} "
-          f"(surfaces={len(files)} counts={counts_checked})")
+    # The evidence this gate publishes is the per-surface and per-count verdict
+    # lines above — scripts/gate_assert.py counts THOSE. A printed total was
+    # worse than nothing here: it was computed from `len(files)`, so a surface
+    # glob that resolved to a corpus this gate never looked at still reported a
+    # full count. This summary is advisory and carries no verdict token.
+    print(f"check_claims: surfaces={len(files)} counts={counts_checked}")
 
     if ok:
         print(f"check_claims: OK — {len(files)} surfaces consistent with {_CAPS_PATH.name}")

@@ -139,7 +139,7 @@ def main() -> int:
             tag = f"BYTE-EXACT ({len(got)}B == golden == oracle)"
         else:
             tag = f"MISMATCH got {len(got)}B vs golden {len(golden)}B"
-        print(f"  [{'OK' if ok else 'XX'}] {label:<28} {tag}")
+        print(f"  [{'PASS' if ok else 'FAIL'}] {label:<28} {tag}")
         if not ok:
             print(f"       got:    {got.hex()}")
             print(f"       golden: {golden.hex()}")
@@ -149,10 +149,9 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
-    # be able to report success through an exit code alone.
-    print(f"\nALL multi-let cases byte-exact (hard-coded golden == live oracle)"
-          f"  (ran={len(CASES)})")
+    # The per-case [PASS] lines above ARE the count scripts/run_gate.py reads;
+    # an empty case loop reports zero rather than the length of the list.
+    print("\nALL multi-let cases byte-exact (hard-coded golden == live oracle)")
     return 0
 
 

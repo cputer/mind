@@ -111,14 +111,14 @@ def main() -> int:
             print(f"  scrut    got {scrut} want {want_scrut}")
             print(f"  wildcard got {wild} want {want_wild}")
         else:
-            print(f"ok: {label}  (arms={arms}, scrut={scrut}, wild={wild})")
+            print(f"[PASS] {label}  (arms={arms}, scrut={scrut}, wild={wild})")
 
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
-    # be able to report success through an exit code alone.
-    print(f"\nall {len(CASES)} match-structure cases passed  (ran={len(CASES)})")
+    # The per-case [PASS] lines above ARE the count scripts/run_gate.py reads;
+    # an empty case loop reports zero rather than the length of the list.
+    print(f"\nall {len(CASES)} match-structure cases passed")
     return 0
 
 

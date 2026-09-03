@@ -78,7 +78,14 @@ def main() -> int:
                 f"`enforces: {rule}`. Nothing would fail if that line were deleted."
             )
 
-    total = len(set(enforced) | set(asserts))
+    rules = sorted(set(enforced) | set(asserts))
+    total = len(rules)
+    # One verdict line per rule EXAMINED. scripts/gate_assert.py counts these;
+    # the marker below refines the number but can no longer manufacture it, so a
+    # scan that found no rule at all reports zero instead of printing a total.
+    broken = {p.split(":", 1)[0] for p in problems}
+    for rule in rules:
+        print(f"[{'FAIL' if rule in broken else 'PASS'}] {rule}")
     print(f"SDLC-GATE enforcement-bijection ran={total} fail={len(problems)}")
     if problems:
         print("\nFAIL: rule/test pairing is broken.\n", file=sys.stderr)

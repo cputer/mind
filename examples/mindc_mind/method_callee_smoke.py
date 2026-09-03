@@ -96,7 +96,7 @@ def main() -> int:
                 print(f"FAIL case {idx}: expected fail (-1) got len {got_len}  src={src!r}")
                 failures += 1
             else:
-                print(f"ok   case {idx}: resolution failed as expected  src={src!r}")
+                print(f"[PASS] case {idx}: resolution failed as expected  src={src!r}")
             continue
 
         if got_len != len(want_callee):
@@ -119,15 +119,15 @@ def main() -> int:
             failures += 1
             continue
 
-        print(f"ok   case {idx}: callee={got_callee.decode()} "
+        print(f"[PASS] case {idx}: callee={got_callee.decode()} "
               f"(param {got_idx}, type {src[ty_lo:ty_hi].decode()})")
 
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
-    # be able to report success through an exit code alone.
-    print(f"\nALL {len(CASES)} method-callee resolution cases passed  (ran={len(CASES)})")
+    # The per-case [PASS] lines above ARE the count scripts/run_gate.py reads;
+    # an empty case loop reports zero rather than the length of the list.
+    print(f"\nALL {len(CASES)} method-callee resolution cases passed")
     return 0
 
 

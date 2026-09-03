@@ -33,7 +33,8 @@ Python gates get (2) for free: they are executed through `gate_assert.py`, which
 counts evaluated `assert` statements and printed verdict lines and emits the
 line unconditionally — including on an early `return 0` skip, where the count is
 0 and the gate goes red. Non-Python gates are counted by the same verdict-line
-rule applied to their output, or may print their own `asserted=` line.
+rule applied to their output. A gate may NEVER print the contract line itself:
+the shim treats that as forgery and forces the count to zero.
 
 USAGE
   python3 scripts/run_gate.py <gate> [args...]     # run one gate under contract
@@ -205,7 +206,10 @@ def run_one(gate: str, args: list[str], *, min_asserted: int = 1,
         sys.stdout.write(out)
         sys.stdout.flush()
 
-    n = _parse_asserted(out)
+    # STDOUT ONLY. The shim prints the contract line on stdout after restoring
+    # the real stream; reading the stderr half too let a gate's own
+    # `asserted=99` on stderr land AFTER it in the concatenation and win.
+    n = _parse_asserted(proc.stdout)
     if n is None and p.suffix != ".py":
         # Non-Python gates are counted by the same verdict-line rule rather than
         # a second, differently-shaped mechanism.
@@ -411,7 +415,7 @@ def _unset_handle_leg(gates: list[str], jobs: int, timeout: int) -> int:
         print(f"VACUOUS  {r.gate}: passed with NO compiler reachable and every "
               f"handle UNSET (exit {r.rc}, asserted={r.asserted}) — it resolved "
               f"some other tree's binary, not the one under test")
-    print(f"unset-handle leg: ran={len(results)} vacuous={len(leaked)} "
+    print(f"unset-handle leg: gates={len(results)} vacuous={len(leaked)} "
           f"rejected={len(results) - len(leaked)}")
     if leaked:
         print(f"FAIL  {len(leaked)} gate(s) pass with no compiler reachable.")
@@ -456,7 +460,7 @@ def sweep(expect_all_fail: bool, jobs: int, timeout: int) -> int:
             print(f"VACUOUS  {r.gate}: passed with NO compiler present "
                   f"(exit {r.rc}, asserted={r.asserted}) — it asserts nothing about "
                   f"the compiler")
-        print(f"env-pointed leg: ran={len(results)} vacuous={len(leaked)} "
+        print(f"env-pointed leg: gates={len(results)} vacuous={len(leaked)} "
               f"rejected={len(results) - len(leaked)}")
         if leaked:
             print(f"FAIL  {len(leaked)} gate(s) pass without a compiler.")
@@ -476,7 +480,7 @@ def sweep(expect_all_fail: bool, jobs: int, timeout: int) -> int:
     bad = [r for r in results if not r.ok]
     for r in bad:
         print(f"FAIL  {r.gate}: {r.reason}")
-    print(f"ran={len(results)} fail={len(bad)}")
+    print(f"SDLC-GATE gate-corpus ran={len(results)} fail={len(bad)}")
     if bad:
         return 1
     print("PASS  every gate in the corpus reported a non-zero assertion count.")

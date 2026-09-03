@@ -355,6 +355,14 @@ MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testd
   || bad "DTK regalloc parity FAILED"
 python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
 
+# The contract behind every OTHER gate in this file: scripts/gate_assert.py must
+# derive `asserted=<N>` from evidence (evaluated asserts, reported verdicts), never
+# from an integer a gate printed. Measured before this test existed: a smoke whose
+# case loop was emptied still reported the length of its case list, and a gate
+# writing `asserted=99` to stderr outranked the shim's verdict. Text-only, seconds.
+python3 scripts/run_gate.py tests/gate_assert_count_contract_test.py \
+  || bad "gate-assert count contract FAILED"
+
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
 # Verified green at 9d3d5d41; a regression here must block a push, not surface at flip time.
 python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"

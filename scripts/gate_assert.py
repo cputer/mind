@@ -39,10 +39,24 @@ The repo ALREADY has machine-readable count conventions on two families of
 gates: `SDLC-GATE <name> ran=<n> fail=<k>` (scripts/sdlc/*.py) and
 `tcdiff ... scored=<n> divergences=<k>` (tc_differential_fuzz.py). Those markers
 are the same fact under older names, so they are READ rather than
-re-implemented: when a gate emits any `ran=`/`scored=` marker, the sum of those
-markers IS the assertion count and the heuristics above are not consulted. Renaming those gates' output to satisfy a
-new checker would have been a second spelling of one contract — the drift shape
-this file exists to remove.
+re-implemented. Two rules keep READING them from becoming a way of TYPING the
+count, both paid for by a measured hole:
+
+  * only those two LINE SHAPES are markers — anchored, with their companion
+    field. A bare `ran=<n>` anywhere in any line used to be authoritative, so a
+    smoke printing `(ran={len(CASES)})` published the LENGTH OF A LIST: emptying
+    its case loop still reported 8, and `ran={result}(want 42)` in a diagnostic
+    line reported 42 assertions for one check.
+  * a marker never MANUFACTURES evidence. With zero evaluated asserts and zero
+    verdict lines the count is 0 whatever the marker says, so pasting a
+    sanctioned-looking line into a gate that checks nothing fails closed.
+
+Renaming those gates' output to satisfy a new checker would have been a second
+spelling of one contract — the drift shape this file exists to remove.
+
+A gate must also never write the `asserted=` line itself: that line is this
+shim's verdict about the gate, and a gate that publishes its own is either
+confused or forging. Seeing one fails the run closed.
 
 `check()` / `check_eq()` below are conveniences for NEW gates: they print one
 verdict line, so they are counted by rule 2 and must NOT also bump (double
@@ -80,17 +94,28 @@ VERDICT_RE = re.compile(
 # A gate that announces a skipped leg has, by construction, not asserted it.
 SKIP_LINE_RE = re.compile(r"^\s*SKIP\b")
 
-# The counters this repo ALREADY publishes for "how many did I actually check":
-#   ran=<n>     scripts/sdlc/*.py, `SDLC-GATE <name> ran=<n> fail=<k>`
-#   scored=<n>  examples/mindc_mind/tc_differential_fuzz.py sweep summaries
-# Authoritative when present — an explicit count from the gate is better evidence
-# than any heuristic, and reading the convention that exists beats minting a
-# second spelling of it in 146 files.
-COUNT_RE = re.compile(r"\b(?:ran|scored)=(\d+)\b")
+# The two counter LINE SHAPES this repo already publishes for "how many did I
+# actually check". Anchored and paired with their companion field on purpose: a
+# bare `ran=`/`scored=` substring is a number a gate typed, not a number it
+# earned, and treating one as authoritative is how a gate with an empty case
+# loop reported a full count (see the module docstring).
+#   scripts/sdlc/*.py             `SDLC-GATE <name> ran=<n> fail=<k>`
+#   tc_differential_fuzz.py       `... scored=<n> divergences=<k>`
+# examples/mindc_mind/smoke_wiring_lint.py refuses any OTHER gate source that
+# prints these shapes, so the families cannot quietly grow a third member.
+MARKER_RES = (
+    re.compile(r"^\s*SDLC-GATE \S+ ran=(\d+) fail=\d+\b"),
+    re.compile(r"\bscored=(\d+) divergences=\d+\b"),
+)
+
+# The contract line belongs to this shim. A gate printing one is forging the
+# only number the runner trusts.
+FORGED_RE = re.compile(r"^\s*" + re.escape(ASSERTED_PREFIX))
 
 _count = 0
-_ran_total = 0
-_ran_seen = False
+_marker_total = 0
+_marker_seen = False
+_forged = False
 
 
 def bump(n: int = 1) -> None:
@@ -99,9 +124,29 @@ def bump(n: int = 1) -> None:
     _count += int(n)
 
 
+def refusal() -> str | None:
+    """Why the count is being forced to zero, or None when it is not."""
+    if _forged:
+        return (f"the gate published its own {ASSERTED_PREFIX}line — "
+                "the contract line is this shim's verdict, not the gate's")
+    if _marker_seen and _count == 0:
+        return ("count marker without evidence — the gate printed a count "
+                "line but evaluated no assert and reported no verdict")
+    return None
+
+
 def count() -> int:
-    """The assertion count. An explicit `ran=` marker wins over the heuristics."""
-    return _ran_total if _ran_seen else _count
+    """The assertion count.
+
+    Evidence first: evaluated asserts and reported verdicts. A sanctioned count
+    marker REFINES that number (those gates check more legs than they print),
+    but can never conjure it from nothing.
+    """
+    if _forged:
+        return 0
+    if _marker_seen:
+        return _marker_total if _count else 0
+    return _count
 
 
 def _ga_assert(value: Any) -> Any:
@@ -125,12 +170,16 @@ def check_eq(got: Any, want: Any, label: str) -> bool:
 
 def _count_line(line: str) -> None:
     """Fold one completed output line into the count (one rule, one place)."""
-    global _count, _ran_total, _ran_seen
-    m = COUNT_RE.search(line)
-    if m:
-        _ran_seen = True
-        _ran_total += int(m.group(1))
+    global _count, _marker_total, _marker_seen, _forged
+    if FORGED_RE.match(line):
+        _forged = True
         return
+    for rx in MARKER_RES:
+        m = rx.search(line)
+        if m:
+            _marker_seen = True
+            _marker_total += int(m.group(1))
+            return
     if VERDICT_RE.search(line):
         _count += 1
 
@@ -238,7 +287,11 @@ def main(argv: list[str]) -> int:
         # The contract line is emitted unconditionally — including on a crash,
         # a SystemExit from inside a helper, or an early `return 0` skip — so
         # "the line is missing" is itself a detectable, failing state rather
-        # than a silent one.
+        # than a silent one. A forced-to-zero count says WHY on the same
+        # stream, so a red run names the defect instead of only its symptom.
+        why = refusal()
+        if why:
+            print(f"gate_assert: {why}")
         print(f"{ASSERTED_PREFIX}{count()}")
         sys.stdout.flush()
     return rc

@@ -94,9 +94,8 @@ def main() -> int:
             )
             got_names.append(name)
         ok = got_names == want_names
-        status = "ok " if ok else "FAIL"
         label = src.split(b"\n")[0].decode()
-        print(f"[{status}] {label}")
+        print(f"[{'PASS' if ok else 'FAIL'}] {label}")
         if not ok:
             print(f"        want: {want_names}")
             print(f"        got:  {got_names}")
@@ -105,10 +104,10 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    # ran=<n>: the repo's machine-readable "how many did I actually check" marker.
-    # scripts/run_gate.py refuses a gate that reports zero, so a silently empty
-    # case list can no longer arrive as a green exit code.
-    print(f"\n{len(CASES)} passed  (ran={len(CASES)})")
+    # One [PASS]/[FAIL] line per case IS the assertion count scripts/run_gate.py
+    # reads (scripts/gate_assert.py counts verdict lines), so an empty case list
+    # reports zero instead of printing the length of a list it never walked.
+    print(f"\n{len(CASES)} passed")
     return 0
 
 
