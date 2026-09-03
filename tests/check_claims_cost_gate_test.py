@@ -158,7 +158,12 @@ def main() -> int:
                 failures.append(
                     f"{name}: failed for the wrong reason (no DRIFT [cost-claim])\n{out}"
                 )
-            print(f"  {'ok ' if ok == want_ok else 'BAD'} {name} (rc={rc})")
+            # The shared verdict vocabulary (scripts/gate_assert.py counts a
+            # PASS/FAIL line as one reported assertion). Printed `ok `/`BAD`
+            # before, which counts as nothing: this file ran nine mutation
+            # cases and published `asserted=0`, so an emptied case list would
+            # still have exited 0 under the gate runner.
+            print(f"  [{'PASS' if ok == want_ok else 'FAIL'}] {name} (rc={rc})")
 
     # 1. Agreement: the derived sentence on the surface passes.
     case("agreement", claim=good, results_mut=results, pricing_mut=pricing_text, want_ok=True)
@@ -220,14 +225,14 @@ def main() -> int:
         rc, out = run_gate(tmp)
         if rc != 0 or "no cost claim to verify" not in out:
             failures.append(f"sibling_without_config: expected a clean skip, got rc={rc}\n{out}")
-        print(f"  {'ok ' if rc == 0 else 'BAD'} sibling_without_config (rc={rc})")
+        print(f"  [{'PASS' if rc == 0 else 'FAIL'}] sibling_without_config (rc={rc})")
 
     # 9. The real repo tree must satisfy the gate end to end.
     rc = subprocess.run([sys.executable, str(CHECK)], cwd=REPO,
                         capture_output=True, text=True, check=False)
     if rc.returncode != 0:
         failures.append(f"repo_tree: check_claims.py failed on the real tree\n{rc.stdout}{rc.stderr}")
-    print(f"  {'ok ' if rc.returncode == 0 else 'BAD'} repo_tree (rc={rc.returncode})")
+    print(f"  [{'PASS' if rc.returncode == 0 else 'FAIL'}] repo_tree (rc={rc.returncode})")
 
     if failures:
         print("\ncheck_claims cost gate: FAILED")

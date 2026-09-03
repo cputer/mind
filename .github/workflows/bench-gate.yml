@@ -175,6 +175,12 @@ jobs:
         # 10% band still defends the compile-speed moat while tolerating the
         # slower / noisier hosted runners.
         run: |
+          # run_gate-exempt: tools/bench_gate.py - a measurement comparator, not an
+          # assert-gate: it reads a frozen baseline and a criterion run and decides a
+          # one-sided threshold. Its fail-closed contract (empty/truncated bench.out
+          # or missing baseline must exit 4, never fall through to PASS) is asserted
+          # by tools/test_bench_gate.py, which IS routed through the runner in the
+          # ci.yml sdlc_integrity job.
           python3 tools/bench_gate.py \
             --baseline .bench-baseline-2026-06-01-correctness.txt \
             --current bench.out \

@@ -137,5 +137,12 @@ jobs:
         # Every tests/*_driver.py is executed; the script aggregates and exits
         # non-zero if ANY driver's exit code is non-zero (a wrong KAT = red).
         run: |
+          # run_gate-exempt: scripts/run_crypto_vectors.sh - it already carries its own
+          # corpus floor, which is the property the runner would add: it fails RED
+          # when fewer than EXPECTED_DRIVERS known-answer drivers ran ("a vector gate
+          # that ran no vectors asserts nothing"). Its verdict vocabulary is
+          # RESULT: GREEN/RED, which the shared counter does not read.
+          # deferred: move it onto the shared PASS/FAIL verdict vocabulary and route
+          # it, so one contract covers this gate too.
           MINDC=./target/release/mindc scripts/run_crypto_vectors.sh
         working-directory: ${{ github.workspace }}

@@ -34,4 +34,7 @@ jobs:
         run: cargo install cargo-deny --locked --version "^0.16"
 
       - name: Run cargo-deny with CVSS v4 sanitization
+        # run_gate-exempt: tools/cargo-deny-sanitize.sh - a thin argv wrapper around
+        # `cargo deny`; the advisory/licence verdict and its counts are cargo-deny's,
+        # published in its own format, and the wrapper asserts nothing of its own.
         run: ./tools/cargo-deny-sanitize.sh check

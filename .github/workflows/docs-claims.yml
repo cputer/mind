@@ -55,7 +55,7 @@ jobs:
           python-version: '3.12'  # tomllib is stdlib from 3.11+
 
       - name: Gate wiring (these gates must be reachable at all)
-        run: python3 scripts/check_gate_wiring.py
+        run: python3 scripts/run_gate.py scripts/check_gate_wiring.py
 
       - name: Gate-wiring lint must fail CLOSED on a deleted gate step
         # scripts/test_gate_wiring.py mutates a scratch copy of the wiring and
@@ -64,7 +64,7 @@ jobs:
         # from .github/required-ci-jobs.tsv, a manifest job id that no longer
         # exists, and a hook missing from .githooks. A lint no mutation can
         # redden is not gating anything, and this job is where that is proved.
-        run: python3 scripts/test_gate_wiring.py
+        run: python3 scripts/run_gate.py scripts/test_gate_wiring.py
 
       - name: Check claims against capability manifest
         run: python3 scripts/run_gate.py scripts/check_claims.py
@@ -75,7 +75,7 @@ jobs:
         # price input, the token counts, the surface text and the benchmark's own
         # cost block in turn, and fails unless the gate goes red for each. Without
         # it, a cost check that silently stopped comparing would ride green.
-        run: python3 tests/check_claims_cost_gate_test.py
+        run: python3 scripts/run_gate.py tests/check_claims_cost_gate_test.py
 
       - name: Counts printed in the docs are derived, not typed (mutation proof)
         # Companion to the cost mutation proof above, for the [counts] gate.
@@ -86,14 +86,23 @@ jobs:
         # sentence and the surface file in turn and fails unless the gate goes
         # red for each -- and asserts the live manifest still wires that leg to
         # the README claims, since a check kind nothing uses gates nothing.
-        run: python3 tests/check_claims_surface_count_gate_test.py
+        run: python3 scripts/run_gate.py tests/check_claims_surface_count_gate_test.py
 
       - name: No AI-attribution in public artifacts
         run: python3 scripts/run_gate.py scripts/check_no_ai_attribution.sh
 
       - name: JSON is never an evidence-hash preimage (wedge integrity)
-        run: bash scripts/check_json_not_evidence.sh
+        run: python3 scripts/run_gate.py scripts/check_json_not_evidence.sh
 
+      # run_gate-exempt: scripts/check_commit_messages.sh - invoked with a RANGE the
+      # surrounding shell computes per event, and not yet contract-clean: measured
+      # `asserted=0` (it publishes a scanned/offending count in its own vocabulary,
+      # which the shared counter does not read), while its empty-range branch prints
+      # a line containing the word PASS that the counter WOULD read — routing it
+      # as-is would trade a silent hole for a forged count.
+      # deferred: give it a single derived verdict line and route it, once the
+      # empty-range arm is decided (fail closed, or --min-asserted 0 like
+      # scripts/sdlc/lost_by_merge.py).
       - name: No model/tool credit in commit MESSAGES (history is permanent)
         # Companion to the file gate above, sharing ONE pattern definition
         # (scripts/ai_attribution_patterns.sh) so the two cannot drift. It lives
@@ -156,4 +165,4 @@ jobs:
         # release.yml + ci.yml + .github/required-ci-jobs.tsv, so a change to any
         # one of them — including a docs-only commit that ci.yml's paths-ignore
         # would skip — can break it. Pure text analysis, no build artifacts.
-        run: python3 scripts/check_release_gating.py
+        run: python3 scripts/run_gate.py scripts/check_release_gating.py

@@ -94,8 +94,31 @@ TAG_MINTING_RE = re.compile(
 )
 
 
+# The rules this gate owns, and the one-line summary each prints when it has
+# ACTUALLY been evaluated. The summary used to be six unconditional `print`
+# calls at the end of main(): a hand-typed list that reported all six rules as
+# checked whether or not their code still existed, and published no assertion
+# count at all (`asserted=0` under scripts/run_gate.py — a gate that, by the
+# shared contract, checked nothing). Each rule now records that it ran, and a
+# rule that records nothing is a failure, so deleting a rule's body can no
+# longer leave its reassuring line behind.
+RULES: dict[str, str] = {
+    "R1": "release.yml mints no tags",
+    "R2": "publish + build gated on the CI-green verifier",
+    "R3": "dispatch takes an existing tag, not a free-text version",
+    "R4": "contents:write scoped to the publishing job",
+    "R5": "required-ci-jobs.tsv == every workflow it names (both directions)",
+    "R6": "verify_ci_green.py present and reading that manifest",
+}
+
+
 def _fail(errors: list[str], rule: str, msg: str) -> None:
     errors.append(f"[{rule}] {msg}")
+
+
+def _ran(ran: set[str], rule: str) -> None:
+    """Record that `rule`'s body was reached and evaluated."""
+    ran.add(rule)
 
 
 def code(body: str) -> str:
@@ -140,11 +163,12 @@ def parse_manifest() -> list[tuple[str, str, str]]:
     return rows
 
 
-def check_release_workflow(errors: list[str]) -> None:
+def check_release_workflow(errors: list[str], ran: set[str]) -> None:
     text = RELEASE_YML.read_text(encoding="utf-8")
     top = blocks(text, 0)
     jobs = workflow_jobs(RELEASE_YML)
 
+    _ran(ran, "R1")
     # R1 — no self-minted tags anywhere in the workflow. Comment lines are
     # excluded: the file documents the human tag-push procedure in prose, and a
     # lint that cannot tell prose from a `run:` step would force the docs out.
@@ -161,6 +185,7 @@ def check_release_workflow(errors: list[str]) -> None:
                 "CI-green history — the workflow must never mint the ref it publishes.",
             )
 
+    _ran(ran, "R2")
     # R2 — publishing jobs must transitively depend on the gate job.
     gate_jobs = [jid for jid, body in jobs.items() if "verify_ci_green.py" in code(body)]
     for jid in gate_jobs:
@@ -230,6 +255,7 @@ def check_release_workflow(errors: list[str]) -> None:
                     f"{gate_jobs}; add it to `needs:`.",
                 )
 
+    _ran(ran, "R3")
     # R3 — dispatch input must name an existing ref, never a version to mint.
     dispatch = blocks(top.get("on", ""), 2).get("workflow_dispatch")
     if dispatch is None:
@@ -252,6 +278,7 @@ def check_release_workflow(errors: list[str]) -> None:
                 f"found inputs {sorted(inputs) or '(none)'}.",
             )
 
+    _ran(ran, "R4")
     # R4 — no workflow-wide write token.
     wf_perms = top.get("permissions", "")
     if re.search(r"contents:\s*write", wf_perms):
@@ -273,8 +300,11 @@ def check_release_workflow(errors: list[str]) -> None:
             )
 
 
-def check_manifest_matches_workflows(errors: list[str], show: bool) -> None:
+def check_manifest_matches_workflows(
+    errors: list[str], show: bool, ran: set[str]
+) -> None:
     rows = parse_manifest()
+    _ran(ran, "R5")
 
     # One map per workflow the manifest names. Both directions are enforced for
     # EVERY such workflow, not just ci.yml: once a workflow is part of what a
@@ -340,6 +370,7 @@ def check_manifest_matches_workflows(errors: list[str], show: bool) -> None:
                     "is never produced.",
                 )
 
+    _ran(ran, "R6")
     # R6 — the runtime verifier exists and consumes this same manifest.
     if not VERIFIER.exists():
         _fail(errors, "R6", f"{VERIFIER.relative_to(ROOT)} is missing.")
@@ -358,8 +389,21 @@ def check_manifest_matches_workflows(errors: list[str], show: bool) -> None:
 def main(argv: list[str]) -> int:
     show = "--print" in argv
     errors: list[str] = []
-    check_release_workflow(errors)
-    check_manifest_matches_workflows(errors, show)
+    ran: set[str] = set()
+    check_release_workflow(errors, ran)
+    check_manifest_matches_workflows(errors, show, ran)
+
+    # A rule whose body was never reached asserted nothing, and a gate that
+    # asserts nothing must not report a contract as upheld.
+    for rule in RULES:
+        if rule not in ran:
+            _fail(
+                errors,
+                rule,
+                "this rule's body was never evaluated — it was deleted, renamed "
+                "or short-circuited. A contract nobody checked is not a contract "
+                "that holds.",
+            )
 
     if errors:
         print("release gating contract: FAIL", file=sys.stderr)
@@ -373,12 +417,10 @@ def main(argv: list[str]) -> int:
         return 1
 
     print("release gating contract: OK")
-    print("  R1 release.yml mints no tags")
-    print("  R2 publish + build gated on the CI-green verifier")
-    print("  R3 dispatch takes an existing tag, not a free-text version")
-    print("  R4 contents:write scoped to the publishing job")
-    print("  R5 required-ci-jobs.tsv == every workflow it names (both directions)")
-    print("  R6 verify_ci_green.py present and reading that manifest")
+    # One verdict line per rule that actually ran — the evidence the shared gate
+    # runner counts, rather than a fixed list printed regardless.
+    for rule, summary in RULES.items():
+        print(f"  [PASS] {rule} {summary}")
     return 0
 
 

@@ -1199,7 +1199,7 @@ jobs:
       - name: Run kernel + assert known output (285)
         run: |
           MINDC_SO=/tmp/libci_kernel.so \
-            python3 examples/native/ci_kernel_smoke.py
+            python3 scripts/run_gate.py examples/native/ci_kernel_smoke.py
         working-directory: ${{ github.workspace }}
 
   executable_semantics_tier:
@@ -1265,7 +1265,7 @@ jobs:
         # scripts/exec_semantics_gate.sh itself), and fails on any file no run can
         # reach. Pure text analysis, so it runs FIRST and fails in seconds instead
         # of after the ~45-minute build.
-        run: python3 scripts/cfg_gate_wiring_lint.py
+        run: python3 scripts/run_gate.py scripts/cfg_gate_wiring_lint.py
         working-directory: ${{ github.workspace }}
 
       - name: Install Rust (nightly)
@@ -1317,6 +1317,11 @@ jobs:
             head -1 /tmp/toolver.txt
           done
 
+      # run_gate-exempt: scripts/exec_semantics_gate.sh - a cargo-test driver, not
+      # an assert-gate: it selects harnesses and hands the verdict to cargo, which
+      # publishes its own executed/failed counts, and the tier's non-vacuity is
+      # asserted separately by scripts/cfg_gate_wiring_lint.py (every feature-gated
+      # test file must be reachable from a selector this script defines).
       - name: Tier 'exec' — executable semantics (mlir-build)
         # 110 mlir-build-gated files, including the alias-miscompile gate and the
         # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP gate. measured@f2a2d87d:
@@ -1356,16 +1361,21 @@ jobs:
           fetch-depth: 0
 
       - name: Lines dropped by a merge that BOTH parents had
-        run: python3 scripts/sdlc/lost_by_merge.py HEAD
+        # --min-asserted 0: this gate is conditional BY DESIGN — on a non-merge HEAD
+        # there is no merge to audit, and it correctly reports `ran=0`. That is "not
+        # applicable", not "checked nothing", and it is the ONLY exemption from the
+        # runner's N>=1 rule here; every other gate in this job must publish a
+        # non-zero assertion count.
+        run: python3 scripts/run_gate.py --min-asserted 0 scripts/sdlc/lost_by_merge.py HEAD
 
       - name: Enforcement/test pairing (a test must not outlive its rule)
-        run: python3 scripts/sdlc/enforcement_bijection.py
+        run: python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py
 
       - name: Feature-gated tests must be reachable from a CI selector
-        run: python3 scripts/cfg_gate_wiring_lint.py
+        run: python3 scripts/run_gate.py scripts/cfg_gate_wiring_lint.py
 
       - name: IR operand visitors must not drift apart
-        run: python3 scripts/operand_visitor_parity_lint.py
+        run: python3 scripts/run_gate.py scripts/operand_visitor_parity_lint.py
 
       - name: A comment's enumeration must match the code it describes
         # The tc_let shape: `parse_let` said ty=0 was "the exact no-annotation value
@@ -1374,7 +1384,19 @@ jobs:
         # counts or names a set is checked by nothing. This pins two such sets that
         # had ALREADY rotted (a 23-vs-25 keyword count, a "these five" beside a
         # nine-key allowlist) to the code that owns them.
-        run: python3 scripts/enumeration_drift_lint.py
+        run: python3 scripts/run_gate.py scripts/enumeration_drift_lint.py
+
+      - name: A gate may be reached only through the gate runner
+        # scripts/run_gate.py is what turns "exit 0" into "exited 0 AND published
+        # asserted=<N> AND announced no SKIP". That guarantee is worth exactly as
+        # many call sites as go through it, and the conversion had stopped half-way:
+        # 11 workflow steps still invoked a gate directly, two of them vacuously
+        # (tests/check_claims_cost_gate_test.py reported nine mutation cases in a
+        # vocabulary the counter does not read -> asserted=0;
+        # scripts/check_release_gating.py printed a hand-typed six-rule list
+        # unconditionally). This lint fails on any direct invocation that is not
+        # declared, in the workflow itself, with a written reason.
+        run: python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py
 
       - name: Bench gate must fail CLOSED on a missing measurement
         # tools/test_bench_gate.py asserts the fail-closed contract of
@@ -1391,7 +1413,7 @@ jobs:
         # Non-vacuity (measured): against a bench_gate.py stubbed to always
         # `exit 0` — exactly the vacuous-PASS hole this defends — the three
         # fail-closed cases go red and the runner exits 1.
-        run: python3 tools/test_bench_gate.py
+        run: python3 scripts/run_gate.py tools/test_bench_gate.py
 
   mindcraft_check:
     name: Mindcraft check (RFC 0007 Phase 6)

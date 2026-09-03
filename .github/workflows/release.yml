@@ -96,7 +96,7 @@ jobs:
         # tag, write scoped to the publisher, and required-ci-jobs.tsv still in
         # agreement with ci.yml. Runs first: if the contract itself has drifted,
         # nothing downstream is trustworthy.
-        run: python3 scripts/check_release_gating.py
+        run: python3 scripts/run_gate.py scripts/check_release_gating.py
 
       - name: Resolve tag and require a green CI run for that exact commit
         id: verify
@@ -129,6 +129,11 @@ jobs:
           # buffers stdout, so a stderr-only verdict lands out of order in the
           # Actions log. pipefail (set above) is what makes a failing verifier
           # fail this step rather than tee's exit code passing it.
+          # run_gate-exempt: scripts/verify_ci_green.py - it queries the live GitHub
+          # check-runs API for the tag under release, so its verdict is about a
+          # remote run, not about anything in this tree; and the step consumes its
+          # STDOUT (`sed -n 's/^sha=//p' /tmp/gate.log`), which routing through a
+          # runner that re-emits the stream would put at risk for no added guarantee.
           python3 scripts/verify_ci_green.py --repo "$GITHUB_REPOSITORY" --ref "$TAG" 2>&1 | tee /tmp/gate.log
 
           SHA=$(sed -n 's/^sha=//p' /tmp/gate.log)

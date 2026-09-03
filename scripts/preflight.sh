@@ -355,6 +355,14 @@ MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testd
   || bad "DTK regalloc parity FAILED"
 python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
 
+# Gate-runner wiring: a workflow may reach a gate ONLY through scripts/run_gate.py.
+# The runner is what refuses "exit 0 with nothing asserted"; a step invoking the
+# same gate directly is a second way to run it — the way that cannot see a vacuous
+# pass. Measured before this lint: 11 direct workflow invocations, two of them
+# publishing asserted=0 while exiting 0.
+python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py \
+  || bad "gate-runner wiring FAILED — a workflow reaches a gate without the runner"
+
 # The contract behind every OTHER gate in this file: scripts/gate_assert.py must
 # derive `asserted=<N>` from evidence (evaluated asserts, reported verdicts), never
 # from an integer a gate printed. Measured before this test existed: a smoke whose
