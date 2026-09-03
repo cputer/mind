@@ -372,8 +372,17 @@ def case_lint_scans_the_real_corpus() -> None:
 # `ALL PASS — 0/0 byte-identical (0 diff)` and graded `run_gate: PASS
 # asserted=1`, byte-identical to the unmutated control — so the count carried no
 # information about the work done, and the mandated mutation could not go red.
-# The structural rule: a gate whose verdict-bearing prints are ALL outside any
-# For/While/If body reports one number for every corpus size.
+# The structural rule: a gate must emit evidence PER CHECKED CASE on a green
+# run — a verdict print whose LITERAL carries a PASS token inside a
+# For/While/AsyncFor body, an `assert` in such a loop, a `gate_assert.check()`
+# in such a loop, or a `--min-asserted N >= 2` floor at its runner call sites.
+# `If` was deliberately REMOVED from the accepted bodies: `if fails:
+# print("FAIL")` is one line whatever the corpus held, and a failure-path print
+# inside a loop emits nothing at all on a green run. Measured before that was
+# tightened: self_host_tc_unknown_ident_smoke compared 419 cases, printed one
+# `ALL PASS`, graded `asserted=1`, and satisfied the old rule purely through two
+# `print("FAIL: ... drifted")` lines in a table-check loop a green run never
+# reaches.
 
 def _shape(src: str) -> list[str]:
     return smoke_wiring_lint.verdict_shape_violations(Path("synthetic_gate.py"), src)
@@ -395,6 +404,67 @@ def case_lint_allows_a_per_case_verdict_gate() -> None:
            '    print(f"  [PASS] {c}")\n'
            'print(f"{len(CASES)}/{len(CASES)} byte-identical")\n')
     check("lint: per-case verdict gate allowed", _shape(src), [])
+
+
+def case_lint_flags_an_if_only_verdict_gate() -> None:
+    """An `if`-guarded recap is unconditional in effect: one line per RUN.
+
+    This is the shape the old rule accepted. `fails` is a whole-corpus
+    aggregate, so the branch fires at most once however many cases ran and the
+    count cannot tell a full corpus from an empty one.
+    """
+    src = ('CASES = []\n'
+           'fails = 0\n'
+           'for c in CASES:\n'
+           '    fails += c\n'
+           'if fails:\n'
+           '    print("FAIL: corpus diverged")\n'
+           'print("ALL PASS")\n')
+    check("lint: if-only verdict gate flagged", bool(_shape(src)), True)
+
+
+def case_lint_flags_a_failure_only_loop_verdict() -> None:
+    """A verdict printed only on the FAILURE path is not green-run evidence.
+
+    Being inside a `for` body is not enough: this line emits nothing when the
+    gate passes, so the count still comes from the blanket recap alone.
+    """
+    src = ('CASES = []\n'
+           'for c in CASES:\n'
+           '    if not c:\n'
+           '        print("FAIL: case diverged")\n'
+           'print("ALL PASS")\n')
+    check("lint: failure-only loop verdict flagged", bool(_shape(src)), True)
+
+
+def case_lint_allows_a_check_call_per_case() -> None:
+    """`gate_assert.check()` composes the token, so its call site is the proof.
+
+    It prints exactly one `[PASS]`/`[FAIL]` line per call, which the shim
+    counts; an emptied loop calls it zero times and the count is zero. This is
+    the sanctioned upgrade path out of VERDICT_SHAPE_RESIDUAL.txt.
+    """
+    src = ('from gate_assert import check\n'
+           'CASES = []\n'
+           'for c in CASES:\n'
+           '    check(c == 1, f"case {c}")\n'
+           'print("all reported cases agreed")\n')
+    check("lint: per-case check() gate allowed", _shape(src), [])
+
+
+def case_lint_residual_is_declared_and_shrink_only() -> None:
+    """The residual is a checked artifact, not a comment.
+
+    Every listed name must be a `gate` row that STILL violates the rule, so a
+    converted gate cannot linger on the list and quietly regress. The corpus
+    scan below is what enforces it; this case pins that the file exists and is
+    parseable, because a missing list would silently disable the declaration.
+    """
+    names = smoke_wiring_lint.load_residual()
+    rows, _ = smoke_wiring_lint.parse_manifest()
+    check("lint: residual is non-empty and declared", bool(names), True)
+    check("lint: every residual entry is a gate row",
+          sorted(n for n in names if rows.get(n, (None, None))[1] != "gate"), [])
 
 
 def case_lint_allows_an_assert_only_gate() -> None:

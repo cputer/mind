@@ -46,6 +46,17 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _selfhost_so import resolve_mindc  # noqa: E402
 
+# One verdict line PER CHECKED CASE, through the shim's own helper. This gate
+# used to report its whole corpus with a single unconditional `ALL PASS` recap,
+# so scripts/gate_assert.py graded a full run and an empty one identically at
+# `asserted=1`; deleting the per-case comparison left both the count and the
+# verdict unchanged, and the "comment the assertions out, expect red" mutation
+# every fix here must survive could not go red. `check()` prints
+# `[PASS]`/`[FAIL]` per case, which is the evidence the shim counts.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "scripts"))
+from gate_assert import check  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_MIND = os.path.join(HERE, "main.mind")
 
@@ -735,8 +746,7 @@ def main():
                 negatives += 1
             if not ok:
                 fails += 1
-            mark = "ok " if ok else "DIFF"
-            print(f"  {mark} got={got} rule={exp} live={live_s} pos={pos} {note}")
+            check(ok, f"got={got} rule={exp} live={live_s} pos={pos} {note}")
 
     print(
         f"scope_frame: cases={total} positives={positives} "
@@ -748,7 +758,11 @@ def main():
     if fails:
         print("FAIL: pure-MIND scope-frame walk diverges from the Rust rule")
         sys.exit(1)
-    print("ALL PASS")
+    # No verdict token in this recap: the per-case `[PASS]`/`[FAIL]` lines
+    # above ARE the count scripts/gate_assert.py reads, so an emptied corpus
+    # reports zero rather than crediting one blanket summary with the whole
+    # run. A summary that carries a verdict is a count of one, forever.
+    print("all reported cases agreed with the Rust oracle")
     if built:
         try:
             os.unlink(so)

@@ -1,0 +1,114 @@
+# VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
+# per-case verdict contract in smoke_wiring_lint.py.
+#
+# WHAT A LINE HERE MEANS
+# ----------------------
+# This gate prints verdict lines, and the static scan in smoke_wiring_lint.py
+# cannot see one that is emitted PER CHECKED CASE on a green run. Two shapes
+# land here, and only measurement tells them apart:
+#
+#   * SINGLE RECAP — the gate really does publish one blanket verdict for its
+#     whole corpus, so scripts/gate_assert.py grades it `asserted=1` however
+#     many cases it compared. Measured examples before they were converted:
+#     self_host_tc_unknown_ident_smoke compared 419 cases and reported
+#     `asserted=1`; self_host_tc_shape_rules_smoke compared 160 and reported 1.
+#     For these, "comment the assertions out, expect red" CANNOT go red — the
+#     count and the verdict are identical either way.
+#   * RUNTIME-COMPOSED TOKEN — the gate DOES report per case, through
+#     `tag = "PASS" if ok else "FAIL"` inside an f-string. The shim counts every
+#     one of those lines, so the runtime contract already binds it; only the
+#     STATIC scan is blind, because `_template` renders an interpolation as
+#     `{}`. Measured: self_host_tc_narrowing_smoke reports 17, lockstep 11,
+#     self_host_narrow_param_smoke 64.
+#
+# deferred: this file is the honest statement of that residual instead of an
+# unstated hole in the rule. UPGRADE PATH, per entry: route the per-case line
+# through `gate_assert.check(cond, label)` (or put an `assert` in the case
+# loop), drop the recap line's verdict token, and delete the name from this
+# file. The self_host_tc_* family and self_host_float_lit_exact_smoke were
+# converted exactly that way and are no longer listed. A leg-reporting gate that
+# does not loop leaves instead by gaining a `--min-asserted N` (N >= 2) floor at
+# its runner call sites, which smoke_wiring_lint.py reads out of the runners.
+#
+# THE LIST IS SHRINK-ONLY, and the lint enforces both directions:
+#   * a name here that now satisfies the rule (or is pinned) -> FAIL, delete it;
+#   * a name here that is not a `gate` row in SMOKE_WIRING.tsv -> FAIL, stale;
+#   * a gate NOT here that violates the rule -> FAIL, fix it or add it in review.
+# So the residual can only get smaller, and no new gate joins it by accident.
+backend_native_bridge_smoke
+bootstrap_smoke
+branch_shadow_crossbackend_smoke
+collect_field_strings_smoke
+div_shift_cmp_edge_smoke
+dtk_plan_parity_smoke
+full_strtab_smoke
+gap_corpus_smoke
+general_float_netverify
+lockstep_lint
+mic3_flip_smoke
+mindfuzz_self_host
+mod_operator_smoke
+multi_let_smoke
+now_ns_smoke
+oracle_parity_lint
+rh_f64_aggregate_canary_smoke
+ri_d1_frozen_profile_gate
+self_host_andor_precedence_smoke
+self_host_arena_growth_smoke
+self_host_args_from_os_smoke
+self_host_argv_smoke
+self_host_arridx_mic3_smoke
+self_host_carry_cap_smoke
+self_host_cast_mic3_smoke
+self_host_check_driver_smoke
+self_host_continue_smoke
+self_host_dtype_tag_smoke
+self_host_else_if_smoke
+self_host_failclosed_smoke
+self_host_ifret_chain_mic3_smoke
+self_host_lockstep_smoke
+self_host_match_smoke
+self_host_matchscalar_mic3_smoke
+self_host_narrow_let_mic3_smoke
+self_host_narrow_param_smoke
+self_host_native_autowrap_smoke
+self_host_native_blas_dot_i16_smoke
+self_host_native_blas_dot_q16_smoke
+self_host_native_diag_smoke
+self_host_native_fp_binop_smoke
+self_host_native_fp_call_smoke
+self_host_native_fp_expr_smoke
+self_host_native_fp_field_smoke
+self_host_native_fp_let_smoke
+self_host_native_fp_param_smoke
+self_host_native_fp_smoke
+self_host_native_genf32_smoke
+self_host_native_intdot_smoke
+self_host_native_narrow_paramret_smoke
+self_host_native_narrowint_smoke
+self_host_native_narrowwrap_smoke
+self_host_native_scalar_narrow_smoke
+self_host_native_scast_smoke
+self_host_native_simd_dot_q16_smoke
+self_host_native_tensor_ewadd_f64_smoke
+self_host_native_tensor_matmul_smoke
+self_host_native_tensor_transpose_smoke
+self_host_native_toplevel_assign_smoke
+self_host_native_ucast_smoke
+self_host_native_write8_smoke
+self_host_native_write_f32_smoke
+self_host_open_smoke
+self_host_param_mutation_smoke
+self_host_standalone_driver_smoke
+self_host_struct_return_smoke
+self_host_tc_fn_value_call_smoke
+self_host_tc_narrowing_smoke
+self_host_tc_self_host_only_call_smoke
+self_host_tc_unknown_call_smoke
+self_host_value_if_expr_smoke
+sha256_hash_smoke
+smoke_wiring_lint
+stdlib_manifest_lint
+struct_lit_smoke
+unified_dispatch_smoke
+validate_real_fns_smoke

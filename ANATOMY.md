@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1466 | **Est. tokens:** ~2,809,979
-**Generated:** 2026-09-03 12:26 UTC
+**Files:** 1467 | **Est. tokens:** ~2,816,793
+**Generated:** 2026-09-03 16:47 UTC
 
 ## Token Budget Guide
 
@@ -61,7 +61,7 @@
 | `examples/grammar_mask/` | 2 | ~4,636 |
 | `examples/halbach_q16/` | 2 | ~7,856 |
 | `examples/lexer/` | 6 | ~8,888 |
-| `examples/mindc_mind/` | 165 | ~411,869 |
+| `examples/mindc_mind/` | 166 | ~417,883 |
 | `examples/mindc_mind/testdata/` | 3 | ~4,159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 342 | ~608,633 |
+| `tests/` | 342 | ~609,433 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -648,7 +648,7 @@
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).
 - `self_host_else_if_smoke.py` (~1715 tok, huge)
 - `self_host_failclosed_smoke.py` (~9331 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
-- `self_host_float_lit_exact_smoke.py` (~1149 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
+- `self_host_float_lit_exact_smoke.py` (~1368 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
 - `self_host_for_smoke.py` (~3191 tok, huge) — Permanent battery for the self-host range-`for` loop.
 - `self_host_if_region_carry_smoke.py` (~4632 tok, huge) — Native-ELF smoke: i64 loop-carry through BRANCHED regions (Sub-step C).
 - `self_host_ifret_chain_mic3_smoke.py` (~1725 tok, huge)
@@ -723,28 +723,28 @@
 - `_selfhost_so.py` (~2139 tok, huge) — Shared self-host `.so` resolver for the examples/mindc_mind smokes.
 - `self_host_standalone_driver_smoke.py` (~3253 tok, huge)
 - `self_host_struct_return_smoke.py` (~4122 tok, huge) — self_host_struct_return_smoke.py — regression lock for STRUCT-BY-VALUE
-- `self_host_tc_classify_error_code_smoke.py` (~2238 tok, huge) — CPU-as-oracle smoke for the pure-MIND classify_error_code router.
-- `self_host_tc_class_mismatch_smoke.py` (~920 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 int<->float class-mismatch rule.
-- `self_host_tc_class_rules_smoke.py` (~1641 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2010/E2011/E2013/E2016 class rules.
-- `self_host_tc_decl_names_smoke.py` (~3404 tok, huge) — CPU-as-oracle smoke for the pure-MIND D1 module DECL-NAME SET.
-- `self_host_tc_fixed_bytes_into_vec_smoke.py` (~1191 tok, large) — CPU-as-oracle smoke for the pure-MIND E2006 FIXED_BYTES_INTO_VEC rule (Bug #38).
+- `self_host_tc_classify_error_code_smoke.py` (~2486 tok, huge) — CPU-as-oracle smoke for the pure-MIND classify_error_code router.
+- `self_host_tc_class_mismatch_smoke.py` (~1167 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 int<->float class-mismatch rule.
+- `self_host_tc_class_rules_smoke.py` (~1889 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2010/E2011/E2013/E2016 class rules.
+- `self_host_tc_decl_names_smoke.py` (~3651 tok, huge) — CPU-as-oracle smoke for the pure-MIND D1 module DECL-NAME SET.
+- `self_host_tc_fixed_bytes_into_vec_smoke.py` (~1438 tok, large) — CPU-as-oracle smoke for the pure-MIND E2006 FIXED_BYTES_INTO_VEC rule (Bug #38).
 - `self_host_tc_fn_value_call_smoke.py` (~7057 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D4 CAPSTONE — the FULL E2012 rule.
-- `self_host_tc_let_class_mismatch_smoke.py` (~1072 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 LET_CLASS_MISMATCH let/assign rule.
+- `self_host_tc_let_class_mismatch_smoke.py` (~1319 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 LET_CLASS_MISMATCH let/assign rule.
 - `self_host_tc_let_infer_ident_smoke.py` (~2882 tok, huge) — self_host_tc_let_infer_ident_smoke — three-leg gate for the T2 port.
 - `self_host_tc_let_infer_smoke.py` (~2132 tok, huge) — self_host_tc_let_infer_smoke — three-leg gate for the T1 type-inference port.
 - `self_host_tc_narrowing_smoke.py` (~1042 tok, large)
-- `self_host_tc_scope_frame_smoke.py` (~5509 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
+- `self_host_tc_scope_frame_smoke.py` (~5756 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
 - `self_host_tc_self_host_only_call_smoke.py` (~1908 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
-- `self_host_tc_shape_annot_compat_smoke.py` (~1695 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
-- `self_host_tc_shape_rules_smoke.py` (~1901 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
-- `self_host_tc_std_export_smoke.py` (~3253 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
-- `self_host_tc_undeclared_assign_smoke.py` (~6994 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2009 rule — undeclared assign.
+- `self_host_tc_shape_annot_compat_smoke.py` (~1943 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
+- `self_host_tc_shape_rules_smoke.py` (~2149 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
+- `self_host_tc_std_export_smoke.py` (~3500 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
+- `self_host_tc_undeclared_assign_smoke.py` (~7241 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2009 rule — undeclared assign.
 - `self_host_tc_unknown_call_smoke.py` (~8534 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2003 rule — unknown call.
-- `self_host_tc_unknown_ident_smoke.py` (~11127 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2002 rule — unknown identifier.
-- `self_host_tc_unknown_variant_smoke.py` (~1986 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2008 unknown-enum-variant rule.
+- `self_host_tc_unknown_ident_smoke.py` (~11374 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1 E2002 rule — unknown identifier.
+- `self_host_tc_unknown_variant_smoke.py` (~2233 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2008 unknown-enum-variant rule.
 - `self_host_value_if_expr_smoke.py` (~1557 tok, huge)
 - `sha256_hash_smoke.py` (~1284 tok, large) — # Copyright 2025 STARGA Inc.
-- `smoke_wiring_lint.py` (~5521 tok, huge) — smoke_wiring_lint.py — machine-checked contract for WHERE each
+- `smoke_wiring_lint.py` (~6980 tok, huge) — smoke_wiring_lint.py — machine-checked contract for WHERE each
 - `SMOKE_WIRING.tsv` (~3294 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
 - `stdlib_manifest_lint.py` (~2418 tok, huge) — stdlib_manifest_lint.py — machine-checked contract for WHICH std/*.mind
 - `_stdlib_manifest.py` (~1129 tok, large) — Shared reader for the committed std/*.mind manifest.
@@ -780,6 +780,7 @@
 
 - `unified_dispatch_smoke.py` (~1598 tok, huge)
 - `validate_real_fns_smoke.py` (~2734 tok, huge)
+- `VERDICT_SHAPE_RESIDUAL.txt` (~1121 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `while_struct_smoke.py` (~1031 tok, large)
 ### `examples/`
 
@@ -1531,7 +1532,7 @@
 - `for_each_run.rs` (~859 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1442 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `g2_differential_mlir.rs` (~10959 tok, huge) — Copyright 2025 STARGA Inc.
-- `gate_assert_count_contract_test.py` (~4823 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
+- `gate_assert_count_contract_test.py` (~5623 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gate_runner_cargo_scope_test.py` (~2695 tok, huge) — Gate test: the wiring lint must SEE a `cargo test` gate, or say it cannot.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.

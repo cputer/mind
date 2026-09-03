@@ -251,7 +251,7 @@ def scan_marker_violations() -> list[str]:
     return bad
 
 
-# ── per-case verdict contract ──────────────────────────────────────────────
+# ── per-case verdict contract ──────────────────────────────────────────
 # The marker contract above stopped a PRINTED INTEGER from standing in for
 # evidence. It left the other half of the same hole open: a verdict line IS
 # evidence to scripts/gate_assert.py, and a single UNCONDITIONAL summary is one
@@ -262,67 +262,146 @@ def scan_marker_violations() -> list[str]:
 # not tell the two apart, and the mutation every fix in this repo is required to
 # survive ("comment the assertions out, expect red") could not go red.
 #
-# The structural rule, stated over shape rather than wording: if a gate prints
-# verdict lines at all, at least one of them must sit inside a For/While/If
-# body — i.e. it must be reported PER CHECKED THING, so an empty corpus reports
-# zero. A gate whose verdict prints are ALL unconditional publishes the same
-# number for every corpus size.
+# WHAT COUNTS AS SCALING EVIDENCE (the rule, stated over shape)
+# -------------------------------------------------------------
+# A gate that prints verdict lines at all must produce at least one piece of
+# evidence that is EMITTED PER CHECKED THING on a GREEN run:
 #
-# THREE deliberate limits, each so the rule stays a statement about evidence
-# rather than about wording:
-#   * scope is the manifest's own `gate` class, read out of SMOKE_WIRING.tsv
-#     rather than listed here. `helper`/`tool`/`wip` files are not pass/fail
-#     gates and owe no verdict.
-#   * a gate that prints no verdict LITERAL is not flagged. Two honest shapes
-#     land there: an `assert`-based gate (the shim already counts an evaluated
-#     assert per iteration, so an empty loop is already zero), and a gate that
-#     composes the token at RUNTIME — `tag = "PASS" if good else "FAIL"` then
-#     `print(f"... {tag}")`. `_template` renders an interpolation as `{}`, so
-#     this scan cannot see the second kind.
-#   * that second case is a KNOWN, MEASURED bound on this scan, not an oversight.
-#     Widening the renderer to read string constants nested inside interpolations
-#     was tried and rejected: it flags enum_netverify, field_store_netverify and
-#     ref_netverify — three gates that DO report one verdict per case through an
-#     interpolated tag — purely because their recap line spells `"ALL PASS" if ok
-#     else "SOME FAIL"` in literals the per-case line hides. A rule that reds
-#     three correct gates to reach two more is a worse rule. What actually binds
-#     those gates is the RUNTIME contract: scripts/run_gate.py refuses
-#     `asserted=0`, so an emptied corpus fails there whatever this scan can read.
-#     This lint is the cheap static half, not the whole gate.
-_BODY_NODES = (ast.For, ast.AsyncFor, ast.While, ast.If)
+#   * a print whose LITERAL text carries a PASS-family token, inside a
+#     For/While/AsyncFor body — one `[PASS]` per case; or
+#   * an `assert` inside such a loop (the shim counts evaluated asserts, so an
+#     empty loop already counts zero); or
+#   * a `check()` / `check_eq()` / `bump()` call inside such a loop — the
+#     gate_assert helpers, which print exactly one verdict line per call; or
+#   * a runner call site that pins the gate with `--min-asserted N`, N >= 2.
+#     A leg-reporting gate (the native byte-identity rungs report four legs as
+#     four unconditional `[PASS]` lines) does not loop, but deleting a leg does
+#     drop the count — and only a floor above 1 makes that drop fail. The floor
+#     is READ OUT of the same runner scripts the wiring half parses, never
+#     hand-copied here, so the two halves cannot come to disagree about which
+#     call sites exist.
+#
+# TWO earlier spellings of this rule were measured and rejected, each because it
+# graded a gate on something other than evidence:
+#
+#   * `If` counted as a per-case body. It is not: an `if fails: print("FAIL")`
+#     recap is ONE line whatever the corpus held, and a failure-path print
+#     inside a loop emits NOTHING on a green run. Measured before this was
+#     tightened: self_host_tc_unknown_ident_smoke.py checked 419 cases, printed
+#     one `ALL PASS`, graded `asserted=1`, and satisfied the old shape rule
+#     purely through two `print("FAIL: ... drifted")` lines in a table-check
+#     loop that a green run never reaches.
+#   * reading string constants nested INSIDE an interpolation. That renders
+#     an f-string that spells the token inside `{...}` visible, but it also
+#     reads the literals of a recap line, and it flagged enum_netverify,
+#     field_store_netverify and ref_netverify — three gates that DO report per
+#     case — for the wording of their summary. A rule that reds correct gates to
+#     reach more is a worse rule; the sanctioned way to make a composed verdict
+#     visible to BOTH this scan and the shim is `gate_assert.check()`.
+#
+# deferred: this scan cannot see a per-case verdict whose PASS/FAIL token is
+# composed at RUNTIME (`tag = "PASS" if ok else "FAIL"`, then `print(f"{tag}")`)
+# — `_template` renders every interpolation as `{}`. Gates in that shape, and
+# gates that still report their whole corpus with one recap line, are listed by
+# name in VERDICT_SHAPE_RESIDUAL.txt rather than left as an unstated hole in the
+# rule. The list is SHRINK-ONLY: a listed gate that starts satisfying the rule
+# must be removed (this lint fails until it is), and a gate not on the list must
+# satisfy the rule today, so the residual can only get smaller and no NEW gate
+# can join it without editing a reviewed file. Upgrade path for one entry:
+# route its per-case line through `gate_assert.check(cond, label)` (or add an
+# `assert` in the case loop), drop the recap's verdict token, then delete its
+# name here — exactly what the self_host_tc_* family did.
+RESIDUAL_FILE = SMOKE_DIR / "VERDICT_SHAPE_RESIDUAL.txt"
+
+_LOOP_NODES = (ast.For, ast.AsyncFor, ast.While)
+_PASS_TOKEN_RE = re.compile(r"\b(?:PASS|PASSED)\b")
+_EVIDENCE_CALLS = {"check", "check_eq", "bump"}
+# `run_gate.py --min-asserted N` on a call site. N >= PINNED_FLOOR is what makes
+# a leg-reporting gate's count load-bearing; the default floor of 1 only ever
+# asserts "something ran".
+MIN_ASSERTED_RE = re.compile(r"--min-asserted[= ]+(\d+)")
+PINNED_FLOOR = 2
 
 
-def _verdict_print_counts(tree: ast.AST) -> tuple[int, int]:
-    """(verdict-bearing print calls, how many are inside a For/While/If body)."""
-    conditional: set[int] = set()
+def pinned_floors() -> dict[str, int]:
+    """{gate stem: the HIGHEST `--min-asserted` floor any runner call site pins}.
+
+    Read out of the SAME runner scripts `actual_wiring()` parses, through the
+    same noise stripping and the same loop expansion — a second hand-written
+    list of call sites is the drift this file exists to catch.
+
+    HIGHEST, not lowest: the floor's job is to make a shrunken count fail
+    SOMEWHERE. A gate pinned at 4 in ci.yml and run bare in fast_keystone.sh
+    still reds CI when it loses a leg, which is the property being claimed.
+    """
+    floors: dict[str, int] = {}
+
+    def note(name: str, value: int) -> None:
+        floors[name] = max(floors.get(name, 0), value)
+
+    for paths in RUNNERS.values():
+        for p in paths:
+            if not p.is_file():
+                continue
+            text = _strip_noise(p.read_text(encoding="utf-8"))
+            # Join shell line continuations so one invocation is one line.
+            text = re.sub(r"\\\n\s*", " ", text)
+            for var, words, body in LOOP_RE.findall(text):
+                if f"examples/mindc_mind/${var}.py" not in body and \
+                   f"examples/mindc_mind/${{{var}}}.py" not in body:
+                    continue
+                m = MIN_ASSERTED_RE.search(body) if "run_gate.py" in body else None
+                value = int(m.group(1)) if m else 0
+                for w in words.replace("\\", " ").split():
+                    if re.fullmatch(NAME_RE, w):
+                        note(w, value)
+            for line in text.splitlines():
+                if "run_gate.py" not in line:
+                    continue
+                m = MIN_ASSERTED_RE.search(line)
+                value = int(m.group(1)) if m else 0
+                for name in PATH_RE.findall(line):
+                    note(name, value)
+    return floors
+
+
+def _verdict_evidence(tree: ast.AST) -> tuple[int, int]:
+    """(verdict-bearing print calls, pieces of PER-CASE evidence in a loop)."""
+    in_loop: set[int] = set()
 
     def descend(node: ast.AST, depth: int) -> None:
         for child in ast.iter_child_nodes(node):
-            d = depth + 1 if isinstance(node, _BODY_NODES) else depth
+            d = depth + 1 if isinstance(node, _LOOP_NODES) else depth
             if d:
-                conditional.add(id(child))
+                in_loop.add(id(child))
             descend(child, d)
 
     descend(tree, 0)
 
-    total = nested = 0
+    total = evidence = 0
     for node in ast.walk(tree):
+        if isinstance(node, ast.Assert) and id(node) in in_loop:
+            evidence += 1
+            continue
         if not isinstance(node, ast.Call):
             continue
         fn = node.func
-        is_print = isinstance(fn, ast.Name) and fn.id == "print"
-        is_write = isinstance(fn, ast.Attribute) and fn.attr == "write"
-        if not (is_print or is_write):
+        name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
+        if name in _EVIDENCE_CALLS and id(node) in in_loop:
+            evidence += 1
+            continue
+        if name not in ("print", "write"):
             continue
         parts = [t for t in (_template(a) for a in node.args) if t is not None]
         if not parts:
             continue
-        if not VERDICT_RE.search(" ".join(parts)):
+        text = " ".join(parts)
+        if not VERDICT_RE.search(text):
             continue
         total += 1
-        if id(node) in conditional:
-            nested += 1
-    return total, nested
+        if id(node) in in_loop and _PASS_TOKEN_RE.search(text):
+            evidence += 1
+    return total, evidence
 
 
 def verdict_shape_violations(path: Path, src: str) -> list[str]:
@@ -331,32 +410,78 @@ def verdict_shape_violations(path: Path, src: str) -> list[str]:
         tree = ast.parse(src, filename=str(path))
     except SyntaxError as err:
         return [f"{path}: unparseable ({err})"]
-    total, nested = _verdict_print_counts(tree)
-    if total == 0 or nested > 0:
+    total, evidence = _verdict_evidence(tree)
+    if total == 0 or evidence > 0:
         return []
     return [
-        f"{path}: every verdict line it prints is unconditional "
-        f"({total} of {total}), so scripts/gate_assert.py reads the same "
-        f"asserted= count whether the gate checked its whole corpus or an "
-        f"empty one. Report one PASS/FAIL line per checked case inside the "
-        f"loop, and leave the summary without a verdict token."
+        f"{path}: prints {total} verdict line(s), none of them per checked case "
+        f"— scripts/gate_assert.py reads the same asserted= count whether the "
+        f"gate checked its whole corpus or an empty one. Report one PASS/FAIL "
+        f"line per case inside the loop (gate_assert.check() does exactly "
+        f"that), leave the summary without a verdict token, or pin the call "
+        f"site with --min-asserted >= {PINNED_FLOOR}."
     ]
+
+
+def load_residual() -> list[str]:
+    """The declared, shrink-only list of gates this scan cannot yet bind."""
+    if not RESIDUAL_FILE.is_file():
+        raise SystemExit(
+            f"{RESIDUAL_FILE} is missing — the verdict-shape residual is part of "
+            f"the checked contract, not an optional note. Restore it (an empty "
+            f"list is legal, a missing file is not)."
+        )
+    names = []
+    for line in RESIDUAL_FILE.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            names.append(s)
+    return names
 
 
 def scan_verdict_shape_violations() -> list[str]:
     """The contract applied to every source the manifest classes as a `gate`."""
     rows, _ = parse_manifest()
     sources = gate_sources()
+    floors = pinned_floors()
+    residual = load_residual()
+    seen = set()
     bad: list[str] = []
+    for name in residual:
+        if name in seen:
+            bad.append(f"{RESIDUAL_FILE.name}: duplicate entry {name!r}")
+        seen.add(name)
+        if name not in rows or rows[name][1] != "gate":
+            bad.append(
+                f"{RESIDUAL_FILE.name}: {name!r} is not a `gate` row in "
+                f"{MANIFEST.name}. A residual entry that names nothing hides "
+                f"nothing — remove it."
+            )
     for name in sorted(rows):
         if rows[name][1] != "gate":
             continue
         path = sources.get(name)
         if path is None:  # a stale/wip row; reported by the manifest checks
             continue
-        bad += verdict_shape_violations(
+        if floors.get(name, 0) >= PINNED_FLOOR:
+            if name in seen:
+                bad.append(
+                    f"{RESIDUAL_FILE.name}: {name!r} is pinned at "
+                    f"--min-asserted {floors[name]} by a runner call site, so it "
+                    f"is no longer residual. Delete its line."
+                )
+            continue
+        problems = verdict_shape_violations(
             path.relative_to(ROOT), path.read_text(encoding="utf-8")
         )
+        if problems and name not in seen:
+            bad += problems
+        if not problems and name in seen:
+            bad.append(
+                f"{RESIDUAL_FILE.name}: {name!r} now reports per checked case, "
+                f"so it has left the residual. Delete its line — the list is "
+                f"shrink-only and a stale entry would let it regress unseen."
+            )
     return bad
 
 

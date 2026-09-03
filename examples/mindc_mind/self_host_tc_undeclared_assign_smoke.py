@@ -78,6 +78,17 @@ import self_host_tc_unknown_ident_smoke as e2002  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _selfhost_so import resolve_mindc  # noqa: E402
 
+# One verdict line PER CHECKED CASE, through the shim's own helper. This gate
+# used to report its whole corpus with a single unconditional `ALL PASS` recap,
+# so scripts/gate_assert.py graded a full run and an empty one identically at
+# `asserted=1`; deleting the per-case comparison left both the count and the
+# verdict unchanged, and the "comment the assertions out, expect red" mutation
+# every fix here must survive could not go red. `check()` prints
+# `[PASS]`/`[FAIL]` per case, which is the evidence the shim counts.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "scripts"))
+from gate_assert import check  # noqa: E402
+
 PRELUDE = e2002.PRELUDE
 collect_decl_names = e2002.collect_decl_names
 scope_verdict = e2002.scope_verdict
@@ -709,8 +720,7 @@ def main():
                 negatives += 1
             if not ok:
                 fails += 1
-            mark = "ok " if ok else "DIFF"
-            print(f"  {mark} got={got} rule={exp_s} live={live} pos={pos} "
+            check(ok, f"got={got} rule={exp_s} live={live} pos={pos} "
                   f"[{mode}] {note}")
 
         # ── GENERATED keyword × ASSIGN-position matrix (tcdiff cross-rule
@@ -825,7 +835,11 @@ def main():
     if fails:
         print("FAIL: pure-MIND E2009 rule diverges from the Rust rule")
         sys.exit(1)
-    print("ALL PASS")
+    # No verdict token in this recap: the per-case `[PASS]`/`[FAIL]` lines
+    # above ARE the count scripts/gate_assert.py reads, so an emptied corpus
+    # reports zero rather than crediting one blanket summary with the whole
+    # run. A summary that carries a verdict is a count of one, forever.
+    print("all reported cases agreed with the Rust oracle")
     if built:
         try:
             os.unlink(so)
