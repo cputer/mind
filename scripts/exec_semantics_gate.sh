@@ -34,6 +34,21 @@
 # with the environment — and it collapses to 0 under exactly the accident being
 # guarded against.
 #
+# "DID IT RUN" IS HALF THE QUESTION; "DID IT PASS" IS THE OTHER HALF.
+# The tier verdict rests on THREE independent readings of the same run, because any
+# one of them can be defeated alone:
+#   1. the triage below, over cargo's rerun hint — for EVERY harness kind it names
+#      (`--test <n>`, `--lib`, `--doc`, `--bin <n>`, `--bench <n>`), not just the
+#      integration targets; a hint this gate cannot parse is itself a failure;
+#   2. the aggregate `failed` count summed from the harnesses' own `test result:`
+#      lines, attributed per-harness so the quarantine keeps working;
+#   3. cargo's own exit status, recorded into the log and compared — a non-zero exit
+#      nothing in the log can account for fails the tier.
+# Measured before (2) and (3) existed and while (1) matched only `--test <n>`: a tier
+# log carrying a lib harness with `3 failed` printed `failed=3` and, three lines
+# later, `ok[exec]: ... 0 failing` — exit 0. scripts/test_exec_semantics_gate.py
+# replays that log and eight more, and asserts the exit code of each.
+#
 # Usage:
 #   scripts/exec_semantics_gate.sh                 # all tiers
 #   scripts/exec_semantics_gate.sh exec            # one tier: exec | lowering | pkg
@@ -102,6 +117,11 @@ REQUIRE_TOOLCHAIN_pkg=0
 # Every entry is a genuine, separately-scoped defect that this tier was HIDING — they
 # are the payload of the finding, not collateral from it.
 # deferred: each needs its own fix; none is closed by this gate.
+#
+# An entry is the name the triage reports: an integration target's bare name, or one
+# of the `@`-prefixed pseudo-targets (`@lib`, `@doc`, `@bin:<name>`, `@bench:<name>`)
+# that stand for the harness kinds cargo does not name with `--test`. See
+# rerun_selector() below.
 #
 #   std_surface_intrinsics       — `each_intrinsic_lowers_to_func_call_with_private_decl`
 #       expects `func.call @__mind_load_i64(%`; the intrinsic now lowers inline to
@@ -211,6 +231,28 @@ fi
 
 in_list() { local n=$1; shift; local e; for e in "$@"; do [ "$e" = "$n" ] && return 0; done; return 1; }
 
+# cargo names four harness KINDS in its rerun hint, and only one of them is a
+# `--test <name>` integration target. The other three (`--lib`, `--doc`,
+# `--bin <n>`, `--bench <n>`) are given PSEUDO-TARGET names below so they can be
+# triaged, reported and quarantined exactly like a real target. The `@` prefix
+# cannot collide with a cargo target name (those are file stems: [A-Za-z0-9_-]),
+# so `@lib` can never be confused with an integration test called `lib`.
+#
+#   @lib            src/lib.rs unit tests        rerun: --lib
+#   @doc            documentation tests          rerun: --doc
+#   @bin:<name>     a binary's unit tests        rerun: --bin <name>
+#   @bench:<name>   a bench target's tests       rerun: --bench <name>
+rerun_selector() {
+  case "$1" in
+    @lib)     echo "--lib" ;;
+    @doc)     echo "--doc" ;;
+    @bin:*)   echo "--bin ${1#@bin:}" ;;
+    @bin)     echo "--bins" ;;
+    @bench:*) echo "--bench ${1#@bench:}" ;;
+    *)        echo "--test $1" ;;
+  esac
+}
+
 overall=0
 for tier in "${want[@]}"; do
   eval "features=\$FEATURES_$tier"
@@ -235,16 +277,26 @@ for tier in "${want[@]}"; do
 
   if [ -n "$from_log" ]; then
     log="$from_log"
-    cargo_status="n/a (--from-log)"
+    # cargo's exit status is RECORDED IN THE LOG (see the marker written below), so
+    # a replayed log is judged on the same evidence as the run that produced it.
+    # Before that, this mode read "n/a" and the status assert below could not run at
+    # all — the analysis silently answered a weaker question than the live gate.
+    # A log written before the marker existed reports `unknown`: that leg of the
+    # verdict is then honestly UNAVAILABLE rather than silently assumed to be 0.
+    cargo_status=$(sed -n 's/^MIND_TIER_CARGO_EXIT=\([0-9]\{1,\}\)$/\1/p' "$log" | tail -1)
+    cargo_status="${cargo_status:-unknown}"
     echo "ANALYSIS-ONLY: re-reading $log; NO tests were run by this invocation."
+    echo "               recorded cargo exit: $cargo_status"
   elif [ "$require_toolchain" = 1 ]; then
     MIND_BENCH_REQUIRE=1 cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$log" 2>&1
     cargo_status=$?
+    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$log"
   else
     cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$log" 2>&1
     cargo_status=$?
+    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$log"
   fi
 
   # --- POSITIVE-COUNT ASSERT (the anti-silent-zeroing core) ----------------
@@ -394,8 +446,24 @@ for tier in "${want[@]}"; do
   fi
 
   # --- FAILURE TRIAGE against the quarantine ratchet -----------------------
+  # EVERY harness kind, not just `--test`. This sed used to match one shape:
+  #   error: test failed, to rerun pass `--test <name>`
+  # cargo prints `--lib` for src/lib.rs unit tests, `--doc` for doctests,
+  # `--bin <n>` for a binary's tests and `--bench <n>` for a bench target — none of
+  # which produced an entry here. `unexpected` is built only from this list, so a
+  # failing lib unit test, doctest or bin test was attributed to NOTHING and the
+  # tier printed `ok[...]`. Measured on a synthetic tier log carrying a lib harness
+  # with `3 failed`: `failed=3` printed, `0 failing` printed, exit 0.
+  # Non---test kinds arrive as the `@`-prefixed pseudo-targets rerun_selector maps
+  # back to a runnable command; they are quarantinable like any other target.
   mapfile -t failing < <(
-    sed -n 's/^error: test failed, to rerun pass `--test \([A-Za-z0-9_]*\)`.*/\1/p' "$log" | sort -u
+    sed -n \
+      -e 's/^error: test failed, to rerun pass `--test \([A-Za-z0-9_-]*\)`.*/\1/p' \
+      -e 's/^error: test failed, to rerun pass `--bin \([A-Za-z0-9_-]*\)`.*/@bin:\1/p' \
+      -e 's/^error: test failed, to rerun pass `--bench \([A-Za-z0-9_-]*\)`.*/@bench:\1/p' \
+      -e 's/^error: test failed, to rerun pass `--lib`.*/@lib/p' \
+      -e 's/^error: test failed, to rerun pass `--doc`.*/@doc/p' \
+      "$log" | sort -u
   )
 
   # A CRASH is never tolerable, whatever the target's environmental status.
@@ -459,7 +527,7 @@ for tier in "${want[@]}"; do
     echo
     echo "FAIL[$tier]: ${#unexpected[@]} target(s) failed that are NOT quarantined:"
     for t in "${unexpected[@]}"; do
-      echo "  - $t   (rerun: cargo test --no-default-features --features \"$features\" --test $t)"
+      echo "  - $t   (rerun: cargo test --no-default-features --features \"$features\" $(rerun_selector "$t"))"
     done
     rc=1
   fi
@@ -475,6 +543,94 @@ for tier in "${want[@]}"; do
     echo "FAIL[$tier]: ${#fixed[@]} quarantined target(s) now PASS — delete them from"
     echo "      QUARANTINE_$tier in scripts/exec_semantics_gate.sh (the list may only shrink):"
     for t in "${fixed[@]}"; do echo "  - $t"; done
+    rc=1
+  fi
+
+  # --- AGGREGATE `failed` COUNT: asserted, not decorated -------------------
+  # `failed` is summed from every `test result:` line and printed on the summary
+  # line above — and until now it was compared to nothing, so a tier could print
+  # `failed=3` and `ok[...]` in the same breath. It is asserted here rather than
+  # left to the triage above because the two rest on DIFFERENT evidence: the
+  # triage greps one cargo message whose wording cargo owns, this counts the
+  # harness's own report. A cargo that reworded (or dropped) the rerun hint would
+  # take the triage with it; the count survives.
+  #
+  # Attribution is per-harness so the shrink-only quarantine keeps working: a
+  # failure inside a QUARANTINE_<tier> target, or inside a target that reported an
+  # env-tolerated ran=0, is ACCOUNTED FOR. Everything else is not, and reds the
+  # tier — which is the whole point.
+  mapfile -t failed_blocks < <(
+    awk '
+      # Attribute at every compilation-unit boundary, mirroring the marker
+      # consumer above so one target can never inherit another one'"'"'s identity.
+      /^[[:space:]]*(Running|Doc-tests) / {
+        key = "<unattributed>"
+        if (match($0, /Running tests\/[A-Za-z0-9_-]+\.rs/))
+          key = substr($0, RSTART + 14, RLENGTH - 17)
+        else if ($0 ~ /Running unittests src\/lib\.rs/)
+          key = "@lib"
+        else if (match($0, /Running unittests src\/bin\/[A-Za-z0-9_-]+\.rs/))
+          key = "@bin:" substr($0, RSTART + 26, RLENGTH - 29)
+        else if ($0 ~ /Running unittests src\/main\.rs/) {
+          # The bin NAME is not on this line; recover it from the deps binary
+          # (`.../deps/mindc-9f8a…`) so this key matches the `@bin:<name>` the
+          # rerun hint yields for the same failure.
+          key = "@bin"
+          if (match($0, /deps\/[A-Za-z0-9_-]+-[0-9a-f]+\)/)) {
+            b = substr($0, RSTART + 5, RLENGTH - 6)
+            sub(/-[0-9a-f]+$/, "", b)
+            if (b != "") key = "@bin:" b
+          }
+        }
+        else if (match($0, /Running benches\/[A-Za-z0-9_-]+\.rs/))
+          key = "@bench:" substr($0, RSTART + 16, RLENGTH - 19)
+        else if ($0 ~ /^[[:space:]]*Doc-tests /)
+          key = "@doc"
+        next
+      }
+      /^test result:/ {
+        f = 0
+        for (i = 1; i <= NF; i++) if ($i == "failed;") f = $(i - 1) + 0
+        if (f > 0) print (key == "" ? "<unattributed>" : key) " " f
+        key = ""
+      }' "$log"
+  )
+  unaccounted=()
+  unaccounted_n=0
+  for fb in ${failed_blocks[@]+"${failed_blocks[@]}"}; do
+    fkey="${fb%% *}"; fn="${fb##* }"
+    in_list "$fkey" ${quarantine[@]+"${quarantine[@]}"} && continue
+    in_list "$fkey" ${env_skipped[@]+"${env_skipped[@]}"} && continue
+    unaccounted+=("$fkey reported $fn failing test(s)")
+    unaccounted_n=$((unaccounted_n + fn))
+  done
+  if [ "$unaccounted_n" -gt 0 ]; then
+    echo
+    echo "FAIL[$tier]: $unaccounted_n test(s) FAILED in target(s) nothing accounts for."
+    for u in "${unaccounted[@]}"; do echo "  - $u"; done
+    echo "  The tier's own summary line prints this count; it is now asserted. A tier"
+    echo "  cannot be green while a test it ran is red."
+    rc=1
+  fi
+
+  # --- CARGO'S OWN EXIT STATUS: asserted, not printed ----------------------
+  # It was captured and used exactly once, in an echo inside the failure branch —
+  # so cargo could report failure while this gate reported success. A non-zero
+  # exit is only acceptable when the log NAMES the target(s) responsible and the
+  # ratchet above has already judged them; a non-zero exit with nothing to
+  # attribute it to (a link error, a harness that aborted before printing its
+  # result, a future cargo whose wording moved) fails closed.
+  # `unknown` = a pre-marker log replayed through --from-log: unavailable, and
+  # said so above, rather than assumed green.
+  if [ "$cargo_status" != 0 ] && [ "$cargo_status" != unknown ] && [ ${#failing[@]} -eq 0 ] \
+     && [ "$unaccounted_n" -eq 0 ]; then
+    echo
+    echo "FAIL[$tier]: cargo exited $cargo_status but no failing target could be named."
+    echo "  Nothing in the log attributes it: no 'error: test failed, to rerun pass ...'"
+    echo "  hint and no harness reporting failed>0. Something failed OUTSIDE the test"
+    echo "  results (a link/build failure, an aborted harness, or a cargo message this"
+    echo "  gate does not parse). Fail-closed: read the log, then teach the triage."
+    echo "  full log: $log"
     rc=1
   fi
 
@@ -494,9 +650,18 @@ for tier in "${want[@]}"; do
     echo "cargo exit was $cargo_status; failing targets: ${failing[*]:-none}"
     echo "full log: $log"
     for t in ${unexpected[@]+"${unexpected[@]}"}; do
-      echo "--- tier '$tier' :: $t ---"
-      awk -v t="tests/$t.rs" '$0 ~ ("Running " t) {on=1} on {print} on && /^test result:/ {exit}' "$log" \
-        | grep -Ev '^test .* \.\.\. ok$' | head -40
+      echo "--- tier '$tier' :: $t   (rerun: $(rerun_selector "$t")) ---"
+      case "$t" in
+        # A pseudo-target has no `Running tests/<t>.rs` block to anchor on: its
+        # harness header is `Running unittests src/...` or `Doc-tests <crate>`.
+        # Anchor on the harness's own failure list instead, or the reader gets an
+        # empty excerpt for exactly the failures this gate was just taught to see.
+        @*)
+          awk '/^failures:$/ {on=1} on {print} on && /^test result:/ {exit}' "$log" | head -40 ;;
+        *)
+          awk -v t="tests/$t.rs" '$0 ~ ("Running " t) {on=1} on {print} on && /^test result:/ {exit}' "$log" \
+            | grep -Ev '^test .* \.\.\. ok$' | head -40 ;;
+      esac
     done
     overall=1
   fi

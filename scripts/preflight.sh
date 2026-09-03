@@ -128,6 +128,25 @@ else
   bad "scripts/cfg_gate_wiring_lint.py MISSING — CI runs it; preflight cannot verify it"
 fi
 
+step "tier gate fails CLOSED on a failing test  [ci.yml executable_semantics_tier]"
+# The lint above proves a test FILE is reachable by some tier. This proves the tier
+# script GRADES what it runs: its triage matched only cargo's `--test <name>` rerun
+# hint, so a failing lib unit test, doctest or bin test (`--lib` / `--doc` /
+# `--bin <n>`) was attributed to nothing, cargo's exit status was printed and never
+# compared, and the aggregate `failed` count was printed and never asserted.
+# Synthetic tier logs replayed through --from-log, asserting the exit code — pure
+# text analysis, sub-second, so it belongs in the FAST path beside the lint above.
+if [ -f scripts/test_exec_semantics_gate.py ]; then
+  if tg_out=$(python3 scripts/test_exec_semantics_gate.py 2>&1); then
+    printf '%s\n' "$tg_out" | grep -E '^ran=' | sed 's/^/  /'
+  else
+    bad "tier-gate mutation proof FAILED — exec_semantics_gate.sh no longer reds on a failing test:"
+    printf '%s\n' "$tg_out" | grep -E '^\[FAIL\]|^ran=' | head -12
+  fi
+else
+  bad "scripts/test_exec_semantics_gate.py MISSING — CI runs it; preflight cannot verify it"
+fi
+
 step "comment-enumeration contract  [ci.yml enumeration_drift_lint.py]"
 # The tc_let shape, generalised: a comment that COUNTS or NAMES a set, beside code
 # that owns the real set, with nothing comparing the two. `parse_let` documented

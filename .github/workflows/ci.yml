@@ -1337,6 +1337,21 @@ jobs:
         run: python3 scripts/run_gate.py scripts/cfg_gate_wiring_lint.py
         working-directory: ${{ github.workspace }}
 
+      - name: Tier gate must fail CLOSED on a failing test (mutation proof)
+        # The tiers below can only gate what the script GRADES. Its triage used to
+        # match one cargo shape, `--test <name>`, so a failing lib unit test,
+        # doctest or bin test (cargo says `--lib` / `--doc` / `--bin <n>`) was
+        # attributed to nothing, cargo's exit status was printed and never
+        # compared, and the aggregate `failed` count was printed and never
+        # asserted — a tier could print `failed=3` and `ok[exec]` together.
+        # scripts/test_exec_semantics_gate.py replays synthetic tier logs through
+        # the real script's --from-log mode and asserts the EXIT CODE for each
+        # case, including a positive control and the quarantine / env-tolerated
+        # paths that must stay green. Pure text analysis: seconds, before the
+        # ~45-minute build, like the lint above.
+        run: python3 scripts/test_exec_semantics_gate.py
+        working-directory: ${{ github.workspace }}
+
       - name: Install Rust (nightly)
         uses: dtolnay/rust-toolchain@nightly
 
