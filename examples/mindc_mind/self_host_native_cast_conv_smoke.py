@@ -99,19 +99,23 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_scalar_cast_conv"):
-        print("FAIL  selftest_native_elf_scalar_cast_conv: symbol absent (cast-conv rung not built)")
+        print("  [FAIL] symbol        selftest_native_elf_scalar_cast_conv absent "
+              "(cast-conv rung not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_scalar_cast_conv exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_cast_conv_elf(lib)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  cast_conv: not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     cast_conv: not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     cast_conv: runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         val = struct.unpack("<q", out)[0]
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
@@ -119,14 +123,16 @@ def main() -> int:
         print(f"  native sha256         = {got}")
         print(f"  canary scalar-cast    = {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF int<->float cast chain is BYTE-IDENTICAL to the "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF int<->float cast chain is BYTE-IDENTICAL to the "
                   "MLIR canary scalar-cast-conv — branchless SSE2 saturating float->i64 "
                   "(cvttsd2si + cmplesd/cmpunordsd masks), cvtsi2sd/cvtsi2ss int->float, "
                   "f32 rounding, zero MLIR/LLVM (RI-B2 #108, closes the scalar tier)")
             return 0
         ref = _ref_scalar_cast_conv()
         print(f"  python oracle i64     = {ref}")
-        print("FAIL  native-ELF cast-conv hash != canary scalar-cast-conv — a saturation "
+        print("  [FAIL] byte-identity  "
+              "native-ELF cast-conv hash != canary scalar-cast-conv — a saturation "
               "edge or the f32 rounding differs; do NOT guess (report native value/hash above).")
         return 1
 

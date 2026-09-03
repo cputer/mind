@@ -883,7 +883,6 @@ jobs:
             self_host_native_narrowint_smoke \
             self_host_native_narrowwrap_smoke \
             self_host_native_autowrap_smoke \
-            self_host_native_scalar_f32_smoke \
             div_shift_cmp_edge_smoke \
             mod_operator_smoke \
             self_host_arena_growth_smoke \
@@ -960,13 +959,24 @@ jobs:
           [ "$fail" -eq 0 ]
         working-directory: ${{ github.workspace }}
 
-      - name: Native-ELF float + SIMD/BLAS kernel value gates
-        # Native-ELF VALUE correctness for the float/SSE + packed-SIMD + integer
-        # kernel surface: the f64/f32 scalar ABI legs (let / param / binop /
-        # dtype-tag), int<->float casts, the strict-FP dot/GEMV/GEMM family and
-        # its Q16.16 and int8/int16 siblings, byte-emit, and SysV stack
-        # alignment. Each asserts a value or a byte-identity against an
-        # independent oracle, so a wrong encoding cannot pass.
+      - name: Native-ELF byte-identity canary rungs (one verdict per leg)
+        # The rungs whose emitted bytes are compared against a COMMITTED
+        # cross-substrate canary hash (or, for scalar_f32, against a
+        # single-precision oracle). Each reports FOUR legs -- the self-host `.so`
+        # exports the rung, the emitted image is a runnable ELF, the run produced
+        # exactly the expected number of stdout bytes, and those bytes match the
+        # canary -- as one `[PASS]`/`[FAIL]` verdict line apiece, so
+        # scripts/gate_assert.py counts the work actually done.
+        #
+        # `--min-asserted 4` is what makes that count load-bearing: before this
+        # step existed the same gates published `asserted=1` on every green run
+        # (one unconditional `ALL PASS` summary), so DELETING a leg's check left
+        # both the count and the verdict unchanged and the runner's floor could
+        # only ever assert "something ran". Four is the leg count these gates
+        # share; scalar_f32 reports five (its f32 value and its truncation are
+        # separate oracle comparisons) and clears the same floor. A gate that
+        # loses a leg now fails HERE rather than riding green.
+        #
         # NOTE: self_host_native_avx2_dot_f32_smoke needs an AVX2 runner. That is
         # already a hard dependency of this workflow (the cross_substrate_identity
         # job runs an `avx2` substrate leg), and it fails closed, never skips.
@@ -976,31 +986,66 @@ jobs:
           set -eo pipefail
           fail=0
           for s in \
+            self_host_native_gemm_q16_smoke \
+            self_host_native_gemm_i8_smoke \
+            self_host_native_gemv_q16_smoke \
+            self_host_native_gemv_i16_smoke \
+            self_host_native_intdot_q16_smoke \
+            self_host_native_intdot_i16_smoke \
+            self_host_native_dot_f32_smoke \
+            self_host_native_simd_dot_f32_smoke \
+            self_host_native_simd_dot_i16_smoke \
+            self_host_native_scalar_f32_smoke \
+            self_host_native_scalar_f64_smoke \
+            self_host_native_cast_conv_smoke \
+            self_host_native_matmul_f32_v_smoke \
+            self_host_native_dot_l1_q16_smoke \
+            self_host_native_avx2_dot_f32_smoke; do
+            echo "=== $s ==="
+            if MINDC_SO=/tmp/libmindc_mind_self_host.so \
+               MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
+               MINDC="${{ github.workspace }}/target/release/mindc" \
+                 python3 scripts/run_gate.py --min-asserted 4 \
+                   "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
+              # Fail-closed on an announced skip, exactly as the sibling steps:
+              # MINDC_SO is set and verified non-empty above, so a SKIP here
+              # means the wiring broke, not that the gate is inapplicable.
+              if grep -qE '^[[:space:]]*SKIP' /tmp/wire_out.txt; then
+                echo "ERROR: $s SKIPped with MINDC_SO set — vacuous green, failing closed"
+                fail=1
+              fi
+            else
+              echo "ERROR: $s FAILED"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
+        working-directory: ${{ github.workspace }}
+
+      - name: Native-ELF float + SIMD/BLAS kernel value gates
+        # Native-ELF VALUE correctness for the float/SSE + packed-SIMD + integer
+        # kernel surface: the f64/f32 scalar ABI legs (let / param / binop /
+        # dtype-tag), int<->float casts, the strict-FP dot/GEMV/GEMM family and
+        # its Q16.16 and int8/int16 siblings, byte-emit, and SysV stack
+        # alignment. Each asserts a value or a byte-identity against an
+        # independent oracle, so a wrong encoding cannot pass.
+        run: |
+          # pipefail is load-bearing: without it `python3 ... | tee` would
+          # return tee's status and a FAILING smoke would grade as a pass.
+          set -eo pipefail
+          fail=0
+          for s in \
             general_float_netverify \
             self_host_dtype_tag_smoke \
             self_host_mic3_float_valueif_smoke \
-            self_host_native_avx2_dot_f32_smoke \
             self_host_native_blas_dot_i16_smoke \
             self_host_native_blas_dot_q16_smoke \
-            self_host_native_cast_conv_smoke \
-            self_host_native_dot_f32_smoke \
-            self_host_native_dot_l1_q16_smoke \
             self_host_native_elf_alignment_smoke \
             self_host_native_fp_binop_smoke \
             self_host_native_fp_let_smoke \
             self_host_native_fp_param_smoke \
-            self_host_native_gemm_i8_smoke \
-            self_host_native_gemm_q16_smoke \
-            self_host_native_gemv_i16_smoke \
-            self_host_native_gemv_q16_smoke \
             self_host_native_genf32_smoke \
-            self_host_native_intdot_i16_smoke \
-            self_host_native_intdot_q16_smoke \
             self_host_native_intdot_smoke \
-            self_host_native_matmul_f32_v_smoke \
-            self_host_native_scalar_f64_smoke \
-            self_host_native_simd_dot_f32_smoke \
-            self_host_native_simd_dot_i16_smoke \
             self_host_native_simd_dot_q16_smoke \
             self_host_native_tensor_ewadd_f64_smoke \
             self_host_native_ucast_smoke \

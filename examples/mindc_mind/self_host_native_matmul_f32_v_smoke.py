@@ -112,19 +112,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_matmul_f32_v"):
-        print("FAIL  selftest_native_elf_matmul_f32_v: symbol absent (RI-B2-S9 not built)")
+        print("  [FAIL] symbol        selftest_native_elf_matmul_f32_v absent (RI-B2-S9 not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_matmul_f32_v exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_matmul_f32_elf(lib, ROWS, COLS)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  matmul_f32_v({ROWS}x{COLS}): not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     matmul_f32_v({ROWS}x{COLS}): not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     matmul_f32_v({ROWS}x{COLS}): runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 4 * ROWS:
-            print(f"  FAIL  expected {4 * ROWS} stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected {4 * ROWS} stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected {4 * ROWS})")
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
         y0 = struct.unpack("<f", out[0:4])[0]
@@ -133,7 +136,8 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary matmul-f32-v= {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF strict-FP f32 GEMV is BYTE-IDENTICAL to the MLIR "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF strict-FP f32 GEMV is BYTE-IDENTICAL to the MLIR "
                   "canary matmul-f32-v — outer row loop over the S8 8-lane accumulate + "
                   "pinned left-to-right fold, unfused mulss/addss, zero MLIR/LLVM "
                   "(RI-B2-S9 #108, f32 matrix-vector rung)")
@@ -155,7 +159,8 @@ def main() -> int:
                       f"{int.from_bytes(ob, 'little'):#010x} (={float(oracle[r])})")
                 if r >= 3:
                     break
-        print("FAIL  native-ELF f32 GEMV hash != canary matmul-f32-v — fold order or "
+        print("  [FAIL] byte-identity  "
+              "native-ELF f32 GEMV hash != canary matmul-f32-v — fold order or "
               "generation order differs; do NOT guess (report native/oracle above).")
         return 1
 

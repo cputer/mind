@@ -114,19 +114,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_avx2_dot_f32"):
-        print("FAIL  selftest_native_elf_avx2_dot_f32: symbol absent (RI-B2-S13 not built)")
+        print("  [FAIL] symbol        selftest_native_elf_avx2_dot_f32 absent (RI-B2-S13 not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_avx2_dot_f32 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_avx2_dot_f32_elf(lib, LENGTH)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  avx2_dot_f32(n={LENGTH}): not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     avx2_dot_f32(n={LENGTH}): not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     avx2_dot_f32(n={LENGTH}): runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         bits = int.from_bytes(out[:4], "little")
         val = struct.unpack("<f", out[:4])[0]
         got = hashlib.sha256(out).hexdigest()
@@ -135,7 +138,8 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary dot-f32-v   = {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF 256-bit AVX2 (VEX/YMM) packed-f32 SIMD strict-FP dot "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF 256-bit AVX2 (VEX/YMM) packed-f32 SIMD strict-FP dot "
                   "is BYTE-IDENTICAL to the MLIR canary dot-f32-v — one 8-lane YMM accumulate "
                   "(vmovups/vmulps/vaddps, unfused) + vextractf128 fold + pinned left-to-right "
                   "movss/addss fold + scalar tail, zero MLIR/LLVM. Native-ELF AVX2 f32 SIMD == "
@@ -146,7 +150,8 @@ def main() -> int:
         ref = _ref_dot_strict(a, b)
         rbits = int.from_bytes(np.float32(ref).tobytes(), "little")
         print(f"  numpy strict oracle= {float(ref)}  (bits {rbits:#010x})")
-        print("FAIL  native-ELF AVX2 f32 SIMD dot hash != canary dot-f32-v — the lane mapping, "
+        print("  [FAIL] byte-identity  "
+              "native-ELF AVX2 f32 SIMD dot hash != canary dot-f32-v — the lane mapping, "
               "the VEX encoding, or the fold order differs; report the native f32/bits/hash "
               "above and the objdump of the hot loop, then STOP (do NOT guess; float "
               "byte-identity is fragile).")

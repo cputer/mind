@@ -65,19 +65,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_gemm_q16"):
-        print("FAIL  selftest_native_elf_gemm_q16: symbol absent (RI-B2-S7 not built)")
+        print("  [FAIL] symbol        selftest_native_elf_gemm_q16 absent (RI-B2-S7 not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_gemm_q16 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_gemm_q16_elf(lib, M, N, K)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  gemm_q16({M}x{N}x{K}): not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     gemm_q16({M}x{N}x{K}): not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     gemm_q16({M}x{N}x{K}): runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != M * N * 4:
-            print(f"  FAIL  expected {M*N*4} stdout bytes, got {len(out)}: {out[:64].hex()}")
+            print(f"  [FAIL] out-size      expected {M*N*4} stdout bytes, got {len(out)}: {out[:64].hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected {M*N*4})")
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
         c0 = int.from_bytes(out[0:4], "little", signed=True)
@@ -86,11 +89,13 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary gemm-q16    = {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF Q16.16 GEMM is BYTE-IDENTICAL to the MLIR canary "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF Q16.16 GEMM is BYTE-IDENTICAL to the MLIR canary "
                   "gemm-q16 — triple loop over the proven i64-MAC/>>16/narrow-i32 dot, "
                   "row-major i32 matrix output, zero MLIR/LLVM (RI-B2-S7 #108)")
             return 0
-        print("FAIL  native-ELF Q16.16 GEMM hash != canary gemm-q16 — reduction/transpose "
+        print("  [FAIL] byte-identity  "
+              "native-ELF Q16.16 GEMM hash != canary gemm-q16 — reduction/transpose "
               "differs from the per-output (Q16-rescale) accumulate over B column j; "
               "report native hash for mind-det-gemm to pin the model")
         return 1

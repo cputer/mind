@@ -84,19 +84,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_dot_l1_q16"):
-        print("FAIL  selftest_native_elf_dot_l1_q16: symbol absent (L1-Q16 rung not built)")
+        print("  [FAIL] symbol        selftest_native_elf_dot_l1_q16 absent (L1-Q16 rung not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_dot_l1_q16 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_dot_l1_q16_elf(lib)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  dot_l1_q16: not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     dot_l1_q16: not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     dot_l1_q16: runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         val = struct.unpack("<q", out)[0]
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
@@ -104,14 +107,16 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary dot-l1-q16  = {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF Q16.16 L1 distance Sum|a-b| is BYTE-IDENTICAL "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF Q16.16 L1 distance Sum|a-b| is BYTE-IDENTICAL "
                   "to the MLIR canary dot-l1-q16 — shared LCG generator, branchless "
                   "integer abs (sub/sar-63/xor), narrow-once-to-i32, zero MLIR/LLVM "
                   "(RI-B2 #108, closes the scalar L1 tier)")
             return 0
         ref = _ref_dot_l1_q16(N, SEED)
         print(f"  python oracle i64  = {ref}")
-        print("FAIL  native-ELF L1-Q16 hash != canary dot-l1-q16 — the reduction or abs "
+        print("  [FAIL] byte-identity  "
+              "native-ELF L1-Q16 hash != canary dot-l1-q16 — the reduction or abs "
               "idiom differs; do NOT guess (report native value/bits/hash above).")
         return 1
 

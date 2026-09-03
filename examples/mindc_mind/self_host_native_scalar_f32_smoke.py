@@ -87,19 +87,23 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_scalar_f32"):
-        print("FAIL  selftest_native_elf_scalar_f32: symbol absent (C1-remainder f32 rung not built)")
+        print("  [FAIL] symbol        selftest_native_elf_scalar_f32 absent "
+              "(C1-remainder f32 rung not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_scalar_f32 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_scalar_f32_elf(lib)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  scalar_f32: not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     scalar_f32: not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     scalar_f32: runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 12:
-            print(f"  FAIL  expected 12 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 12 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 12)")
         got_trunc = struct.unpack("<q", out[0:8])[0]
         got_f32 = struct.unpack("<f", out[8:12])[0]
         got_bits = int.from_bytes(out[8:12], "little")
@@ -112,16 +116,25 @@ def main() -> int:
         print(f"  python oracle f32  = {ref_f32}  (bits {ref_bits:#010x})")
         print(f"  python oracle trunc= {ref_trunc}")
 
-        if got_bits == ref_bits and got_trunc == ref_trunc:
-            print("ALL PASS  native-ELF single-precision chain `a + b - c * d / a` matches "
-                  "the numpy-style f32 reference — unfused SSE addss/subss/mulss/divss with "
-                  "single-rounded intermediates, cvtss2sd/cvtsd2ss round-trip and cvttss2si "
-                  "truncation, movd lift, zero MLIR/LLVM (Phase C1-remainder f32 scalar tier)")
-            return 0
-        print("FAIL  native-ELF f32 chain != single-precision oracle — an op rounded to "
-              "double or a conversion/opcode byte is wrong; do NOT guess (report the "
-              "native f32/bits/trunc above).")
-        return 1
+        if got_bits != ref_bits:
+            print("  [FAIL] f32-value     "
+                  f"native bits {got_bits:#010x} != single-precision oracle "
+                  f"{ref_bits:#010x} — an op rounded to double or a conversion/opcode "
+                  "byte is wrong; do NOT guess (report the native f32/bits above).")
+            return 1
+        print(f"  [PASS] f32-value     native bits {got_bits:#010x} == "
+              "single-precision oracle")
+        if got_trunc != ref_trunc:
+            print("  [FAIL] trunc-i64     "
+                  f"native {got_trunc} != oracle {ref_trunc} — the cvttss2si truncation "
+                  "or the movd lift is wrong; do NOT guess (report the native trunc above).")
+            return 1
+        print(f"  [PASS] trunc-i64     native {got_trunc} == oracle (cvttss2si truncation)")
+        print("native-ELF single-precision chain `a + b - c * d / a` matches "
+              "the numpy-style f32 reference — unfused SSE addss/subss/mulss/divss with "
+              "single-rounded intermediates, cvtss2sd/cvtsd2ss round-trip and cvttss2si "
+              "truncation, movd lift, zero MLIR/LLVM (Phase C1-remainder f32 scalar tier)")
+        return 0
 
 
 if __name__ == "__main__":

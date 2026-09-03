@@ -70,19 +70,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_simd_dot_i16"):
-        print("FAIL  selftest_native_elf_simd_dot_i16: symbol absent (RI-B2-S12 not built)")
+        print("  [FAIL] symbol        selftest_native_elf_simd_dot_i16 absent (RI-B2-S12 not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_simd_dot_i16 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_simd_dot_i16_elf(lib, LENGTH)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  simd_dot_i16(n={LENGTH}): not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     simd_dot_i16(n={LENGTH}): not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     simd_dot_i16(n={LENGTH}): runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         val = int.from_bytes(out, "little", signed=True)
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
@@ -90,14 +93,16 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary dot-i16-4096= {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF PACKED-int16 SIMD (SSE2, 128-bit) dot is "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF PACKED-int16 SIMD (SSE2, 128-bit) dot is "
                   "BYTE-IDENTICAL to the MLIR canary dot-i16-4096 — 8-wide pmaddwd "
                   "accumulate (4 i32 lanes via paddd), horizontal reduce, narrow-once-"
                   "to-i32, zero MLIR/LLVM. The pmaddwd-i32-pairwise-wrap equals the "
                   "scalar pure-i64 sum-then-narrow (linear mod 2^32). Native-ELF SIMD "
                   "== scalar == MLIR (RI-B2-S12 #108, int16 SIMD rung).")
             return 0
-        print("FAIL  native-ELF SIMD int16 dot hash != canary dot-i16-4096 — the "
+        print("  [FAIL] byte-identity  "
+              "native-ELF SIMD int16 dot hash != canary dot-i16-4096 — the "
               "pmaddwd/paddd reduction diverged; report the native value + hash above "
               "and STOP (do NOT guess).")
         return 1

@@ -79,19 +79,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_scalar_f64"):
-        print("FAIL  selftest_native_elf_scalar_f64: symbol absent (RI-B2 f64 rung not built)")
+        print("  [FAIL] symbol        selftest_native_elf_scalar_f64 absent (RI-B2 f64 rung not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_scalar_f64 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_scalar_f64_elf(lib)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  scalar_f64: not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     scalar_f64: not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     scalar_f64: runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         val = struct.unpack("<d", out)[0]
         bits = int.from_bytes(out, "little")
         got = hashlib.sha256(out).hexdigest()
@@ -100,7 +103,8 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary scalar-f64  = {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF strict-FP f64 chain `a + b - c * d / a` is "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF strict-FP f64 chain `a + b - c * d / a` is "
                   "BYTE-IDENTICAL to the MLIR canary scalar-float-f64 — fixed source "
                   "precedence, unfused SSE2 addsd/mulsd/divsd/subsd, movq lift, zero "
                   "MLIR/LLVM (RI-B2 #108, upgrades the f64 native path from "
@@ -110,7 +114,8 @@ def main() -> int:
         ref = _ref_scalar_f64_chain(a, b, c, d)
         rbits = int.from_bytes(struct.pack("<d", ref), "little")
         print(f"  python oracle      = {ref}  (bits {rbits:#018x})")
-        print("FAIL  native-ELF f64 chain hash != canary scalar-float-f64 — op order or "
+        print("  [FAIL] byte-identity  "
+              "native-ELF f64 chain hash != canary scalar-float-f64 — op order or "
               "a rounding detail differs; do NOT guess (report native f64/bits/hash above).")
         return 1
 

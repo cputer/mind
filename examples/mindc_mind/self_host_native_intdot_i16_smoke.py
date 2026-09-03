@@ -64,19 +64,22 @@ def main() -> int:
         return 0
     lib = ctypes.CDLL(so)
     if not hasattr(lib, "selftest_native_elf_intdot_i16"):
-        print("FAIL  selftest_native_elf_intdot_i16: symbol absent (RI-B2-S2 not built)")
+        print("  [FAIL] symbol        selftest_native_elf_intdot_i16 absent (RI-B2-S2 not built)")
         return 1
+    print("  [PASS] symbol        selftest_native_elf_intdot_i16 exported by the self-host .so")
 
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
         elf = mind_intdot_i16_elf(lib, LENGTH)
         if not (len(elf) > 120 and elf[:4] == b"\x7fELF"):
-            print(f"  FAIL  intdot_i16(n={LENGTH}): not a runnable ELF (len={len(elf)})")
+            print(f"  [FAIL] elf-image     intdot_i16(n={LENGTH}): not a runnable ELF (len={len(elf)})")
             return 1
+        print(f"  [PASS] elf-image     intdot_i16(n={LENGTH}): runnable ELF (len={len(elf)})")
         out = run_elf_capture(elf, tmp)
         if len(out) != 8:
-            print(f"  FAIL  expected 8 stdout bytes, got {len(out)}: {out.hex()}")
+            print(f"  [FAIL] out-size      expected 8 stdout bytes, got {len(out)}: {out.hex()}")
             return 1
+        print(f"  [PASS] out-size      {len(out)} stdout bytes (expected 8)")
         val = int.from_bytes(out, "little", signed=True)
         got = hashlib.sha256(out).hexdigest()
         ok = got == CANARY
@@ -84,11 +87,13 @@ def main() -> int:
         print(f"  native sha256      = {got}")
         print(f"  canary dot-i16-4096= {CANARY}")
         if ok:
-            print("ALL PASS  native-ELF int16 dot-product is BYTE-IDENTICAL to the MLIR "
+            print(f"  [PASS] byte-identity native sha256 == canary {CANARY}")
+            print("native-ELF int16 dot-product is BYTE-IDENTICAL to the MLIR "
                   "canary dot-i16-4096 — i64 accumulate, narrow once to i32, zero MLIR/LLVM "
                   "(RI-B2-S2 #108, first byte-identity-gated tensor rung)")
             return 0
-        print("FAIL  native-ELF int16 dot hash != canary dot-i16-4096 — reduction model "
+        print("  [FAIL] byte-identity  "
+              "native-ELF int16 dot hash != canary dot-i16-4096 — reduction model "
               "differs from the straightforward i64-accumulate/narrow-i32; report native "
               "value + hash for mind-det-gemm to pin the exact MLIR reduction model")
         return 1
