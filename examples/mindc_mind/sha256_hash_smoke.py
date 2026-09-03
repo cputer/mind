@@ -21,8 +21,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-MINDC = Path(__file__).resolve().parents[2] / "target" / "release" / "mindc"
-if not MINDC.exists():
+# Honour the corpus-wide MINDC_BIN / MINDC handles before the in-tree path.
+# Reading only target/release/mindc made this gate impossible to aim at a
+# specific compiler, and made it report success against whatever binary
+# happened to be lying in the tree — including when the caller had said,
+# explicitly, that no compiler was available.
+_ENV_MINDC = os.environ.get("MINDC_BIN") or os.environ.get("MINDC")
+MINDC = Path(_ENV_MINDC) if _ENV_MINDC else (
+    Path(__file__).resolve().parents[2] / "target" / "release" / "mindc")
+if not MINDC.exists() and not _ENV_MINDC:
     MINDC = Path(__file__).resolve().parents[2] / "target" / "debug" / "mindc"
 
 ENV_SKIP_OPT_IN = "MIND_SMOKE_ALLOW_ENV_SKIP"

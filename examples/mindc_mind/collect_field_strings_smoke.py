@@ -105,7 +105,10 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    print(f"\n{len(CASES)} passed")
+    # ran=<n>: the repo's machine-readable "how many did I actually check" marker.
+    # scripts/run_gate.py refuses a gate that reports zero, so a silently empty
+    # case list can no longer arrive as a green exit code.
+    print(f"\n{len(CASES)} passed  (ran={len(CASES)})")
     return 0
 
 

@@ -13,14 +13,21 @@
 # Run: python3 examples/mindc_mind/now_ns_smoke.py
 
 import ctypes
+import os
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-MINDC = Path(__file__).resolve().parents[2] / "target" / "release" / "mindc"
-if not MINDC.exists():
+# MINDC_BIN first: every other gate in this corpus honours it, and CI points it
+# at the freshly built binary. Reading only the in-tree target/ path meant this
+# gate could not be aimed at a real compiler at all — and then took the skip
+# branch below and reported success.
+_ENV_MINDC = os.environ.get("MINDC_BIN") or os.environ.get("MINDC")
+MINDC = Path(_ENV_MINDC) if _ENV_MINDC else (
+    Path(__file__).resolve().parents[2] / "target" / "release" / "mindc")
+if not MINDC.exists() and not _ENV_MINDC:
     MINDC = Path(__file__).resolve().parents[2] / "target" / "debug" / "mindc"
 
 MAIN_MIND = """import std.time
@@ -47,8 +54,13 @@ sources = ["src/main.mind"]
 
 def main() -> int:
     if not MINDC.exists():
-        print("now-ns-smoke: mindc not found; skipping")
-        return 0
+        # FAIL CLOSED. This used to `print(... skipping); return 0`, so the gate
+        # reported success on a tree with no compiler at all — it asserted
+        # nothing and said so in a line that reads like a pass. A gate that
+        # cannot run its subject must go red and name what is missing.
+        print(f"now-ns-smoke: FAILED — no mindc at {MINDC}; point MINDC_BIN at a "
+              "built binary. A missing compiler is a red gate, never a green one.")
+        return 1
     with tempfile.TemporaryDirectory() as td:
         proj = Path(td)
         (proj / "src").mkdir()
@@ -64,8 +76,14 @@ def main() -> int:
         if out.returncode != 0:
             stderr = out.stderr
             if "mlir-build" in stderr and "requires" in stderr:
-                print("now-ns-smoke: needs mlir-build; skipping")
-                return 0
+                # FAIL CLOSED, same reason as the missing-binary branch above: a
+                # mindc built without `mlir-build` cannot lower this program, so
+                # nothing was checked. Returning 0 here made a toolchain gap
+                # indistinguishable from a verified clock intrinsic.
+                print("now-ns-smoke: FAILED — mindc was built without the "
+                      "`mlir-build` feature, so std.time could not be lowered and "
+                      "nothing was verified. Rebuild with --features mlir-build.")
+                return 1
             print("now-ns-smoke: mindc build failed:\n" + stderr)
             return 1
 

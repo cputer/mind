@@ -506,7 +506,23 @@ jobs:
         # runner set, or an unwired gate with no stated reason). Pure text
         # analysis — no build artifacts needed, so it runs FIRST in this job,
         # before the MLIR install and the mindc build, and fails fast.
-        run: python3 examples/mindc_mind/smoke_wiring_lint.py
+        run: python3 scripts/run_gate.py examples/mindc_mind/smoke_wiring_lint.py
+        working-directory: ${{ github.workspace }}
+
+      - name: Gate-vacuity sweep (run_gate.py --vacuity-sweep)
+        # THE POSITIVE CONTROL for every gate in this repo. Runs the whole smoke
+        # corpus with the toolchain handles (MINDC / MINDC_BIN / MINDC_SO /
+        # MINDC_NATIVE_ELF) pointed at paths that do not exist, and REQUIRES every
+        # compiler-dependent gate to be rejected. Measured before scripts/run_gate.py
+        # existed: 108 of the 146 corpus gates still exited 0 with the compiler
+        # binary absent, because an exit code answers "did anything that ran fail",
+        # never "did anything run" — rh_f64_aggregate_canary_smoke.py printed
+        # `SKIP  mindc not built` and returned 0 as a REQUIRED step of THIS job.
+        # Every gate now publishes `asserted=<N>` and the runner refuses N==0, a
+        # missing line, or a `SKIP` line. This sweep fails when it finds NOTHING
+        # wrong with the negative case, so it cannot rot into a vacuous pass itself.
+        # Pure Python, no build artifacts — runs before the MLIR install, fails fast.
+        run: python3 scripts/run_gate.py --vacuity-sweep
         working-directory: ${{ github.workspace }}
 
       - name: std manifest contract (stdlib_manifest_lint.py)
@@ -523,7 +539,7 @@ jobs:
         # bytes of every native build (a whole-corpus RESEED event), so it must not
         # be able to land as a quiet one-line edit. Pure text analysis, no build
         # artifacts, so it runs early and fails fast alongside the wiring lint.
-        run: python3 examples/mindc_mind/stdlib_manifest_lint.py
+        run: python3 scripts/run_gate.py examples/mindc_mind/stdlib_manifest_lint.py
         working-directory: ${{ github.workspace }}
 
       - name: Install Rust (nightly)
@@ -622,20 +638,20 @@ jobs:
       - name: Real-body emitter smoke (self_host_body_smoke.py)
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/self_host_body_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_body_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: mic@3 primitives smoke (mic3_primitives_smoke.py)
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/mic3_primitives_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/mic3_primitives_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Whole-module mic@3 self-host FLIP (mic3_flip_smoke.py)
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/mic3_flip_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/mic3_flip_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Self-host MLIR-text f64+i64 emit gate (self_host_mlir_smoke.py)
@@ -646,7 +662,7 @@ jobs:
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC_BIN=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/self_host_mlir_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_mlir_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Per-arm oracle-parity linter (oracle_parity_lint.py)
@@ -659,20 +675,20 @@ jobs:
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/oracle_parity_lint.py
+            python3 scripts/run_gate.py examples/mindc_mind/oracle_parity_lint.py
         working-directory: ${{ github.workspace }}
 
       - name: Self-host gap-corpus integrity gate (gap_corpus_smoke.py)
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/gap_corpus_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/gap_corpus_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Self-host LOOP gate — MIND compiles MIND, Rust+LLVM out (self_host_loop_smoke.py)
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/self_host_loop_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_loop_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Native-ELF scalar-f64 execution gate (self_host_native_fp_smoke.py)
@@ -683,7 +699,7 @@ jobs:
         # wrong SSE encoding faults or returns the wrong integer — non-fakeable.
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/self_host_native_fp_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_native_fp_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Native-ELF integer byte-identity gate (self_host_native_elf_smoke.py)
@@ -699,7 +715,7 @@ jobs:
           MIND_SELFHOST_SKIP_REF_REGEN: "1"
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/self_host_native_elf_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_native_elf_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: RI-D seam gates — mindc build --backend=native (bridge + exact fail-close diagnostics)
@@ -714,9 +730,9 @@ jobs:
         # otherwise land CI-green.
         run: |
           set -e
-          python3 examples/mindc_mind/backend_native_bridge_smoke.py
+          python3 scripts/run_gate.py examples/mindc_mind/backend_native_bridge_smoke.py
           MINDC_BIN=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/self_host_native_diag_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_native_diag_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: RH f64-aggregate surface canary (rh_f64_aggregate_canary_smoke.py)
@@ -730,7 +746,7 @@ jobs:
         # (no silent wrong-value artifact). Uses the mlir-build mindc built above.
         run: |
           MINDC_BIN=${{ github.workspace }}/target/release/mindc \
-            python3 examples/mindc_mind/rh_f64_aggregate_canary_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/rh_f64_aggregate_canary_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Native-ELF float end-to-end gate (self_host_native_fp_expr_smoke.py)
@@ -745,7 +761,7 @@ jobs:
         # so this arm is never taken during self-compile (integer byte-identity holds).
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 examples/mindc_mind/self_host_native_fp_expr_smoke.py
+            python3 scripts/run_gate.py examples/mindc_mind/self_host_native_fp_expr_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Self-host ADDITIVE selftest gates (C4 tensor ops + type-checker rules + narrow/f32/div)
@@ -832,7 +848,7 @@ jobs:
             echo "=== $s ==="
             MINDC_SO=/tmp/libmindc_mind_self_host.so \
             MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
-              python3 "examples/mindc_mind/$s.py"
+              python3 scripts/run_gate.py "examples/mindc_mind/$s.py"
           done
         working-directory: ${{ github.workspace }}
 
@@ -864,7 +880,7 @@ jobs:
             if MINDC_SO=/tmp/libmindc_mind_self_host.so \
                MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
                MINDC="${{ github.workspace }}/target/release/mindc" \
-                 python3 "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
+                 python3 scripts/run_gate.py "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
               # Fail-closed: a "SKIP <so> not built" line exits 0 and would grade
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
@@ -938,7 +954,7 @@ jobs:
             if MINDC_SO=/tmp/libmindc_mind_self_host.so \
                MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
                MINDC="${{ github.workspace }}/target/release/mindc" \
-                 python3 "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
+                 python3 scripts/run_gate.py "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
               # Fail-closed: a "SKIP <so> not built" line exits 0 and would grade
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
@@ -1014,7 +1030,7 @@ jobs:
             if MINDC_SO=/tmp/libmindc_mind_self_host.so \
                MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
                MINDC="${{ github.workspace }}/target/release/mindc" \
-                 python3 "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
+                 python3 scripts/run_gate.py "examples/mindc_mind/$s.py" | tee /tmp/wire_out.txt; then
               # Fail-closed: a "SKIP <so> not built" line exits 0 and would grade
               # a MISSING library as a pass. MINDC_SO is set and verified
               # non-empty above, so a SKIP here means the wiring broke, not that
@@ -1051,13 +1067,13 @@ jobs:
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
-            python3 examples/mindc_mind/tc_differential_fuzz.py --rule all --ci --budget 400
+            python3 scripts/run_gate.py examples/mindc_mind/tc_differential_fuzz.py --rule all --ci --budget 400
           # T1 type-inference: `let x: T = <literal>` scalar-class (E2015).
           # Dedicated annotation x RHS-literal corpus (not the position grid);
           # planted literal-tag-flip mutation gate runs first.
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
-            python3 examples/mindc_mind/tc_differential_fuzz.py --rule E2015 --ci
+            python3 scripts/run_gate.py examples/mindc_mind/tc_differential_fuzz.py --rule E2015 --ci
         working-directory: ${{ github.workspace }}
 
       - name: Run Phase G integration tests

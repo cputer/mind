@@ -23,7 +23,13 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-MINDC = REPO / "target" / "release" / "mindc"
+# Honour the corpus-wide MINDC_BIN / MINDC handles before the in-tree path.
+# Reading only target/release/mindc made this gate impossible to aim at a
+# specific compiler, and made it report success against whatever binary
+# happened to be lying in the tree — including when the caller had said,
+# explicitly, that no compiler was available.
+_ENV_MINDC = os.environ.get("MINDC_BIN") or os.environ.get("MINDC")
+MINDC = pathlib.Path(_ENV_MINDC) if _ENV_MINDC else REPO / "target" / "release" / "mindc"
 STAGE1 = HERE / "testdata" / "selfhost_loop" / "stage1.elf"
 ORACLE = HERE / "testdata" / "backend_native_bridge" / "add.elf"
 # Twin of the Rust bridge's STD_MODULES and self_host_standalone_driver_smoke.py's

@@ -464,15 +464,27 @@ def main() -> int:
         print(line)
         ok = False
 
+    counts_checked = 0
     if _PHRASES_ONLY:
         print("check_claims: MODE=phrases — forbidden-phrase + canonical-IR only ([counts] skipped)")
     else:
         drift, info = check_counts()
+        counts_checked = len(drift) + len(info)
         for line in info:
             print(line)
         for line in drift:
             print(line)
             ok = False
+
+    # The assertion count, in the repo's existing `ran=<n>` marker convention, so
+    # scripts/run_gate.py can refuse a run that checked nothing. `exit 0` alone
+    # cannot distinguish "86 surfaces agreed with the manifest" from "the surface
+    # glob resolved to a corpus this gate never looked at" — and this checker's
+    # counts are FLOOR comparisons, which stay green while the tree and the
+    # manifest drift apart above the floor. Publishing the number makes the size
+    # of the evidence visible to the runner instead of implied by an exit code.
+    print(f"check_claims: ran={len(files) + counts_checked} "
+          f"(surfaces={len(files)} counts={counts_checked})")
 
     if ok:
         print(f"check_claims: OK — {len(files)} surfaces consistent with {_CAPS_PATH.name}")

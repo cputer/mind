@@ -151,7 +151,9 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED ({len(CASES)} cases)")
         return 1
-    print(f"\nALL {len(CASES)} dispatch cases passed")
+    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
+    # be able to report success through an exit code alone.
+    print(f"\nALL {len(CASES)} dispatch cases passed  (ran={len(CASES)})")
     return 0
 
 

@@ -233,7 +233,10 @@ def main() -> int:
     if failures:
         print(f"\n{failures} FAILED")
         return 1
-    print("\nALL cases behaved as classified (green byte-exact, walls fail-closed)")
+    # ran=<n>: see scripts/run_gate.py — a gate that checked nothing must not
+    # be able to report success through an exit code alone.
+    print(f"\nALL cases behaved as classified (green byte-exact, walls fail-closed)"
+          f"  (ran={green_total + wall_total})")
     return 0
 
 

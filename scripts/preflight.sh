@@ -118,7 +118,7 @@ step "cfg-gate wiring contract  [ci.yml executable_semantics_tier first step]"
 # ci.yml + Cargo.toml's feature graph + the tier definitions in
 # scripts/exec_semantics_gate.sh, so there is no second hand-maintained list to drift.
 if [ -f scripts/cfg_gate_wiring_lint.py ]; then
-  if cw_out=$(python3 scripts/cfg_gate_wiring_lint.py 2>&1); then
+  if cw_out=$(python3 scripts/run_gate.py scripts/cfg_gate_wiring_lint.py 2>&1); then
     printf '%s\n' "$cw_out" | tail -1
   else
     bad "cfg-gate wiring contract FAILED — a feature-gated test file runs NOWHERE in CI:"
@@ -135,7 +135,7 @@ step "comment-enumeration contract  [ci.yml enumeration_drift_lint.py]"
 # named the handlers; tc_let was not among them and read ast_span_lo(0). Two
 # enumerations that had already rotted the same way are pinned here.
 if [ -f scripts/enumeration_drift_lint.py ]; then
-  if ed_out=$(python3 scripts/enumeration_drift_lint.py 2>&1); then
+  if ed_out=$(python3 scripts/run_gate.py scripts/enumeration_drift_lint.py 2>&1); then
     printf '%s\n' "$ed_out" | tail -1
   else
     bad "comment-enumeration contract FAILED — a comment disagrees with its code:"
@@ -152,7 +152,7 @@ step "smoke-corpus wiring contract  [ci.yml mindcraft_self_host first step]"
 # in fast_keystone.sh and one ran in neither runner). SMOKE_WIRING.tsv is the checked
 # contract; the lint recomputes the real wiring and fails on drift in either direction.
 if [ -f examples/mindc_mind/smoke_wiring_lint.py ]; then
-  if sw_out=$(python3 examples/mindc_mind/smoke_wiring_lint.py 2>&1); then
+  if sw_out=$(python3 scripts/run_gate.py examples/mindc_mind/smoke_wiring_lint.py 2>&1); then
     printf '%s\n' "$sw_out" | tail -1
   else
     bad "smoke-corpus wiring contract FAILED — a smoke is unclassified or its wiring drifted:"
@@ -172,7 +172,7 @@ step "std manifest contract  [examples/mindc_mind/testdata/stdlib_manifest.txt]"
 # in BOTH directions, and pins the seed blob's sha256 so a reseed event (which
 # changes the compiled bytes of every native build) cannot land as a quiet edit.
 if [ -f examples/mindc_mind/stdlib_manifest_lint.py ]; then
-  if sm_out=$(python3 examples/mindc_mind/stdlib_manifest_lint.py 2>&1); then
+  if sm_out=$(python3 scripts/run_gate.py examples/mindc_mind/stdlib_manifest_lint.py 2>&1); then
     printf '%s\n' "$sm_out" | tail -1
   else
     bad "std manifest contract FAILED — a std module list drifted, or the seed blob changed:"
@@ -288,12 +288,28 @@ if [ "${1:-}" = "--full" ]; then
     bad "scripts/exec_semantics_gate.sh MISSING — CI runs it; preflight cannot verify it"
   fi
 
+  step "gate-vacuity sweep  [ci.yml gate_vacuity — the positive control for every gate]"
+  # THE POSITIVE CONTROL. Runs the whole smoke corpus with the toolchain handles
+  # pointed at paths that do not exist and requires EVERY compiler-dependent gate
+  # to be REJECTED. Measured before scripts/run_gate.py existed: 108 of the 146
+  # corpus gates still exited 0 with the compiler binary absent — i.e. two thirds
+  # of this repo's regression corpus could report success having compiled nothing.
+  # A gate that cannot fail is not a gate, and a fix proven through one is an
+  # unproven fix. This sweep fails when it finds NOTHING wrong with the negative
+  # case, so it cannot itself rot into a vacuous pass.
+  if vs_out=$(python3 scripts/run_gate.py --vacuity-sweep 2>&1); then
+    printf '%s\n' "$vs_out" | grep -E '^(ran=|PASS )' | sed 's/^/  /'
+  else
+    bad "gate-vacuity sweep FAILED — a gate reports success with no compiler present:"
+    printf '%s\n' "$vs_out" | grep -E '^(VACUOUS|ran=|FAIL)' | head -12
+  fi
+
   step "whole-module mic@3 FLIP  [examples/mindc_mind/mic3_flip_smoke.py]"
   # Banked lesson (reference_mic3_flip_required_local_gate_2026_08_06): REQUIRED for ANY
   # lower.rs / emit / mic@3 change. Keystone cargo-test + oracle-parity do NOT cover the
   # whole-module FLIP — this is the gate that reverted #287-F2 (#223 -> #224).
   if [ -f examples/mindc_mind/mic3_flip_smoke.py ]; then
-    if fl_out=$(python3 examples/mindc_mind/mic3_flip_smoke.py 2>&1); then
+    if fl_out=$(python3 scripts/run_gate.py examples/mindc_mind/mic3_flip_smoke.py 2>&1); then
       echo "ok (whole-module FLIP byte-identical)"
     else
       bad "mic@3 whole-module FLIP gate FAILED — this is the #287-F2 revert class:"; printf '%s\n' "$fl_out" | tail -5
@@ -323,7 +339,11 @@ if [ "${1:-}" = "--full" ]; then
 # deleted a security ENFORCEMENT line while its enum variant, Display arm, error
 # mapping AND its test all survived, so nothing failed to compile and the test kept
 # passing over a rule that no longer existed.
-python3 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
+# --min-asserted 0: this gate is conditional BY DESIGN — on a non-merge HEAD there
+# is no merge to audit, and it correctly reports `ran=0`. That is "not applicable",
+# not "checked nothing", and it is the ONLY exemption from the runner's N>=1 rule in
+# this file; every other gate here must publish a non-zero assertion count.
+python3 scripts/run_gate.py --min-asserted 0 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
 
 # DTK register-allocator cross-implementation parity. The pure-MIND planner SHIPS
 # inside the frozen stage1.elf, so a divergence between it and the Rust reference is
@@ -331,17 +351,17 @@ python3 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
 # was executed by nothing at all. MINDC_SO is set explicitly so a missing .so FAILS
 # rather than skipping.
 MINDC_SO="${MINDC_SO:-$(ls examples/mindc_mind/libmindc_mind.so 2>/dev/null || echo /tmp/libmindc_mind_self_host.so)}" \
-MIND_DTK_SKIP_RUST_REGEN=1 python3 examples/mindc_mind/testdata/dtk_plan_parity_smoke.py \
+MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testdata/dtk_plan_parity_smoke.py \
   || bad "DTK regalloc parity FAILED"
-python3 scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
+python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
 
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
 # Verified green at 9d3d5d41; a regression here must block a push, not surface at flip time.
-python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"
+python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"
 
   if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then
     if mp_out=$(MINDC_SO="${MINDC_SO:-/tmp/libmindc_mind_self_host.so}" \
-                python3 examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
+                python3 scripts/run_gate.py examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
 
       echo "ok (mic@3 primitives byte-exact vs the live oracle)"
     else
@@ -369,7 +389,7 @@ python3 examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness
   if [ ! -f examples/mindc_mind/self_host_loop_smoke.py ]; then
     bad "self_host_loop_smoke.py MISSING — the loop gate cannot run; do NOT push"
   fi
-  loop_rc=0; python3 examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
+  loop_rc=0; python3 scripts/run_gate.py examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
   if [ "$loop_rc" = 0 ]; then echo "ok (frozen seed reproduces current source)"
   elif [ "$loop_rc" = 2 ]; then
   # exit 2 = BLOCKED, "could not evaluate". The smoke uses it for more than one

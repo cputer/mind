@@ -24,6 +24,7 @@ Exit 0 = PASS. No effect on the mic@1 keystone (separate emit path).
 Usage:  python3 mic3_oracle_smoke.py [path/to/mindc] [path/to/fixture.mind]
 """
 import hashlib
+import os
 import pathlib
 import subprocess
 import sys
@@ -50,8 +51,13 @@ def emit_mic3(mindc: str, src: pathlib.Path) -> bytes:
 
 
 def main() -> int:
-    mindc = sys.argv[1] if len(sys.argv) > 1 else str(
-        HERE.parents[1] / "target" / "release" / "mindc")
+    # argv wins, then the corpus-wide MINDC_BIN / MINDC handles, then the in-tree
+    # path. Reading only target/release/mindc made this gate report success
+    # against whatever binary happened to be lying in the tree — including when
+    # the caller had said, explicitly, that no compiler was available.
+    mindc = (sys.argv[1] if len(sys.argv) > 1
+             else os.environ.get("MINDC_BIN") or os.environ.get("MINDC")
+             or str(HERE.parents[1] / "target" / "release" / "mindc"))
     fixture = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "fixture.mind"
 
     if not pathlib.Path(mindc).exists():
