@@ -182,6 +182,29 @@ else
   bad "examples/mindc_mind/stdlib_manifest_lint.py MISSING — CI runs it; preflight cannot verify it"
 fi
 
+step "no-AI-attribution FILE gate  [docs-claims.yml — no model/tool credit in TRACKED FILES]"
+# The sibling of the message gate below, and it was MISSING here. .githooks/pre-commit
+# runs it, but a hook is opt-in (core.hooksPath must be set) and preflight is what
+# this repo tells you to run before pushing — so the whole-tree file gate was
+# enforced by CI and by a hook a developer may not have installed, and by nothing
+# in between. It also carries the ARTIFACT-scoped bare-name rule over ANATOMY.md,
+# which is the one leak class that has actually shipped: a generated index named a
+# model as this compiler's owner while every locally-runnable gate said PASS.
+# Text-only (`git grep`), seconds, so it belongs in the FAST path.
+# Run under scripts/run_gate.py: a whole-tree grep is exactly the shape that can
+# exit 0 having scanned nothing, and the runner refuses a PASS with no asserted
+# count rather than trusting this script to notice.
+if [ ! -f scripts/check_no_ai_attribution.sh ]; then
+  bad "scripts/check_no_ai_attribution.sh MISSING — CI runs it; preflight cannot verify it"
+else
+  if na_out=$(python3 scripts/run_gate.py scripts/check_no_ai_attribution.sh 2>&1); then
+    printf '%s\n' "$na_out" | tail -1
+  else
+    bad "no-AI-attribution file gate FAILED — a tracked file credits a model or a tool:"
+    printf '%s\n' "$na_out" | grep -E '^(::error::|ANATOMY\.md:|[^ ]+:[0-9]+:)' | head -12
+  fi
+fi
+
 step "commit-message hygiene main..HEAD  [docs-claims.yml — no model/tool credit in HISTORY]"
 # Text-only (git log + grep), seconds, and in the FAST path for the same reason
 # the cfg-gate lint is: it is the cheapest catch for the one failure class that

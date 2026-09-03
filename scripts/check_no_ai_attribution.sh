@@ -29,9 +29,9 @@ if [ ! -f "$PATTERNS_FILE" ]; then
 fi
 # shellcheck source=scripts/ai_attribution_patterns.sh
 . "$PATTERNS_FILE"
-if [ -z "${PATTERN:-}" ] || [ -z "${PATTERN_CREDIT:-}" ]; then
-  echo "::error::$PATTERNS_FILE defined no PATTERN/PATTERN_CREDIT - refusing to"
-  echo "         pass on an empty pattern set."
+if [ -z "${PATTERN:-}" ] || [ -z "${PATTERN_CREDIT:-}" ] || [ -z "${AI_NAMES:-}" ]; then
+  echo "::error::$PATTERNS_FILE defined no PATTERN/PATTERN_CREDIT/AI_NAMES -"
+  echo "         refusing to pass on an empty pattern set."
   exit 1
 fi
 
@@ -57,11 +57,17 @@ fi
 # in either order) matches it -- "owner" is not credit vocabulary. Widening the
 # shared pattern to flag a BARE vendor name is the wrong fix: a supported-client
 # integration target is explicitly allowed policy and appears legitimately in
-# README.md and scripts/anatomy.sh. The rule belongs to the
-# ARTIFACT instead -- a GENERATED index has no legitimate reason to carry a
-# vendor name in any position -- so it lives as a bare-name check over
-# ANATOMY.md in scripts/test_no_ai_attribution.py, which CI runs as a
-# release-required step in the same job as this gate.
+# README.md and scripts/anatomy.sh. The rule belongs to the ARTIFACT instead --
+# a GENERATED index has no legitimate reason to carry a vendor name in any
+# position -- so it is the ARTIFACT SCAN at the bottom of this file.
+#
+# It used to live ONLY in scripts/test_no_ai_attribution.py, which runs in CI.
+# That put the rule at the wrong LAYER: .githooks/pre-commit and (now)
+# scripts/preflight.sh both run THIS script, so the single leak class that has
+# actually shipped was invisible at exactly the two layers where a developer
+# could still have stopped it -- a correctly installed hook would have let that
+# commit through. The self-test keeps the mutation cases and now calls this gate
+# instead of re-implementing the grep, so the rule has one definition.
 #
 # deferred: SCAN SCOPE is narrower than the tree — .ts (23 files), .yml (10),
 # .js (9), .c (7) and .mojo (4) are tracked but never scanned, so an attribution
@@ -112,4 +118,44 @@ if [ -n "$hits" ]; then
   echo "agent client list, a shelled-out CLI backend) are fine."
   exit 1
 fi
+# ---------------------------------------------------------------------------
+# ARTIFACT SCAN - deliberately a DIFFERENT strength from the scan above.
+#
+# Scope is ONE generated file, and that narrowness is the whole point: a bare
+# vendor name is legal prose in README.md (the supported-client plugin list) and
+# in scripts/anatomy.sh (the coding-agent client list), so this rule may not be
+# applied tree-wide. A GENERATED index carries only filenames and each file's
+# first meaningful line, so a vendor token in ANY position there means some
+# private input got laundered into a public artifact.
+#
+# Fails CLOSED on a missing artifact: if ANATOMY.md is not tracked, this rule
+# asserted nothing, and "asserted nothing" is a red gate, not a pass.
+ARTIFACT='ANATOMY.md'
+artifact_files=$(git ls-files -- "$ARTIFACT" | wc -l)
+if [ "$artifact_files" -lt 1 ]; then
+  echo "::error::no-ai-attribution gate: $ARTIFACT is not tracked, so the"
+  echo "         artifact-scoped bare-name rule scanned nothing. A PASS here"
+  echo "         would assert nothing; regenerate it with scripts/anatomy.sh."
+  exit 1
+fi
+bare=$(git grep -nIiE "\b(${AI_NAMES})\b" -- "$ARTIFACT")
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  echo "::error::git grep failed (rc=$rc) on $ARTIFACT - the artifact rule did"
+  echo "         not run; refusing to pass."
+  exit 1
+fi
+if [ -n "$bare" ]; then
+  echo "::error::vendor/model name in the generated index $ARTIFACT (forbidden"
+  echo "         in ANY position, not just next to a credit verb):"
+  echo "$bare"
+  echo ""
+  echo "$ARTIFACT is generated from the TRACKED tree by scripts/anatomy.sh, so a"
+  echo "vendor name here means a private note was indexed or an indexed file's"
+  echo "first line names a model. Fix the SOURCE line, then regenerate:"
+  echo "  bash scripts/anatomy.sh"
+  exit 1
+fi
+
 echo "no-ai-attribution gate: PASS ($scanned tracked files scanned)"
+echo "no-ai-attribution artifact rule: PASS (no vendor name in $ARTIFACT)"

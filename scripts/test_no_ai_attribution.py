@@ -178,28 +178,82 @@ def case_anatomy_indexes_only_tracked_files() -> None:
               "generator produced no index; the omission check would be vacuous")
 
 
-def case_committed_anatomy_names_no_model() -> None:
-    """The artifact itself, checked with a BARE-name grep over the rulebook's
-    AI_NAMES -- deliberately broader than the gate's verb-adjacency PATTERN.
+def case_bare_vendor_name_in_generated_index_is_red() -> None:
+    """THE SHAPE THAT ACTUALLY SHIPPED, run through the PRIMARY gate.
 
-    This is the case that catches the leak that actually happened. The line that
-    shipped read "Handoff for <model> (compiler owner)"; neither PATTERN nor
-    PATTERN_CREDIT matches it, because "owner" is not credit vocabulary. The
-    shared pattern is NOT the place to fix that -- naming a supported client as
-    an integration target is allowed policy and appears legitimately in
-    README.md and scripts/anatomy.sh, so a bare-name rule there would flag real
-    documentation. The rule belongs to this ARTIFACT: a GENERATED index carries
-    only filenames and first lines, and has no legitimate reason to name a
-    vendor in any position. Measured when this landed: zero matches across all
-    1465 indexed entries."""
+    The line read "Handoff for <vendor> (compiler owner)". "owner" is not credit
+    vocabulary, so neither PATTERN nor PATTERN_CREDIT sees it -- the gate the
+    pre-commit hook and preflight both run printed PASS over it. The rule that
+    catches it used to live here, in a CI-only self-test, i.e. at a layer no
+    developer runs; it now lives in the gate, and this case asserts that by
+    driving the gate rather than by re-implementing its grep."""
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        scratch_gate_repo(repo)
+        (repo / "ANATOMY.md").write_text(
+            f"# Repository Anatomy\n\n- `handoff.md` (~10 tok) - Handoff for {_NAME} (compiler owner)\n")
+        git("add", "ANATOMY.md", cwd=repo)
+        r = run_gate(repo)
+        check("bare vendor name in generated ANATOMY.md turns the PRIMARY gate RED",
+              r.returncode != 0,
+              f"gate exited 0; stdout={r.stdout.strip()[:200]!r}")
+
+
+def case_bare_vendor_name_outside_the_artifact_still_passes() -> None:
+    """Negative control for the rule's SCOPE, and the reason it may not be
+    tree-wide: naming a supported client as an integration target is allowed
+    policy and appears legitimately in README.md and scripts/anatomy.sh. The
+    same bare token that is fatal inside the generated index must stay legal in
+    ordinary prose, or the fix above would have flagged real documentation."""
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        scratch_gate_repo(repo)
+        (repo / "ANATOMY.md").write_text("# Repository Anatomy\n\n- `notes.md` (~10 tok)\n")
+        (repo / "README.md").write_text(
+            f"# Readme\n\nSupported clients: {_NAME}, and other MCP hosts.\n")
+        git("add", "ANATOMY.md", "README.md", cwd=repo)
+        r = run_gate(repo)
+        check("bare vendor name OUTSIDE the generated index still PASSES",
+              r.returncode == 0,
+              f"gate exited {r.returncode}; stdout={r.stdout.strip()[:200]!r}")
+
+
+def case_missing_artifact_fails_closed() -> None:
+    """A rule with nothing to scan asserted nothing. An untracked ANATOMY.md
+    must be a RED gate, never a quiet pass over an evaporated scope -- the same
+    vacuity floor the tree-wide scan already applies to itself."""
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        scratch_gate_repo(repo)  # deliberately no ANATOMY.md
+        r = run_gate(repo)
+        check("gate fails CLOSED when ANATOMY.md is not tracked",
+              r.returncode != 0,
+              f"gate exited 0 with no artifact to scan; stdout={r.stdout.strip()[:200]!r}")
+
+
+def case_committed_anatomy_names_no_model() -> None:
+    """The committed artifact, judged BY THE GATE rather than by a second copy
+    of its rule.
+
+    This case used to re-implement the bare-name grep in Python. That made the
+    self-test the only enforcer, and a second definition of the rule besides:
+    two hand-copied vocabularies are the drift this repo keeps paying for. The
+    real ANATOMY.md is now copied into a scratch tree and handed to the gate, so
+    the verdict is attributable to THIS file alone (not to an unrelated hit
+    elsewhere in the tree) while the rule itself has exactly one definition."""
     doc = ROOT / "ANATOMY.md"
     if not doc.is_file():
         check("committed ANATOMY.md exists", False, "ANATOMY.md missing")
         return
-    bare = re.compile(rf"\b({rulebook('AI_NAMES')})\b", re.I)
-    hits = [f"{i}: {ln.rstrip()}" for i, ln in enumerate(doc.read_text().splitlines(), 1)
-            if bare.search(ln)]
-    check("committed ANATOMY.md names no model", not hits, "; ".join(hits[:3]))
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        scratch_gate_repo(repo)
+        shutil.copy2(doc, repo / "ANATOMY.md")
+        git("add", "ANATOMY.md", cwd=repo)
+        r = run_gate(repo)
+        check("committed ANATOMY.md names no model (judged by the gate)",
+              r.returncode == 0,
+              f"gate exited {r.returncode}; stdout={r.stdout.strip()[-400:]!r}")
 
 
 def case_committed_anatomy_matches_the_tracked_tree() -> None:
@@ -226,6 +280,9 @@ def main() -> int:
         case_generated_doc_is_in_scope,
         case_control_clean_tree_passes,
         case_anatomy_indexes_only_tracked_files,
+        case_bare_vendor_name_in_generated_index_is_red,
+        case_bare_vendor_name_outside_the_artifact_still_passes,
+        case_missing_artifact_fails_closed,
         case_committed_anatomy_names_no_model,
         case_committed_anatomy_matches_the_tracked_tree,
     ):
