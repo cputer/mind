@@ -90,7 +90,15 @@ GATED_EVENTS = ("push", "pull_request")
 # ratchet is for. Folding a self-test into the gate it proves (the accepted
 # pattern: `<gate>.py --self-test`) LOWERS the count, and lowering the ceiling
 # to match is what makes the ratchet bite the next time.
-HARNESS_CEILING = 247
+# 247 -> 249. Two mutation proofs that could not be folded joined the harness in
+# this integration: scripts/test_exec_semantics_gate.py (nine replayed tier logs
+# proving the executable-semantics gate attributes a failing target instead of
+# exiting 0) and scripts/test_smoke_wiring_lint.py (five fixture repos proving the
+# smoke-wiring lint reds a class=gate row that reaches no workflow, and reds an
+# "UNCONDITIONALLY" claim written from inside preflight's `--full` branch). Both
+# drive their gate through its REAL CLI as a subprocess, so neither can be folded
+# behind a `--self-test` flag without importing the gate it is meant to mutate.
+HARNESS_CEILING = 249
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

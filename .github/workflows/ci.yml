@@ -1046,6 +1046,7 @@ jobs:
             self_host_native_fp_param_smoke \
             self_host_native_genf32_smoke \
             self_host_native_intdot_smoke \
+            self_host_native_scalar_narrow_smoke \
             self_host_native_simd_dot_q16_smoke \
             self_host_native_tensor_ewadd_f64_smoke \
             self_host_native_ucast_smoke \
@@ -1175,6 +1176,26 @@ jobs:
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
           MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
             python3 scripts/run_gate.py examples/mindc_mind/tc_differential_fuzz.py --rule E2015 --ci
+        working-directory: ${{ github.workspace }}
+
+      - name: DTK register-allocator cross-implementation parity
+        # The ONLY gate comparing the pure-MIND nb_dtk_* planner — which SHIPS
+        # inside the frozen stage1.elf and decides which register every value
+        # lands in — against the Rust reference plan_module_k. A divergence is a
+        # silent wrong-register miscompile in the shipped bootstrap compiler.
+        # tests/regalloc_dtk_parity.rs is Rust-vs-Rust against hardcoded tables
+        # and does not substitute for it.
+        #
+        # It ran ONLY in scripts/preflight.sh, which no workflow invokes, so a
+        # regression landed CI-green. MINDC_SO is set to the .so built above and
+        # MIND_DTK_SKIP_RUST_REGEN=1 pins the reference side, so a missing
+        # library fails closed instead of skipping.
+        run: |
+          MINDC_SO=/tmp/libmindc_mind_self_host.so \
+          MIND_DTK_SKIP_RUST_REGEN=1 \
+          MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
+            python3 scripts/run_gate.py \
+              examples/mindc_mind/testdata/dtk_plan_parity_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Run Phase G integration tests
@@ -1349,7 +1370,7 @@ jobs:
         # case, including a positive control and the quarantine / env-tolerated
         # paths that must stay green. Pure text analysis: seconds, before the
         # ~45-minute build, like the lint above.
-        run: python3 scripts/test_exec_semantics_gate.py
+        run: python3 scripts/run_gate.py scripts/test_exec_semantics_gate.py
         working-directory: ${{ github.workspace }}
 
       - name: Install Rust (nightly)
@@ -1433,6 +1454,67 @@ jobs:
   # merge deleted a security ENFORCEMENT line while its enum variant, Display arm,
   # error mapping AND its test all survived, so nothing failed to compile and the
   # test kept passing over a rule that no longer existed.
+  ri_d1_mlir_free:
+    name: RI-D1 MLIR-free native path (MLIR compiled out)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # THE STRONGEST LEG OF THE RI DEPENDENCY-CUT, and until now it was asserted
+    # by prose only: scripts/ri_d1_mlir_free_gate.sh was referenced by ANATOMY.md
+    # and docs/RI_DEPENDENCY_MATRIX.md and executed by no workflow, no preflight
+    # step and no hook.
+    #
+    # Every other RI-D evidence step observes at RUNTIME that no toolchain was
+    # spawned. This one removes the possibility BY CONSTRUCTION: it rebuilds mindc
+    # with `mlir-build` compiled OUT, so src/eval/mlir_build.rs is not in the
+    # binary at all. If the native path secretly depended on MLIR the binary would
+    # fail to LINK, and a "silent MLIR fallback" has nothing to fall back to.
+    #
+    # Deliberately NOT folded into mindcraft_self_host: that job installs the LLVM
+    # 20 toolchain and builds WITH mlir-build, and this gate's whole claim is a
+    # second, MLIR-free cargo profile (target/mlir-free). Sharing a job would
+    # share a target dir and blur exactly the distinction being proved.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/mlir-free
+          key: ${{ runner.os }}-ri-d1-mlir-free-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-ri-d1-mlir-free-
+
+      - name: Install strace (the gate's observation instrument)
+        # The gate exits 2 = BLOCKED when strace, cargo or the frozen stage1.elf
+        # is missing. BLOCKED is a developer-local outcome meaning "not measured";
+        # in CI it must never be mistaken for a pass, so the instrument is
+        # installed up front and the run step below maps 2 to FAILURE explicitly.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends strace
+
+      - name: MLIR un-linkable on the native path (ri_d1_mlir_free_gate.sh)
+        run: |
+          set +e
+          python3 scripts/run_gate.py scripts/ri_d1_mlir_free_gate.sh
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::RI-D1 MLIR-free gate exited 2 (BLOCKED) — a prerequisite"
+            echo "::error::was missing, so the MLIR-free claim was NOT measured."
+            echo "::error::An unmeasured claim is a FAILURE in CI, never a pass."
+            exit 1
+          fi
+          exit "$rc"
+        working-directory: ${{ github.workspace }}
+
   sdlc_integrity:
     name: SDLC gate integrity (merge + enforcement pairing)
     runs-on: ubuntu-latest
@@ -1495,6 +1577,19 @@ jobs:
         # unconditionally). This lint fails on any direct invocation that is not
         # declared, in the workflow itself, with a written reason.
         run: python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py
+
+      - name: Smoke-wiring lint must reject a gate that reaches no CI
+        # scripts/test_smoke_wiring_lint.py builds miniature fixture repos and
+        # runs the REAL lint against them, pinning two holes that let a GREEN
+        # lint certify an UNEXECUTED gate: a class=gate row wired only to the
+        # developer-local keystone/preflight runners, and an "runs
+        # UNCONDITIONALLY" claim written from inside preflight.sh's `--full`
+        # branch. Both were live defects; the fixtures encode the exact shapes.
+        #
+        # Non-vacuity: two of its five cases are controls that must stay GREEN,
+        # so a lint stubbed to always fail is caught as surely as one stubbed to
+        # always pass. It prints ran=/fail= counts, never a bare exit code.
+        run: python3 scripts/run_gate.py scripts/test_smoke_wiring_lint.py
 
       - name: Bench gate must fail CLOSED on a missing measurement
         # tools/test_bench_gate.py asserts the fail-closed contract of

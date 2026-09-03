@@ -246,14 +246,20 @@ def main() -> int:
         proc = run_gate(log_text, tier)
         got_nonzero = 1 if proc.returncode != 0 else 0
         ok = got_nonzero == want_nonzero
-        verdict = "ok" if ok else "FAIL"
+        # PASS, not `ok`: scripts/gate_assert.py counts a reported verdict
+        # from a fixed token set, and `[ok]` is outside it -- every case here
+        # published NO evidence, so the count marker below had nothing to
+        # refine and the gate graded `asserted=0` once routed.
+        verdict = "PASS" if ok else "FAIL"
         want = "non-zero" if want_nonzero else "0"
         print(f"[{verdict}] {name}: want exit {want}, got {proc.returncode}")
         if not ok:
             bad += 1
             sys.stdout.write(proc.stdout[-2500:])
             sys.stderr.write(proc.stderr[-2000:])
-    print(f"\nran={len(CASES)} fail={bad}")
+    # The sanctioned marker shape (see scripts/gate_assert.py MARKER_RES); a
+    # bare `ran=/fail=` is refused by examples/mindc_mind/smoke_wiring_lint.py.
+    print(f"\nSDLC-GATE exec_semantics_gate_selftest ran={len(CASES)} fail={bad}")
     if bad:
         print("FAIL: exec_semantics_gate.sh did not grade as required above")
         return 1

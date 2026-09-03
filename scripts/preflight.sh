@@ -137,7 +137,7 @@ step "tier gate fails CLOSED on a failing test  [ci.yml executable_semantics_tie
 # Synthetic tier logs replayed through --from-log, asserting the exit code — pure
 # text analysis, sub-second, so it belongs in the FAST path beside the lint above.
 if [ -f scripts/test_exec_semantics_gate.py ]; then
-  if tg_out=$(python3 scripts/test_exec_semantics_gate.py 2>&1); then
+  if tg_out=$(python3 scripts/run_gate.py scripts/test_exec_semantics_gate.py 2>&1); then
     printf '%s\n' "$tg_out" | grep -E '^ran=' | sed 's/^/  /'
   else
     bad "tier-gate mutation proof FAILED — exec_semantics_gate.sh no longer reds on a failing test:"
@@ -247,6 +247,73 @@ else
     printf '%s\n' "$cm_out" | grep -E '^(::error::|    msg:)' | head -12
   fi
 fi
+
+# --- git-level SDLC gates -------------------------------------------------
+# These run UNCONDITIONALLY: they are OUTSIDE the `--full` branch below, so every
+# preflight executes them.
+#
+# They were previously nested inside the mic@3 smoke's SUCCESS branch (merge
+# collateral, 5b0d0097), and then inside `--full` while a comment claimed they were
+# unconditional -- a gate whose execution depends on an unrelated red gate, or on a
+# flag, is not a gate, and a COMMENT saying otherwise is worse than silence because
+# it stops anyone from checking. examples/mindc_mind/smoke_wiring_lint.py now
+# locates this branch and fails on an unconditional-execution claim written inside
+# it, so the arrangement below is checked rather than asserted.
+#
+# They are text-only (git + python3 stdlib), need no toolchain and take seconds, so
+# "unconditional" costs nothing. The first two exist because of a real incident: a
+# merge deleted a security ENFORCEMENT line while its enum variant, Display arm,
+# error mapping AND its test all survived, so nothing failed to compile and the test
+# kept passing over a rule that no longer existed. The three gate-runner checks
+# below are text-only for the same reason and stood under the same unconditional
+# claim, so they are hoisted WITH them: leaving them inside `--full` would keep the
+# claim false for three of five gates while repairing it for two.
+#
+# Every call goes through scripts/run_gate.py. The runner is what turns "exit 0"
+# into "exited 0 AND published asserted=<N> AND announced no SKIP"; a direct call
+# here would be the second way to run a gate -- the way that cannot see a vacuous
+# pass -- in the very file that checks for it.
+#
+# --min-asserted 0 on lost_by_merge only: that gate is conditional BY DESIGN -- on a
+# non-merge HEAD there is no merge to audit and it correctly reports `ran=0`. That is
+# "not applicable", not "checked nothing", and it is the ONLY exemption from the
+# runner's N>=1 rule in this file; every other gate here must publish a non-zero
+# assertion count.
+python3 scripts/run_gate.py --min-asserted 0 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
+python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
+
+# Gate-runner wiring: a workflow may reach a gate ONLY through scripts/run_gate.py.
+# The runner is what refuses "exit 0 with nothing asserted"; a step invoking the
+# same gate directly is a second way to run it — the way that cannot see a vacuous
+# pass. Measured before this lint: 11 direct workflow invocations, two of them
+# publishing asserted=0 while exiting 0.
+python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py \
+  || bad "gate-runner wiring FAILED — a workflow reaches a gate without the runner"
+
+# The wiring lint's own SCOPE. It started at repository scripts only, so a step
+# whose gate IS `cargo test` was neither routed nor required to be declared — a
+# whole class of gate outside the mechanism with nothing recording that fact.
+# This pins the widened scope and pins the deferral: a cargo exemption must name
+# the upgrade path that ends it, and deleting the record turns the gate red. It is
+# the SAME module's --self-test entry point: a gate and the proof that it bites are
+# one artifact, so the proof cannot be deleted while the gate keeps riding green.
+python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py --self-test \
+  || bad "gate-runner cargo scope FAILED — a cargo gate is uncovered and undeclared"
+
+# The contract behind every OTHER gate in this file: scripts/gate_assert.py must
+# derive `asserted=<N>` from evidence (evaluated asserts, reported verdicts), never
+# from an integer a gate printed. Measured before this test existed: a smoke whose
+# case loop was emptied still reported the length of its case list, and a gate
+# writing `asserted=99` to stderr outranked the shim's verdict. Text-only, seconds.
+python3 scripts/run_gate.py tests/gate_assert_count_contract_test.py \
+  || bad "gate-assert count contract FAILED"
+
+# The smoke-wiring lint's own mutation proof: fixture repos in which a class=gate
+# row reaches no workflow, and in which preflight claims UNCONDITIONAL execution
+# from inside `--full`, must BOTH red the real lint. Two of its five cases are
+# controls that must stay green, so a lint stubbed either way is caught.
+python3 scripts/run_gate.py scripts/test_smoke_wiring_lint.py \
+  || bad "smoke-wiring lint self-test FAILED — the CI-coverage rule does not bite"
 
 if [ "${1:-}" = "--full" ]; then
   step "no-features test parity  [ci.yml Build & Test 'Test' steps — the fail-close regression class]"
@@ -369,62 +436,36 @@ if [ "${1:-}" = "--full" ]; then
   # of this commit: task #316 (goldens predate the #318 lower.rs merge fix). It is
   # reported, never silently skipped; see the banked rule "never print KEYSTONE=PASS
   # while #316 is red".
-# --- git-level SDLC gates -------------------------------------------------
-# These run UNCONDITIONALLY and BEFORE the mic@3 smoke.
+# --- artifact-dependent SDLC gates (--full only, and WHY) -----------------
+# These two are NOT in the fast path above, and the reason is a prerequisite, not
+# an oversight: dtk parity needs a built self-host .so and the RI-D1 ratchet needs
+# target/release/mindc (the fast path builds mindc into $PF_TARGET, deliberately,
+# so it cannot clobber the developer's binary) plus strace. Running them in the
+# fast path would report BLOCKED, and a gate that reports "not measured" on every
+# fast preflight teaches you to ignore it.
 #
-# They were previously nested inside that smoke's SUCCESS branch (merge collateral,
-# 5b0d0097). mic@3 primitives is known-red at this commit (#316, 4/122 stale goldens),
-# so the branch never executed and all four gates below silently did not run — a gate
-# whose execution depends on an unrelated red gate is not a gate. They are text-only
-# (git + python3 stdlib), need no toolchain, and take seconds.
-# SDLC gates (git-level, no build). Both exist because of a real incident: a merge
-# deleted a security ENFORCEMENT line while its enum variant, Display arm, error
-# mapping AND its test all survived, so nothing failed to compile and the test kept
-# passing over a rule that no longer existed.
-# --min-asserted 0: this gate is conditional BY DESIGN — on a non-merge HEAD there
-# is no merge to audit, and it correctly reports `ran=0`. That is "not applicable",
-# not "checked nothing", and it is the ONLY exemption from the runner's N>=1 rule in
-# this file; every other gate here must publish a non-zero assertion count.
-python3 scripts/run_gate.py --min-asserted 0 scripts/sdlc/lost_by_merge.py HEAD || bad "lost-by-merge gate FAILED"
+# DTK parity now ALSO runs in ci.yml's KEYSTONE job against the .so that job
+# builds, so its coverage no longer depends on a developer remembering `--full`.
+# The RI-D1 ratchet is deliberately NOT in CI: it is RED at this commit (3 of its
+# 5 in-profile programs are over-rejected `call.undefined_or_builtin`; see the
+# deferral in src/ir/frozen_profile.rs::admit_instrs_in), and wiring a red gate
+# would block every push on a known, recorded gap rather than gate a regression.
+# examples/mindc_mind/SMOKE_WIRING.tsv carries that exemption with its own
+# `deferred:` marker, which smoke_wiring_lint.py requires before a class=gate row
+# is allowed to reach no CI at all.
 
 # DTK register-allocator cross-implementation parity. The pure-MIND planner SHIPS
 # inside the frozen stage1.elf, so a divergence between it and the Rust reference is
-# a silent wrong-register miscompile. This was the only gate checking that, and it
-# was executed by nothing at all. MINDC_SO is set explicitly so a missing .so FAILS
-# rather than skipping.
+# a silent wrong-register miscompile. MINDC_SO is set explicitly so a missing .so
+# FAILS rather than skipping.
 MINDC_SO="${MINDC_SO:-$(ls examples/mindc_mind/libmindc_mind.so 2>/dev/null || echo /tmp/libmindc_mind_self_host.so)}" \
 MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testdata/dtk_plan_parity_smoke.py \
   || bad "DTK regalloc parity FAILED"
-python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforcement/test pairing FAILED"
-
-# Gate-runner wiring: a workflow may reach a gate ONLY through scripts/run_gate.py.
-# The runner is what refuses "exit 0 with nothing asserted"; a step invoking the
-# same gate directly is a second way to run it — the way that cannot see a vacuous
-# pass. Measured before this lint: 11 direct workflow invocations, two of them
-# publishing asserted=0 while exiting 0.
-python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py \
-  || bad "gate-runner wiring FAILED — a workflow reaches a gate without the runner"
-
-# The wiring lint's own SCOPE. It started at repository scripts only, so a step
-# whose gate IS `cargo test` was neither routed nor required to be declared — a
-# whole class of gate outside the mechanism with nothing recording that fact.
-# This pins the widened scope and pins the deferral: a cargo exemption must name
-# the upgrade path that ends it, and deleting the record turns the gate red. It is
-# the SAME module's --self-test entry point: a gate and the proof that it bites are
-# one artifact, so the proof cannot be deleted while the gate keeps riding green.
-python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py --self-test \
-  || bad "gate-runner cargo scope FAILED — a cargo gate is uncovered and undeclared"
-
-# The contract behind every OTHER gate in this file: scripts/gate_assert.py must
-# derive `asserted=<N>` from evidence (evaluated asserts, reported verdicts), never
-# from an integer a gate printed. Measured before this test existed: a smoke whose
-# case loop was emptied still reported the length of its case list, and a gate
-# writing `asserted=99` to stderr outranked the shim's verdict. Text-only, seconds.
-python3 scripts/run_gate.py tests/gate_assert_count_contract_test.py \
-  || bad "gate-assert count contract FAILED"
 
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
-# Verified green at 9d3d5d41; a regression here must block a push, not surface at flip time.
+# Was green at 9d3d5d41 and is RED now (the allowlist/corpus bijection gap above);
+# it stays here, failing loudly, because a ratchet that is quietly removed while it
+# is red is how a readiness claim survives the loss of its evidence.
 python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"
 
   if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then

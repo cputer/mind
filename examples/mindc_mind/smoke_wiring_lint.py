@@ -24,7 +24,34 @@ fails on any divergence, in either direction:
   * a file on disk with no manifest row            -> FAIL (new smoke, unclassified)
   * a manifest row with no file on disk            -> FAIL (stale row)
   * declared runners != actual runners             -> FAIL (drift)
-  * an unwired row with no stated reason           -> FAIL (silent gap)
+  * an unwired helper/tool/wip with no reason      -> FAIL (silent gap)
+  * a `gate` row that no WORKFLOW executes         -> FAIL (runs in no CI)
+
+The last two are ONE coverage rule split by class, not two rules that overlap: a
+`gate` owes CI execution (or a `deferred:` marker), every other class only owes a
+stated reason for being unwired. Reported as two errors for the same unwired gate,
+each read like the whole rule while neither was.
+
+The CI rule closes the hole the first three could not see. Matching the
+manifest to reality proves the manifest is honest; it says nothing about whether
+reality contains CI. `keystone` and `preflight` are developer-local runners --
+no workflow invokes fast_keystone.sh or preflight.sh -- so a `gate` wired only
+there is executed by nobody on a push, and a regression in it lands GREEN. Three
+gates sat in exactly that state, including the ONLY cross-implementation gate for
+the DTK register allocator that ships inside the frozen bootstrap ELF. A gate may
+still opt out, but only EXPLICITLY: its note must carry a `deferred:` marker
+naming the upgrade path, which is the same marker the rest of the repo uses for
+deliberate, reviewed gaps.
+
+BRANCH AWARENESS (why this lint reads preflight.sh's structure, not just its text)
+  preflight.sh carried a comment stating four gates "run UNCONDITIONALLY and
+  BEFORE the mic@3 smoke" while those gates sat inside the `--full` branch, so
+  they ran on no fast preflight at all. Parsed as flat text, the lint confirmed
+  the runner column that false claim implied. It now locates the `--full` branch
+  and rejects an unconditional-execution claim written from inside it -- the
+  branch extent is DERIVED from the script (the `--full` test line and its
+  column-0 `fi`), never hand-copied line numbers, which is how the previous
+  comment rotted in the first place.
 
 So adding a smoke and forgetting to wire it is now a build error that forces an
 explicit, reviewed decision instead of an invisible hole.
@@ -73,6 +100,14 @@ RUNNERS: dict[str, list[Path]] = {
 #   tool   an analysis or measurement utility, not a pass/fail gate
 #   wip    landed-but-unfinished; unwired on purpose, with the completion condition
 VALID_CLASSES = {"gate", "helper", "tool", "wip"}
+
+# The one runner label that means "a push actually executes this". `keystone`
+# and `preflight` are developer-local scripts no workflow invokes.
+CI_RUNNER = "ci"
+# A `gate` may sit outside CI only behind this explicit marker, which the rest of
+# the repo already uses for a deliberate, reviewed gap (see coding-style's
+# deferred-work marker). Reusing it keeps ONE vocabulary for "knowingly skipped".
+DEFERRAL_MARKER = "deferred:"
 
 NAME_RE = r"[A-Za-z0-9_]+"
 # Matches a runner reference with an OPTIONAL nested directory segment. The
@@ -136,6 +171,53 @@ def gate_sources() -> dict[str, Path]:
         if sub.stem.endswith(("_smoke", "_gate", "_lint")):
             found.setdefault(sub.stem, sub)
     return found
+
+# A conditional branch opener of the shape `if [ "${1:-}" = "--full" ]; then`.
+# Found by SHAPE, not by line number: the previous prose claim about this branch
+# rotted because it pinned :292-297 against an `if` at :171, and both moved.
+FULL_BRANCH_RE = re.compile(r'^if\s+\[.*--full.*\];\s*then\s*$')
+# A comment asserting that what follows is not conditional.
+UNCONDITIONAL_RE = re.compile(r"UNCONDITIONAL", re.IGNORECASE)
+
+
+def preflight_branch_errors() -> list[str]:
+    """Reject an 'runs UNCONDITIONALLY' claim made from INSIDE the --full branch.
+
+    preflight.sh has two execution regions: a fast region every invocation runs,
+    and the `--full` region only `preflight.sh --full` runs. A comment that
+    promises unconditional execution is a claim about WHICH region its gates are
+    in, and nothing checked it -- so four SDLC gates advertised as unconditional
+    ran only under --full. Both the branch extent and the claim are read out of
+    the script itself, so this cannot drift the way the line-numbered prose did.
+    """
+    path = ROOT / "scripts" / "preflight.sh"
+    if not path.is_file():
+        return [f"MISSING: {path} does not exist; preflight wiring cannot be checked."]
+    lines = path.read_text(encoding="utf-8").splitlines()
+    opens = [i for i, ln in enumerate(lines) if FULL_BRANCH_RE.match(ln)]
+    if not opens:
+        return []
+    errs: list[str] = []
+    for start in opens:
+        end = next((j for j in range(start + 1, len(lines))
+                    if lines[j].rstrip() == "fi"), None)
+        if end is None:
+            errs.append(
+                f"{path}:{start + 1}: the --full branch has no column-0 `fi`; the "
+                f"lint cannot tell which gates are conditional. Refusing to pass."
+            )
+            continue
+        for j in range(start + 1, end):
+            ln = lines[j]
+            if ln.lstrip().startswith("#") and UNCONDITIONAL_RE.search(ln):
+                errs.append(
+                    f"FALSE CLAIM: {path}:{j + 1} says gates run UNCONDITIONALLY, but "
+                    f"line {j + 1} is inside the `--full` branch opened at line "
+                    f"{start + 1} and closed at line {end + 1}, so they run ONLY on "
+                    f"`preflight.sh --full`. Hoist the gates above line {start + 1} "
+                    f"or correct the comment."
+                )
+    return errs
 
 
 def actual_wiring() -> dict[str, set[str]]:
@@ -553,7 +635,7 @@ def main() -> int:
         print(f"regenerated runners= column in {MANIFEST}")
         return 0
 
-    errors: list[str] = []
+    errors: list[str] = preflight_branch_errors()
     errors += scan_marker_violations()
     errors += scan_verdict_shape_violations()
 
@@ -590,7 +672,29 @@ def main() -> int:
                 f"scripts actually execute it in {fmt(actual[name])}. Either wire it "
                 f"where the manifest claims, or update the manifest."
             )
-        if not actual[name] and not note:
+        # COVERAGE, one predicate per class rather than two overlapping ones.
+        # `NO CI` and `SILENT GAP` both fired on a gate that is unwired with an
+        # empty note, so the same defect was reported twice in two vocabularies
+        # while each rule separately looked like the whole rule. For a `gate` the
+        # CI rule is strictly the stronger of the two -- an unwired, unexplained
+        # gate has no `ci` runner and no `deferred:` marker, so it is caught HERE
+        # and with the message that names the actual remedy. `SILENT GAP` keeps
+        # the weaker classes (helper/tool/wip), which are allowed to live outside
+        # CI and only owe a stated reason for being unwired.
+        if cls == "gate":
+            # `keystone` and `preflight` are developer-local scripts no workflow
+            # invokes, so a gate wired only there is executed by nobody on a push
+            # and a regression in it lands green. Opting out is allowed, but only
+            # with an explicit deferral marker naming the upgrade path.
+            if CI_RUNNER not in actual[name] and DEFERRAL_MARKER not in note:
+                errors.append(
+                    f"NO CI: {name} is class=gate but no workflow executes it "
+                    f"(actual runners: {fmt(actual[name])}). keystone/preflight are "
+                    f"local-only, so a regression here lands CI-green. Wire it into "
+                    f".github/workflows/, or state a `{DEFERRAL_MARKER}` reason in "
+                    f"the note column naming what must change before it can be wired."
+                )
+        elif not actual[name] and not note:
             errors.append(
                 f"SILENT GAP: {name} runs in NO runner and gives no reason. State why "
                 f"in the note column (or wire it)."

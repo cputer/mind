@@ -55,6 +55,16 @@ The `MLIR_UNLINKABLE_*` row is the strongest leg of rows #4/#5/#6: the earlier
 `*_IN_PROCESS_TREE = 0` proves MLIR is not *invoked* at runtime; the compiled-out
 build proves it is not *present* — fail-closed BY CONSTRUCTION (gate-assertion #1 (council-decided)).
 
+That gate is EXECUTED, not merely cited: `.github/workflows/ci.yml` job
+`ri_d1_mlir_free` ("RI-D1 MLIR-free native path (MLIR compiled out)") runs
+`scripts/ri_d1_mlir_free_gate.sh` on every push, and the job is listed in
+`.github/required-ci-jobs.tsv`, so a release cannot be cut from a commit it did not
+pass. The step maps the script's exit 2 (BLOCKED — a missing prerequisite, i.e. the
+claim was NOT measured) to a hard failure; in CI an unmeasured claim is never a pass.
+Until that job existed the row above was backed by prose alone: the script was
+referenced by this file and ANATOMY.md and invoked by no workflow, no preflight step
+and no hook.
+
 Consumer: `src/bin/mindc.rs::run_native_backend_bridge` (bridge, commit 52bd6d3b) →
 spawns the frozen pure-MIND `stage1.elf`, captures its stdout ELF, writes it. It does
 NOT call `resolve_tools()` / `build_all()` (the MLIR path), so the MLIR/clang absence is
