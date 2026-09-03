@@ -35,9 +35,33 @@ if [ -z "${PATTERN:-}" ] || [ -z "${PATTERN_CREDIT:-}" ]; then
   exit 1
 fi
 
-# Excludes: vendored node_modules, the generated file index, and the two files
-# that necessarily CONTAIN the example patterns (this one and the sourced
-# definitions file) - a gate that flags its own rulebook can never pass.
+# Excludes: vendored node_modules and the two files that necessarily CONTAIN
+# the example patterns (this one and the sourced definitions file) - a gate that
+# flags its own rulebook can never pass.
+#
+# ANATOMY.md is NOT excluded, though it used to be as "the generated file
+# index". That exclusion inverted the risk: ANATOMY.md is the one tracked file
+# whose contents are COPIED from other files (each entry carries a filename and
+# that file's first meaningful line), so it is the likeliest carrier of a credit
+# nobody typed by hand -- and it was the only file this gate never read. A
+# committed ANATOMY.md did in fact ship a line naming a model as this compiler's
+# owner while this gate printed PASS. Generated-ness is a reason to scan a
+# public artifact, never a reason to skip it; the generator is now restricted to
+# tracked files (scripts/anatomy.sh) so it has no private input to launder, and
+# this gate reads its output as it reads every other tracked doc.
+#
+# Measured while removing the exclusion: putting ANATOMY.md in scope is NECESSARY
+# but not SUFFICIENT for that leak. The line that actually shipped had the shape
+# "Handoff for <vendor> (compiler owner)", and neither PATTERN (which flags a
+# vendor token only next to an authorship/review verb) nor PATTERN_CREDIT (same,
+# in either order) matches it -- "owner" is not credit vocabulary. Widening the
+# shared pattern to flag a BARE vendor name is the wrong fix: a supported-client
+# integration target is explicitly allowed policy and appears legitimately in
+# README.md and scripts/anatomy.sh. The rule belongs to the
+# ARTIFACT instead -- a GENERATED index has no legitimate reason to carry a
+# vendor name in any position -- so it lives as a bare-name check over
+# ANATOMY.md in scripts/test_no_ai_attribution.py, which CI runs as a
+# release-required step in the same job as this gate.
 #
 # deferred: SCAN SCOPE is narrower than the tree — .ts (23 files), .yml (10),
 # .js (9), .c (7) and .mojo (4) are tracked but never scanned, so an attribution
@@ -50,7 +74,7 @@ fi
 # automatically, since it reads this pathspec rather than a second copy of it.
 PATHSPEC=(
   '*.md' '*.rs' '*.py' '*.mind' '*.sh' '*.toml' '*.rst' '*.txt'
-  ':!node_modules' ':!**/node_modules' ':!ANATOMY.md'
+  ':!node_modules' ':!**/node_modules'
   ':!scripts/check_no_ai_attribution.sh' ':!scripts/ai_attribution_patterns.sh'
 )
 

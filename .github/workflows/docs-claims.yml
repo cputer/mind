@@ -91,6 +91,21 @@ jobs:
       - name: No AI-attribution in public artifacts
         run: python3 scripts/run_gate.py scripts/check_no_ai_attribution.sh
 
+      - name: No-AI-attribution gate self-test (scope, not just verdict)
+        # A green run of the gate above proves the tree is clean TODAY; it never
+        # proves the gate would object if it were not. This step mutates a
+        # scratch copy and asserts the RED verdict appears, for the two holes
+        # that once lined up to put a model name into a committed public doc
+        # while the gate printed PASS: ANATOMY.md was excluded from the gate's
+        # pathspec, and scripts/anatomy.sh indexed UNTRACKED files, so a private
+        # local note could be transcribed into that very document. It also
+        # re-checks the committed ANATOMY.md against the TRACKED tree, which is
+        # what catches an index regenerated in the wrong checkout.
+        # Same job as the gate it tests, deliberately: this job already has a row
+        # in .github/required-ci-jobs.tsv, so the step is release-required
+        # without a new row (verify: python3 scripts/check_release_gating.py).
+        run: python3 scripts/run_gate.py scripts/test_no_ai_attribution.py
+
       - name: JSON is never an evidence-hash preimage (wedge integrity)
         run: python3 scripts/run_gate.py scripts/check_json_not_evidence.sh
 

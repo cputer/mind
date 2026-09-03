@@ -89,6 +89,34 @@ fi
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
 
+# Fail CLOSED if the root we resolved is not the worktree git is committing in.
+#
+# This is not hypothetical. A maintainer clone had .git/hooks/pre-commit
+# symlinked at an OLDER copy of this script, one whose ROOT_DIR walked
+# `dirname $BASH_SOURCE/../..` BEFORE consulting git. Committing from a `git
+# worktree` therefore resolved ROOT_DIR to the MAIN clone, regenerated THAT
+# checkout's ANATOMY.md there -- from that checkout's files, including its
+# untracked private notes -- and then ran `git add ANATOMY.md`, which honours
+# the GIT_INDEX_FILE git exported for the worktree's commit. The other
+# checkout's index was staged into this one's commit, and six commits landed
+# carrying a file index that described a different tree. Nothing printed a
+# warning: every gate had already run, and the substitution happened after them.
+#
+# A hook cannot make a stale INSTALLED copy of itself correct, but it can refuse
+# to write when the two roots disagree, so the next mis-install is a blocked
+# commit with a diagnosis instead of a silently wrong public document.
+GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$GIT_ROOT" ] && [ "$ROOT_DIR" != "$GIT_ROOT" ]; then
+  echo "pre-commit: ANATOMY refresh resolved a DIFFERENT tree than the commit's." >&2
+  echo "  resolved:  $ROOT_DIR" >&2
+  echo "  committing: $GIT_ROOT" >&2
+  echo "  Regenerating there would stage another checkout's file index into this" >&2
+  echo "  commit. This is a stale installed hook: re-install the tracked one with" >&2
+  echo "  'git config core.hooksPath .githooks' (CONTRIBUTING.md § Setup) and drop" >&2
+  echo "  any .git/hooks/pre-commit symlink." >&2
+  exit 1
+fi
+
 ANATOMY="$ROOT_DIR/ANATOMY.md"
 SCRIPT="$ROOT_DIR/scripts/anatomy.sh"
 

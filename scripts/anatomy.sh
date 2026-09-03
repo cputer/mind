@@ -118,9 +118,26 @@ done
 cd "$TARGET_DIR"
 
 # Collect files (respect .gitignore if in a git repo)
+#
+# TRACKED FILES ONLY, deliberately. This once enumerated `--cached --others
+# --exclude-standard`, i.e. untracked-but-not-ignored files too. ANATOMY.md is
+# COMMITTED and PUBLIC, and it transcribes each indexed file's name and first
+# meaningful line -- so any private, uncommitted note that happened to be
+# sitting in the checkout when the index was regenerated was copied verbatim
+# into a public document. That is exactly what happened: two local handoff
+# notes, one of them naming a model as this compiler's owner, entered
+# ANATOMY.md from a checkout that had them lying around untracked.
+#
+# The fix is at the input set, not at the output filter: with `--cached` the
+# generator structurally cannot see a file that is not already public, so no
+# amount of local scratch in a working tree can leak through it. A consequence
+# worth stating: a NEW file must be `git add`ed before it appears in the index.
+# That is the intended trade -- an index that lags a brand-new file by one
+# `git add` is strictly safer than one that publishes private notes.
+# Guarded by scripts/test_no_ai_attribution.py.
 collect_files() {
   if git rev-parse --is-inside-work-tree &>/dev/null; then
-    git ls-files --cached --others --exclude-standard 2>/dev/null
+    git ls-files --cached 2>/dev/null
   else
     find . -maxdepth "$MAX_DEPTH" -type f \
       -not -path '*/.git/*' \
@@ -174,8 +191,17 @@ files=$(collect_files | filter_files | awk '{
 total_files=0
 total_tokens=0
 
-# Get project name
-project_name=$(basename "$(pwd)")
+# Get project name.
+#
+# NOT basename(pwd): ANATOMY.md is committed, so the checkout DIRECTORY name
+# would end up in a public artifact and would differ between the main clone and
+# every `git worktree` (`mind` vs `fix-wt-<branch>`), making a regeneration from
+# a worktree look like a real content change and leaking local scratch paths.
+# The remote's repository name is the same from every checkout of the same repo,
+# which is the property the field actually wants. basename(pwd) stays as the
+# fallback so this remains usable in a repo with no remote, or outside git.
+project_name=$(basename -s .git "$(git config --get remote.origin.url 2>/dev/null)" 2>/dev/null || true)
+[ -z "$project_name" ] && project_name=$(basename "$(pwd)")
 
 # Count stats first
 declare -A dir_tokens
