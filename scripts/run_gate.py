@@ -95,6 +95,7 @@ binary absent, 108 of the 146 corpus gates still exited 0.
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import pathlib
 import subprocess
@@ -305,14 +306,83 @@ def compiler_dependent(rel: str,
     return any(m in code for m in handles)
 
 
+# The env-var handles the ENV-POINTED leg sets, in the one place that sets them.
+# `supplies_own_handles()` reads this same tuple rather than re-typing the names,
+# because a leg whose action and whose expected-RED derivation name two different
+# sets is the drift this runner exists to refuse.
+ENV_POINTED_HANDLES = ("MINDC", "MINDC_BIN", "MINDC_SO", "MINDC_NATIVE_ELF",
+                       "MINDC_SO_NOBUILD")
+
+
 def _absent_toolchain_env() -> dict[str, str]:
     """Every compiler handle the corpus consults, pointed at a path that is not there."""
     env = dict(os.environ)
     missing = str(ROOT / ".gate-vacuity-sweep" / "absent")
-    for var in ("MINDC", "MINDC_BIN", "MINDC_SO", "MINDC_NATIVE_ELF"):
+    for var in ENV_POINTED_HANDLES:
         env[var] = missing
     env["MINDC_SO_NOBUILD"] = "1"
     return env
+
+
+def supplies_own_handles(rel: str) -> bool:
+    """True iff this gate WRITES every env handle the env-pointed leg would set.
+
+    The leg's whole action is putting those variables in the environment. A gate
+    that ASSIGNS them itself -- `os.environ["MINDC_SO"] = <fabricated path>` --
+    never reads what the leg put there, so removing the compiler that way proves
+    nothing about it, in either direction. Requiring it RED would be requiring a
+    gate to fail for a reason it cannot observe.
+
+    That is the same derivation the rest of this file uses (an expected-RED set
+    read out of what the leg actually removes), not a second hand-written
+    allowlist: the answer comes from the GATE'S OWN SOURCE, and it is narrow.
+    Measured over the whole corpus at the commit that added this: exactly ONE
+    gate qualifies -- selfhost_so_provenance_smoke.py, which fabricates stale,
+    fresh, sidecar-stamped and absent oracles in a temp tree in order to assert
+    that resolve_so() REFUSES the ones it cannot prove fresh. It is a static
+    contract test of the resolver, in the same class as the pure lints, and it
+    is correct to pass with no compiler anywhere.
+
+    A gate that merely READS a handle is untouched by this: it is still required
+    RED. The exemption is printed by name on every sweep, so growth in this class
+    is visible rather than silent.
+    """
+    try:
+        src = (ROOT / rel).read_text(encoding="utf-8")
+        code = _code_without_prose(src)
+        tree = ast.parse(code)
+    except (OSError, SyntaxError):
+        return False  # unreadable/unparseable: never assume immunity
+
+    def _env_key(node: ast.AST) -> str | None:
+        """`os.environ[<literal>]` -> the literal, else None."""
+        if not isinstance(node, ast.Subscript):
+            return None
+        v = node.value
+        if not (isinstance(v, ast.Attribute) and v.attr == "environ"):
+            return None
+        k = node.slice
+        return k.value if isinstance(k, ast.Constant) and isinstance(k.value, str) else None
+
+    written: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                key = _env_key(tgt)
+                if key:
+                    written.add(key)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            # `os.environ.pop("MINDC_SO", None)` -- clearing the ambient value is
+            # supplying it just as much as overwriting it is.
+            if isinstance(fn, ast.Attribute) and fn.attr in ("pop", "setdefault") \
+                    and isinstance(fn.value, ast.Attribute) and fn.value.attr == "environ" \
+                    and node.args and isinstance(node.args[0], ast.Constant) \
+                    and isinstance(node.args[0].value, str):
+                written.add(node.args[0].value)
+
+    named = {h for h in ENV_POINTED_HANDLES if f"'{h}'" in code or f'"{h}"' in code}
+    return bool(named) and named <= written
 
 
 def _unset_toolchain_env() -> tuple[dict[str, str], str]:
@@ -471,6 +541,13 @@ def sweep(expect_all_fail: bool, jobs: int, timeout: int) -> int:
         print(f"run_gate: {len(static)} corpus gate(s) consult no compiler handle "
               f"and are correctly exempt from the absent-toolchain sweep: "
               f"{', '.join(pathlib.Path(g).name for g in sorted(static)) or '(none)'}")
+        # SECOND exemption class, derived the same way and printed the same way:
+        # a gate that SETS the handles this leg sets cannot observe this leg.
+        own = [g for g in gates if supplies_own_handles(g)]
+        gates = [g for g in gates if g not in own]
+        print(f"run_gate: {len(own)} corpus gate(s) supply their own toolchain "
+              f"handles and are structurally immune to the env-pointed leg: "
+              f"{', '.join(pathlib.Path(g).name for g in sorted(own)) or '(none)'}")
         if not gates:
             print("run_gate: FAIL — no compiler-dependent gate found in the corpus; "
                   "the handle detection is wrong, not the corpus. "

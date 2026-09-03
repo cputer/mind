@@ -7,23 +7,42 @@ gitignored (`examples/**/*.so`). Crucially, `cargo build` does NOT produce it;
 only `mindc build --emit=cdylib` does. So an in-tree copy left over from an
 older build goes STALE and silently false-fails the byte-identity smokes
 (mic@3 flip, self-host loop, native-ELF, ...): the driver bytes drift from the
-oracle even though nothing is actually wrong. CI never hits this — it builds the
-`.so` fresh each run and points `MINDC_SO` at `/tmp/libmindc_mind_self_host.so`.
+oracle even though nothing is actually wrong. Worse in the other direction, a
+stale oracle that HAPPENS to agree with an equally stale expectation certifies
+byte-identity for a compiler nobody is building any more.
 
 `resolve_so()` gives a purely-local run the same guarantee CI has:
 
-  1. `MINDC_SO` set          -> use it verbatim (the CI contract, unchanged).
+  1. `MINDC_SO` set          -> use it, AFTER verifying it is not older than the
+                                compile inputs (stamp sidecar, else mtime).
   2. else, release `mindc`   -> BUILD THE SELF-HOST `.so` FRESH via
      binary present             `mindc build --release --emit=cdylib` into a
                                 per-tree temp cache (rebuilt only when `mindc`,
-                                `main.mind`, `selfhost_driver.mind` or `Mind.toml`
-                                change), so no stale in-tree `.so` is ever trusted.
-  3. else                    -> fall back to the legacy in-tree path so each
-                                smoke's existing not-found (SKIP/BLOCKED)
-                                fail-closed handling fires exactly as before.
+                                `main.mind`, `selfhost_driver.mind`, `Mind.toml`
+                                or any `std/*.mind` change).
+  3. else                    -> the legacy in-tree path, tagged as such.
 
-Escape hatch: `MINDC_SO_NOBUILD=1` forces the legacy in-tree default (no build) —
-e.g. to point a smoke at whatever `.so` happens to be next to it on purpose.
+Provenance, and why it is enforced HERE
+---------------------------------------
+Every route returns a `ResolvedSo` — a `pathlib.Path` that CARRIES where it came
+from (`FRESH_BUILD` / `ENV_VERIFIED` / `ENV_STALE` / `LEGACY_IN_TREE`). The
+qualification used to be advisory ("callers that draw a CONCLUSION must qualify
+it") and exactly ONE of ~47 importers did so, while the `MINDC_SO` route set no
+marker at all — so pointing `MINDC_SO` at the legacy artifact laundered it as a
+promised real oracle and sibling gates printed `ALL PASS` on bytes the self-host
+loop gate, given the same file, refuses. A contract that every call site must
+remember is not a contract.
+
+So `resolve_so()` is STRICT BY DEFAULT: a non-fresh oracle is REFUSED
+(`SystemExit`) and no importer has to opt in to that. A genuinely age-tolerant
+caller opts out explicitly and NAMES its reason:
+
+    so = resolve_so(allow_stale=True, reason="only reads the ELF header")
+
+Escape hatch: `MINDC_SO_NOBUILD=1` still selects the legacy in-tree artifact
+without building — but it is tagged `LEGACY_IN_TREE`, so it is refused unless
+the caller also passes `allow_stale=True`. Gate:
+`examples/mindc_mind/selfhost_so_provenance_smoke.py`.
 """
 
 import hashlib
@@ -38,30 +57,70 @@ _REPO = _HERE.parents[1]
 _LEGACY_SO = _HERE / "libmindc_mind.so"
 _MINDC = _REPO / "target" / "release" / "mindc"
 
-#: True once `resolve_so()` has fallen back to the legacy in-tree `.so` because a
-#: fresh build was impossible. Callers that draw a CONCLUSION from the resolved
-#: `.so` must qualify it: stale bytes cannot distinguish real drift from age.
+#: Provenance tags carried by every resolved path.
+FRESH_BUILD = "fresh-build"  # emitted this run (or cached against an identical stamp)
+ENV_VERIFIED = "env-verified"  # MINDC_SO, proven not older than the compile inputs
+ENV_STALE = "env-stale"  # MINDC_SO, older than a compile input -> untrustworthy
+LEGACY_IN_TREE = "legacy-in-tree"  # in-tree artifact of unknown age
+
+#: The provenances a byte-identity verdict may rest on.
+FRESH = frozenset({FRESH_BUILD, ENV_VERIFIED})
+
+#: Back-compat view for callers that already qualified their verdict (kept so the
+#: self-host loop gate's fallback wording keeps working). It is now DERIVED from
+#: the provenance of the last resolution, not a second bookkeeping variable.
 USED_LEGACY_FALLBACK = False
 
+#: Provenance of the most recent `resolve_so()` result (None before the first).
+PROVENANCE: str | None = None
 
-def _stamp() -> str:
-    """Fingerprint of every input that affects the emitted self-host `.so`."""
-    parts = []
-    # EVERY compile input, not just the entry. main.mind imports std.vec / std.map
-    # / std.string / std.io, so a std/ edit changes the emitted .so while leaving
-    # this stamp identical -- and _build_fresh() would then serve the CACHED .so as
-    # "fresh" with USED_LEGACY_FALLBACK False, reintroducing the stale-oracle bug
-    # class through the cache and defeating the very flag that guards it. The whole
-    # of std/ is stamped rather than the four current imports, so adding an import
-    # cannot silently narrow the fingerprint again.
-    std_inputs = sorted((_REPO / "std").glob("*.mind"))
-    for p in (
+
+class ResolvedSo(pathlib.Path):
+    """A resolved `.so` path that carries its own provenance.
+
+    A `Path` subclass so all ~47 existing call sites keep using it as a path
+    (`str(so)`, `so.exists()`, `ctypes.CDLL(str(so))`) while a verdict-drawing
+    caller can ask `so.is_fresh` instead of consulting a module global it has to
+    know about. Class-level defaults keep derived paths (`so.parent / "x"`)
+    from raising.
+    """
+
+    provenance: str = LEGACY_IN_TREE
+    detail: str = "derived path — provenance not carried"
+
+    def __init__(self, *args, provenance: str = LEGACY_IN_TREE, detail: str = ""):
+        super().__init__(*args)
+        self.provenance = provenance
+        self.detail = detail
+
+    @property
+    def is_fresh(self) -> bool:
+        """True only when a byte-identity verdict may rest on these bytes."""
+        return self.provenance in FRESH
+
+
+def _stamp_inputs() -> list[pathlib.Path]:
+    """EVERY compile input that affects the emitted self-host `.so`.
+
+    One list, two consumers (`stamp()` and `_newest_input_mtime_ns()`), so the
+    freshness check can never police a narrower set than the cache key does.
+    main.mind imports std.vec / std.map / std.string / std.io, so a std/ edit
+    changes the emitted `.so`; the whole of std/ is stamped rather than the four
+    current imports, so adding an import cannot silently narrow the fingerprint.
+    """
+    return [
         _MINDC,
         _HERE / "main.mind",
         _HERE / "selfhost_driver.mind",
         _REPO / "Mind.toml",
-        *std_inputs,
-    ):
+        *sorted((_REPO / "std").glob("*.mind")),
+    ]
+
+
+def stamp() -> str:
+    """Fingerprint of every input that affects the emitted self-host `.so`."""
+    parts = []
+    for p in _stamp_inputs():
         try:
             st = p.stat()
             parts.append(f"{p}:{st.st_mtime_ns}:{st.st_size}")
@@ -70,13 +129,61 @@ def _stamp() -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
+#: Historical private name; `stamp()` is the public one (the gate calls it).
+_stamp = stamp
+
+
+def _newest_input_mtime_ns() -> tuple[int, pathlib.Path | None]:
+    """(mtime_ns, path) of the most recently modified compile input."""
+    newest, which = 0, None
+    for p in _stamp_inputs():
+        try:
+            m = p.stat().st_mtime_ns
+        except OSError:
+            continue
+        if m > newest:
+            newest, which = m, p
+    return newest, which
+
+
+def _env_provenance(p: pathlib.Path) -> tuple[str, str]:
+    """Classify a caller-supplied `MINDC_SO`: (provenance, human detail).
+
+    Two independent ways to be fresh, because CI and a local build differ:
+      * a `<so>.stamp` sidecar matching the current tree stamp — what
+        `_build_fresh()` writes, and survives an mtime-rewriting checkout;
+      * an mtime not older than every compile input — what CI's build-then-run
+        step produces, with no sidecar at all.
+    Anything else is `ENV_STALE`: it may predate the sources it claims to
+    compile, and a byte verdict from it cannot tell drift from age.
+    """
+    sidecar = p.with_name(p.name + ".stamp")
+    try:
+        if sidecar.is_file() and sidecar.read_text().strip() == stamp():
+            return ENV_VERIFIED, f"stamp sidecar {sidecar.name} matches the current tree"
+    except OSError:
+        pass
+    newest, which = _newest_input_mtime_ns()
+    try:
+        so_m = p.stat().st_mtime_ns
+    except OSError:
+        return ENV_STALE, "could not stat the artifact"
+    if so_m >= newest:
+        return ENV_VERIFIED, "artifact is newer than every compile input"
+    return (
+        ENV_STALE,
+        f"artifact mtime is OLDER than {which} "
+        f"(artifact {so_m} < input {newest})",
+    )
+
+
 def _build_fresh() -> pathlib.Path | None:
     """Emit the self-host cdylib fresh (cached by input stamp). None on failure."""
     cache = pathlib.Path(tempfile.gettempdir()) / "mindc_mind_selfhost_cache"
     cache.mkdir(parents=True, exist_ok=True)
     so = cache / "libmindc_mind.so"
     stampf = cache / "stamp"
-    want = _stamp()
+    want = stamp()
     if so.exists() and stampf.is_file() and stampf.read_text() == want:
         return so
     proc = subprocess.run(
@@ -94,14 +201,52 @@ def _build_fresh() -> pathlib.Path | None:
         )
         return None
     stampf.write_text(want)
+    # Sidecar next to the artifact so a caller that later passes this path
+    # through MINDC_SO can prove its freshness without re-deriving it.
+    try:
+        so.with_name(so.name + ".stamp").write_text(want)
+    except OSError:
+        pass
     return so
 
 
-def resolve_so() -> pathlib.Path:
-    """Resolve the self-host `.so` path (see module docstring for the order)."""
-    # Declared once for the whole function: BOTH fallback routes below assign it,
-    # and Python rejects a `global` that follows an assignment in the same scope.
-    global USED_LEGACY_FALLBACK
+def _refuse(so: ResolvedSo) -> None:
+    """Fail CLOSED on an oracle that cannot support a byte-identity verdict."""
+    how = (
+        "unset MINDC_SO and let this resolver build one, or emit it yourself:\n"
+        f"  cargo build --release --bin mindc --features "
+        f"mlir-build,std-surface,cross-module-imports\n"
+        f"  ./target/release/mindc build --release --emit=cdylib --out=/tmp/oracle.so\n"
+        f"  MINDC_SO=/tmp/oracle.so <re-run this gate>"
+    )
+    raise SystemExit(
+        f"FAIL[_selfhost_so]: refusing a NON-FRESH self-host oracle.\n"
+        f"  path       : {so}\n"
+        f"  provenance : {so.provenance}\n"
+        f"  why        : {so.detail}\n"
+        f"  A verdict drawn from these bytes cannot distinguish real drift from "
+        f"an old artifact, and an agreement between two equally old artifacts "
+        f"proves nothing about the current source. Build a fresh oracle: {how}\n"
+        f"  (A caller that genuinely tolerates age must say so in code: "
+        f"resolve_so(allow_stale=True, reason=...).)"
+    )
+
+
+def resolve_so(*, allow_stale: bool = False, reason: str = "") -> ResolvedSo:
+    """Resolve the self-host `.so`, REFUSING a non-fresh oracle by default.
+
+    `allow_stale=True` requires a non-empty `reason`: an opt-out from the
+    freshness contract has to name itself, so it is reviewable and greppable
+    rather than a silent default nobody notices.
+    """
+    global USED_LEGACY_FALLBACK, PROVENANCE
+    if allow_stale and not reason.strip():
+        raise SystemExit(
+            "FAIL[_selfhost_so]: resolve_so(allow_stale=True) requires reason=... "
+            "— an opt-out from the stale-oracle refusal must name why this caller "
+            "does not draw a byte-identity verdict from the artifact."
+        )
+
     env = os.environ.get("MINDC_SO")
     if env:
         # Fail CLOSED on an explicit-but-missing MINDC_SO. Setting it is a promise
@@ -109,10 +254,10 @@ def resolve_so() -> pathlib.Path:
         # ci.yml, fast_keystone.sh and preflight.sh all invoke these smokes. Handing
         # the path back regardless left each of ~46 importers to decide, and eight of
         # them printed `SKIP ... not built` and returned 0: a broken wiring graded as
-        # a green gate. Several callers already open-code this refusal; centralising
-        # it means a NEW smoke cannot reintroduce the hole by forgetting to.
+        # a green gate. `allow_stale` does NOT relax this: absence is not age.
         p = pathlib.Path(env)
         if not p.is_file():
+            PROVENANCE = None
             raise SystemExit(
                 f"FAIL[_selfhost_so]: MINDC_SO is set to {env!r} but no such file "
                 f"exists. Refusing to skip -- with MINDC_SO set, a skip would grade "
@@ -120,25 +265,46 @@ def resolve_so() -> pathlib.Path:
                 f"`mindc build --release --emit=cdylib --out={env}`, or unset "
                 f"MINDC_SO to let this resolver build a fresh one."
             )
-        return p
-    if os.environ.get("MINDC_SO_NOBUILD") or not _MINDC.exists():
+        prov, detail = _env_provenance(p)
+        # The route that used to set NO marker at all. An explicit MINDC_SO is a
+        # promise that a real oracle is there, but a promise is not a timestamp:
+        # preflight itself pointed it at the legacy in-tree artifact, and the
+        # unmarked path laundered those months-old bytes as a fresh oracle.
+        so = ResolvedSo(p, provenance=prov, detail=detail)
+    elif os.environ.get("MINDC_SO_NOBUILD") or not _MINDC.exists():
         # Second route to the legacy artifact (explicit escape hatch, or no
         # release mindc to build with). The REASON differs from the build-failure
         # route below, but the consequence is identical: these bytes may be
-        # arbitrarily old, so any caller drawing a conclusion from them must
-        # qualify it. Instrumenting only one of the two routes left the flag
-        # False on this path and the unqualified verdict was still printed.
-        USED_LEGACY_FALLBACK = True
-        return _LEGACY_SO
-    fresh = _build_fresh()
-    if fresh is not None:
-        return fresh
-    # Fell back to the legacy in-tree artifact. It WARNs above, but a caller that
-    # goes on to assert a verdict from these bytes cannot tell "source drifted"
-    # from "this .so is months old" -- so record the fallback and let the caller
-    # qualify its conclusion. See self_host_loop_smoke.py's ORACLE leg.
-    USED_LEGACY_FALLBACK = True
-    return _LEGACY_SO
+        # arbitrarily old.
+        so = ResolvedSo(
+            _LEGACY_SO,
+            provenance=LEGACY_IN_TREE,
+            detail=(
+                "MINDC_SO_NOBUILD was set"
+                if os.environ.get("MINDC_SO_NOBUILD")
+                else f"no release mindc at {_MINDC} to build a fresh oracle with"
+            ),
+        )
+    else:
+        fresh = _build_fresh()
+        if fresh is not None:
+            so = ResolvedSo(
+                fresh, provenance=FRESH_BUILD, detail="emitted from the current tree"
+            )
+        else:
+            # Fell back to the legacy in-tree artifact. It WARNs above; the caller
+            # still gets a path tagged for what it is.
+            so = ResolvedSo(
+                _LEGACY_SO,
+                provenance=LEGACY_IN_TREE,
+                detail="`mindc build --emit=cdylib` failed (see the WARN above)",
+            )
+
+    PROVENANCE = so.provenance
+    USED_LEGACY_FALLBACK = not so.is_fresh
+    if not so.is_fresh and not allow_stale:
+        _refuse(so)
+    return so
 
 
 def resolve_mindc() -> str:

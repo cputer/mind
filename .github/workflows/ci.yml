@@ -454,12 +454,42 @@ jobs:
         # corpus — a wedge break — and MUST fail the build.
         run: |
           set -euo pipefail
-          AVX2="$(cat avx2/mindfuzz_digest_avx2.txt)"
-          NEON="$(cat neon/mindfuzz_digest_neon.txt)"
-          echo "avx2 (x86_64) batch mic@3 digest = ${AVX2}"
-          echo "neon (aarch64) batch mic@3 digest = ${NEON}"
+          # File format (written by tests/mindfuzz_cross_substrate.rs):
+          #   iters=<program count>
+          #   <64-hex batch mic@3 digest>
+          # The count is compared as well as the digest. Equality of two digests
+          # says nothing about how much was hashed: with MINDFUZZ_ITERS=0 both
+          # runners wrote the SHA-256 of NOTHING — non-empty, equal, and this job
+          # printed PASS having compared no programs at all. The test now refuses
+          # any count below its floor, and this job refuses a file that does not
+          # state a count at or above that floor, so neither side can go vacuous.
+          MIN_ITERS=32
+          read_count() { sed -n 's/^iters=\([0-9][0-9]*\)$/\1/p' "$1" | head -1; }
+          read_digest() { sed -n '2p' "$1" | tr -d '[:space:]'; }
+          AVX2_N="$(read_count avx2/mindfuzz_digest_avx2.txt)"
+          NEON_N="$(read_count neon/mindfuzz_digest_neon.txt)"
+          AVX2="$(read_digest avx2/mindfuzz_digest_avx2.txt)"
+          NEON="$(read_digest neon/mindfuzz_digest_neon.txt)"
+          echo "avx2 (x86_64)  programs = ${AVX2_N:-<none>}  batch mic@3 digest = ${AVX2}"
+          echo "neon (aarch64) programs = ${NEON_N:-<none>}  batch mic@3 digest = ${NEON}"
           if [ -z "${AVX2}" ] || [ -z "${NEON}" ]; then
             echo "FAIL: a batch digest is empty — the fuzzer did not run on a substrate"
+            exit 1
+          fi
+          if [ -z "${AVX2_N}" ] || [ -z "${NEON_N}" ]; then
+            echo "FAIL: a digest file states no program count — refusing to compare"
+            echo "      two digests over an unknown (possibly empty) corpus."
+            exit 1
+          fi
+          if [ "${AVX2_N}" -lt "${MIN_ITERS}" ] || [ "${NEON_N}" -lt "${MIN_ITERS}" ]; then
+            echo "FAIL: fuzzed corpus below the floor (${MIN_ITERS}):"
+            echo "      avx2=${AVX2_N} neon=${NEON_N}. A digest over a shrunken corpus"
+            echo "      is not evidence of cross-substrate identity."
+            exit 1
+          fi
+          if [ "${AVX2_N}" != "${NEON_N}" ]; then
+            echo "FAIL: the runners fuzzed DIFFERENT program counts"
+            echo "      (avx2=${AVX2_N}, neon=${NEON_N}) — the digests are not comparable."
             exit 1
           fi
           if [ "${AVX2}" != "${NEON}" ]; then
@@ -468,7 +498,7 @@ jobs:
             echo "      a difference is a real x86 != ARM cross-substrate wedge break."
             exit 1
           fi
-          echo "PASS: avx2 == neon — fuzzed corpus is byte-identical mic@3 across substrates."
+          echo "PASS: avx2 == neon over ${AVX2_N} programs — fuzzed corpus is byte-identical mic@3 across substrates."
 
   format:
     name: Format Check
@@ -683,6 +713,24 @@ jobs:
             sha256sum /tmp/libmindc_mind_self_host.so /tmp/libmindc_mind_direct.so
             exit 1
           fi
+
+      - name: Self-host stale-oracle guard (selfhost_so_provenance_smoke.py)
+        # Every smoke below resolves its `.so` through `_selfhost_so.resolve_so()`.
+        # That resolver used to hand back whatever `MINDC_SO` named without any
+        # freshness check, and only ONE of ~47 importers consulted the fallback
+        # flag — so a months-old in-tree artifact could certify byte-identity in
+        # every sibling gate while the self-host loop gate, on the same bytes,
+        # refused. This asserts the resolver still REFUSES what it cannot prove
+        # fresh and that no smoke opts out unnamed. Pure stdlib; needs no `.so`.
+        #
+        # --min-asserted 16 is what makes the count load-bearing. This gate reports
+        # sixteen NAMED legs and does not loop, so an unpinned floor of 1 would be
+        # cleared by any one of them; with the floor at the leg count, deleting a
+        # check fails HERE instead of quietly shrinking the evidence.
+        run: |
+          python3 scripts/run_gate.py --min-asserted 16 \
+            examples/mindc_mind/selfhost_so_provenance_smoke.py
+        working-directory: ${{ github.workspace }}
 
       - name: Real-body emitter smoke (self_host_body_smoke.py)
         run: |

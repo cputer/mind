@@ -456,11 +456,31 @@ if [ "${1:-}" = "--full" ]; then
 
 # DTK register-allocator cross-implementation parity. The pure-MIND planner SHIPS
 # inside the frozen stage1.elf, so a divergence between it and the Rust reference is
-# a silent wrong-register miscompile. MINDC_SO is set explicitly so a missing .so
-# FAILS rather than skipping.
-MINDC_SO="${MINDC_SO:-$(ls examples/mindc_mind/libmindc_mind.so 2>/dev/null || echo /tmp/libmindc_mind_self_host.so)}" \
+# a silent wrong-register miscompile. This was the only gate checking that, and it
+# was executed by nothing at all.
+#
+# MINDC_SO is deliberately NOT set here any more. It used to default to
+# `examples/mindc_mind/libmindc_mind.so` "so a missing .so FAILS rather than
+# skipping" -- but that in-tree artifact is a gitignored leftover that `cargo build`
+# never regenerates, and handing it through MINDC_SO laundered months-old bytes as a
+# promised real oracle: this gate printed ALL PASS on the exact .so the self-host
+# loop gate refuses. Both properties now hold WITHOUT the default, because
+# `_selfhost_so.resolve_so()` builds a fresh cdylib when MINDC_SO is unset and
+# REFUSES (non-zero) any oracle it cannot prove fresh -- so a missing or stale .so
+# still fails rather than skipping, and a stale one can no longer pass.
 MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testdata/dtk_plan_parity_smoke.py \
   || bad "DTK regalloc parity FAILED"
+
+# Stale-oracle provenance contract for the ~47 self-host smokes (pure stdlib, no
+# build). The freshness qualification used to live in ONE importer and the MINDC_SO
+# route set no marker at all, so a stale oracle could certify byte-identity in every
+# sibling gate. This asserts resolve_so() still refuses what it cannot prove fresh.
+# --min-asserted 16: sixteen named legs, no loop -- an unpinned floor of 1 would be
+# cleared by any single one of them, so the floor is the leg count (same pin as the
+# ci.yml step; scripts/gate_runner_wiring_lint.py reads both call sites).
+python3 scripts/run_gate.py --min-asserted 16 \
+  examples/mindc_mind/selfhost_so_provenance_smoke.py \
+  || bad "self-host stale-oracle guard FAILED"
 
 # RI-D1 readiness ratchet (#313): native-backend readiness for the frozen profile.
 # Was green at 9d3d5d41 and is RED now (the allowlist/corpus bijection gap above);
@@ -469,8 +489,11 @@ MIND_DTK_SKIP_RUST_REGEN=1 python3 scripts/run_gate.py examples/mindc_mind/testd
 python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || bad "RI-D1 readiness gate FAILED"
 
   if [ -f examples/mindc_mind/mic3_primitives_smoke.py ]; then
-    if mp_out=$(MINDC_SO="${MINDC_SO:-/tmp/libmindc_mind_self_host.so}" \
-                python3 scripts/run_gate.py examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
+    # No MINDC_SO default (see the DTK step above): unset, the resolver builds a
+    # fresh oracle and refuses a non-fresh one, which is both fail-closed and
+    # stale-proof. The old default named CI's /tmp path, which locally does not
+    # exist at all.
+    if mp_out=$(python3 scripts/run_gate.py examples/mindc_mind/mic3_primitives_smoke.py 2>&1); then
 
       echo "ok (mic@3 primitives byte-exact vs the live oracle)"
     else
@@ -487,7 +510,10 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
   # stage0 seed stale. This gate runs the FROZEN pure-MIND ELF on the CURRENT source
   # (PRIMARY mode — no MINDC_SO needed) and asserts it still reproduces the seed: the
   # exact drift that reddened main after #10 added main.mind helpers with no --reseed.
-  # Fix on FAIL:  MINDC_SO=<built .so> python3 examples/mindc_mind/self_host_loop_smoke.py --reseed
+  # Fix on FAIL:  python3 examples/mindc_mind/self_host_loop_smoke.py --reseed
+  # with MINDC_SO UNSET (the resolver then emits a fresh oracle itself, and refuses
+  # a stale one -- never point MINDC_SO at the in-tree libmindc_mind.so to reseed:
+  # that freezes whatever compiler that leftover artifact came from),
   # then commit the re-blessed testdata/selfhost_loop/{stage1.elf,MANIFEST.txt}.
   # ONE site, deliberately. preflight used to run this smoke TWICE — a duplicate
   # "self-host LOOP byte-identity" step ran it earlier. That cost a second run of a

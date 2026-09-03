@@ -78,7 +78,6 @@ _DEFAULT_SO = _HERE / "libmindc_mind.so"  # legacy in-tree path (fallback only)
 # MINDC_SO (CI) verbatim; else build the self-host .so FRESH — never trust a
 # stale in-tree libmindc_mind.so (a cargo build does not regenerate it).
 sys.path.insert(0, str(_HERE))
-import _selfhost_so as _so_mod  # noqa: E402
 from _selfhost_so import resolve_so  # noqa: E402
 
 SO = resolve_so()
@@ -182,10 +181,14 @@ def do_reseed(combined: bytes, stdin_image: bytes, user_lo: int) -> int:
     # freezing the WRONG compiler, which is the one catastrophe this gate exists
     # to prevent. preflight advises `--reseed` on loop failure unconditionally,
     # so an operator following that advice is exactly who lands here.
-    if _so_mod.USED_LEGACY_FALLBACK:
-        print(f"BLOCKED: --reseed refuses a FALLBACK oracle. {SO} is the legacy "
-              f"in-tree .so (a fresh `--emit=cdylib` was not possible -- see the "
-              f"WARN above), and its bytes may be arbitrarily old. Seeding the "
+    # Defence in depth: `resolve_so()` is STRICT by default and refuses a
+    # non-fresh oracle before this file does any work, so this branch is now
+    # reachable only if this smoke ever opts out with allow_stale=True. It
+    # reads provenance off the handle, so there is one source of truth.
+    if not SO.is_fresh:
+        print(f"BLOCKED: --reseed refuses a {SO.provenance} oracle. {SO} is "
+              f"NOT a fresh build ({SO.detail}), so its bytes may be "
+              f"arbitrarily old. Seeding the "
               f"frozen bootstrap from it would freeze whatever compiler that "
               f"artifact came from. Build a real oracle first:\n"
               f"  cargo build --release --bin mindc --features "
@@ -345,7 +348,7 @@ def main() -> int:
         return 1
     hso = hashlib.sha256(so_stage1).hexdigest()
     if so_stage1 != frozen:
-        if _so_mod.USED_LEGACY_FALLBACK:
+        if not SO.is_fresh:
             # The resolver could not build a fresh oracle and fell back to the
             # legacy in-tree .so (it WARNs above). Those bytes cannot distinguish
             # real source drift from an artifact months old, so the normal advice
@@ -353,8 +356,8 @@ def main() -> int:
             # bootstrap from a stale oracle freezes the WRONG compiler, which is
             # the one outcome this gate exists to prevent.
             print(f"  FAIL  [ORACLE] output ({hso}) != frozen bootstrap ({hf}) — but "
-                  f"this oracle is the LEGACY IN-TREE .so, NOT a fresh build (see the "
-                  f"WARN above). Stale bytes cannot tell real drift from an old "
+                  f"this oracle is {SO.provenance}, NOT a fresh build ({SO.detail}). "
+                  f"Stale bytes cannot tell real drift from an old "
                   f"artifact, so DO NOT --reseed on this evidence. Rebuild mindc with "
                   f"`--features mlir-build` so a fresh oracle can be emitted, then "
                   f"re-run; only then is a drift verdict trustworthy.")
@@ -363,15 +366,15 @@ def main() -> int:
                   f"({hf}) — std/main.mind SOURCE drifted; re-freeze with "
                   f"`self_host_loop_smoke.py --reseed` (MINDC_SO set) in THIS change.")
         return 1
-    if _so_mod.USED_LEGACY_FALLBACK:
+    if not SO.is_fresh:
         # The mirror of the FAIL case, and the more dangerous half: stale bytes
         # that HAPPEN to match an equally stale seed would otherwise print
         # "fresh Rust .so ... no source drift" and exit 0 while the current
         # source has genuinely drifted. The oracle leg cannot be satisfied by an
         # oracle we could not build, so it does not get to pass.
         print(f"  FAIL  [ORACLE] output matches the frozen bootstrap ({hso}), but "
-              f"this oracle is the LEGACY IN-TREE .so, NOT a fresh build (see the "
-              f"WARN above). A stale oracle agreeing with an equally stale seed "
+              f"this oracle is {SO.provenance}, NOT a fresh build ({SO.detail}). "
+              f"A stale oracle agreeing with an equally stale seed "
               f"proves nothing about current source. Rebuild mindc with "
               f"`--features mlir-build` and re-run.")
         return 1

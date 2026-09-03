@@ -100,10 +100,8 @@ use sha2::{Digest, Sha256};
 /// pinned across the cross-substrate fixtures (RFC 0020 §4.3).
 const FUZZ_SEED: u64 = 0xDEAD_BEEF;
 
-/// Number of programs generated per run. Fixed so wall-time is bounded and the
-/// verdict is deterministic. Override upward locally with `MINDFUZZ_ITERS` for a
-/// heavier soak; CI uses this default.
-const DEFAULT_ITERS: usize = 32;
+mod mindfuzz_corpus_floor;
+use mindfuzz_corpus_floor::resolve_iters;
 
 /// Fixed input vector every generated `f(a)` is probed over. Chosen to hit the
 /// loop-not-taken path (negative / zero) and a spread of positive bounds. All
@@ -1206,6 +1204,11 @@ fn mindfuzz_cross_substrate_determinism() {
 #[cfg(target_os = "linux")]
 #[test]
 fn mindfuzz_cross_substrate_determinism() {
+    // Resolve the corpus size FIRST: a shrunken-corpus request is a configuration
+    // error whether or not this box can run the fuzzer, and the soft-skip below
+    // must never be the thing that hides it.
+    let iters = resolve_iters(std::env::var("MINDFUZZ_ITERS").ok());
+
     let bin = mindc_bin();
     assert!(
         bin.exists(),
@@ -1219,11 +1222,6 @@ fn mindfuzz_cross_substrate_determinism() {
         // already panicked). Honest: identity is UNVERIFIED on this run.
         return;
     }
-
-    let iters = std::env::var("MINDFUZZ_ITERS")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_ITERS);
 
     let tmp = std::env::temp_dir().join("mindfuzz_xsi");
     let _ = fs::create_dir_all(&tmp);
@@ -1468,8 +1466,13 @@ fn mindfuzz_cross_substrate_determinism() {
     // runners' files and FAIL RED on any mismatch — the cross-runner assertion,
     // not just a print.
     let batch = format!("{:x}", mic3_digest.finalize());
+    // Record the program COUNT alongside the digest. Equality of two digests says
+    // nothing about how much was hashed; with the count in the file the
+    // cross-runner job can assert both runners covered the same, non-trivial
+    // corpus instead of agreeing about nothing.
+    let digest_file = format!("iters={iters}\n{batch}\n");
     if let Some(path) = std::env::var_os("MINDFUZZ_DIGEST_OUT") {
-        fs::write(&path, &batch).unwrap_or_else(|e| {
+        fs::write(&path, &digest_file).unwrap_or_else(|e| {
             panic!(
                 "MIND-Fuzz: failed to write batch digest to MINDFUZZ_DIGEST_OUT \
                  ({path:?}): {e}"

@@ -98,7 +98,11 @@ GATED_EVENTS = ("push", "pull_request")
 # "UNCONDITIONALLY" claim written from inside preflight's `--full` branch). Both
 # drive their gate through its REAL CLI as a subprocess, so neither can be folded
 # behind a `--self-test` flag without importing the gate it is meant to mutate.
-HARNESS_CEILING = 249
+# 249 -> 250 for examples/mindc_mind/selfhost_so_provenance_smoke.py, which is not a
+# mutation proof at all but a GATE in its own right: it is the only thing asserting
+# that _selfhost_so.resolve_so() still refuses an oracle it cannot prove fresh, and
+# that no sibling smoke opts out of that contract unnamed.
+HARNESS_CEILING = 250
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.
