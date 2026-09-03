@@ -27,15 +27,19 @@
 //! This is the semantic-correctness gate: a formatter that changes the
 //! program's meaning (IR) is a compiler bug, not just a style issue.
 //!
-//! Scope:
-//!   - `std/vec.mind`, `std/string.mind`, `std/io.mind`, `std/map.mind`,
-//!     `std/blas.mind`
-//!   - `examples/parser/main.mind`, `examples/typecheck/main.mind`,
-//!     `examples/emit_ir/main.mind` (if they compile successfully)
+//! Scope: [`IN_SCOPE_FILES`] — the single source of truth shared by the
+//! per-file tests and by `ir_preservation_summary`, so the two can never
+//! drift apart.
 //!
-//! Files that fail to compile (e.g. because they use intrinsics or tensor
-//! ops that require runtime support beyond the compile-to-MIC pipeline)
-//! are skipped with a note — compile failures are not IR-preservation failures.
+//! # The gate is fail-closed on skips
+//!
+//! A file whose *original* source does not compile is not an IR-preservation
+//! failure, but a per-file test that silently passes because its file was
+//! never compiled is a gate that cannot fail. So a skip is a FAILURE unless
+//! the file carries an explicit [`SKIP_ALLOWLIST`] entry naming the reason,
+//! and a missing file is always a failure. `ir_preservation_summary` asserts
+//! the exercised/skipped counts against that allowlist rather than merely
+//! printing them.
 //!
 //! # What "byte-identical MIC IR" means
 //!
@@ -63,6 +67,42 @@ fn manifest_dir() -> std::path::PathBuf {
 }
 
 // ---------------------------------------------------------------------------
+// Gate scope
+// ---------------------------------------------------------------------------
+
+/// Every file this gate covers, relative to the crate manifest dir.
+///
+/// Both the per-file tests and `ir_preservation_summary` read their scope
+/// from here: a file added to the gate cannot be covered by one and missed
+/// by the other.
+const IN_SCOPE_FILES: &[&str] = &[
+    "std/vec.mind",
+    "std/string.mind",
+    "std/io.mind",
+    "std/map.mind",
+    "std/blas.mind",
+    "examples/parser/main.mind",
+    "examples/typecheck/main.mind",
+    "examples/emit_ir/main.mind",
+];
+
+/// Files permitted to be skipped because their *original* source is outside
+/// the compile-to-MIC scope, each with the reason.
+///
+/// Empty: every in-scope file compiles under `std-surface` today. An entry
+/// here narrows the gate, so it is a deliberate, reviewed decision — and it
+/// is self-cleaning: once the named file compiles again, its stale entry
+/// fails this test rather than quietly shrinking coverage forever.
+const SKIP_ALLOWLIST: &[(&str, &str)] = &[];
+
+fn allowed_skip(rel: &str) -> Option<&'static str> {
+    SKIP_ALLOWLIST
+        .iter()
+        .find(|(name, _)| *name == rel)
+        .map(|(_, reason)| *reason)
+}
+
+// ---------------------------------------------------------------------------
 // Core assertion helper
 // ---------------------------------------------------------------------------
 
@@ -70,6 +110,10 @@ fn manifest_dir() -> std::path::PathBuf {
 ///
 /// Returns `true` if the file was exercised (passed the assertion),
 /// `false` if skipped (compile error on the original source).
+///
+/// `#[must_use]`: discarding the verdict is exactly how this gate went
+/// vacuous — a skipped file then reads as a pass.
+#[must_use]
 fn check_ir_preservation(label: &str, src: &str) -> bool {
     let cfg = default_cfg();
     let opts = default_compile_opts();
@@ -112,42 +156,67 @@ fn check_ir_preservation(label: &str, src: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Per-file gate entry point
+// ---------------------------------------------------------------------------
+
+/// Run the gate for one in-scope file, fail-closed on every way it could
+/// fail to run: unknown scope, missing file, unreadable file, or a skip that
+/// is not on [`SKIP_ALLOWLIST`].
+fn gate_file(rel: &str) {
+    assert!(
+        IN_SCOPE_FILES.contains(&rel),
+        "ir_preservation: {rel} is not in IN_SCOPE_FILES — the summary would not cover it"
+    );
+    let path = manifest_dir().join(rel);
+    assert!(
+        path.exists(),
+        "ir_preservation: {rel} is missing — the gate cannot be exercised"
+    );
+    let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
+    let exercised = check_ir_preservation(rel, &src);
+
+    match allowed_skip(rel) {
+        None => assert!(
+            exercised,
+            "ir_preservation: {rel} was skipped, not exercised — its original source \
+             failed to compile, so formatting was never checked against it. Fix the \
+             compile failure, or add an explicit SKIP_ALLOWLIST entry with a reason."
+        ),
+        Some(reason) => assert!(
+            !exercised,
+            "ir_preservation: {rel} carries a stale SKIP_ALLOWLIST entry ({reason}) \
+             but now compiles — remove the entry so the file is gated"
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // std/*.mind
 // ---------------------------------------------------------------------------
 
 #[test]
 fn ir_preservation_vec() {
-    let path = manifest_dir().join("std/vec.mind");
-    let src = std::fs::read_to_string(&path).unwrap();
-    check_ir_preservation("std/vec.mind", &src);
+    gate_file("std/vec.mind");
 }
 
 #[test]
 fn ir_preservation_string() {
-    let path = manifest_dir().join("std/string.mind");
-    let src = std::fs::read_to_string(&path).unwrap();
-    check_ir_preservation("std/string.mind", &src);
+    gate_file("std/string.mind");
 }
 
 #[test]
 fn ir_preservation_io() {
-    let path = manifest_dir().join("std/io.mind");
-    let src = std::fs::read_to_string(&path).unwrap();
-    check_ir_preservation("std/io.mind", &src);
+    gate_file("std/io.mind");
 }
 
 #[test]
 fn ir_preservation_map() {
-    let path = manifest_dir().join("std/map.mind");
-    let src = std::fs::read_to_string(&path).unwrap();
-    check_ir_preservation("std/map.mind", &src);
+    gate_file("std/map.mind");
 }
 
 #[test]
 fn ir_preservation_blas() {
-    let path = manifest_dir().join("std/blas.mind");
-    let src = std::fs::read_to_string(&path).unwrap();
-    check_ir_preservation("std/blas.mind", &src);
+    gate_file("std/blas.mind");
 }
 
 // ---------------------------------------------------------------------------
@@ -156,80 +225,63 @@ fn ir_preservation_blas() {
 
 #[test]
 fn ir_preservation_parser_main() {
-    let path = manifest_dir().join("examples/parser/main.mind");
-    if !path.exists() {
-        return;
-    }
-    let src = std::fs::read_to_string(&path).unwrap();
-    let exercised = check_ir_preservation("examples/parser/main.mind", &src);
-    let _ = exercised;
+    gate_file("examples/parser/main.mind");
 }
 
 #[test]
 fn ir_preservation_typecheck_main() {
-    let path = manifest_dir().join("examples/typecheck/main.mind");
-    if !path.exists() {
-        return;
-    }
-    let src = std::fs::read_to_string(&path).unwrap();
-    let exercised = check_ir_preservation("examples/typecheck/main.mind", &src);
-    let _ = exercised;
+    gate_file("examples/typecheck/main.mind");
 }
 
 #[test]
 fn ir_preservation_emit_ir_main() {
-    let path = manifest_dir().join("examples/emit_ir/main.mind");
-    if !path.exists() {
-        return;
-    }
-    let src = std::fs::read_to_string(&path).unwrap();
-    let exercised = check_ir_preservation("examples/emit_ir/main.mind", &src);
-    let _ = exercised;
+    gate_file("examples/emit_ir/main.mind");
 }
 
 // ---------------------------------------------------------------------------
 // Aggregated summary
 // ---------------------------------------------------------------------------
 
+/// Asserts the whole-scope counts, not just "something ran": every in-scope
+/// file must be exercised except the explicitly allowlisted ones.
 #[test]
 fn ir_preservation_summary() {
     let base = manifest_dir();
 
-    let files = [
-        "std/vec.mind",
-        "std/string.mind",
-        "std/io.mind",
-        "std/map.mind",
-        "std/blas.mind",
-        "examples/parser/main.mind",
-        "examples/typecheck/main.mind",
-        "examples/emit_ir/main.mind",
-    ];
+    let mut exercised: Vec<&str> = Vec::new();
+    let mut skipped: Vec<&str> = Vec::new();
 
-    let mut exercised = 0usize;
-    let mut skipped = 0usize;
-
-    for &rel in &files {
+    for &rel in IN_SCOPE_FILES {
         let path = base.join(rel);
-        if !path.exists() {
-            skipped += 1;
-            continue;
-        }
+        assert!(
+            path.exists(),
+            "ir_preservation: {rel} is missing — the gate cannot be exercised"
+        );
         let src =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
         if check_ir_preservation(rel, &src) {
-            exercised += 1;
+            exercised.push(rel);
         } else {
-            skipped += 1;
+            skipped.push(rel);
         }
     }
 
-    eprintln!("ir_preservation_summary: {exercised} exercised, {skipped} skipped (compile-scope)");
+    eprintln!(
+        "ir_preservation_summary: ran={} exercised={} skipped={} ({skipped:?})",
+        IN_SCOPE_FILES.len(),
+        exercised.len(),
+        skipped.len(),
+    );
 
-    // At minimum the stdlib files that use only core MIND should all compile.
-    // If ALL files skipped, something is wrong with the compile pipeline.
-    assert!(
-        exercised > 0,
-        "ir_preservation: every file was skipped — compile pipeline may be broken"
+    let expected_skips: Vec<&str> = SKIP_ALLOWLIST.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        skipped, expected_skips,
+        "ir_preservation: skipped set does not match SKIP_ALLOWLIST — a file went \
+         un-exercised without a recorded reason (or an allowlisted file now compiles)"
+    );
+    assert_eq!(
+        exercised.len(),
+        IN_SCOPE_FILES.len() - SKIP_ALLOWLIST.len(),
+        "ir_preservation: not every non-allowlisted in-scope file was exercised"
     );
 }
