@@ -711,9 +711,16 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Self-host LOOP gate — MIND compiles MIND, Rust+LLVM out (self_host_loop_smoke.py)
+        # `--min-asserted 2` because this gate has TWO legs and only the pair is
+        # the gate: PRIMARY (the frozen pure-MIND stage0 still reproduces itself)
+        # and ORACLE (the CURRENT std/*.mind + main.mind has not drifted from that
+        # frozen ELF). With the `.so` away the ORACLE leg used to print a
+        # `NOTE ... SKIPPED` line and return 0 — asserted=1, exit 0, source-drift
+        # detection gone and the step green. The floor makes the missing leg the
+        # failure it is; MINDC_SO below is what makes both legs runnable.
         run: |
           MINDC_SO=/tmp/libmindc_mind_self_host.so \
-            python3 scripts/run_gate.py examples/mindc_mind/self_host_loop_smoke.py
+            python3 scripts/run_gate.py --min-asserted 2 examples/mindc_mind/self_host_loop_smoke.py
         working-directory: ${{ github.workspace }}
 
       - name: Native-ELF scalar-f64 execution gate (self_host_native_fp_smoke.py)

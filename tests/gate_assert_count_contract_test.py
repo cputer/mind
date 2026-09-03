@@ -167,6 +167,88 @@ def case_runner_ignores_a_forged_count() -> None:
           "asserted=99 (<" not in proc.stdout + proc.stderr, True)
 
 
+# ── the runner's announced-skip rule ───────────────────────────────────────
+# `SKIP` was matched only as `^\s*SKIP\b`. That is NARROWER than the ci.yml
+# tee-loop backstop it was meant to supersede (`^[[:space:]]*SKIP`, which does
+# match `SKIPPED`), and it cannot see a leg a multi-leg gate drops INSIDE a
+# wider line. Measured on this tree with the oracle `.so` hidden:
+# self_host_loop_smoke.py printed `  NOTE  [ORACLE] ... — SKIPPED (...)`,
+# dropped its entire Rust-oracle leg and graded `run_gate: PASS asserted=1`.
+# The synthetic gate sources below spell the token by concatenation so THIS
+# gate's own output never carries one.
+
+def _runner(src: str, *args: str) -> tuple[int, str]:
+    """Run a synthetic gate through run_gate.py; return (rc, output)."""
+    with tempfile.TemporaryDirectory() as td:
+        gate = Path(td) / "skip_gate.py"
+        gate.write_text(src, encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(RUNNER), *args, str(gate)],
+            capture_output=True, text=True, cwd=str(REPO), timeout=120,
+        )
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def case_runner_rejects_an_anchored_skip_line() -> None:
+    """The original rule, unchanged: `SKIP  <thing> not built` is red."""
+    rc, _ = _runner('print("[PASS] one leg")\nprint("SK" + "IP  mindc not built")\n')
+    check("runner rejects an anchored skip line (rc)", rc, 1)
+
+
+def case_runner_rejects_an_indented_skipped_line() -> None:
+    """`  SKIPPED: ...` — the exact spelling `SKIP\b` could not match."""
+    rc, _ = _runner('print("[PASS] one leg")\nprint("  SKIP" + "PED: leg x")\n')
+    check("runner rejects an indented skipped line (rc)", rc, 1)
+
+
+def case_runner_rejects_a_midline_skipped_report() -> None:
+    """A leg dropped INSIDE a wider line is still a leg that did not run."""
+    src = ('print("[PASS] primary leg")\n'
+           'print("  NOTE  [ORACLE] drift .so not present — SKIP" + "PED (x).")\n')
+    rc, out = _runner(src)
+    check("runner rejects a mid-line dropped leg (rc)", rc, 1)
+    check("runner names the announced skip", "unasserted invariant" in out, True)
+
+
+def case_runner_keeps_a_per_case_skip_classification() -> None:
+    """Deliberate limit: mindfuzz_self_host.py prints one
+    `[  17] SKIP  rust rejected` line per generated CASE. That is a
+    classification inside a gate that IS asserting, not a dropped gate leg —
+    broadening to a mid-line `SKIP` would turn a working fuzzer red."""
+    src = ('print("[PASS] real leg")\n'
+           'print("  [  17] SK" + "IP  rust rejected")\n')
+    rc, _ = _runner(src)
+    check("runner keeps a per-case skip classification (rc)", rc, 0)
+
+
+def case_runner_enforces_the_min_asserted_floor() -> None:
+    """The floor a two-leg gate is wired with must actually bite."""
+    rc, out = _runner('print("[PASS] only one leg")\n', "--min-asserted", "2")
+    check("runner enforces --min-asserted 2 (rc)", rc, 1)
+    check("runner names the shortfall", "asserted=1 (< 2)" in out, True)
+
+
+def case_loop_gate_is_wired_with_both_legs_required() -> None:
+    """The self-host LOOP gate has TWO legs (PRIMARY reproduction + the Rust
+    drift ORACLE) and only the pair is the gate. Every runner invocation of it
+    must therefore demand both, or the wedge's loop gate grades green with the
+    oracle leg silently dropped. The scope is READ OUT of the wiring files
+    rather than hand-copied, so a new call site cannot quietly omit the floor."""
+    checked = 0
+    for rel in (".github/workflows/ci.yml", "scripts/preflight.sh"):
+        text = (REPO / rel).read_text(encoding="utf-8")
+        # Join shell line continuations so `ENV=... \<nl> python3 run_gate.py ...`
+        # is one command, the way the shell sees it.
+        joined = text.replace("\\\n", " ")
+        for line in joined.splitlines():
+            if "run_gate.py" not in line or "self_host_loop_smoke" not in line:
+                continue
+            checked += 1
+            check(f"{rel}: loop gate demands both legs",
+                  "--min-asserted 2" in line, True)
+    check("loop-gate call sites found", checked >= 2, True)
+
+
 # ── the lint that keeps the shapes out of gate sources ─────────────────────
 
 def _lint(src: str) -> list[str]:

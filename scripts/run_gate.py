@@ -25,9 +25,11 @@ A gate PASSES only when ALL of these hold:
   1. it exits 0;
   2. its output carries a final machine-readable `asserted=<N>` line;
   3. N >= 1 (or >= --min-asserted);
-  4. no output line begins with `SKIP` — an announced skip is an unasserted
-     invariant, and it must be a red gate or an explicit, recorded deferral,
-     never a silent green.
+  4. no output line ANNOUNCES A SKIP — `gate_assert.is_skip_line` (one shared
+     definition, applied to stdout and stderr alike) matches both a `SKIP` /
+     `SKIPPED` line and a leg a multi-leg gate reports as `SKIPPED` mid-line.
+     An announced skip is an unasserted invariant, and it must be a red gate or
+     an explicit, recorded deferral, never a silent green.
 
 Python gates get (2) for free: they are executed through `gate_assert.py`, which
 counts evaluated `assert` statements and printed verdict lines and emits the
@@ -97,7 +99,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from gate_assert import ASSERTED_PREFIX, SKIP_LINE_RE, VERDICT_RE  # noqa: E402
+from gate_assert import ASSERTED_PREFIX, VERDICT_RE, is_skip_line  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SMOKE_DIR = ROOT / "examples" / "mindc_mind"
@@ -168,7 +170,8 @@ def _parse_asserted(text: str) -> int | None:
 
 
 def _has_skip(text: str) -> bool:
-    return any(SKIP_LINE_RE.match(line) for line in text.splitlines())
+    """Both streams, one shared rule (gate_assert.is_skip_line)."""
+    return any(is_skip_line(line) for line in text.splitlines())
 
 
 def run_one(gate: str, args: list[str], *, min_asserted: int = 1,
@@ -222,7 +225,15 @@ def run_one(gate: str, args: list[str], *, min_asserted: int = 1,
     elif n is None:
         reason = f"no `{ASSERTED_PREFIX}<N>` line in output (gate published no count)"
     elif n < min_asserted:
-        reason = f"asserted={n} (< {min_asserted}) — the gate checked nothing"
+        # Two distinct facts, named distinctly: 0 is a gate that checked NOTHING,
+        # while 0 < n < floor is a MULTI-LEG gate that ran fewer legs than this
+        # call site requires (the self-host LOOP gate reporting its PRIMARY leg
+        # with the drift ORACLE dropped is exactly this). Calling the second one
+        # "checked nothing" sends the reader hunting the wrong defect.
+        reason = (f"asserted={n} (< {min_asserted}) — the gate checked nothing"
+                  if n == 0 else
+                  f"asserted={n} (< {min_asserted}) — the gate reported fewer "
+                  f"asserted legs than this call site requires")
     elif skipped:
         reason = "output contains a `SKIP` line — an unasserted invariant"
     return Result(gate, rc, n, skipped, reason, out)

@@ -18,9 +18,11 @@ machine-readable line
 
     asserted=<N>
 
-`scripts/run_gate.py` treats N == 0, a missing line, or a `^SKIP` line as a
-FAILURE. So a gate that skips its whole body can no longer be indistinguishable
-from a gate that checked every invariant.
+`scripts/run_gate.py` treats N == 0, a missing line, or an announced skip
+(`is_skip_line` below — a `SKIP`/`SKIPPED` line, or a leg a multi-leg gate
+reports as `SKIPPED` mid-line) as a FAILURE. So a gate that skips its whole
+body — or quietly drops one leg of several — can no longer be
+indistinguishable from a gate that checked every invariant.
 
 WHAT COUNTS AS ONE ASSERTION (one rule, defined once, here)
 -----------------------------------------------------------
@@ -92,7 +94,35 @@ VERDICT_RE = re.compile(
 )
 
 # A gate that announces a skipped leg has, by construction, not asserted it.
-SKIP_LINE_RE = re.compile(r"^\s*SKIP\b")
+# TWO shapes, each paid for by a measured hole:
+#
+#   * ANCHORED  `^\s*(SKIP|SKIPPED)\b` — the announced-skip line itself. `SKIP\b`
+#     alone did NOT match `SKIPPED` (`\b` needs a non-word char after the P), so
+#     this rule was NARROWER than the ci.yml tee-loop backstop it supersedes
+#     (`^[[:space:]]*SKIP`, unanchored suffix, which does match `SKIPPED`) — the
+#     exact spelling that backstop's comment says it closed.
+#   * MID-LINE  `\bSKIPPED\b` anywhere on the line — a MULTI-LEG gate announces a
+#     dropped leg inside a wider sentence, which no start-of-line rule can see.
+#     Measured with the oracle `.so` hidden: self_host_loop_smoke.py printed
+#     `  NOTE  [ORACLE] Rust drift .so not present (...) — SKIPPED (...)`, dropped
+#     its whole Rust-oracle leg, and graded `run_gate: PASS asserted=1`.
+#
+# Deliberately NOT mid-line `\bSKIP\b`: mindfuzz_self_host.py prints one
+# `[  17] SKIP  rust rejected` line per generated CASE — a per-case
+# classification inside a gate that IS asserting, not a dropped gate leg.
+# Widening that far would turn a working fuzzer red, so the two shapes above are
+# the whole rule and tests/gate_assert_count_contract_test.py pins both edges.
+SKIP_LINE_RE = re.compile(r"^\s*(?:SKIP|SKIPPED)\b|\bSKIPPED\b")
+
+
+def is_skip_line(line: str) -> bool:
+    """True when this output line announces a leg the gate did not assert.
+
+    The ONE definition — `scripts/run_gate.py` imports this rather than
+    re-applying the pattern, because a `.match()` here and a `.search()` there
+    is precisely how the anchored and mid-line halves would drift apart.
+    """
+    return SKIP_LINE_RE.search(line) is not None
 
 # The two counter LINE SHAPES this repo already publishes for "how many did I
 # actually check". Anchored and paired with their companion field on purpose: a

@@ -397,7 +397,10 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
   if [ ! -f examples/mindc_mind/self_host_loop_smoke.py ]; then
     bad "self_host_loop_smoke.py MISSING — the loop gate cannot run; do NOT push"
   fi
-  loop_rc=0; python3 scripts/run_gate.py examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
+  # --min-asserted 2: BOTH legs (PRIMARY reproduction + the Rust drift ORACLE)
+  # or it is not this gate. A run that cannot build the `.so` reports 1 and is
+  # refused here rather than printing a skip note and grading green.
+  loop_rc=0; python3 scripts/run_gate.py --min-asserted 2 examples/mindc_mind/self_host_loop_smoke.py >/tmp/preflight-loop.out 2>&1 || loop_rc=$?
   if [ "$loop_rc" = 0 ]; then echo "ok (frozen seed reproduces current source)"
   elif [ "$loop_rc" = 2 ]; then
   # exit 2 = BLOCKED, "could not evaluate". The smoke uses it for more than one

@@ -16,9 +16,11 @@ is DEMOTED from seed to a re-freeze / drift oracle.
     execve(self)/read/write/exit — zero rustc, zero LLVM, zero clang, zero .so.
   * ORACLE (drift check, when the Rust `.so` is present): assert the FRESH `.so`
     output stage0_emit(combined, user_lo) == frozen. This catches std/*.mind or
-    main.mind SOURCE drift where the frozen ELF was not re-blessed. It SOFT-SKIPS
-    if the `.so` is unavailable — the primary reproduction path never depends on
-    the `.so` being buildable.
+    main.mind SOURCE drift where the frozen ELF was not re-blessed. The primary
+    reproduction path never depends on the `.so` being buildable, but an
+    UNBUILDABLE `.so` is not a pass: the leg announces a `SKIP` line and exits
+    non-zero (see oracle_unavailable), because a green gate with its drift half
+    silently dropped is the vacuous pass this corpus exists to refuse.
   * RESEED (--reseed / MIND_SELFHOST_RESEED=1): the ONLY mode that uses the `.so`
     as the seed. Emits a fresh stage1 via the Rust `.so`, confirms the loop closes,
     and re-freezes testdata/selfhost_loop/{stage1.elf,MANIFEST.txt} — the deliberate
@@ -47,6 +49,9 @@ FAIL-CLOSED (never skips when asked to run):
         run_elf(frozen) reproduces frozen by construction)
   * .so present AND fresh .so output != frozen        -> FAIL exit 1  (source drifted;
         re-freeze with --reseed in the same change)
+  * .so unavailable (drift oracle cannot run)        -> SKIP line + exit 1, unless
+        MIND_SELFHOST_LOOP_ORACLE_DEFERRED=1 records a deliberate one-leg run
+        (which still reports asserted=1, so a --min-asserted 2 caller refuses it)
   --reseed only:
   * MINDC_SO unset/missing                            -> BLOCKED exit 2  (needs the seed .so)
   * .so emits an empty / non-ELF image                -> FAIL exit 1
@@ -223,6 +228,42 @@ def do_reseed(combined: bytes, stdin_image: bytes, user_lo: int) -> int:
     return 0
 
 
+ORACLE_DEFER_ENV = "MIND_SELFHOST_LOOP_ORACLE_DEFERRED"
+
+
+def oracle_unavailable(reason: str) -> int:
+    """The ORACLE leg could not run: announce it as a SKIP and FAIL CLOSED.
+
+    This gate has TWO legs and only the pair is the gate: PRIMARY proves the
+    frozen pure-MIND stage0 still reproduces itself, ORACLE proves the CURRENT
+    std/*.mind + main.mind source has not drifted away from that frozen ELF.
+    Dropping ORACLE removes source-drift detection entirely.
+
+    It used to be dropped by printing a `NOTE ... SKIPPED` line and returning 0.
+    Measured with the oracle `.so` hidden (`MINDC_SO_NOBUILD=1`, MINDC_SO unset):
+    `run_gate: PASS ... asserted=1` — the wedge's loop gate green with half of
+    itself never executed, and its skip line invisible to BOTH skip detectors
+    (`SKIP\b` does not match `SKIPPED`; nothing looked mid-line at all).
+
+    So: a `SKIP` line the runner sees, plus a non-zero exit for a bare
+    invocation. `MIND_SELFHOST_LOOP_ORACLE_DEFERRED=1` records a deliberate
+    one-leg run for a box that cannot build the `.so`; it is NOT a way past CI,
+    because ci.yml and preflight.sh both run this gate with `--min-asserted 2`
+    and a one-leg run reports 1.
+    """
+    if os.environ.get(ORACLE_DEFER_ENV) == "1":
+        print(f"  NOTE  [ORACLE] {reason} — deferred by {ORACLE_DEFER_ENV}=1. "
+              f"The source-drift assertion did NOT run, so this run reports one "
+              f"asserted leg; every `--min-asserted 2` call site still refuses it.")
+        return 0
+    print(f"  SKIP  [ORACLE] {reason} — the source-drift assertion did NOT run, "
+          f"and half a gate is not this gate. Set MINDC_SO to a built self-host "
+          f"`.so`, or build `mindc` so a fresh one can be emitted. To record a "
+          f"deliberate one-leg run on a box that cannot, set "
+          f"{ORACLE_DEFER_ENV}=1 (CI and preflight demand both legs regardless).")
+    return 1
+
+
 def main() -> int:
     combined, stdin_image, user_lo = build_seed()
     print(f"[self-host loop] combined={len(combined)}B user_lo={user_lo} "
@@ -280,25 +321,24 @@ def main() -> int:
     # not re-blessed. The PRIMARY path above does NOT depend on this.
     # ------------------------------------------------------------------
     if not SO.exists():
-        print(f"  NOTE  [ORACLE] Rust drift .so not present ({SO}) — SKIPPED "
-              f"(source-drift detection unavailable; primary loop still gated). "
-              f"Set MINDC_SO or build the self-host .so for full coverage.")
-        return 0
+        return oracle_unavailable(f"Rust drift .so not present ({SO})")
     try:
         so_stage1 = stage0_emit(combined, user_lo)
     except OSError as e:
         # With MINDC_SO set the operator/CI promised a real oracle .so, so a load
-        # failure is a BROKEN gate, not an inapplicable one. This smoke runs BARE
-        # in ci.yml (no surrounding "SKIPped with MINDC_SO set" backstop like the
-        # batch loops have), and its skip line is indented + spelled "SKIPPED", so
-        # that backstop's `^SKIP` grep would not have caught it either way.
+        # failure is a BROKEN gate, not an inapplicable one, and it names that
+        # promise in the message rather than routing through the generic
+        # unavailable path. Without the handle it is still not a pass: the
+        # fall-through below announces a SKIP and exits non-zero. This smoke runs
+        # BARE in ci.yml (no surrounding "SKIPped with MINDC_SO set" backstop like
+        # the batch loops have), so run_gate.py's shared skip rule — which now
+        # matches "SKIPPED" and mid-line reports too — is the whole backstop.
         if os.environ.get("MINDC_SO"):
             print(f"  FAIL  [ORACLE] MINDC_SO is set but the drift .so could not be "
                   f"loaded ({e}) — refusing to skip; the source-drift assertion did "
                   f"not run.")
             return 1
-        print(f"  NOTE  [ORACLE] could not load drift .so ({e}) — SKIPPED.")
-        return 0
+        return oracle_unavailable(f"could not load the drift .so ({e})")
     if not is_static_elf(so_stage1):
         print(f"  FAIL  [ORACLE] fresh .so emitted a non-ELF/empty image "
               f"({len(so_stage1)}B) — .so seed path is broken.")
