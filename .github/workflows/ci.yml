@@ -1,5 +1,29 @@
 name: CI
 
+# GATE-RUNNER SCOPE — the cargo steps below are DEFERRED, not covered.
+#
+# Every gate a workflow step invokes goes through scripts/run_gate.py, which
+# refuses a gate that exits 0 while publishing no `asserted=<N>` evidence and
+# refuses a gate that announced a SKIP. `cargo test` cannot publish that line,
+# so the ~15 cargo steps in this file are outside the contract. Two known
+# vacuity holes live in that gap and are NOT closed by the runner:
+#
+#   * a capability skip inside a Rust test (`println!("... skipping"); return;`)
+#     turns a FAILING compile into a PASSING test; the fail-closed
+#     `MIND_BENCH_REQUIRE` guard is honoured in 3 of 322 test files. Upgrade
+#     path: one shared test helper that panics when MIND_BENCH_REQUIRE is set
+#     and otherwise reports `ran=0`, with the ~273 skip sites routed through it
+#     instead of 273 hand-written copies.
+#   * the differential fuzzer reads its program count from MINDFUZZ_ITERS with
+#     no floor, so MINDFUZZ_ITERS=0 digests zero programs on BOTH runners —
+#     equal, non-empty and green on `mindfuzz_cross_runner_identity`. Upgrade
+#     path: emit `iters=<n>` into MINDFUZZ_DIGEST_OUT and have that job assert
+#     n >= the default alongside the digest compare.
+#
+# scripts/gate_runner_wiring_lint.py holds this declaration to the deferral, and
+# removes it the moment these steps stop being invoked directly.
+# run_gate-exempt: cargo-test - deferred: a cargo step cannot publish asserted=N; upgrade path is the shared skip helper + the fuzzer program-count floor described above
+
 on:
   push:
     branches: [ main ]
@@ -1367,6 +1391,17 @@ jobs:
         # runner's N>=1 rule here; every other gate in this job must publish a
         # non-zero assertion count.
         run: python3 scripts/run_gate.py --min-asserted 0 scripts/sdlc/lost_by_merge.py HEAD
+
+      - name: A cargo gate is in the wiring lint's scope, or declared deferred
+        # The lint above only ever looked for a repository script, so a step whose
+        # gate IS `cargo test` was invisible to it: not routed, not required to be
+        # declared, and not recorded anywhere as uncovered — while the lint reported
+        # that every gate invocation reaches the runner. Two live vacuity holes sit
+        # in that gap (a capability skip inside a Rust test; the fuzzer's missing
+        # program-count floor). They stay open, and this gate keeps them WRITTEN
+        # DOWN: a cargo exemption must name the upgrade path that ends it, and
+        # deleting the declaration from this file fails the job.
+        run: python3 scripts/run_gate.py tests/gate_runner_cargo_scope_test.py
 
       - name: Enforcement/test pairing (a test must not outlive its rule)
         run: python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py

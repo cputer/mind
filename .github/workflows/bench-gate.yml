@@ -1,5 +1,13 @@
 name: Bench gate
 
+# GATE-RUNNER SCOPE — the `cargo bench` step below is DEFERRED, not covered.
+# scripts/run_gate.py judges a gate on the `asserted=<N>` line it publishes;
+# criterion publishes no such line, so a bench run that measured nothing would
+# still exit 0 here and the comparison downstream would have nothing to reject.
+# Upgrade path: have tools/bench_gate.py report the number of benchmarks it
+# actually compared and route the step through the runner with --min-asserted.
+# run_gate-exempt: cargo-bench - deferred: criterion publishes no asserted=N; upgrade path is a compared-benchmark count from tools/bench_gate.py routed through the runner
+
 # Enforces the parser/typecheck/IR pipeline regression rule for mindc.
 #
 # The threshold is documented at docs/versioning.md (and pinned in

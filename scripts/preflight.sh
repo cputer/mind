@@ -363,6 +363,14 @@ python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py || bad "enforc
 python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py \
   || bad "gate-runner wiring FAILED — a workflow reaches a gate without the runner"
 
+# The wiring lint's own SCOPE. It started at repository scripts only, so a step
+# whose gate IS `cargo test` was neither routed nor required to be declared — a
+# whole class of gate outside the mechanism with nothing recording that fact.
+# This pins the widened scope and pins the deferral: a cargo exemption must name
+# the upgrade path that ends it, and deleting the record turns the gate red.
+python3 scripts/run_gate.py tests/gate_runner_cargo_scope_test.py \
+  || bad "gate-runner cargo scope FAILED — a cargo gate is uncovered and undeclared"
+
 # The contract behind every OTHER gate in this file: scripts/gate_assert.py must
 # derive `asserted=<N>` from evidence (evaluated asserts, reported verdicts), never
 # from an integer a gate printed. Measured before this test existed: a smoke whose

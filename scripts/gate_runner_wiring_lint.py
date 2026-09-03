@@ -22,12 +22,34 @@ run. Both would have kept riding green with their case loops emptied.
 WHAT IS CHECKED
 ---------------
 Every invocation of a repository script (`scripts/`, `tests/`, `tools/`,
-`examples/`) inside a workflow `run:` block must either
+`examples/`) AND every `cargo test` / `cargo bench` step inside a workflow
+`run:` block must either
 
   * be ROUTED — the same command also invokes scripts/run_gate.py; or
   * be EXEMPT — a comment in the same workflow declares
         `# run_gate-exempt: <path> - <reason>`
-    naming that exact path with a written reason.
+    naming that exact path (`cargo-test` / `cargo-bench` for a cargo step) with
+    a written reason.
+
+A CARGO GATE IS AN INVOCATION, AND ITS EXEMPTION IS A DEFERRAL
+--------------------------------------------------------------
+The scan started at repository scripts only, which left a whole class of gate
+outside the mechanism: a step whose gate IS `cargo test` was not routed, not
+required to be declared, and — the part that cost real integrity — not recorded
+anywhere as uncovered, while this lint reported that every gate invocation
+reaches the runner. Two live defects sit in exactly that blind spot: a
+capability skip inside a Rust test (`println!("... skipping"); return;`) turns a
+FAILING compile into a PASSING test, and the differential fuzzer reads its
+program count from `MINDFUZZ_ITERS` with no floor, so a count of zero yields the
+digest of zero programs on both runners — equal, non-empty, green.
+
+Neither is reachable from the Python `asserted=N` contract, and saying so is
+legitimate; letting the silence read as coverage is not. So a cargo invocation
+is scanned like any other, and its exemption reason must carry a `deferred:`
+marker naming the upgrade path: a cargo step publishes no `asserted=N` line
+today, which makes its exemption temporary by construction. When the upgrade
+lands and the direct call goes, the stale-declaration rule below removes the
+deferral with it.
 
 The exemption lives beside the call site instead of in a list inside this file:
 a second, hand-maintained copy of the scope is exactly the drift this repo keeps
@@ -70,6 +92,15 @@ PATH_RE = re.compile(
 )
 EXEMPT_RE = re.compile(r"#\s*run_gate-exempt:\s*(\S+)\s*[-—:]\s*(.+?)\s*$")
 MIN_REASON = 20
+
+# A cargo gate. `cargo test`/`cargo bench` decide required CI jobs exactly like a
+# script gate does, so they are invocations under the same rule. The declared
+# name is the hyphenated form, because EXEMPT_RE names one token.
+CARGO_RE = re.compile(r"(?<![A-Za-z0-9_./-])cargo\s+(test|bench)(?![A-Za-z0-9_-])")
+CARGO_NAMES = ("cargo-test", "cargo-bench")
+# A cargo step cannot publish `asserted=N`, so its exemption is a DEFERRAL that
+# must name how it ends — never a standing "this one is fine".
+DEFERRAL_MARKER = "deferred:"
 
 
 class Invocation:
@@ -173,13 +204,28 @@ def scan(path: Path) -> tuple[list[Invocation], dict[str, str]]:
             if rel == RUNNER:
                 continue  # the runner itself is not a gate it must route
             invocations.append(Invocation(path.name, lineno, rel, code))
+        for hit in CARGO_RE.finditer(code):
+            name = f"cargo-{hit.group(1)}"
+            invocations.append(Invocation(path.name, lineno, name, code))
     return invocations, exempt
 
 
-def main() -> int:
-    workflows = sorted(WORKFLOW_DIR.glob("*.yml"))
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # The scope is the workflow DIRECTORY, read off disk. The override exists so
+    # the contract test can drive synthetic workflows through the same code path
+    # the repo runs; the default is, and stays, the real tree.
+    wf_dir = WORKFLOW_DIR
+    if "--workflow-dir" in argv:
+        i = argv.index("--workflow-dir")
+        if i + 1 >= len(argv):
+            print("FAIL: --workflow-dir needs a directory")
+            return 1
+        wf_dir = Path(argv[i + 1])
+
+    workflows = sorted(wf_dir.glob("*.yml"))
     if not workflows:
-        print(f"FAIL: no workflows under {WORKFLOW_DIR} — the scan found nothing "
+        print(f"FAIL: no workflows under {wf_dir} — the scan found nothing "
               "to check, which is a broken lint, not a clean tree.")
         return 1
 
@@ -187,11 +233,14 @@ def main() -> int:
     checked = 0
     routed = 0
     declared = 0
+    cargo_seen = 0
     for wf in workflows:
         invocations, exempt = scan(wf)
         used: set[str] = set()
         for inv in invocations:
             checked += 1
+            if inv.path in CARGO_NAMES:
+                cargo_seen += 1
             if inv.routed:
                 routed += 1
                 print(f"[PASS] routed  {inv}")
@@ -204,6 +253,15 @@ def main() -> int:
                         f"{inv}: run_gate-exempt reason is {len(reason)} chars "
                         f"({reason!r}); an exemption without a written reason is "
                         "a hand-waved second way to run a gate."
+                    )
+                elif (inv.path in CARGO_NAMES
+                      and DEFERRAL_MARKER not in reason.lower()):
+                    failures.append(
+                        f"{inv}: a cargo gate publishes no `asserted=N` line, so "
+                        f"its exemption is a DEFERRAL and must say how it ends. "
+                        f"Write `{DEFERRAL_MARKER} <upgrade path>` into the "
+                        f"reason ({reason!r}); a standing exemption records an "
+                        "uncovered gate as a covered one."
                     )
                 else:
                     print(f"[PASS] exempt  {inv} - {reason}")
@@ -235,7 +293,8 @@ def main() -> int:
 
     print(f"\nPASS: every gate invocation in {len(workflows)} workflow(s) reaches "
           f"the gate through {RUNNER} ({routed} routed, {declared} declared "
-          f"exempt, {checked} checked)")
+          f"exempt, {checked} checked, of which {cargo_seen} cargo invocation(s) "
+          "ride a written deferral)")
     return 0
 
 
