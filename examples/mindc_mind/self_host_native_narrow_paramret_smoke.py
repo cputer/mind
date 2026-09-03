@@ -24,6 +24,12 @@ import subprocess
 import sys
 import tempfile
 
+# The compiler under test is resolved through the SHARED fail-closed resolver,
+# never a bare-name PATH lookup: a PATH `mindc` is another checkout's binary and
+# lets this gate report green about a tree that never built one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _selfhost_so import resolve_mindc  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_MIND = os.path.join(HERE, "main.mind")
 
@@ -62,7 +68,7 @@ def build_so() -> str:
     so = os.environ.get("MINDC_SO")
     if so:
         return so
-    mindc = os.environ.get("MINDC_BIN", "mindc")
+    mindc = resolve_mindc()
     out = tempfile.NamedTemporaryFile(suffix=".so", delete=False).name
     r = subprocess.run([mindc, MAIN_MIND, "--emit-shared", out],
                        capture_output=True, text=True)

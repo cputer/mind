@@ -36,7 +36,13 @@ import subprocess
 import sys
 import tempfile
 
-MINDC = os.environ.get("MINDC_BIN", "mindc")
+# The compiler under test is resolved through the SHARED fail-closed resolver,
+# never a bare-name PATH lookup: a PATH `mindc` is another checkout's binary and
+# lets this gate report green about a tree that never built one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _selfhost_so import resolve_mindc  # noqa: E402
+
+MINDC = resolve_mindc()
 SO = os.environ.get("MINDC_SO")
 E2004_RE = re.compile(r":(\d+):(\d+): error: .*\[type_check::E2004\]")
 

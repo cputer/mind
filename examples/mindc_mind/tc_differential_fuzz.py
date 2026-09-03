@@ -86,6 +86,12 @@ import sys
 import tempfile
 from collections import namedtuple
 
+# The compiler under test is resolved through the SHARED fail-closed resolver,
+# never a bare-name PATH lookup: a PATH `mindc` is another checkout's binary and
+# lets this gate report green about a tree that never built one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _selfhost_so import resolve_mindc  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 MAIN_MIND_DEFAULT = os.path.join(HERE, "main.mind")
@@ -471,7 +477,7 @@ def build_so(args):
     so = args.so or os.environ.get("MINDC_SO")
     if so:
         return so, False
-    mindc = os.environ.get("MINDC_BIN", "mindc")
+    mindc = resolve_mindc()
     out = tempfile.NamedTemporaryFile(suffix=".so", delete=False).name
     cmd = [mindc, args.main_mind, "--emit-shared", out]
     print("BUILD:", " ".join(cmd), flush=True)
@@ -1126,7 +1132,7 @@ def main():
     templates = TEMPLATES + nested_templates(rng)
     exit_code = 0
     with tempfile.TemporaryDirectory() as workdir:
-        oracle = LiveOracle(os.environ.get("MINDC_BIN", "mindc"), workdir)
+        oracle = LiveOracle(resolve_mindc(), workdir)
         if rules == ["E2004"]:
             exit_code = run_e2004(args, port, oracle)
             if built:

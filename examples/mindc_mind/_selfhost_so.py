@@ -139,3 +139,38 @@ def resolve_so() -> pathlib.Path:
     # qualify its conclusion. See self_host_loop_smoke.py's ORACLE leg.
     USED_LEGACY_FALLBACK = True
     return _LEGACY_SO
+
+
+def resolve_mindc() -> str:
+    """Resolve the `mindc` binary UNDER TEST. Fail-closed, never a PATH lookup.
+
+    Why this exists (and why it must not consult PATH)
+    --------------------------------------------------
+    26 gates in this directory resolved the compiler as
+    `os.environ.get("MINDC_BIN", "mindc")`. The default is a BARE NAME, so with
+    no handle exported the gate ran whatever `mindc` the shell's PATH happened
+    to point at — on a developer box, a symlink into a DIFFERENT checkout's
+    `target/release/`. Measured: a pristine `git archive HEAD` copy with no
+    `target/` at all, every handle unset, still had 21 compiler-dependent gates
+    report `ALL PASS / asserted=1` — they were exercising another tree's binary,
+    not the tree under test. A PATH lookup must never be able to select the
+    subject under test.
+
+    Order: `MINDC_BIN`, then `MINDC` (both already exported by ci.yml and
+    preflight.sh), then this tree's `target/release/mindc`. A handle that is set
+    but missing, and an unset handle with no built binary, are BOTH a hard exit —
+    the gate cannot state anything about a compiler it never ran, and a SKIP here
+    would grade a broken wiring as a green gate.
+    """
+    env = os.environ.get("MINDC_BIN") or os.environ.get("MINDC")
+    p = pathlib.Path(env) if env else _MINDC
+    if not p.is_file():
+        raise SystemExit(
+            f"FAIL[_selfhost_so]: mindc not found at {p}"
+            + (" (from $MINDC_BIN/$MINDC)" if env else " (this tree's release build)")
+            + ". Refusing to fall back to a PATH `mindc`: that would run another "
+            "checkout's compiler and report a green gate about a tree that never "
+            "built one. Build it with `cargo build --release --bin mindc`, or "
+            "point $MINDC_BIN at the binary under test."
+        )
+    return str(p)

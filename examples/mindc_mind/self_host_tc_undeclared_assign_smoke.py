@@ -72,6 +72,12 @@ STD_DIR = os.path.join(REPO, "std")
 sys.path.insert(0, HERE)
 import self_host_tc_unknown_ident_smoke as e2002  # noqa: E402
 
+# The compiler under test is resolved through the SHARED fail-closed resolver,
+# never a bare-name PATH lookup: a PATH `mindc` is another checkout's binary and
+# lets this gate report green about a tree that never built one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _selfhost_so import resolve_mindc  # noqa: E402
+
 PRELUDE = e2002.PRELUDE
 collect_decl_names = e2002.collect_decl_names
 scope_verdict = e2002.scope_verdict
@@ -592,7 +598,7 @@ def build_so():
     so = os.environ.get("MINDC_SO")
     if so:
         return so, False
-    mindc = os.environ.get("MINDC_BIN", "mindc")
+    mindc = resolve_mindc()
     out = tempfile.NamedTemporaryFile(suffix=".so", delete=False).name
     cmd = [mindc, MAIN_MIND, "--emit-shared", out]
     print("BUILD:", " ".join(cmd), flush=True)
@@ -617,7 +623,7 @@ def main():
     fn.argtypes = [ctypes.c_int64] * 5
     fn.restype = ctypes.c_int64
 
-    mindc = os.environ.get("MINDC_BIN", "mindc")
+    mindc = resolve_mindc()
 
     assign_arm_source_guard()
     mods = bundled_modules()

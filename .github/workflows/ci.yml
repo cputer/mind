@@ -511,9 +511,20 @@ jobs:
 
       - name: Gate-vacuity sweep (run_gate.py --vacuity-sweep)
         # THE POSITIVE CONTROL for every gate in this repo. Runs the whole smoke
-        # corpus with the toolchain handles (MINDC / MINDC_BIN / MINDC_SO /
-        # MINDC_NATIVE_ELF) pointed at paths that do not exist, and REQUIRES every
-        # compiler-dependent gate to be rejected. Measured before scripts/run_gate.py
+        # corpus TWICE, once per way of taking the compiler away, and REQUIRES
+        # every compiler-dependent gate to be rejected in both:
+        #   (1) the toolchain handles (MINDC / MINDC_BIN / MINDC_SO /
+        #       MINDC_NATIVE_ELF) SET to paths that do not exist;
+        #   (2) those handles REMOVED and every PATH entry holding a `mindc`
+        #       scrubbed. Leg (1) cannot see a gate that defaulted to the bare
+        #       name "mindc": it never reads the handle, so it silently ran
+        #       whatever `mindc` was on PATH — another checkout's binary.
+        #       Measured on a pristine copy of the tree with no target/ and every
+        #       handle unset: 21 compiler-dependent gates still reported PASS.
+        # Leg (2) needs a tree with no target/release/mindc; THIS STEP RUNS BEFORE
+        # THE CARGO BUILD, which is exactly that condition. It refuses (exit 1)
+        # rather than report itself passed if it cannot create the negative case.
+        # Measured before scripts/run_gate.py
         # existed: 108 of the 146 corpus gates still exited 0 with the compiler
         # binary absent, because an exit code answers "did anything that ran fail",
         # never "did anything run" — rh_f64_aggregate_canary_smoke.py printed
