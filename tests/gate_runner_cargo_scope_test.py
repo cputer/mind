@@ -145,6 +145,78 @@ def case_commented_cargo_line_is_not_an_invocation() -> None:
     check("commented cargo line is not counted", "cargo-test" in out, False)
 
 
+def case_and_chained_direct_call_is_not_routed() -> None:
+    """`routed` is a property of a SEGMENT, not of the whole joined command.
+
+    `<routed call> && <direct call>` runs two gates: the first through the
+    runner, the second past it. Asking whether the runner appears anywhere in
+    the joined command answers yes for both, so the chained call is reported as
+    routed -- the exact second way to run a gate this lint exists to forbid.
+    """
+    body = ("          python3 scripts/run_gate.py scripts/check_claims.py "
+            "&& python3 scripts/check_release_gating.py")
+    rc, out = run_lint(workflow(STEP.format(body=body)))
+    check("`&&`-chained direct call fails", rc, 1)
+    check("`&&`-chained direct call is named",
+          "scripts/check_release_gating.py: invoked DIRECTLY" in out, True)
+    check("the routed half of the chain still passes",
+          "[PASS] routed" in out and "scripts/check_claims.py" in out, True)
+
+
+def case_semicolon_chained_direct_call_is_not_routed() -> None:
+    """Same defect via `;` -- sequencing, not conjunction, is not the point."""
+    body = ("          python3 scripts/run_gate.py scripts/check_claims.py"
+            "; python3 examples/mindc_mind/mic3_flip_smoke.py")
+    rc, out = run_lint(workflow(STEP.format(body=body)))
+    check("`;`-chained direct call fails", rc, 1)
+    check("`;`-chained direct call is named",
+          "examples/mindc_mind/mic3_flip_smoke.py: invoked DIRECTLY" in out, True)
+
+
+def case_chained_direct_calls_are_counted_individually() -> None:
+    """Both chained shapes in one workflow: two direct invocations, not zero."""
+    body = ("          python3 scripts/run_gate.py scripts/check_claims.py "
+            "&& python3 scripts/check_release_gating.py\n"
+            "          python3 scripts/run_gate.py scripts/check_claims.py"
+            "; python3 examples/mindc_mind/mic3_flip_smoke.py")
+    rc, out = run_lint(workflow(STEP.format(body=body)))
+    check("chained direct calls fail the lint", rc, 1)
+    check("both chained direct calls are reported", "2 problem(s)" in out, True)
+
+
+def case_backgrounded_direct_call_before_runner_is_not_routed() -> None:
+    """Segmenting alone is not enough — argument position carries the rest.
+
+    `&` is deliberately NOT a segment separator (splitting it would cut `2>&1`
+    in half), so a backgrounded direct call and a routed call land in ONE
+    segment. Routing therefore also requires the path to appear AFTER the runner
+    on that segment, i.e. as an argument to it; without that, an operator this
+    lint does not split on would launder a direct call all over again.
+    """
+    body = ("          python3 scripts/check_release_gating.py "
+            "& python3 scripts/run_gate.py scripts/check_claims.py")
+    rc, out = run_lint(workflow(STEP.format(body=body)))
+    check("backgrounded direct call before the runner fails", rc, 1)
+    check("backgrounded direct call is named",
+          "scripts/check_release_gating.py: invoked DIRECTLY" in out, True)
+
+
+def case_piped_routed_call_stays_routed() -> None:
+    """Positive control against over-splitting.
+
+    The real tree pipes a routed gate into `tee` inside an `if`. Segmenting must
+    keep the gate and its path in ONE segment, or this lint would start failing
+    call sites that are correctly routed -- a fix that trades a false pass for a
+    false failure has not fixed anything.
+    """
+    body = ('          if python3 scripts/run_gate.py "examples/mindc_mind/$s.py" '
+            "| tee /tmp/out.txt; then\n"
+            "            echo ok\n"
+            "          fi")
+    rc, out = run_lint(workflow(STEP.format(body=body)))
+    check("piped routed call stays routed", rc, 0)
+
+
 def case_real_workflows_declare_their_cargo_gates() -> None:
     """The regression this wave must not re-open, on the real tree."""
     rc, out = run_lint(REPO / ".github" / "workflows")

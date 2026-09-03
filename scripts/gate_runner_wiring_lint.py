@@ -67,6 +67,21 @@ one. Shell line continuations are joined first, so a command split across lines
 is judged whole. A dynamic path (`"examples/mindc_mind/$s.py"`) is matched too:
 a loop that invokes a gate by variable is still an invocation.
 
+ROUTING IS A PROPERTY OF A SEGMENT, NOT OF A LINE
+-------------------------------------------------
+The joined command is then SPLIT on unquoted `&&`, `||`, `;` and `|`, and each
+invocation is judged against its own segment: routed means THIS segment invokes
+the runner with THIS path as an argument. Asking whether `scripts/run_gate.py`
+appeared anywhere on the line answered yes for `python3 scripts/run_gate.py
+<gate> && python3 scripts/<other gate>.py` — a routed call and a direct call
+chained together, with the direct one reported as routed. That is the second way
+to run a gate this lint exists to forbid, wearing the first one's evidence.
+
+Splitting has to stop exactly there: the real tree pipes a routed gate into
+`tee` inside an `if`, so the gate and its path must stay in ONE segment. A split
+that broke those apart would trade a false pass for a false failure, which is
+not a fix.
+
 Dependency-free (python3 stdlib). Fails closed: finding no invocation at all is
 a broken scan, not a clean tree, and is reported as a failure.
 """
@@ -104,15 +119,25 @@ DEFERRAL_MARKER = "deferred:"
 
 
 class Invocation:
-    def __init__(self, workflow: str, line: int, path: str, command: str) -> None:
+    def __init__(self, workflow: str, line: int, path: str, segment: str,
+                 offset: int) -> None:
         self.workflow = workflow
         self.line = line
         self.path = path
-        self.command = command
+        self.segment = segment
+        self.offset = offset
 
     @property
     def routed(self) -> bool:
-        return RUNNER in self.command
+        """This invocation goes THROUGH the runner — not merely beside one.
+
+        The runner must appear in this invocation's own segment, and the path
+        must appear after it, i.e. as an argument to that runner call. `RUNNER
+        in <whole line>` graded `run_gate.py a.py && python3 b.py` as two routed
+        calls; b.py never met the runner.
+        """
+        at = self.segment.find(RUNNER)
+        return at != -1 and self.offset > at
 
     def __str__(self) -> str:
         return f"{self.workflow}:{self.line} {self.path}"
@@ -188,6 +213,48 @@ def strip_shell_comment(cmd: str) -> str:
     return "".join(out)
 
 
+SEGMENT_OPS = ("&&", "||", ";", "|")
+
+
+def split_segments(cmd: str) -> list[str]:
+    """Each unquoted-operator-separated part of a shell command.
+
+    Quotes are honoured so a `&&`, `;` or `|` inside a quoted argument does not
+    manufacture a segment boundary, and a backslash escape outside quotes hides
+    the character it precedes. `||` is tested before `|` so a logical-or is not
+    read as two empty pipes.
+    """
+    out: list[str] = []
+    start = 0
+    i = 0
+    quote = ""
+    n = len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if ch in "'\"":
+            quote = ch
+            i += 1
+            continue
+        for op in SEGMENT_OPS:
+            if cmd.startswith(op, i):
+                out.append(cmd[start:i])
+                i += len(op)
+                start = i
+                break
+        else:
+            i += 1
+    out.append(cmd[start:])
+    return [seg for seg in out if seg.strip()]
+
+
 def scan(path: Path) -> tuple[list[Invocation], dict[str, str]]:
     text = path.read_text(encoding="utf-8")
     exempt: dict[str, str] = {}
@@ -199,14 +266,17 @@ def scan(path: Path) -> tuple[list[Invocation], dict[str, str]]:
     invocations: list[Invocation] = []
     for lineno, cmd in join_continuations(run_block_lines(text)):
         code = strip_shell_comment(cmd)
-        for hit in PATH_RE.finditer(code):
-            rel = hit.group(1)
-            if rel == RUNNER:
-                continue  # the runner itself is not a gate it must route
-            invocations.append(Invocation(path.name, lineno, rel, code))
-        for hit in CARGO_RE.finditer(code):
-            name = f"cargo-{hit.group(1)}"
-            invocations.append(Invocation(path.name, lineno, name, code))
+        for seg in split_segments(code):
+            for hit in PATH_RE.finditer(seg):
+                rel = hit.group(1)
+                if rel == RUNNER:
+                    continue  # the runner itself is not a gate it must route
+                invocations.append(
+                    Invocation(path.name, lineno, rel, seg, hit.start(1)))
+            for hit in CARGO_RE.finditer(seg):
+                name = f"cargo-{hit.group(1)}"
+                invocations.append(
+                    Invocation(path.name, lineno, name, seg, hit.start()))
     return invocations, exempt
 
 
