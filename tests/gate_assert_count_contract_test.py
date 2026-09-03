@@ -287,6 +287,54 @@ def case_lint_scans_the_real_corpus() -> None:
     check("lint: corpus clean", bad, [])
 
 
+# ── the per-case verdict contract ──────────────────────────────────────────
+# The count rule above made a MARKER unable to stand in for evidence. It left
+# the other half open: a single UNCONDITIONAL summary line is itself a verdict,
+# so a gate that printed only `ALL PASS — {n}/{n} byte-identical` reported
+# `asserted=1` whether it compared eight cases or none. Measured on this tree:
+# self_host_array_smoke.py with `CASES = []` printed
+# `ALL PASS — 0/0 byte-identical (0 diff)` and graded `run_gate: PASS
+# asserted=1`, byte-identical to the unmutated control — so the count carried no
+# information about the work done, and the mandated mutation could not go red.
+# The structural rule: a gate whose verdict-bearing prints are ALL outside any
+# For/While/If body reports one number for every corpus size.
+
+def _shape(src: str) -> list[str]:
+    return smoke_wiring_lint.verdict_shape_violations(Path("synthetic_gate.py"), src)
+
+
+def case_lint_flags_a_summary_only_gate() -> None:
+    """An empty case loop plus a trailing summary must be reported."""
+    src = ('CASES = []\n'
+           'for c in CASES:\n'
+           '    print(f"  [OK] {c}")\n'
+           'print(f"ALL PASS — {len(CASES)}/{len(CASES)} byte-identical")\n')
+    check("lint: summary-only gate flagged", bool(_shape(src)), True)
+
+
+def case_lint_allows_a_per_case_verdict_gate() -> None:
+    """The same gate reporting one verdict per case is the fixed shape."""
+    src = ('CASES = []\n'
+           'for c in CASES:\n'
+           '    print(f"  [PASS] {c}")\n'
+           'print(f"{len(CASES)}/{len(CASES)} byte-identical")\n')
+    check("lint: per-case verdict gate allowed", _shape(src), [])
+
+
+def case_lint_allows_an_assert_only_gate() -> None:
+    """Deliberate limit: an `assert`-based gate prints no verdict at all, and
+    an evaluated assert is already counted per iteration — flagging it would
+    demand output from a gate whose evidence is not output."""
+    src = 'for c in []:\n    assert c\n'
+    check("lint: assert-only gate allowed", _shape(src), [])
+
+
+def case_lint_scans_the_real_corpus_for_verdict_shape() -> None:
+    """Every declared `gate` reports per case, not one blanket summary."""
+    check("lint: corpus reports per case",
+          smoke_wiring_lint.scan_verdict_shape_violations(), [])
+
+
 def main() -> int:
     for fn in sorted(
         (v for k, v in globals().items() if k.startswith("case_")),

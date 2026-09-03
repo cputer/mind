@@ -173,12 +173,12 @@ def main():
     for cid, src in FAILCLOSE:
         got, sig = run_isolated(so, src)
         if got is None:
-            print(f"  [DRIFT ] failclose {cid:<12} CRASHED (signal {-sig}) — must fail-closed, never crash")
+            print(f"  [FAIL  ] failclose {cid:<12} CRASHED (signal {-sig}) — must fail-closed, never crash")
             failed += 1
         elif len(got) == 0:
-            print(f"  [OK    ] failclose {cid:<12} 0B rc=0 (fail-closed over wrong-bytes)")
+            print(f"  [PASS  ] failclose {cid:<12} 0B rc=0 (fail-closed over wrong-bytes)")
         else:
-            print(f"  [DRIFT ] failclose {cid:<12} emitted {len(got)}B via src=0 path — MUST be 0B")
+            print(f"  [FAIL  ] failclose {cid:<12} emitted {len(got)}B via src=0 path — MUST be 0B")
             failed += 1
 
     for cid, src in ORACLE_EXACT:
@@ -188,30 +188,32 @@ def main():
             return EXIT_BLOCKED
         got, sig = run_isolated(so, src)
         if got is None:
-            print(f"  [DRIFT ] exact     {cid:<12} CRASHED (signal {-sig})")
+            print(f"  [FAIL  ] exact     {cid:<12} CRASHED (signal {-sig})")
             failed += 1
         elif got == want:
-            print(f"  [OK    ] exact     {cid:<12} {len(got)}B byte-exact vs oracle (guard did not over-refuse)")
+            print(f"  [PASS  ] exact     {cid:<12} {len(got)}B byte-exact vs oracle (guard did not over-refuse)")
         else:
-            print(f"  [DRIFT ] exact     {cid:<12} OVER-REFUSED/wrong: got {len(got)}B vs oracle {len(want)}B")
+            print(f"  [FAIL  ] exact     {cid:<12} OVER-REFUSED/wrong: got {len(got)}B vs oracle {len(want)}B")
             failed += 1
 
     for cid, src in KEPT:
         got, sig = run_isolated(so, src)
         if got is None:
-            print(f"  [DRIFT ] kept      {cid:<12} CRASHED (signal {-sig})")
+            print(f"  [FAIL  ] kept      {cid:<12} CRASHED (signal {-sig})")
             failed += 1
         elif len(got) > 0:
-            print(f"  [OK    ] kept      {cid:<12} {len(got)}B emitted (guard did not over-refuse)")
+            print(f"  [PASS  ] kept      {cid:<12} {len(got)}B emitted (guard did not over-refuse)")
         else:
-            print(f"  [DRIFT ] kept      {cid:<12} OVER-REFUSED to 0B — guard must keep kinds 0/1/2/6")
+            print(f"  [FAIL  ] kept      {cid:<12} OVER-REFUSED to 0B — guard must keep kinds 0/1/2/6")
             failed += 1
 
     print()
     if failed:
         print(f"LET-PATH FAILCLOSE SMOKE: {failed} DRIFT")
         return EXIT_DRIFT
-    print(f"ALL PASS — {len(FAILCLOSE)} fail-closed (no crash), "
+    # No verdict token: the per-case [PASS]/[FAIL] lines above are the count,
+    # so three empty corpora report zero instead of one blanket success.
+    print(f"let-path failclose smoke: {len(FAILCLOSE)} fail-closed (no crash), "
           f"{len(ORACLE_EXACT)} byte-exact, {len(KEPT)} kept")
     return EXIT_PASS
 

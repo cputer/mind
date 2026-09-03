@@ -70,18 +70,33 @@ def main() -> int:
     print(f"  fixture: {fixture}")
 
     a = emit_mic3(mindc, fixture)
-    if len(a) == 0:
-        raise SystemExit("FAIL: empty mic@3 artifact")
-    if not a.startswith(MIC3_MAGIC):
-        raise SystemExit(f"FAIL: bad magic {a[:4]!r} (expected {MIC3_MAGIC!r})")
-    version = a[len(MIC3_MAGIC)]
-
     b = emit_mic3(mindc, fixture)
-    if a != b:
-        raise SystemExit("FAIL: non-deterministic — two emits differ byte-for-byte")
 
+    # Three separate invariants, REPORTED separately. They used to be three
+    # `raise SystemExit("FAIL: ...")` guards followed by one unconditional
+    # `PASS — ...` summary, so scripts/gate_assert.py could see exactly one
+    # countable line no matter how many invariants had actually been evaluated —
+    # the same number a gate checking nothing would publish. One verdict line per
+    # invariant makes the count the work done.
+    checks = [
+        ("non-empty artifact", len(a) > 0, f"{len(a)} bytes"),
+        ("mic@3 magic", a.startswith(MIC3_MAGIC), f"{a[:4]!r} want {MIC3_MAGIC!r}"),
+        ("deterministic run-to-run", a == b,
+         f"two emits of {len(a)}B/{len(b)}B "
+         f"{'byte-identical' if a == b else 'DIFFER'}"),
+    ]
+    failed = 0
+    for label, ok, detail in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {label}: {detail}")
+        failed += not ok
+    if failed:
+        print(f"  {failed}/{len(checks)} mic@3 oracle invariants broken")
+        return 1
+
+    version = a[len(MIC3_MAGIC)]
     digest = hashlib.sha256(a).hexdigest()
-    print(f"  PASS — MIC3 v{version}, {len(a)} bytes, deterministic run-to-run")
+    # No verdict token on the recap — the per-invariant lines above are the count.
+    print(f"  MIC3 v{version}, {len(a)} bytes, deterministic run-to-run")
     print(f"  oracle SHA-256: {digest}")
     return 0
 

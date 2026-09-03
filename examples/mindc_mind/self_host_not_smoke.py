@@ -127,19 +127,19 @@ def main():
         try:
             got = mind_mic3(fn, src)
         except Exception as exc:  # noqa: BLE001
-            print(f"  [DRIFT  ] {cid:<14} MIND driver raised {exc!r}")
+            print(f"  [FAIL   ] {cid:<14} MIND driver raised {exc!r}")
             failed += 1
             continue
         if not got:
-            print(f"  [DRIFT  ] {cid:<14} MIND emitted EMPTY buf (nb_len=0, still fail-closed); oracle_len={len(want)}")
+            print(f"  [FAIL   ] {cid:<14} MIND emitted EMPTY buf (nb_len=0, still fail-closed); oracle_len={len(want)}")
             failed += 1
             continue
         if got == want:
             h = hashlib.sha256(got).hexdigest()[:16]
-            print(f"  [OK     ] {cid:<14} {len(got):>4}B  sha256={h}…  nb_len==oracle_len")
+            print(f"  [PASS   ] {cid:<14} {len(got):>4}B  sha256={h}…  nb_len==oracle_len")
         else:
             off = first_diff(got, want)
-            print(f"  [DRIFT  ] {cid:<14} PARITY VIOLATION at offset {off}")
+            print(f"  [FAIL   ] {cid:<14} PARITY VIOLATION at offset {off}")
             print(f"            mind_len={len(got)} oracle_len={len(want)}")
             failed += 1
 
@@ -147,7 +147,9 @@ def main():
     if failed:
         print(f"[DRIFT] {failed}/{len(CASES)} case(s) not byte-identical to the oracle")
         return EXIT_DRIFT
-    print(f"[PASS] all {len(CASES)} `!x` cases byte-identical to `mindc --emit-mic3`")
+    # The per-case [PASS]/[FAIL] lines above are the count; a summary token
+    # here would report 1 for an empty corpus just as loudly as for a full one.
+    print(f"not smoke: all {len(CASES)} `!x` cases byte-identical to `mindc --emit-mic3`")
     return EXIT_PASS
 
 

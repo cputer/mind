@@ -90,7 +90,7 @@ def main() -> int:
         want = ref_uleb128(n & 0xFFFFFFFFFFFFFFFF)
         ok = got == want
         failures += not ok
-        tag = "OK" if ok else f"FAIL (want {want.hex()})"
+        tag = "PASS" if ok else f"FAIL (want {want.hex()})"
         print(f"  uleb128({n}) = {got.hex():<10} {tag}")
 
     total = len(cases)
@@ -103,7 +103,7 @@ def main() -> int:
     want = b"MIC3\x02"
     failures += got != want
     total += 1
-    print(f"  header = {got.hex():<10} {'OK' if got == want else 'FAIL (want ' + want.hex() + ')'}")
+    print(f"  header = {got.hex():<10} {'PASS' if got == want else 'FAIL (want ' + want.hex() + ')'}")
 
     # --- string-table entry: uleb128(len) || bytes (the per-string framing) ---
     lib.selftest_mic3_lp_bytes.restype = ctypes.c_void_p
@@ -116,7 +116,7 @@ def main() -> int:
         want = ref_uleb128(len(sval)) + sval
         failures += got != want
         total += 1
-        tag = "OK" if got == want else f"FAIL (want {want.hex()})"
+        tag = "PASS" if got == want else f"FAIL (want {want.hex()})"
         print(f"  lp_bytes(len={len(sval)}) = {got.hex():<18} {tag}")
 
     # --- instruction emitters: operands -> mic@3 bytes (emit_instr arms) ---
@@ -137,7 +137,7 @@ def main() -> int:
         want = ref_const_i64(dst, v)
         failures += got != want
         total += 1
-        tag = "OK" if got == want else f"FAIL (want {want.hex()})"
+        tag = "PASS" if got == want else f"FAIL (want {want.hex()})"
         print(f"  const_i64(dst={dst}, v={v}) = {got.hex():<14} {tag}")
 
     lib.selftest_mic3_binop.restype = ctypes.c_void_p
@@ -148,7 +148,7 @@ def main() -> int:
         want = ref_binop(dst, op, lhs, rhs)
         failures += got != want
         total += 1
-        tag = "OK" if got == want else f"FAIL (want {want.hex()})"
+        tag = "PASS" if got == want else f"FAIL (want {want.hex()})"
         print(f"  binop(dst={dst},op={op},lhs={lhs},rhs={rhs}) = {got.hex():<12} {tag}")
 
     # --- terminators: Output (0x13) and Return (0x17, opt vid) ---
@@ -166,7 +166,7 @@ def main() -> int:
         want = ref_output(idv)
         failures += got != want
         total += 1
-        tag = "OK" if got == want else f"FAIL (want {want.hex()})"
+        tag = "PASS" if got == want else f"FAIL (want {want.hex()})"
         print(f"  output(id={idv}) = {got.hex():<8} {tag}")
 
     lib.selftest_mic3_return.restype = ctypes.c_void_p
@@ -177,7 +177,7 @@ def main() -> int:
         want = ref_return(has, idv)
         failures += got != want
         total += 1
-        tag = "OK" if got == want else f"FAIL (want {want.hex()})"
+        tag = "PASS" if got == want else f"FAIL (want {want.hex()})"
         print(f"  return(has={has},id={idv}) = {got.hex():<8} {tag}")
 
     # --- full string-table SECTION: uleb128(count) || N length-prefixed entries.
@@ -204,7 +204,7 @@ def main() -> int:
     matches_oracle = got == oracle_strtab
     failures += got != want
     total += 1
-    tag = "OK" + (" (== fixture oracle string table)" if matches_oracle else "") \
+    tag = "PASS" + (" (== fixture oracle string table)" if matches_oracle else "") \
         if got == want else f"FAIL (want {want.hex()})"
     print(f"  strtab[{len(strings)}] = {got.hex()}  {tag}")
 
@@ -218,7 +218,7 @@ def main() -> int:
     want = ref_uleb128(len(exp_idx)) + b"".join(ref_uleb128(e) for e in exp_idx)
     failures += got != want
     total += 1
-    print(f"  exports{exp_idx} = {got.hex():<12} {'OK' if got == want else 'FAIL want ' + want.hex()}")
+    print(f"  exports{exp_idx} = {got.hex():<12} {'PASS' if got == want else 'FAIL want ' + want.hex()}")
 
     # --- empty std-surface registries: three uleb128(0) ---
     lib.selftest_mic3_empty_registries.restype = ctypes.c_void_p
@@ -228,7 +228,7 @@ def main() -> int:
     want = b"\x00\x00\x00"
     failures += got != want
     total += 1
-    print(f"  empty_registries = {got.hex():<8} {'OK' if got == want else 'FAIL want ' + want.hex()}")
+    print(f"  empty_registries = {got.hex():<8} {'PASS' if got == want else 'FAIL want ' + want.hex()}")
 
     # --- COMPLETE bodiless module: header||strtab||next_id||exports||0-instrs||registries ---
     lib.selftest_mic3_module_noinstr.restype = ctypes.c_void_p
@@ -259,7 +259,7 @@ def main() -> int:
     failures += got != want
     total += 1
     print(f"  module(noinstr, syms={msyms}) = {got.hex()}  "
-          f"{'OK (complete valid mic@3 module)' if got == want else 'FAIL want ' + want.hex()}")
+          f"{'PASS (complete valid mic@3 module)' if got == want else 'FAIL want ' + want.hex()}")
 
     # --- FN_DEF header (OP_FN_DEF 0x15): name_idx || params(0) || opt_vid(ret) ||
     #     opt_f64(None) || body_len.  fn f()->i64 {..}: 15 00 00 01 00 00 01 ---
@@ -272,7 +272,7 @@ def main() -> int:
     failures += got != want
     total += 1
     print(f"  fn_def_header(name0,ret%0,body=1) = {got.hex()}  "
-          f"{'OK (== oracle FN_DEF header)' if got == want else 'FAIL want ' + want.hex()}")
+          f"{'PASS (== oracle FN_DEF header)' if got == want else 'FAIL want ' + want.hex()}")
 
     # --- COMPLETE WITH-BODY module: pub fn <name>() -> i64 {{ <val> }} — the
     #     first end-to-end with-body mic@3 emit in pure-MIND. (f(){42}) == the
@@ -303,7 +303,7 @@ def main() -> int:
         failures += got != want
         total += 1
         note = " (== fn f(){42} oracle, 29B)" if (name, val) == (b"f", 42) else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         print(f"  const_fn {name.decode()}()={{{val}}} [{len(got)}B] = {got.hex()}  {ok}")
 
     # --- OP_PARAM (0x18): vid(dst) || string_idx(name) || uleb(index).
@@ -318,7 +318,7 @@ def main() -> int:
         total += 1
         note = " (== fn id(a) PARAM)" if (dst, nidx, index) == (0, 1, 0) else ""
         print(f"  param(dst={dst},name={nidx},idx={index}) = {got.hex():<10} "
-              f"{'OK' + note if got == want else 'FAIL want ' + want.hex()}")
+              f"{'PASS' + note if got == want else 'FAIL want ' + want.hex()}")
 
     # --- encode_named_vids: uleb(count) || (string_idx, vid) per pair ---
     lib.selftest_mic3_named_vids.restype = ctypes.c_void_p
@@ -332,7 +332,7 @@ def main() -> int:
         failures += got != want
         total += 1
         print(f"  named_vids({pairs}) = {got.hex():<12} "
-              f"{'OK' if got == want else 'FAIL want ' + want.hex()}")
+              f"{'PASS' if got == want else 'FAIL want ' + want.hex()}")
 
     # --- COMPLETE WITH-BODY arithmetic fn: pub fn <name>(<pa>,<pb>) -> i64 { pa OP pb }
     #     add(a,b){a+b} (op_byte=0) == the captured 49-byte oracle byte-for-byte. ---
@@ -367,7 +367,7 @@ def main() -> int:
         failures += got != want
         total += 1
         note = " (== add(a,b){a+b} oracle, 49B)" if (name, op) == (b"add", 0) else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         print(f"  arith_fn {name.decode()}({pa.decode()},{pb.decode()}) [{len(got)}B] = {got.hex()}  {ok}")
 
     # --- COMPLETE WITH-BODY identity fn: pub fn <name>(<pa>) -> i64 { <pa> }
@@ -403,7 +403,7 @@ def main() -> int:
         failures += got != want
         total += 1
         note = " (== ident(a){a} oracle, 38B)" if (name, pa) == (b"ident", b"a") else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         print(f"  ident_fn {name.decode()}({pa.decode()}) [{len(got)}B] = {got.hex()}  {ok}")
 
     # --- COMPLETE WITH-BODY N-param chained-binop fn:
@@ -459,7 +459,7 @@ def main() -> int:
             note = " (== chain(a,b,c){a+b+c} oracle, 64B)"
         elif (name, op) == (b"chain4", 0):
             note = " (== chain4(a,b,c,d){a+b+c+d} oracle, 78B)"
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  chain_fn {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -559,7 +559,7 @@ def main() -> int:
             note = " (== mixed(a,b,c,d){a*b+c*d} oracle, 77B)"
         elif name == b"f":
             note = " (== f(a,b,c){(a+b)*c} oracle, 60B)"
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  tree_fn {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -650,7 +650,7 @@ def main() -> int:
         want = ref_ast_fn(name, params, nodes)
         failures += got != want
         total += 1
-        ok = "OK" if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" if got == want else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  ast_fn  {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -730,7 +730,7 @@ def main() -> int:
             note = " (== g(a){let x=a+1; let y=x*2; y} oracle, 50B)"
         elif name == b"h":
             note = " (== h(a,b){let s=a+b; s*s} oracle, 52B)"
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  let_fn  {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -855,7 +855,7 @@ def main() -> int:
         total += 1
         note = " (== sel(a,b){if a {b} else {a}} oracle, 60B)" \
             if (name, src.count(b"{ b }")) == (b"sel", 1) and src.endswith(b"{ a } }") else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  if_fn   {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -983,7 +983,7 @@ def main() -> int:
 
         failures += got != want
         total += 1
-        ok = "OK (real-oracle byte-exact)" if got == want \
+        ok = "PASS (real-oracle byte-exact)" if got == want \
             else f"FAIL want {want.hex()}"
         pnames = ",".join(p.decode() for p in params)
         print(f"  if_blk  {name.decode()}({pnames}) [{len(got)}B] = {got.hex()}  {ok}")
@@ -1035,7 +1035,7 @@ def main() -> int:
         failures += got != want
         total += 1
         note = " (== one(){1} two(){2} oracle, 50B)" if (v0, v1) == (1, 2) else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         print(f"  mod_2fn one={v0},two={v1} [{len(got)}B] = {got.hex()}  {ok}")
 
     # (5b) const fn0 + arith fn1: `pub fn one(){1} pub fn add(a,b){a+b}` — 68B oracle.
@@ -1079,7 +1079,7 @@ def main() -> int:
         total += 1
         note = " (== one(){1} add(a,b){a+b} oracle, 68B)" \
             if (v0, op_byte) == (1, 0) else ""
-        ok = "OK" + note if got == want else f"FAIL want {want.hex()}"
+        ok = "PASS" + note if got == want else f"FAIL want {want.hex()}"
         print(f"  mod_carit v0={v0},op={op_byte} [{len(got)}B] = {got.hex()}  {ok}")
 
     # --- Phase 5c: AST-DRIVEN full-module COLLECTION PASS (hand-feeding removal) -
@@ -1194,7 +1194,7 @@ def main() -> int:
             raise SystemExit("FAIL: no oracle for from_ast case")
         failures += got != want
         total += 1
-        ok = "OK (AST-driven, byte-exact vs --emit-mic3)" \
+        ok = "PASS (AST-driven, byte-exact vs --emit-mic3)" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  mod_ast [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1270,7 +1270,7 @@ def main() -> int:
             raise SystemExit("FAIL: no oracle for nfn case")
         failures += got != want
         total += 1
-        ok = "OK (N-fn AST-driven, byte-exact vs --emit-mic3)" \
+        ok = "PASS (N-fn AST-driven, byte-exact vs --emit-mic3)" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  mod_nfn [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1332,7 +1332,7 @@ def main() -> int:
         want = live if live is not None else golden
         failures += got != want
         total += 1
-        ok = "OK (tree/if body, byte-exact vs --emit-mic3)" \
+        ok = "PASS (tree/if body, byte-exact vs --emit-mic3)" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  mod_body [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1387,7 +1387,7 @@ def main() -> int:
     want = live if live is not None else golden
     failures += got != want
     total += 1
-    ok = "OK (AST-driven field load idx0, byte-exact vs --emit-mic3, 71B)" \
+    ok = "PASS (AST-driven field load idx0, byte-exact vs --emit-mic3, 71B)" \
         if got == want else f"FAIL want {want.hex()}"
     print(f"  field_ast[{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1433,7 +1433,7 @@ def main() -> int:
         want = live if live is not None else golden
         failures += got != want
         total += 1
-        ok = f"OK (AST-driven field load {fa2_note}, byte-exact vs --emit-mic3)" \
+        ok = f"PASS (AST-driven field load {fa2_note}, byte-exact vs --emit-mic3)" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  field_ast[{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1522,7 +1522,7 @@ def main() -> int:
         want = live if live is not None else golden
         failures += got != want
         total += 1
-        ok = f"OK (multi-struct field, byte-exact vs --emit-mic3, {ms_note})" \
+        ok = f"PASS (multi-struct field, byte-exact vs --emit-mic3, {ms_note})" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  field_ms [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1569,7 +1569,7 @@ def main() -> int:
         want = live if live is not None else mc_golden
         failures += got != want
         total += 1
-        ok = f"OK (AST-driven method-call UFCS, byte-exact vs --emit-mic3, {mc_note})" \
+        ok = f"PASS (AST-driven method-call UFCS, byte-exact vs --emit-mic3, {mc_note})" \
             if got == want else f"FAIL want {want.hex()}"
         print(f"  method   [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1609,7 +1609,7 @@ def main() -> int:
     want = live if live is not None else golden
     failures += got != want
     total += 1
-    ok = "OK (struct_defs + field load, byte-exact vs --emit-mic3, 111B)" \
+    ok = "PASS (struct_defs + field load, byte-exact vs --emit-mic3, 111B)" \
         if got == want else f"FAIL want {want.hex()}"
     print(f"  field    [{len(got)}B] = {got.hex()}  {ok}")
 
@@ -1647,13 +1647,16 @@ def main() -> int:
     want = live if live is not None else wl_golden
     failures += got != want
     total += 1
-    ok = "OK (while-loop 0x1b, byte-exact vs --emit-mic3, 73B)" \
+    ok = "PASS (while-loop 0x1b, byte-exact vs --emit-mic3, 73B)" \
         if got == want else f"FAIL want {want.hex()}"
     print(f"  while    [{len(got)}B] = {got.hex()}  {ok}")
 
     if failures:
         raise SystemExit(f"FAIL: {failures}/{total} mic@3 primitive mismatches")
-    print(f"  PASS — {total}/{total} byte-exact vs reference "
+    # No verdict token in the recap: each reported check above already
+    # carries its own PASS/FAIL, so scripts/gate_assert.py counts work
+    # done rather than crediting one unconditional summary line.
+    print(f"  {total}/{total} byte-exact vs reference "
           f"(uleb128 + header + string-table + instr emit + multi-fn module)")
     return 0
 

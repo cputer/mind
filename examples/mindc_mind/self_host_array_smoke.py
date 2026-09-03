@@ -124,19 +124,19 @@ def main():
         try:
             got = mind_mic3(fn, src)
         except Exception as exc:  # noqa: BLE001
-            print(f"  [DRIFT  ] {cid:<14} MIND driver raised {exc!r}")
+            print(f"  [FAIL   ] {cid:<14} MIND driver raised {exc!r}")
             failed += 1
             continue
         if not got:
-            print(f"  [DRIFT  ] {cid:<14} MIND emitted EMPTY buf (nb_len=0, still fail-closed); oracle_len={len(want)}")
+            print(f"  [FAIL   ] {cid:<14} MIND emitted EMPTY buf (nb_len=0, still fail-closed); oracle_len={len(want)}")
             failed += 1
             continue
         if got == want:
             h = hashlib.sha256(got).hexdigest()[:16]
-            print(f"  [OK     ] {cid:<14} {len(got):>4}B  sha256={h}…  nb_len==oracle_len")
+            print(f"  [PASS   ] {cid:<14} {len(got):>4}B  sha256={h}…  nb_len==oracle_len")
         else:
             off = first_diff(got, want)
-            print(f"  [DRIFT  ] {cid:<14} PARITY VIOLATION at offset {off}")
+            print(f"  [FAIL   ] {cid:<14} PARITY VIOLATION at offset {off}")
             print(f"            mind_len={len(got)} oracle_len={len(want)}")
             print(f"            mind  ={got.hex()}")
             print(f"            oracle={want.hex()}")
@@ -146,7 +146,10 @@ def main():
     if failed:
         print(f"ARRAY SMOKE: {failed}/{len(CASES)} DRIFT")
         return EXIT_DRIFT
-    print(f"ALL PASS — {len(CASES)}/{len(CASES)} byte-identical (0 diff)")
+    # No verdict token here: the per-case [PASS]/[FAIL] lines above ARE the
+    # count scripts/gate_assert.py reads, so an empty corpus reports zero
+    # rather than crediting one blanket summary with the whole run.
+    print(f"array smoke: {len(CASES)}/{len(CASES)} byte-identical to the oracle (0 diff)")
     return EXIT_PASS
 
 

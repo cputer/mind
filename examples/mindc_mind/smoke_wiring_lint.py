@@ -52,6 +52,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SMOKE_DIR = ROOT / "examples" / "mindc_mind"
 MANIFEST = SMOKE_DIR / "SMOKE_WIRING.tsv"
 
+# The verdict vocabulary belongs to scripts/gate_assert.py — it is what the shim
+# COUNTS. Imported, never re-spelled here: a second copy of that regex is a
+# second definition of "what a reported check looks like", and the two would
+# drift the first time the vocabulary grew a token, leaving this lint blind to
+# exactly the lines the shim was crediting.
+sys.path.insert(0, str(ROOT / "scripts"))
+from gate_assert import VERDICT_RE  # noqa: E402
+
 # runner label -> files whose text is scanned for smoke invocations
 RUNNERS: dict[str, list[Path]] = {
     "ci": sorted((ROOT / ".github" / "workflows").glob("*.yml")),
@@ -112,6 +120,24 @@ def executed_smokes(paths: list[Path]) -> set[str]:
     return found
 
 
+def gate_sources() -> dict[str, Path]:
+    """{stem: path} for every gate-shaped script this lint governs.
+
+    The ONE definition of the on-disk scan scope. `actual_wiring()` classifies
+    these names and `scan_verdict_shape_violations()` reads the same map, so the
+    wiring half and the shape half of this lint cannot come to disagree about
+    which files are in scope — a hand-copied second glob is the drift this file
+    keeps finding elsewhere.
+    """
+    found: dict[str, Path] = {p.stem: p for p in sorted(SMOKE_DIR.glob("*.py"))}
+    for sub in sorted(SMOKE_DIR.rglob("*.py")):
+        if sub.parent == SMOKE_DIR or "__pycache__" in sub.parts:
+            continue
+        if sub.stem.endswith(("_smoke", "_gate", "_lint")):
+            found.setdefault(sub.stem, sub)
+    return found
+
+
 def actual_wiring() -> dict[str, set[str]]:
     # Gate-shaped scripts NESTED below this directory count too. A `*.py` glob on
     # SMOKE_DIR alone had a blind spot exactly one level deep: the ONLY
@@ -120,15 +146,7 @@ def actual_wiring() -> dict[str, set[str]]:
     # invisible to THIS lint — the check whose entire job is finding unwired gates
     # could not see it. A meta-gate with a scan blind spot is the failure mode it
     # exists to prevent, one directory deeper.
-    on_disk = {p.stem for p in SMOKE_DIR.glob("*.py")}
-    for sub in SMOKE_DIR.rglob("*.py"):
-        if sub.parent == SMOKE_DIR:
-            continue
-        if "__pycache__" in sub.parts:
-            continue
-        if sub.stem.endswith(("_smoke", "_gate", "_lint")):
-            on_disk.add(sub.stem)
-    wiring: dict[str, set[str]] = {n: set() for n in on_disk}
+    wiring: dict[str, set[str]] = {n: set() for n in gate_sources()}
     for label, paths in RUNNERS.items():
         for name in executed_smokes(paths):
             if name in wiring:
@@ -233,6 +251,115 @@ def scan_marker_violations() -> list[str]:
     return bad
 
 
+# ── per-case verdict contract ──────────────────────────────────────────────
+# The marker contract above stopped a PRINTED INTEGER from standing in for
+# evidence. It left the other half of the same hole open: a verdict line IS
+# evidence to scripts/gate_assert.py, and a single UNCONDITIONAL summary is one
+# verdict line whatever the gate compared. Measured on this tree:
+# self_host_array_smoke.py with `CASES = []` printed
+# `ALL PASS — 0/0 byte-identical (0 diff)` and graded `run_gate: PASS
+# asserted=1` — byte-identical to the unmutated 5-case control. The count could
+# not tell the two apart, and the mutation every fix in this repo is required to
+# survive ("comment the assertions out, expect red") could not go red.
+#
+# The structural rule, stated over shape rather than wording: if a gate prints
+# verdict lines at all, at least one of them must sit inside a For/While/If
+# body — i.e. it must be reported PER CHECKED THING, so an empty corpus reports
+# zero. A gate whose verdict prints are ALL unconditional publishes the same
+# number for every corpus size.
+#
+# THREE deliberate limits, each so the rule stays a statement about evidence
+# rather than about wording:
+#   * scope is the manifest's own `gate` class, read out of SMOKE_WIRING.tsv
+#     rather than listed here. `helper`/`tool`/`wip` files are not pass/fail
+#     gates and owe no verdict.
+#   * a gate that prints no verdict LITERAL is not flagged. Two honest shapes
+#     land there: an `assert`-based gate (the shim already counts an evaluated
+#     assert per iteration, so an empty loop is already zero), and a gate that
+#     composes the token at RUNTIME — `tag = "PASS" if good else "FAIL"` then
+#     `print(f"... {tag}")`. `_template` renders an interpolation as `{}`, so
+#     this scan cannot see the second kind.
+#   * that second case is a KNOWN, MEASURED bound on this scan, not an oversight.
+#     Widening the renderer to read string constants nested inside interpolations
+#     was tried and rejected: it flags enum_netverify, field_store_netverify and
+#     ref_netverify — three gates that DO report one verdict per case through an
+#     interpolated tag — purely because their recap line spells `"ALL PASS" if ok
+#     else "SOME FAIL"` in literals the per-case line hides. A rule that reds
+#     three correct gates to reach two more is a worse rule. What actually binds
+#     those gates is the RUNTIME contract: scripts/run_gate.py refuses
+#     `asserted=0`, so an emptied corpus fails there whatever this scan can read.
+#     This lint is the cheap static half, not the whole gate.
+_BODY_NODES = (ast.For, ast.AsyncFor, ast.While, ast.If)
+
+
+def _verdict_print_counts(tree: ast.AST) -> tuple[int, int]:
+    """(verdict-bearing print calls, how many are inside a For/While/If body)."""
+    conditional: set[int] = set()
+
+    def descend(node: ast.AST, depth: int) -> None:
+        for child in ast.iter_child_nodes(node):
+            d = depth + 1 if isinstance(node, _BODY_NODES) else depth
+            if d:
+                conditional.add(id(child))
+            descend(child, d)
+
+    descend(tree, 0)
+
+    total = nested = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        is_print = isinstance(fn, ast.Name) and fn.id == "print"
+        is_write = isinstance(fn, ast.Attribute) and fn.attr == "write"
+        if not (is_print or is_write):
+            continue
+        parts = [t for t in (_template(a) for a in node.args) if t is not None]
+        if not parts:
+            continue
+        if not VERDICT_RE.search(" ".join(parts)):
+            continue
+        total += 1
+        if id(node) in conditional:
+            nested += 1
+    return total, nested
+
+
+def verdict_shape_violations(path: Path, src: str) -> list[str]:
+    """Per-case verdict contract applied to one gate source."""
+    try:
+        tree = ast.parse(src, filename=str(path))
+    except SyntaxError as err:
+        return [f"{path}: unparseable ({err})"]
+    total, nested = _verdict_print_counts(tree)
+    if total == 0 or nested > 0:
+        return []
+    return [
+        f"{path}: every verdict line it prints is unconditional "
+        f"({total} of {total}), so scripts/gate_assert.py reads the same "
+        f"asserted= count whether the gate checked its whole corpus or an "
+        f"empty one. Report one PASS/FAIL line per checked case inside the "
+        f"loop, and leave the summary without a verdict token."
+    ]
+
+
+def scan_verdict_shape_violations() -> list[str]:
+    """The contract applied to every source the manifest classes as a `gate`."""
+    rows, _ = parse_manifest()
+    sources = gate_sources()
+    bad: list[str] = []
+    for name in sorted(rows):
+        if rows[name][1] != "gate":
+            continue
+        path = sources.get(name)
+        if path is None:  # a stale/wip row; reported by the manifest checks
+            continue
+        bad += verdict_shape_violations(
+            path.relative_to(ROOT), path.read_text(encoding="utf-8")
+        )
+    return bad
+
+
 def parse_manifest() -> tuple[dict[str, tuple[set[str], str, str]], list[str]]:
     """-> ({name: (runners, class, note)}, raw_lines)"""
     rows: dict[str, tuple[set[str], str, str]] = {}
@@ -303,6 +430,7 @@ def main() -> int:
 
     errors: list[str] = []
     errors += scan_marker_violations()
+    errors += scan_verdict_shape_violations()
 
     for name in sorted(set(actual) - set(rows)):
         errors.append(
