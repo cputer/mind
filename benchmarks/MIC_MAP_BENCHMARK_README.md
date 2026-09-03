@@ -63,7 +63,7 @@ The script also derives the published dollar figure and writes it to the
 `scripts/check_claims.py` recomputes the same arithmetic from those two committed
 inputs and fails the build if a surface disagrees, which is what stops a headline
 from drifting away from its own methodology (it once read $6,780 against a cited
-$396). `python3 tests/check_claims_cost_gate_test.py` proves that check bites by
+$396). `python3 tests/check_claims_gate_tests.py` proves that check bites by
 mutating each input and requiring the gate to go red.
 
 ## Reproducibility

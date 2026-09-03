@@ -1446,7 +1446,10 @@ jobs:
         # program-count floor). They stay open, and this gate keeps them WRITTEN
         # DOWN: a cargo exemption must name the upgrade path that ends it, and
         # deleting the declaration from this file fails the job.
-        run: python3 scripts/run_gate.py tests/gate_runner_cargo_scope_test.py
+        # Folded into the lint itself (`--self-test`): a gate and its mutation
+        # proof are one artifact, so the proof cannot be dropped while the gate
+        # keeps riding green.
+        run: python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py --self-test
 
       - name: Enforcement/test pairing (a test must not outlive its rule)
         run: python3 scripts/run_gate.py scripts/sdlc/enforcement_bijection.py
@@ -1471,7 +1474,7 @@ jobs:
         # asserted=<N> AND announced no SKIP". That guarantee is worth exactly as
         # many call sites as go through it, and the conversion had stopped half-way:
         # 11 workflow steps still invoked a gate directly, two of them vacuously
-        # (tests/check_claims_cost_gate_test.py reported nine mutation cases in a
+        # (tests/check_claims_gate_tests.py reported nine mutation cases in a
         # vocabulary the counter does not read -> asserted=0;
         # scripts/check_release_gating.py printed a hand-typed six-rule list
         # unconditionally). This lint fails on any direct invocation that is not

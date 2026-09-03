@@ -18,6 +18,7 @@ Run: ``python3 scripts/test_gate_wiring.py`` (no third-party deps).
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LINT = ROOT / "scripts" / "check_gate_wiring.py"
+
+
+def lint_constant(name: str) -> int:
+    """Read an integer constant OFF the lint source.
+
+    Not re-typed here and not imported: a second copy of the number is the drift
+    this repo keeps paying for, and importing the module would compile it into a
+    __pycache__ the repo does not track.
+    """
+    m = re.search(rf"^{name}\s*=\s*(\d+)\s*$",
+                  LINT.read_text(encoding="utf-8"), re.MULTILINE)
+    if not m:
+        raise SystemExit(f"test_gate_wiring: {name} not found in {LINT.name} "
+                         "-- the constant moved and this test would go vacuous")
+    return int(m.group(1))
+
+
+HARNESS_CEILING = lint_constant("HARNESS_CEILING")
 
 # Everything the lint reads. Copied into a scratch git repo so a mutation can be
 # applied without touching the working tree.
@@ -92,7 +111,15 @@ def drop_manifest_row(text: str, needle: str) -> str:
 def main() -> int:
     failures: list[str] = []
 
-    def case(label: str, mutate, expect_nonzero: bool) -> None:
+    def case(label: str, mutate, expect_nonzero: bool,
+             expect_in: str | None = None) -> None:
+        """One mutation, one verdict.
+
+        `expect_in` pins the REASON as well as the exit code. A mutation that
+        breaks the scratch tree in some other way also exits non-zero, so a case
+        asserting the code alone can pass while the property it names is not
+        gated at all -- the shape this repo already paid for elsewhere.
+        """
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
             scratch(d)
@@ -100,6 +127,9 @@ def main() -> int:
                 mutate(d)
             rc, out = run_lint(d)
             ok = (rc != 0) if expect_nonzero else (rc == 0)
+            if ok and expect_in is not None and expect_in not in out:
+                ok = False
+                out += f"\n(expected the failure to name: {expect_in!r})"
             verdict = "ok" if ok else "FAIL"
             print(f"  [{verdict}] {label}: exit={rc}")
             if not ok:
@@ -184,6 +214,31 @@ def main() -> int:
         (d / ".githooks/post-commit").unlink()
         subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
     case(".githooks/post-commit removed -> RED", del_posthooks, expect_nonzero=True)
+
+    # The harness ratchet. Every tracked .py/.sh here is harness -- a gate, a
+    # driver, or a mutation proof for one -- and it is the file class that grows
+    # without anyone deciding to grow it. The ceiling is only a ratchet if going
+    # over it is RED, and only a ratchet if an empty scan is RED too.
+    def overflow_harness(d: Path) -> None:
+        room = d / "scratch_harness"
+        room.mkdir()
+        for i in range(HARNESS_CEILING + 1):
+            (room / f"h{i:04d}.py").write_text("# harness\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+    case(f"tracked .py/.sh over the ceiling ({HARNESS_CEILING}) -> RED",
+         overflow_harness, expect_nonzero=True,
+         expect_in="exceeds the recorded ceiling")
+
+    # `0 <= ceiling` is the shape of a vacuous pass: a broken pathspec would
+    # report a clean tree forever. The scratch keeps failing for its OTHER
+    # missing inputs here, which is why this case pins the REASON.
+    def erase_harness(d: Path) -> None:
+        for f in list(d.rglob("*.py")) + list(d.rglob("*.sh")):
+            f.unlink()
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+    case("no tracked .py/.sh at all -> RED (not a vacuous pass)",
+         erase_harness, expect_nonzero=True,
+         expect_in="matched no .py/.sh at all")
 
     # And the real tree must pass, from the real repo root.
     rc, out = run_lint(ROOT)

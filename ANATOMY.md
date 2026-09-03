@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1467 | **Est. tokens:** ~2,816,793
-**Generated:** 2026-09-03 16:47 UTC
+**Files:** 1465 | **Est. tokens:** ~2,818,840
+**Generated:** 2026-09-03 16:58 UTC
 
 ## Token Budget Guide
 
@@ -32,7 +32,7 @@
 | `benches/` | 28 | ~84,218 |
 | `benches/common/` | 1 | ~668 |
 | `bench/fft/` | 8 | ~8,060 |
-| `benchmarks/` | 13 | ~28,497 |
+| `benchmarks/` | 13 | ~28,495 |
 | `benchmarks/autograd_comparison/` | 8 | ~9,411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7,733 |
 | `benchmarks/determinism/` | 3 | ~4,601 |
@@ -74,10 +74,10 @@
 | `.githooks/` | 4 | ~1,755 |
 | `.github/` | 4 | ~847 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~31,521 |
+| `.github/workflows/` | 9 | ~31,568 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 27 | ~80,207 |
+| `scripts/` | 27 | ~84,594 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 342 | ~609,433 |
+| `tests/` | 340 | ~607,048 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 1 | ~668 |
@@ -304,7 +304,7 @@
 - `requirements.txt` (~7 tok, tiny) — torch>=1.0.0
 ### `benchmarks/`
 
-- `BENCHMARK_RESULTS.md` (~4997 tok, huge) — MIND Benchmark Results
+- `BENCHMARK_RESULTS.md` (~4996 tok, huge) — MIND Benchmark Results
 - `criterion_ci_sweep.txt` (~4173 tok, huge) — CRITERION CI-EQUIVALENT SWEEP — recorded output
 ### `benchmarks/cupy_comparison/`
 
@@ -338,7 +338,7 @@
 ### `benchmarks/`
 
 - `mic_benchmark.py` (~1473 tok, large)
-- `MIC_MAP_BENCHMARK_README.md` (~676 tok, large) — MIC/MAP Patent Reference Benchmark
+- `MIC_MAP_BENCHMARK_README.md` (~675 tok, large) — MIC/MAP Patent Reference Benchmark
 - `mic_map_benchmark_results.json` (~1506 tok, huge) — Keys: metadata, measurements, paper_figures_verified, claim_checks, cost_model
 - `mic_map_benchmark_v2.py` (~5563 tok, huge)
 ### `benchmarks/mojo/`
@@ -856,9 +856,9 @@
 
 - `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~19757 tok, huge) — name: CI
+- `ci.yml` (~19805 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
-- `docs-claims.yml` (~2526 tok, huge) — name: Docs Claims
+- `docs-claims.yml` (~2525 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
 - `mindcraft.yml` (~910 tok, large) — name: Mindcraft Check
 - `release-drafter.yml` (~91 tok, small) — name: Release Drafter
@@ -880,15 +880,15 @@
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7043 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~4995 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~5809 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~2217 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
 - `exec_semantics_gate.sh` (~6635 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
-- `gate_assert.py` (~3298 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
-- `gate_runner_wiring_lint.py` (~3818 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
+- `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
+- `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
 ### `scripts/mind-vs-rust/`
@@ -902,7 +902,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~7872 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~7918 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~1376 tok, large) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~1932 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -913,7 +913,7 @@
 - `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `test_gate_wiring.py` (~2271 tok, huge) — Regression test for scripts/check_gate_wiring.py.
+- `test_gate_wiring.py` (~2931 tok, huge) — Regression test for scripts/check_gate_wiring.py.
 - `test_no_ai_attribution.py` (~3509 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
 - `verify_ci_green.py` (~3651 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
 - `workflow_scan.py` (~1069 tok, large) — workflow_scan.py — dependency-free structural reader for the GitHub Actions
@@ -1304,8 +1304,7 @@
 - `cerebras_stencil_tile.rs` (~1929 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `chacha20_poly1305_smoke.rs` (~2222 tok, huge) — Copyright 2025 STARGA Inc.
 - `char_literal_run.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
-- `check_claims_cost_gate_test.py` (~2785 tok, huge) — Gate test: the published MIC cost figure must be DERIVED, not typed.
-- `check_claims_surface_count_gate_test.py` (~2158 tok, huge) — Gate test: a count PRINTED on a public surface must equal the derived count.
+- `check_claims_gate_tests.py` (~5253 tok, huge) — Gate tests for scripts/check_claims.py — its two DERIVED numbers must bite.
 - `cli_buffers.rs` (~459 tok, medium) — Copyright 2025 STARGA Inc.
 - `cli_build.rs` (~648 tok, large) — Copyright 2025 STARGA Inc.
 - `cli_eval.rs` (~502 tok, large) — Copyright 2025 STARGA Inc.
@@ -1533,7 +1532,6 @@
 - `for_hygiene_run.rs` (~1442 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `g2_differential_mlir.rs` (~10959 tok, huge) — Copyright 2025 STARGA Inc.
 - `gate_assert_count_contract_test.py` (~5623 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
-- `gate_runner_cargo_scope_test.py` (~2695 tok, huge) — Gate test: the wiring lint must SEE a `cargo test` gate, or say it cannot.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3678 tok, huge) — Copyright 2025 STARGA Inc.

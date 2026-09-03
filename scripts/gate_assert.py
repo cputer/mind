@@ -69,6 +69,20 @@ number typed into 146 files is 146 copies of one fact and would start drifting
 the day it landed — the same defect this repo keeps finding in hand-copied gate
 scopes.
 
+WHERE THIS GATE'S OWN MUTATION PROOF LIVES
+------------------------------------------
+deferred: tests/gate_assert_count_contract_test.py stays a SEPARATE file rather
+than folding into `scripts/gate_assert.py --self-test`, which is the pattern
+this repo otherwise uses (see scripts/gate_runner_wiring_lint.py --self-test).
+Reason, measured: this module is 331 lines and the contract test is 498; folded
+they are 829, past the 800-line ceiling every file here is held to. Upgrade
+path: the contract test's cases split cleanly into the COUNTING rules (what is
+one assertion) and the SKIP/marker rules; extracting the marker-reading rules
+(`SDLC-GATE ran=`, `tcdiff scored=`) from this module into a small sibling
+brings both halves under the ceiling and lets each fold into the code it proves.
+Until then scripts/check_gate_wiring.py's harness ceiling accounts for the extra
+file, and preflight/ci.yml run it as its own step.
+
 USAGE
   python3 scripts/gate_assert.py <gate.py> [args...]   # run a gate, counting
   from gate_assert import check, check_eq, bump        # inside a gate

@@ -11,7 +11,7 @@ so a named-model attribution landing in any source file never started the
 workflow, and the json-not-evidence gate (which scans ONLY *.mind) could never
 fire on the file class capable of breaking it.
 
-This lint fails if that drift is reintroduced. It checks five things:
+This lint fails if that drift is reintroduced. It checks six things:
   1. every gate STEP the workflow must run is present, as code and not as prose,
      inside the job the release manifest names;
   2. no push/pull_request paths filter excludes any path class they scan;
@@ -21,7 +21,10 @@ This lint fails if that drift is reintroduced. It checks five things:
      cannot be cut from a commit where they never ran;
   4. the tracked hooks directory runs them too (local defence-in-depth);
   5. that directory carries every hook a maintainer needs, because
-     core.hooksPath selects ONE directory and silently drops the rest.
+     core.hooksPath selects ONE directory and silently drops the rest;
+  6. the tracked harness surface (.py/.sh) stays at or below its recorded
+     ceiling, so "one more small script" per wave has to be decided rather
+     than merely accumulate.
 
 Check 3 is the reason this file grew a manifest reader. docs-claims.yml owns the
 gates that keep a named-model credit out of a PUBLIC repo -- in file contents AND
@@ -70,6 +73,64 @@ GATES = (
 # Events whose trigger must cover the whole tree. workflow_dispatch is manual.
 GATED_EVENTS = ("push", "pull_request")
 
+# --------------------------------------------------------------------------
+# HARNESS SURFACE RATCHET
+#
+# This repository's product surface is MIND and Rust; every tracked .py/.sh is
+# HARNESS -- a CI gate, a driver, or a mutation proof for one. Harness is
+# legitimate and load-bearing, and it is also the one file class that grows
+# without anybody deciding to grow it: each wave that closes a finding tends to
+# add "one more small script", and the total is visible only to whoever thinks
+# to count it. A prose baseline recorded in a note is not a baseline -- nothing
+# reads it, and the next wave inherits a number it never sees.
+#
+# So the baseline lives here as an executable CEILING. Raising it is a
+# deliberate edit to this line, in the same commit as the files that need the
+# room, with the reason in the commit message; that is exactly the friction a
+# ratchet is for. Folding a self-test into the gate it proves (the accepted
+# pattern: `<gate>.py --self-test`) LOWERS the count, and lowering the ceiling
+# to match is what makes the ratchet bite the next time.
+HARNESS_CEILING = 247
+# Read as a git PATHSPEC against the index: the tree on disk carries untracked
+# scratch files whose count is nobody's contract, and a working-tree glob would
+# make this gate's verdict depend on what happens to be lying around.
+HARNESS_PATHSPEC = ("*.py", "*.sh")
+
+
+def tracked_harness_files(root: Path) -> list[str]:
+    """Every TRACKED .py/.sh path, newline-split off `git ls-files`."""
+    out = subprocess.run(
+        ["git", "ls-files", "--", *HARNESS_PATHSPEC],
+        capture_output=True, text=True, cwd=root, check=True,
+    ).stdout
+    return [ln for ln in out.splitlines() if ln.strip()]
+
+
+def check_harness_ratchet(root: Path, failures: list[str]) -> None:
+    """The harness file count must not exceed the recorded ceiling."""
+    files = tracked_harness_files(root)
+    n = len(files)
+    if n == 0:
+        # An empty result is a broken pathspec, not a repository with no
+        # harness -- and `0 <= ceiling` is the shape of a vacuous pass.
+        failures.append(
+            "harness ratchet: `git ls-files` matched no .py/.sh at all. That is "
+            "a broken pathspec, not a clean tree; a count of zero can never "
+            "breach a ceiling, so this check must fail closed on it."
+        )
+        return
+    if n > HARNESS_CEILING:
+        failures.append(
+            f"harness ratchet: {n} tracked .py/.sh files exceeds the recorded "
+            f"ceiling of {HARNESS_CEILING} by {n - HARNESS_CEILING}. A gate's "
+            "mutation proof belongs INSIDE the gate it proves "
+            "(`python3 <gate>.py --self-test`), not in a new file. Fold it, or "
+            "raise HARNESS_CEILING in scripts/check_gate_wiring.py in the same "
+            "commit and say in the message what the new files buy."
+        )
+        return
+    print(f"[PASS] harness ratchet: {n} tracked .py/.sh <= ceiling {HARNESS_CEILING}")
+
 # (workflow file, job id) -> scripts that job MUST invoke as a step.
 # Checked against the job body with comment lines removed: a workflow that
 # merely mentions a gate in prose is not a workflow that runs it, and that is
@@ -79,12 +140,12 @@ REQUIRED_STEPS: dict[tuple[str, str], tuple[str, ...]] = {
         "scripts/check_gate_wiring.py",
         "scripts/test_gate_wiring.py",
         "scripts/check_claims.py",
-        # The two mutation proofs for check_claims.py's derived numbers. The
-        # gate above only reports that the docs currently agree with the tree;
-        # these prove the comparisons BITE. A silently deleted mutation proof
-        # leaves a check that can stop comparing and still ride green.
-        "tests/check_claims_cost_gate_test.py",
-        "tests/check_claims_surface_count_gate_test.py",
+        # The mutation proofs for check_claims.py's two derived numbers (cost
+        # and printed counts), in one file with one step. The gate above only
+        # reports that the docs currently agree with the tree; these prove the
+        # comparisons BITE. A silently deleted mutation proof leaves a check
+        # that can stop comparing and still ride green.
+        "tests/check_claims_gate_tests.py",
         "scripts/check_no_ai_attribution.sh",
         "scripts/check_json_not_evidence.sh",
         # The commit-message gate. A file can be corrected by the next commit;
@@ -440,6 +501,9 @@ def main() -> int:
 
     # (4) local defence-in-depth: one tracked hooks directory runs them too.
     check_hooks(root, failures)
+
+    # (5) the harness surface may not grow past its recorded ceiling.
+    check_harness_ratchet(root, failures)
 
     if failures:
         print("::error::gate wiring is broken - a whole-tree gate is not reachable:")

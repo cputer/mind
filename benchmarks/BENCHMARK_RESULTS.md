@@ -505,7 +505,7 @@ MIC      ████████████████                       
 - Gate: `scripts/check_claims.py` recomputes the saving from the price config and
   the benchmark's token counts and fails the build if any declared surface carries
   a different figure. Proof that the comparison bites:
-  `python3 tests/check_claims_cost_gate_test.py`.
+  `python3 tests/check_claims_gate_tests.py`.
 
 ## Reproduction
 

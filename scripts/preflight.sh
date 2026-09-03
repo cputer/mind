@@ -390,8 +390,10 @@ python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py \
 # whose gate IS `cargo test` was neither routed nor required to be declared — a
 # whole class of gate outside the mechanism with nothing recording that fact.
 # This pins the widened scope and pins the deferral: a cargo exemption must name
-# the upgrade path that ends it, and deleting the record turns the gate red.
-python3 scripts/run_gate.py tests/gate_runner_cargo_scope_test.py \
+# the upgrade path that ends it, and deleting the record turns the gate red. It is
+# the SAME module's --self-test entry point: a gate and the proof that it bites are
+# one artifact, so the proof cannot be deleted while the gate keeps riding green.
+python3 scripts/run_gate.py scripts/gate_runner_wiring_lint.py --self-test \
   || bad "gate-runner cargo scope FAILED — a cargo gate is uncovered and undeclared"
 
 # The contract behind every OTHER gate in this file: scripts/gate_assert.py must
