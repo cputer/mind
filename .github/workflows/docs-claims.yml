@@ -77,6 +77,17 @@ jobs:
         # it, a cost check that silently stopped comparing would ride green.
         run: python3 tests/check_claims_cost_gate_test.py
 
+      - name: Counts printed in the docs are derived, not typed (mutation proof)
+        # Companion to the cost mutation proof above, for the [counts] gate.
+        # check_claims.py's count leg compared config/capabilities.toml against
+        # the tree and never read the number a reader sees, so README could type
+        # "~1,390 tests across 174 test files" over a tree of 2,217 tests in 325
+        # files and still print [PASS]. This step mutates the number, the
+        # sentence and the surface file in turn and fails unless the gate goes
+        # red for each -- and asserts the live manifest still wires that leg to
+        # the README claims, since a check kind nothing uses gates nothing.
+        run: python3 tests/check_claims_surface_count_gate_test.py
+
       - name: No AI-attribution in public artifacts
         run: python3 scripts/run_gate.py scripts/check_no_ai_attribution.sh
 

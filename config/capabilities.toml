@@ -85,7 +85,7 @@ mindcraft   = ["mindc lint src/", "mindc lint --rule"]
 # declared number must stay <= the real count (the surface uses "N+"); an
 # `exact` number must match within `tolerance`. Drift is FLAGGED.
 #
-# Modes:
+# Modes (manifest `declared` vs the tree):
 #   floor  — declared <= derived            (surface phrased as "N+")
 #   exact  — |declared - derived| <= tolerance
 # Kinds:
@@ -93,33 +93,60 @@ mindcraft   = ["mindc lint src/", "mindc lint --rule"]
 #   regex_count   — occurrences of `regex` across files matching `pattern`
 #   py_test_count — `def test_*` functions under `path` (pytest discovery)
 #
+# SECOND LEG — the number PRINTED on the surface (`surface_regex`, opt-in):
+#   The fields above compare a number in THIS FILE against the tree. They never
+#   read the docs, so the two drifted freely: README said "~1,390 tests across
+#   174 test files" against a tree of 2,217 tests in 325 files while
+#   `[PASS] floor 156+ <= 325` printed on every run, and the note below quoted
+#   README text that had not existed for months. An entry that declares
+#   `surface_regex` (exactly ONE capture group) has the number the regex finds
+#   on `surface` compared to the DERIVED count, every occurrence:
+#     surface_mode = "floor" — typed must not EXCEED derived, and must not lag
+#                              it by more than `surface_tolerance` (the lag
+#                              bound is what stops a floor going stale)
+#     surface_mode = "exact" — |typed - derived| <= `surface_tolerance`
+#   Fail-CLOSED: a missing surface, a regex matching nothing, or a non-numeric
+#   capture is DRIFT, never a skip.
+#
 # Keep this section conservative: only declare counts a maintainer is willing
 # to have block a commit. Floor + tolerance keep the false-positive rate low.
 [counts.rust_test_files]
-declared  = 156
-mode      = "floor"
-kind      = "glob_count"
-globs     = ["tests/**/*.rs"]
-surface   = "README.md"
-note      = '"... across 156 test files" — floor; real tree has more.'
+declared          = 325
+mode              = "floor"
+kind              = "glob_count"
+globs             = ["tests/**/*.rs"]
+surface           = "README.md"
+surface_regex     = '([\d,]+)\+ test files'
+surface_mode      = "floor"
+surface_tolerance = 25
+note              = '"... in 325+ test files" — floor, and README may lag the tree by at most 25 files before the gate demands a refresh.'
 
 [counts.rust_test_fns]
-declared  = 1264
-mode      = "floor"
-kind      = "regex_count"
-globs     = ["tests/**/*.rs", "src/**/*.rs"]
-regex     = '#\[(?:tokio::)?test\]'
-surface   = "README.md"
-note      = '"1,264+ tests" — floor over #[test] / #[tokio::test] across src/ + tests/.'
+declared          = 2217
+mode              = "floor"
+kind              = "regex_count"
+globs             = ["tests/**/*.rs", "src/**/*.rs"]
+regex             = '#\[(?:tokio::)?test\]'
+surface           = "README.md"
+surface_regex     = '([\d,]+)\+ tests\b'
+surface_mode      = "floor"
+surface_tolerance = 200
+note              = '"2,217+ tests" — floor over #[test] / #[tokio::test] across src/ + tests/; README may lag by at most 200.'
 
 [counts.pytorch_bridge_tests]
-declared  = 11
-mode      = "exact"
-tolerance = 0
-kind      = "py_test_count"
-path      = "tools/pytorch_bridge/tests"
-surface   = "README.md"
-note      = '"11 unit tests under tools/pytorch_bridge/tests/" — exact.'
+declared          = 11
+mode              = "exact"
+tolerance         = 0
+kind              = "py_test_count"
+path              = "tools/pytorch_bridge/tests"
+surface           = "README.md"
+# Anchored on the PATH: README also says "17 unit tests under ..." about a
+# different suite, and an unanchored pattern would compare that number to this
+# count. A surface pattern must identify the claim, not just a number shape.
+surface_regex     = '([\d,]+) unit tests under `tools/pytorch_bridge/tests/`'
+surface_mode      = "exact"
+surface_tolerance = 0
+note              = '"11 unit tests under tools/pytorch_bridge/tests/" — exact, both in this manifest and on the surface.'
 
 [counts.stdlib_modules]
 declared  = 13
@@ -128,4 +155,12 @@ kind      = "glob_count"
 path      = "std"
 pattern   = "*.mind"
 surface   = "STATUS.md"
+# deferred: no `surface_regex`. STATUS.md's "13 stdlib modules
+# (vec/string/map/io/blas/toml/json/regex/net/fs/process/mlir/llvm)" is a
+# HISTORICAL v0.7.0 release marker naming the modules that shipped in that
+# release, not a live count of std/ (42 today) — raising it to the derived
+# figure would falsify the release history. Upgrade path: split the sentence
+# into the historical milestone and a live "std/ ships N+ modules" claim, then
+# give the live one a surface_regex. check_claims.py prints a NOTE for this
+# entry on every run so the gap stays visible.
 note      = '"13 stdlib modules" — floor; std/ also holds runtime-internal modules.'

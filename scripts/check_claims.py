@@ -9,7 +9,12 @@ each was fixed, and this gate stops them from silently drifting back:
   2. canonical IR — at least one version doc must state the canonical mic@1 / mic@3 pair.
   3. [counts] (OPTIONAL) — numbers in the docs re-derived from the real tree, FLAGGED
      on drift. Floor + tolerance keep the false-positive rate low; a missing source
-     path SKIPS the entry instead of crashing.
+     path SKIPS the entry instead of crashing. TWO legs: the manifest's `declared`
+     number against the tree, AND — when the entry declares `surface_regex` — the
+     number PRINTED ON THE SURFACE against the tree. The second leg exists because
+     the first one cannot see the docs at all: README typed "~1,390 tests across 174
+     test files" while the tree held 325 files and 2,217 `#[test]`s, and a manifest
+     floor of 156 kept reporting `[PASS] 156+ <= 325` throughout.
   4. cost claim — the published "MIC saves $N/year" figure RE-DERIVED from the price
      input in config/token_pricing.toml and the tokenizer-measured counts in the
      benchmark output, then required verbatim on every declared surface. It is the
@@ -209,6 +214,123 @@ _DERIVERS = {
 }
 
 
+# --------------------------------------------------------------------------------
+# The SURFACE leg: the number a reader actually sees, compared to the tree.
+#
+# The manifest leg above compares `declared` (a number in config/) against the
+# tree. Nothing compared the number PRINTED IN THE DOCS, so the two could drift
+# apart indefinitely while the gate reported PASS — measured: README.md said
+# "~1,390 tests across 174 test files", tests/**/*.rs held 325 files and
+# src/+tests/ held 2,217 `#[test]`s, and `[PASS] counts[rust_test_files]: floor
+# 156+ <= 325` printed on every run. The manifest's own note quoted README text
+# ("... across 156 test files") that had not existed for months.
+#
+# An entry opts in with `surface_regex` (exactly one capture group, matched
+# against the whole `surface` file). Semantics:
+#   surface_mode = "floor" — the surface is phrased "N+": typed must never
+#       EXCEED the derived count, and must not lag it by more than
+#       `surface_tolerance`. The lag bound is what stops a floor from going
+#       stale, which is the whole defect above.
+#   surface_mode = "exact" — |typed - derived| <= `surface_tolerance`.
+#
+# Fail-CLOSED, deliberately: a declared surface that is missing, a regex that
+# matches nothing, and a capture that is not a number are all DRIFT, never a
+# skip. A pattern that matches nothing asserts nothing, and that is exactly how
+# this check would quietly stop checking after an innocuous re-wording.
+#
+# deferred: [counts.stdlib_modules] has NO surface leg. Its surface text
+# ("13 stdlib modules (vec/string/map/io/...)" in STATUS.md) is a HISTORICAL
+# v0.7.0 release marker naming the 13 modules that shipped in that release, not
+# a live count of std/ (42 files today) — raising it to the derived figure would
+# make the release history wrong, and lowering the derived count is not an
+# option. Upgrade path: split the claim into a historical milestone sentence and
+# a live "std/ ships N+ modules" sentence, then give the live one a
+# surface_regex. Until then check_counts prints an explicit NOTE for every entry
+# whose surface number is not parsed, so the gap is visible on every run rather
+# than inferred from an absent field.
+# --------------------------------------------------------------------------------
+
+
+def _grouped_int(raw: str) -> int | None:
+    """`"1,390"` -> 1390. None when the capture is not a plain number."""
+    txt = raw.strip().replace(",", "").replace("\u202f", "").replace(" ", "")
+    return int(txt) if txt.isdigit() else None
+
+
+def _check_surface_number(name: str, spec: dict, derived: int) -> tuple[list[str], list[str]]:
+    """Compare every occurrence of the surface's printed number to `derived`."""
+    rx_src = spec.get("surface_regex")
+    surface = spec.get("surface")
+    if not rx_src:
+        return [], [
+            f"counts[{name}]: NOTE surface number on {surface} is NOT parsed "
+            f"(no surface_regex) — manifest-vs-tree comparison only"
+        ]
+    if not surface:
+        return [f"DRIFT [counts/{name}] surface_regex declared without a `surface`"], []
+    path = ROOT / surface
+    if not path.is_file():
+        return [f"DRIFT [counts/{name}] declared surface {surface} does not exist"], []
+    try:
+        rx = re.compile(rx_src)
+    except re.error as err:
+        return [f"DRIFT [counts/{name}] surface_regex is invalid: {err}"], []
+    if rx.groups != 1:
+        return [
+            f"DRIFT [counts/{name}] surface_regex must have exactly one capture "
+            f"group (the number); it has {rx.groups}"
+        ], []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    found = rx.findall(text)
+    if not found:
+        return [
+            f"DRIFT [counts/{name}] {surface} no longer prints the claim this entry "
+            f"checks: surface_regex {rx_src!r} matched nothing. Point it at the live "
+            f"wording or delete the entry — a pattern that matches nothing asserts "
+            f"nothing."
+        ], []
+
+    mode = spec.get("surface_mode", "exact")
+    tol = int(spec.get("surface_tolerance", 0))
+    drift: list[str] = []
+    info: list[str] = []
+    for occ in found:
+        typed = _grouped_int(occ)
+        if typed is None:
+            drift.append(
+                f"DRIFT [counts/{name}] {surface}: captured {occ!r}, which is not a number"
+            )
+            continue
+        if mode == "floor":
+            if typed > derived:
+                drift.append(
+                    f"DRIFT [counts/{name}] {surface} claims {typed}+ but the tree has "
+                    f"{derived} — the surface OVER-CLAIMS"
+                )
+            elif derived - typed > tol:
+                drift.append(
+                    f"DRIFT [counts/{name}] {surface} prints {typed}+ but the tree has "
+                    f"{derived} — stale by {derived - typed} (bound {tol}); raise the "
+                    f"surface to the derived figure"
+                )
+            else:
+                info.append(
+                    f"[PASS] counts[{name}]/surface: {surface} prints {typed}+ "
+                    f"<= {derived} (lag {derived - typed} <= {tol})"
+                )
+        elif abs(typed - derived) > tol:
+            drift.append(
+                f"DRIFT [counts/{name}] {surface} prints {typed} but the tree has "
+                f"{derived} (±{tol})"
+            )
+        else:
+            info.append(
+                f"[PASS] counts[{name}]/surface: {surface} prints {typed} "
+                f"~= {derived} (±{tol})"
+            )
+    return drift, info
+
+
 def check_counts() -> tuple[list[str], list[str]]:
     """Return (drift_messages, info_messages). Drift fails the gate; info is advisory."""
     drift: list[str] = []
@@ -247,6 +369,12 @@ def check_counts() -> tuple[list[str], list[str]]:
                 )
             else:
                 info.append(f"[PASS] counts[{name}]: exact {declared} ~= {actual} (±{tol})")
+
+        # Second leg: the number printed on the surface, not just the one in
+        # config/. A manifest floor stays green exactly while the docs go stale.
+        s_drift, s_info = _check_surface_number(name, spec, actual)
+        drift.extend(s_drift)
+        info.extend(s_info)
     return drift, info
 
 

@@ -79,6 +79,12 @@ REQUIRED_STEPS: dict[tuple[str, str], tuple[str, ...]] = {
         "scripts/check_gate_wiring.py",
         "scripts/test_gate_wiring.py",
         "scripts/check_claims.py",
+        # The two mutation proofs for check_claims.py's derived numbers. The
+        # gate above only reports that the docs currently agree with the tree;
+        # these prove the comparisons BITE. A silently deleted mutation proof
+        # leaves a check that can stop comparing and still ride green.
+        "tests/check_claims_cost_gate_test.py",
+        "tests/check_claims_surface_count_gate_test.py",
         "scripts/check_no_ai_attribution.sh",
         "scripts/check_json_not_evidence.sh",
         # The commit-message gate. A file can be corrected by the next commit;
