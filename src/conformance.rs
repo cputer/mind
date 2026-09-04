@@ -67,6 +67,17 @@ pub struct ConformanceReport {
     /// passing profile as evidence of autodiff stability. Zero while
     /// [`AUTODIFF_COMPILED_IN`] is true is a failure, not a pass.
     pub autodiff_ran: usize,
+    /// Number of executed cases whose VALUE cell actually ran through
+    /// [`run_value_oracle`].
+    ///
+    /// Counted where the check executes, not where it is declared: a case that
+    /// pins a value and also pins a compile error never reaches the oracle, so
+    /// a declaration-side count would attest a runtime value nobody computed.
+    /// Zero is a failure (see [`NO_VALUE_CASES`]).
+    ///
+    /// What a green value cell attests is [`VALUE_ORACLE_ENGINE`]'s
+    /// [`ValueOracleEngine::attests`] — read it before quoting this count.
+    pub value_ran: usize,
 }
 
 impl ConformanceReport {
@@ -97,6 +108,56 @@ pub const NO_AUTODIFF_CASES: &str = "autodiff: no conformance case exercises the
                                      stability the suite never checked — \
                                      treating as failure";
 
+/// Failure text for a run whose value leg executed zero cells.
+pub const NO_VALUE_CASES: &str = "value: no conformance case executed the value \
+                                  oracle (0 cells ran); a pass here would attest \
+                                  runtime values the suite never computed — \
+                                  treating as failure";
+
+/// The engine whose result a conformance VALUE cell attests.
+///
+/// One owner for the fact, so the suite, the CLI attestation line and any
+/// downstream claim read the same sentence instead of inferring "the compiler
+/// is correct" from a green cell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueOracleEngine {
+    /// The shipped AST evaluator (`eval_module_value_with_env_mode`), executing
+    /// the case SOURCE. The compiled IR is checked for canonical-artifact
+    /// integrity only (mic@3 emit -> parse -> emit fixed point).
+    AstEvaluator,
+    /// The compiled artifact's own execution. Not reachable yet — the typed
+    /// name of the upgrade documented on [`run_value_oracle`], so that landing
+    /// it changes the attestation text in exactly one place.
+    CompiledArtifact,
+}
+
+impl ValueOracleEngine {
+    /// Short machine-greppable tag for the CI log line.
+    pub const fn tag(self) -> &'static str {
+        match self {
+            Self::AstEvaluator => "ast-evaluator",
+            Self::CompiledArtifact => "compiled-artifact",
+        }
+    }
+
+    /// One line stating exactly what a green value cell does and does not prove.
+    pub const fn attests(self) -> &'static str {
+        match self {
+            Self::AstEvaluator => {
+                "a green value cell attests the AST evaluator's result and the \
+                 canonical mic@3 artifact's emit -> parse -> emit fixed point, \
+                 NOT the compiled artifact's execution"
+            }
+            Self::CompiledArtifact => {
+                "a green value cell attests the compiled artifact's own execution"
+            }
+        }
+    }
+}
+
+/// The engine this build's value cells actually run on.
+pub const VALUE_ORACLE_ENGINE: ValueOracleEngine = ValueOracleEngine::AstEvaluator;
+
 /// Whether the `autodiff` feature was compiled into this binary.
 ///
 /// One owner for the fact: the suite, the CLI attestation line and the tests
@@ -112,55 +173,103 @@ pub const AUTODIFF_COMPILED_IN: bool = cfg!(feature = "autodiff");
 /// that finds nothing to run.
 pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, ConformanceFailure> {
     let mut failures = Vec::new();
+    let mut counts = LegCounts {
+        cpu_ran: 0,
+        gpu_requested: matches!(opts.profile, ConformanceProfile::CpuAndGpu),
+        gpu_ran: 0,
+        value_ran: 0,
+        autodiff_ran: 0,
+    };
 
     let cpu = cpu_cases();
-    if cpu.is_empty() {
-        failures.push(NO_CPU_CASES.to_string());
-    }
-    let mut autodiff_ran = 0;
+    counts.cpu_ran = cpu.len();
     for case in &cpu {
-        if case.run_autodiff {
-            autodiff_ran += 1;
-        }
-        if let Err(msg) = run_case(case) {
-            failures.push(format!("cpu:{} => {msg}", case.name));
+        match run_case(case) {
+            Ok(outcome) => counts.record(&outcome),
+            Err(msg) => failures.push(format!("cpu:{} => {msg}", case.name)),
         }
     }
 
-    let mut gpu_ran = 0;
-    if matches!(opts.profile, ConformanceProfile::CpuAndGpu) {
+    if counts.gpu_requested {
         let gpu = gpu_cases();
-        if gpu.is_empty() {
-            failures.push(NO_GPU_CASES.to_string());
-        }
-        gpu_ran = gpu.len();
+        counts.gpu_ran = gpu.len();
         for case in &gpu {
-            if case.run_autodiff {
-                autodiff_ran += 1;
-            }
-            if let Err(msg) = run_case(case) {
-                failures.push(format!("gpu:{} => {msg}", case.name));
+            match run_case(case) {
+                Ok(outcome) => counts.record(&outcome),
+                Err(msg) => failures.push(format!("gpu:{} => {msg}", case.name)),
             }
         }
     }
 
-    // Per-leg count, not just the total: a suite whose every case leaves
-    // `run_autodiff` false verified nothing about autodiff, and the exit code
-    // cannot tell that apart from a real pass.
-    if AUTODIFF_COMPILED_IN && autodiff_ran == 0 {
-        failures.push(NO_AUTODIFF_CASES.to_string());
-    }
+    failures.extend(leg_failures(&counts));
 
     if failures.is_empty() {
         Ok(ConformanceReport {
             profile: opts.profile,
-            cpu_ran: cpu.len(),
-            gpu_ran,
-            autodiff_ran,
+            cpu_ran: counts.cpu_ran,
+            gpu_ran: counts.gpu_ran,
+            autodiff_ran: counts.autodiff_ran,
+            value_ran: counts.value_ran,
         })
     } else {
         Err(ConformanceFailure(failures))
     }
+}
+
+/// Per-leg execution counts for one run — the input to the fail-closed policy.
+///
+/// One owner for the "did this leg run anything" rule: empty-CPU, empty-GPU,
+/// no-value-cell and no-autodiff-case are four spellings of the same invariant
+/// (an exit code answers "did anything that ran fail", never "did anything
+/// run"), so they are decided once in [`leg_failures`] and unit-tested there
+/// instead of being re-derived inline at each leg.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LegCounts {
+    cpu_ran: usize,
+    gpu_requested: bool,
+    gpu_ran: usize,
+    value_ran: usize,
+    autodiff_ran: usize,
+}
+
+impl LegCounts {
+    fn record(&mut self, outcome: &CaseOutcome) {
+        if outcome.value_ran {
+            self.value_ran += 1;
+        }
+        if outcome.autodiff_ran {
+            self.autodiff_ran += 1;
+        }
+    }
+}
+
+/// Which optional legs a single case actually EXECUTED.
+///
+/// Recorded where the check runs, not where it is declared: a case can carry
+/// `expected_value` and still never reach the oracle (it also pins a compile
+/// error), and counting the declaration would attest a value nobody computed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct CaseOutcome {
+    value_ran: bool,
+    autodiff_ran: bool,
+}
+
+/// The fail-closed policy over one run's per-leg counts.
+fn leg_failures(counts: &LegCounts) -> Vec<String> {
+    let mut failures = Vec::new();
+    if counts.cpu_ran == 0 {
+        failures.push(NO_CPU_CASES.to_string());
+    }
+    if counts.gpu_requested && counts.gpu_ran == 0 {
+        failures.push(NO_GPU_CASES.to_string());
+    }
+    if counts.value_ran == 0 {
+        failures.push(NO_VALUE_CASES.to_string());
+    }
+    if AUTODIFF_COMPILED_IN && counts.autodiff_ran == 0 {
+        failures.push(NO_AUTODIFF_CASES.to_string());
+    }
+    failures
 }
 
 /// Runtime-value oracle for a conformance case.
@@ -177,14 +286,34 @@ pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, Co
 /// (`Int(0)` for a `while` program that computes 6), so a conformance cell
 /// beyond straight-line arithmetic would have passed on the wrong value.
 ///
-/// deferred: the strongest oracle is executing the emitted NATIVE artifact (or
-/// the canonical mic@3 through the same VM the differential fuzzer uses) rather
-/// than the interpreter; the artifact round-trip below pins the bytes but not
-/// their execution. Upgrade path: run the case through `ExecMode::MlirJitCpu` /
-/// the self-host stage1 runner once the conformance job can require that
-/// toolchain — owned by the conformance grid-expansion task, docs/roadmap.md
-/// "Phase 19.3 — Exhaustive-cell conformance over the codegen flag product",
-/// which turns this suite into the language definition.
+/// SCOPE OF A GREEN VALUE CELL — do not over-read it: it attests the AST
+/// evaluator's result and the canonical mic@3 artifact's emit -> parse -> emit
+/// fixed point, NOT the execution of the compiled artifact; a lowering or
+/// codegen miscompile leaves the artifact a valid fixed point and the
+/// evaluator's answer correct, so the cell stays green. The single spelling of
+/// that sentence is [`ValueOracleEngine::attests`] for [`VALUE_ORACLE_ENGINE`],
+/// which the CLI prints on every run so a CI log cannot be quoted for more than
+/// it checked.
+///
+/// deferred: execute the COMPILED artifact instead of the source.
+/// - Owner: docs/roadmap.md "Phase 19.3 — Exhaustive-cell conformance over the
+///   codegen flag product" (the task that turns this suite into the language
+///   definition); this oracle is its per-cell value leg.
+/// - Route (pick one, in preference order): (1) `ExecMode::MlirJitCpu` via
+///   `eval_module_value_with_env_mode`, which already exists behind the
+///   `mlir-jit` feature; (2) the differential fuzzer's mic@3 VM over the
+///   canonical bytes emitted above (`tests/mindfuzz_cross_substrate.rs`), which
+///   needs no native toolchain; (3) the self-host stage1 runner, once it
+///   accepts an arbitrary conformance case.
+/// - CI prerequisite: the `conformance` job in `.github/workflows/ci.yml` today
+///   builds `cargo build --release --bin mindc` with default features and
+///   installs no LLVM/MLIR toolchain, so route (1) is blocked until that job
+///   pins LLVM 20 (`mlir-20-tools clang-20`, PATH `/usr/lib/llvm-20/bin`, as the
+///   cross-substrate job does) and builds with `--features mlir-jit`. Route (2)
+///   has no such prerequisite and is the cheapest first step.
+/// - On landing: flip [`VALUE_ORACLE_ENGINE`] to
+///   [`ValueOracleEngine::CompiledArtifact`]; the attestation text follows from
+///   that one constant.
 pub fn run_value_oracle(source: &str, ir: &IRModule) -> Result<Value, String> {
     // (a) Artifact integrity: the canonical mic@3 bytes for this IR must
     //     survive emit -> parse -> emit unchanged. A codec or lowering
@@ -211,7 +340,8 @@ pub fn run_value_oracle(source: &str, ir: &IRModule) -> Result<Value, String> {
         .map_err(|err| format!("execution failed: {err}"))
 }
 
-fn run_case(case: &ConformanceCase) -> Result<(), String> {
+fn run_case(case: &ConformanceCase) -> Result<CaseOutcome, String> {
+    let mut outcome = CaseOutcome::default();
     let compile_opts = CompileOptions {
         func: case.func.map(ToOwned::to_owned),
         enable_autodiff: case.run_autodiff,
@@ -254,10 +384,13 @@ fn run_case(case: &ConformanceCase) -> Result<(), String> {
                         return Err(format!("expected runtime value {expected}, got {got:?}"));
                     }
                 }
+                // Recorded here, where the oracle actually ran.
+                outcome.value_ran = true;
             }
 
             #[cfg(feature = "autodiff")]
             if case.run_autodiff {
+                outcome.autodiff_ran = true;
                 let grad = products
                     .grad
                     .as_ref()
@@ -294,13 +427,14 @@ fn run_case(case: &ConformanceCase) -> Result<(), String> {
                 }
             }
 
-            Ok(())
+            Ok(outcome)
         }
         Err(err) => {
             if let Some(expected) = case.expected_error {
                 let msg = format!("{err}").to_lowercase();
                 if msg.contains(&expected.to_lowercase()) {
-                    Ok(())
+                    // Nothing optional executed: the case pinned a compile error.
+                    Ok(CaseOutcome::default())
                 } else {
                     Err(format!("expected error containing '{expected}', got {msg}"))
                 }
@@ -504,6 +638,41 @@ mod tests {
             "no conformance case exercised the autodiff leg (autodiff_ran={}); \
              a pass here would attest autodiff stability the suite never checked",
             report.autodiff_ran
+        );
+    }
+
+    /// The VALUE leg must actually execute on a passing profile. The suite's
+    /// exit code cannot tell "every value cell matched" from "no case pinned a
+    /// value, so the oracle never ran" — and the second reads as a pass while
+    /// attesting nothing about runtime values.
+    #[test]
+    fn value_leg_runs_at_least_one_case() {
+        let report = run_conformance(ConformanceOptions {
+            profile: ConformanceProfile::CpuBaseline,
+        })
+        .expect("cpu baseline profile passes");
+        assert!(
+            report.value_ran >= 1,
+            "no conformance case executed the value oracle (value_ran={}); \
+             a pass here would attest runtime values the suite never checked",
+            report.value_ran
+        );
+    }
+
+    /// A run whose value leg executed zero cells must fail closed, exactly as
+    /// an empty case list does.
+    #[test]
+    fn zero_value_cells_fails_closed() {
+        let failures = leg_failures(&LegCounts {
+            cpu_ran: 1,
+            gpu_requested: false,
+            gpu_ran: 0,
+            value_ran: 0,
+            autodiff_ran: 1,
+        });
+        assert!(
+            failures.iter().any(|f| f == NO_VALUE_CASES),
+            "zero executed value cells must be reported as a failure, got: {failures:?}"
         );
     }
 

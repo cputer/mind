@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1477 | **Est. tokens:** ~2,866,093
-**Generated:** 2026-09-04 21:58 UTC
+**Files:** 1477 | **Est. tokens:** ~2,868,000
+**Generated:** 2026-09-04 22:07 UTC
 
 ## Token Budget Guide
 
@@ -88,7 +88,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~38,210 |
+| `src/` | 9 | ~40,022 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 343 | ~622,601 |
+| `tests/` | 343 | ~622,696 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -1024,7 +1024,7 @@
 - `reporter.rs` (~374 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `conformance.rs` (~5492 tok, huge) — Per-profile execution counts for one conformance run.
+- `conformance.rs` (~7304 tok, huge) — Per-profile execution counts for one conformance run.
 ### `src/deps/`
 
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1347,7 +1347,7 @@
 - `backend_unavailable.mind` (~2 tok, tiny)
 ### `tests/`
 
-- `conformance.rs` (~443 tok, medium) — Exit status alone cannot distinguish "everything passed" from "nothing
+- `conformance.rs` (~538 tok, large) — Exit status alone cannot distinguish "everything passed" from "nothing
 - `CONFORMANCE_TESTS.md` (~1225 tok, large) — MIND Conformance Test Corpus
 - `const_array_run.rs` (~884 tok, large) — Copyright 2025 STARGA Inc.
 - `const_f64_array_run.rs` (~1148 tok, large) — Copyright 2025 STARGA Inc.

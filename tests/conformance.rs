@@ -14,6 +14,14 @@ fn cpu_conformance_profile_passes() {
         report.cpu_ran
     );
     assert_eq!(report.gpu_ran, 0, "CPU profile must not run GPU cases");
+    // Same rule per LEG: a grid whose value cells never executed attests no
+    // runtime value at all. What a green cell means is the engine's own
+    // sentence, printed by the CLI — never "the compiled artifact is correct".
+    assert!(
+        report.value_ran >= 1,
+        "CPU profile must execute at least one value cell, value_ran={}",
+        report.value_ran
+    );
 }
 
 /// The GPU profile is built without the `mlir-gpu` feature in every default and

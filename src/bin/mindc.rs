@@ -1756,13 +1756,21 @@ fn run_conformance(profile: &str) {
                  run attests nothing about autodiff"
                     .to_string()
             };
+            // The VALUE leg is reported the same way, with the engine that
+            // produced it: a green value cell attests that engine's result, and
+            // a CI log that omits which engine ran invites the reader to take it
+            // for the compiled artifact's execution.
+            let engine = libmind::conformance::VALUE_ORACLE_ENGINE;
             println!(
-                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={}, {autodiff})",
+                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={}, value={} via {}, {autodiff})",
                 profile,
                 report.total_ran(),
                 report.cpu_ran,
-                report.gpu_ran
+                report.gpu_ran,
+                report.value_ran,
+                engine.tag()
             );
+            println!("value oracle: {}", engine.attests());
         }
         Err(err) => {
             eprintln!("conformance failures detected:");
