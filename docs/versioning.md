@@ -40,7 +40,17 @@ MIND Core currently publishes 0.y.z versions with the following rules:
 - **Conformance suite**: the golden Core v1 conformance corpus shipped with this
   repository. Passing the suite for a given profile (CPU baseline or the GPU
   profile) demonstrates API, IR, autodiff, and MLIR stability for that profile
-  in the current release.
+  in the current release. The run states what it actually executed — `ran=N
+  (cpu=…, gpu=…, autodiff=…)` — and a requested leg that executed zero cases
+  fails the run instead of reporting a pass. The `autodiff=` count is `n/a` on a
+  binary built without the `autodiff` feature: that build compiles no
+  differentiator and attests nothing about autodiff.
+  The autodiff cell differentiates a constant program, so it pins that the
+  differentiator runs end to end and that its gradient IR is byte-stable, not
+  that a tensor derivative is correct — derivative correctness is pinned by the
+  autodiff API tests. Tensor-gradient cells are deferred to the conformance
+  grid-expansion task ([roadmap Phase 19.3](roadmap.md#phase-193--exhaustive-cell-conformance-over-the-codegen-flag-product));
+  the same pointer is recorded beside `cpu_cases()` in `src/conformance.rs`.
 
 ### Conditionally stable surfaces
 

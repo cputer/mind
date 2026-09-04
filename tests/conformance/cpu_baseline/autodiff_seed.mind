@@ -1,0 +1,13 @@
+// Core v1 conformance — the autodiff leg.
+//
+// The suite differentiates this module's top level and pins the gradient IR
+// the differentiator derives from the canonical primal, so a change to the
+// autodiff surface fails the profile instead of passing unobserved.
+//
+// The program is deliberately a constant expression: it pins that the
+// differentiator RUNS end-to-end from source and that its gradient module is
+// byte-stable. Derivative correctness over tensor ops is pinned by the
+// autodiff API tests (grad_of_square, grad_of_relu, matmul_rule_applied, ...);
+// see the `deferred:` marker beside `cpu_cases()` in src/conformance.rs for
+// why no source-level differentiable TENSOR program can be a cell yet.
+2 * 5 + 4

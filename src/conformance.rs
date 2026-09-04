@@ -58,6 +58,15 @@ pub struct ConformanceReport {
     pub cpu_ran: usize,
     /// Number of GPU-profile cases executed (always 0 for `CpuBaseline`).
     pub gpu_ran: usize,
+    /// Number of executed cases that exercised the AUTODIFF leg
+    /// (`run_autodiff`), across every case list the profile ran.
+    ///
+    /// Counted separately because a per-run total cannot distinguish "the
+    /// autodiff surface was verified" from "one arithmetic case ran and the
+    /// autodiff leg was never entered" — and `docs/versioning.md` sells a
+    /// passing profile as evidence of autodiff stability. Zero while
+    /// [`AUTODIFF_COMPILED_IN`] is true is a failure, not a pass.
+    pub autodiff_ran: usize,
 }
 
 impl ConformanceReport {
@@ -79,6 +88,21 @@ pub const NO_GPU_CASES: &str = "gpu: no GPU cases compiled in (0 cases ran); \
                                 time, so nothing was verified for this profile — \
                                 treating as failure";
 
+/// Failure text for a build that compiled the autodiff leg in but ran no case
+/// through it.
+pub const NO_AUTODIFF_CASES: &str = "autodiff: no conformance case exercises the \
+                                     autodiff leg (0 cases ran); this build \
+                                     compiled the `autodiff` feature in, so a \
+                                     pass here would attest an autodiff \
+                                     stability the suite never checked — \
+                                     treating as failure";
+
+/// Whether the `autodiff` feature was compiled into this binary.
+///
+/// One owner for the fact: the suite, the CLI attestation line and the tests
+/// all read this constant instead of each spelling their own `cfg!` check.
+pub const AUTODIFF_COMPILED_IN: bool = cfg!(feature = "autodiff");
+
 /// Run the Core v1 conformance suite for one profile.
 ///
 /// Fails closed on an empty case list: a profile that executes zero cases
@@ -93,7 +117,11 @@ pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, Co
     if cpu.is_empty() {
         failures.push(NO_CPU_CASES.to_string());
     }
+    let mut autodiff_ran = 0;
     for case in &cpu {
+        if case.run_autodiff {
+            autodiff_ran += 1;
+        }
         if let Err(msg) = run_case(case) {
             failures.push(format!("cpu:{} => {msg}", case.name));
         }
@@ -107,10 +135,20 @@ pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, Co
         }
         gpu_ran = gpu.len();
         for case in &gpu {
+            if case.run_autodiff {
+                autodiff_ran += 1;
+            }
             if let Err(msg) = run_case(case) {
                 failures.push(format!("gpu:{} => {msg}", case.name));
             }
         }
+    }
+
+    // Per-leg count, not just the total: a suite whose every case leaves
+    // `run_autodiff` false verified nothing about autodiff, and the exit code
+    // cannot tell that apart from a real pass.
+    if AUTODIFF_COMPILED_IN && autodiff_ran == 0 {
+        failures.push(NO_AUTODIFF_CASES.to_string());
     }
 
     if failures.is_empty() {
@@ -118,6 +156,7 @@ pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, Co
             profile: opts.profile,
             cpu_ran: cpu.len(),
             gpu_ran,
+            autodiff_ran,
         })
     } else {
         Err(ConformanceFailure(failures))
@@ -143,8 +182,9 @@ pub fn run_conformance(opts: ConformanceOptions) -> Result<ConformanceReport, Co
 /// than the interpreter; the artifact round-trip below pins the bytes but not
 /// their execution. Upgrade path: run the case through `ExecMode::MlirJitCpu` /
 /// the self-host stage1 runner once the conformance job can require that
-/// toolchain — owned by the grid-expansion task that turns this suite into the
-/// language definition.
+/// toolchain — owned by the conformance grid-expansion task, docs/roadmap.md
+/// "Phase 19.3 — Exhaustive-cell conformance over the codegen flag product",
+/// which turns this suite into the language definition.
 pub fn run_value_oracle(source: &str, ir: &IRModule) -> Result<Value, String> {
     // (a) Artifact integrity: the canonical mic@3 bytes for this IR must
     //     survive emit -> parse -> emit unchanged. A codec or lowering
@@ -293,6 +333,50 @@ fn cpu_cases() -> Vec<ConformanceCase> {
         run_autodiff: false,
     }];
 
+    // The AUTODIFF leg of the profile. `enable_autodiff` requires a function
+    // to differentiate and `differentiate_function` differentiates the
+    // module's top level, so the case selects `main` and pins the gradient
+    // module derived from the canonical primal.
+    //
+    // Gated on the feature that compiles the differentiator in: without it
+    // `compile_source` refuses the request (`CompileError::AutodiffDisabled`),
+    // so the cell would pin the refusal, not a gradient. A build without the
+    // feature runs zero autodiff cases and the `mindc conformance` attestation
+    // line says so rather than implying coverage it does not have.
+    //
+    // deferred: this cell differentiates a CONSTANT program — it pins that the
+    // differentiator runs end to end from source and that its gradient module
+    // is byte-stable, NOT that a tensor derivative is correct. No source-level
+    // differentiable TENSOR program can be a cell today: a top-level
+    // `let x: diff tensor<f32[3]> = [1.0, 2.0, 3.0]` fails type-check with
+    // E2001 ("annotation Tensor[f32, (3)] vs inferred Scalar[f64]"), and a
+    // fn-wrapped one lowers to `module { %0 = const.i64 0  output %0 }`, whose
+    // gradient is the seed alone. Derivative CORRECTNESS is pinned meanwhile
+    // by the autodiff API tests (`tests/autodiff.rs`: grad_of_square,
+    // grad_of_relu, grad_of_conv2d, matmul_rule_applied, ...). Upgrade path:
+    // add tensor-gradient cells here once the source pipeline lowers a
+    // differentiable tensor program — owned by the conformance
+    // grid-expansion task, docs/roadmap.md "Phase 19.3 — Exhaustive-cell
+    // conformance over the codegen flag product". docs/versioning.md carries
+    // the same pointer so no reader takes the corpus for more than it is.
+    #[cfg(feature = "autodiff")]
+    cases.push(ConformanceCase {
+        name: "autodiff_seed",
+        source: include_str!("../tests/conformance/cpu_baseline/autodiff_seed.mind"),
+        target: BackendTarget::Cpu,
+        func: Some("main"),
+        expected_ir: include_str!("../tests/conformance/cpu_baseline/autodiff_seed.ir"),
+        // The value oracle executes the whole module and this case selects a
+        // function, so it pins IR (primal + gradient), not a runtime value.
+        expected_value: None,
+        expected_mlir: None,
+        expected_grad_ir: Some(include_str!(
+            "../tests/conformance/cpu_baseline/autodiff_seed.grad.ir"
+        )),
+        expected_error: None,
+        run_autodiff: true,
+    });
+
     // The autodiff_pairwise conformance entry was removed 2026-05-20 — its
     // fixture used the obsolete top-level expression syntax `tensor.zeros(f32, ())`
     // which the grammar tightened out in mindc v0.4.x (bare type names are
@@ -400,6 +484,26 @@ mod tests {
             value,
             Value::Int(6),
             "0+1+2+3 = 6; a skipped loop yields Int(0)"
+        );
+    }
+
+    /// The suite must actually ENTER the autodiff leg on a build that compiled
+    /// it in — `docs/versioning.md` sells a passing profile as evidence of
+    /// autodiff stability, and a corpus whose every case leaves `run_autodiff`
+    /// false attests that with nothing. Pins the count per leg, the way
+    /// `cpu_ran` pins the total.
+    #[cfg(feature = "autodiff")]
+    #[test]
+    fn autodiff_leg_runs_at_least_one_case() {
+        let report = run_conformance(ConformanceOptions {
+            profile: ConformanceProfile::CpuBaseline,
+        })
+        .expect("cpu baseline profile passes");
+        assert!(
+            report.autodiff_ran >= 1,
+            "no conformance case exercised the autodiff leg (autodiff_ran={}); \
+             a pass here would attest autodiff stability the suite never checked",
+            report.autodiff_ran
         );
     }
 

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1474 | **Est. tokens:** ~2,864,300
-**Generated:** 2026-09-04 21:44 UTC
+**Files:** 1477 | **Est. tokens:** ~2,866,093
+**Generated:** 2026-09-04 21:58 UTC
 
 ## Token Budget Guide
 
@@ -42,7 +42,7 @@
 | `benchmarks/pytorch_comparison/` | 5 | ~4,828 |
 | `.cargo/` | 1 | ~130 |
 | `config/` | 2 | ~3,326 |
-| `docs/` | 35 | ~91,251 |
+| `docs/` | 35 | ~91,465 |
 | `docs/backends/` | 1 | ~1,482 |
 | `docs/benchmarks/` | 3 | ~9,315 |
 | `docs/design/` | 4 | ~11,498 |
@@ -88,7 +88,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~36,850 |
+| `src/` | 9 | ~38,210 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -129,7 +129,7 @@
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
-| `tests/conformance/cpu_baseline/` | 9 | ~171 |
+| `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
 | `tests/cross_substrate_identity/array-store-branch/` | 2 | ~974 |
@@ -490,7 +490,7 @@
 
 - `type-system.md` (~1082 tok, large) — Type System
 - `VERIFICATION_APPARATUS.md` (~7783 tok, huge) — Self-Host Port Verification Apparatus & SOTA Roadmap
-- `versioning.md` (~804 tok, large) — MIND Core Stability & Versioning
+- `versioning.md` (~1018 tok, large) — MIND Core Stability & Versioning
 - `version-matrix.md` (~1828 tok, huge) — MIND Ecosystem — Version Matrix
 - `whitepaper.md` (~2788 tok, huge) — MIND: The Native Language for Intelligent Systems
 ### `examples/`
@@ -1024,7 +1024,7 @@
 - `reporter.rs` (~374 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `conformance.rs` (~4132 tok, huge) — Per-profile execution counts for one conformance run.
+- `conformance.rs` (~5492 tok, huge) — Per-profile execution counts for one conformance run.
 ### `src/deps/`
 
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1330,6 +1330,9 @@
 ### `tests/conformance/cpu_baseline/`
 
 - `autodiff_pairwise.runtime` (~1 tok, tiny) — 0
+- `autodiff_seed.grad.ir` (~20 tok, tiny) — module {
+- `autodiff_seed.ir` (~15 tok, tiny) — module {
+- `autodiff_seed.mind` (~184 tok, small) — Core v1 conformance — the autodiff leg.
 - `phase_10_5_const.mind` (~34 tok, tiny) — fn main() {
 - `phase_10_5_logical.mind` (~32 tok, tiny) — fn main() {
 - `phase_10_5_module.mind` (~31 tok, tiny) — module governance {

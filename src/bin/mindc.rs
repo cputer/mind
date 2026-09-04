@@ -1744,8 +1744,20 @@ fn run_conformance(profile: &str) {
             // profile that ran zero cases verified nothing, and `run_conformance`
             // now fails closed on exactly that — printing the count keeps the
             // attestation checkable by whoever reads the CI log.
+            // The autodiff leg is reported separately, and a build without the
+            // feature says so instead of printing a 0 a reader could take for
+            // "checked, nothing wrong": docs/versioning.md sells a passing
+            // profile as evidence of autodiff stability, so the line must state
+            // whether that leg ran at all.
+            let autodiff = if conformance::AUTODIFF_COMPILED_IN {
+                format!("autodiff={}", report.autodiff_ran)
+            } else {
+                "autodiff=n/a: built without the `autodiff` feature, so this \
+                 run attests nothing about autodiff"
+                    .to_string()
+            };
             println!(
-                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={})",
+                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={}, {autodiff})",
                 profile,
                 report.total_ran(),
                 report.cpu_ran,
