@@ -69,7 +69,10 @@ pub struct BuildProducts {
 #[cfg(feature = "mlir-build")]
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
-    #[error("tool not found: {0}")]
+    /// `mlir-opt` / `clang` absent from `PATH`. A host-CAPABILITY gap, so it
+    /// carries the stable code that `diagnostics::capability` classifies on —
+    /// the harness must never have to match this wording.
+    #[error("[{code}] tool not found: {0}", code = crate::diagnostics::capability::NATIVE_TOOLCHAIN_ABSENT)]
     ToolMissing(&'static str),
     #[error("subprocess {tool} failed: {stderr}")]
     Subprocess { tool: &'static str, stderr: String },

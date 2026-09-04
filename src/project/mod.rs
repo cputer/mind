@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
+
+use crate::diagnostics::capability::{FallbackReason, NativeOutcome};
 use serde::Deserialize;
 
 /// Cross-module import resolution (Phase 10.6 item 9 / Phase 15
@@ -706,6 +708,15 @@ pub struct BuildResult {
     /// fails loud (fail-closed) if this list is non-empty. Empty for the cdylib
     /// path (which errors hard rather than falling back).
     pub fallback_sources: Vec<String>,
+    /// WHY the fallbacks above happened, merged over every fallen-back source
+    /// (fail-closed: one module that did not compile makes the whole build a
+    /// real failure, never a host-capability skip). `None` iff nothing fell
+    /// back. The refusal sites stamp this cause's stable diagnostic code onto
+    /// their message so a consumer classifies on the CODE — see
+    /// [`crate::diagnostics::capability`], and the regression that motivated
+    /// it: a capability gap graded as a compiler regression because the only
+    /// signal on the wire was prose.
+    pub fallback_reason: Option<FallbackReason>,
 }
 
 /// Find the project root by looking for Mind.toml
@@ -1130,11 +1141,12 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
             // rejection) — it never silently drops to the runtime-JIT fallback.
             entry_native_compiled: true,
             fallback_sources: Vec::new(),
+            fallback_reason: None,
         });
     }
 
     // Build each source file and link
-    let (compiled, entry_native_compiled, fallback_sources) = compile_sources(
+    let (compiled, entry_native_compiled, fallback_sources, fallback_reason) = compile_sources(
         &project_root,
         &sources,
         &backend,
@@ -1200,6 +1212,7 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
         success: true,
         entry_native_compiled,
         fallback_sources,
+        fallback_reason,
     })
 }
 
@@ -1662,9 +1675,12 @@ fn build_cdylib_from_entry(
     _opts: &BuildOptions,
 ) -> Result<()> {
     Err(anyhow!(
-        "cdylib emit requires the 'mlir-build' feature (the runtime-support \
-         link path is gated behind it); rebuild mindc with \
-         --features mlir-build"
+        "{}",
+        FallbackReason::NoNativeBackend.tag(
+            "cdylib emit requires the 'mlir-build' feature (the runtime-support \
+             link path is gated behind it); rebuild mindc with \
+             --features mlir-build"
+        )
     ))
 }
 
@@ -1677,9 +1693,11 @@ fn build_cdylib_from_entry(
 /// PROJECT-ROOT-relative path — stable and collision-free across subdirs.
 /// The walk/default case keeps the historical entry-parent keying and
 /// stem-named objects byte-unchanged (self-host + std depend on it).
-/// Compile every project source to an object and return the object paths plus
+/// Compile every project source to an object and return the object paths,
 /// whether the ENTRY module was natively compiled (`false` = embedded as a
-/// runtime-JIT fallback; the caller fails loud on `mindc run` in that case).
+/// runtime-JIT fallback; the caller fails loud on `mindc run` in that case),
+/// the names of every fallen-back source, and WHY they fell back — the cause
+/// the refusal sites stamp their diagnostic code from.
 fn compile_sources(
     project_root: &Path,
     sources: &[PathBuf],
@@ -1687,7 +1705,7 @@ fn compile_sources(
     opts: &BuildOptions,
     explicit_sources: bool,
     cc_target_triple: Option<&str>,
-) -> Result<(Vec<PathBuf>, bool, Vec<String>)> {
+) -> Result<(Vec<PathBuf>, bool, Vec<String>, Option<FallbackReason>)> {
     let obj_dir = project_root.join("target").join("obj");
     fs::create_dir_all(&obj_dir)?;
 
@@ -1837,6 +1855,11 @@ fn compile_sources(
     // the runtime-JIT fallback, so `run_project` can fail loud rather than let a
     // non-entry fallback silently reach the runtime at execution.
     let mut fallback_sources: Vec<String> = Vec::new();
+    // WHY they fell back, merged fail-closed across sources (a module that did
+    // not compile dominates a missing-toolchain host). Decided ONCE, at the
+    // only site that knows the answer, and threaded out — never re-derived at
+    // the refusal, which would be a second implementation of the same rule.
+    let mut fallback_reason: Option<FallbackReason> = None;
 
     for source in sources {
         // Object filename. The walk/default case keeps the historical
@@ -1875,13 +1898,17 @@ fn compile_sources(
         let is_entry = source_canonical == entry_canonical;
 
         // Compile with appropriate mode
-        let native =
+        let outcome =
             compile_single_source(source, &obj_path, backend, opts, is_entry, cc_target_triple)?;
-        if is_entry && !native {
-            entry_native_compiled = false;
-        }
-        if !native {
+        if let NativeOutcome::Fallback(reason) = outcome {
+            if is_entry {
+                entry_native_compiled = false;
+            }
             fallback_sources.push(source_name.clone());
+            fallback_reason = Some(match fallback_reason {
+                Some(prev) => prev.merge(reason),
+                None => reason,
+            });
         }
 
         objects.push(obj_path);
@@ -1918,7 +1945,12 @@ fn compile_sources(
     // `_project_guard` (Drop) so it runs on every return path — including the
     // early `Err` from the E2002 fail-closed in `compile_single_source`.
 
-    Ok((objects, entry_native_compiled, fallback_sources))
+    Ok((
+        objects,
+        entry_native_compiled,
+        fallback_sources,
+        fallback_reason,
+    ))
 }
 
 /// Compile every `std` substrate module transitively imported by ANY project
@@ -2342,12 +2374,16 @@ fn reject_runnable_blockers(
 
 /// Compile a single source file to native object code.
 ///
-/// Returns `Ok(true)` when the source lowered to a real native object, and
-/// `Ok(false)` when it could not be natively compiled and was embedded as a
-/// runtime-JIT fallback instead (parse/type failure, or MLIR tools
-/// unavailable). The caller threads that signal up so `mindc run` can fail
+/// Returns [`NativeOutcome::Native`] when the source lowered to a real native
+/// object, and [`NativeOutcome::Fallback`] — carrying WHY — when it could not
+/// be natively compiled and was embedded as a runtime-JIT fallback instead.
+/// The caller threads that signal up so `mindc run` / `mindc build` can fail
 /// loud when the ENTRY module is a fallback rather than silently deferring to a
-/// runtime that may print a notice and exit 0.
+/// runtime that may print a notice and exit 0, and so the refusal can say
+/// whether the cause was this HOST (no backend compiled in, no toolchain on
+/// PATH — a capability gap) or this PROGRAM (it did not compile — a real
+/// failure). This function is the only place both facts are in scope, so it is
+/// the only place the distinction is decided.
 #[allow(clippy::needless_return)]
 fn compile_single_source(
     source: &Path,
@@ -2360,7 +2396,7 @@ fn compile_single_source(
     #[cfg_attr(not(feature = "mlir-build"), allow(unused_variables))] cc_target_triple: Option<
         &str,
     >,
-) -> Result<bool> {
+) -> Result<NativeOutcome> {
     use crate::pipeline::{CompileOptions, compile_source_with_name};
     use crate::runtime::types::BackendTarget;
 
@@ -2429,7 +2465,11 @@ fn compile_single_source(
             // "build succeeded" from masking a degraded/unparseable module.
             warn_embedded_fallback(source, &source_code, &diags, opts.verbose);
             compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
-            return Ok(false);
+            // The SOURCE did not compile — never a capability gap, whatever the
+            // host has installed.
+            return Ok(NativeOutcome::Fallback(
+                FallbackReason::SourceNotNativelyCompilable,
+            ));
         }
     };
 
@@ -2492,12 +2532,14 @@ fn compile_single_source(
                 mlir_build::build_all(&mlir, &tools, &build_opts)
                     .map_err(|e| anyhow!("MLIR build failed: {}", e))?;
 
-                return Ok(true);
+                return Ok(NativeOutcome::Native);
             }
             Err(_) => {
-                // MLIR tools not available, fall back to embedded source
+                // `mlir-opt` / `clang` absent from PATH: a HOST capability gap.
                 compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
-                return Ok(false);
+                return Ok(NativeOutcome::Fallback(
+                    FallbackReason::NativeToolchainAbsent,
+                ));
             }
         }
     }
@@ -2506,7 +2548,8 @@ fn compile_single_source(
     {
         let _ = &products; // products.ir is only consumed by the mlir-build path
         compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
-        Ok(false)
+        // This binary carries no native backend at all: a HOST capability gap.
+        Ok(NativeOutcome::Fallback(FallbackReason::NoNativeBackend))
     }
 }
 
@@ -3107,12 +3150,21 @@ pub fn run_project(args: &[String], opts: &BuildOptions) -> Result<i32> {
     // report a false green (exit 0) for a program that never executed. A silent
     // green in CI is worse than a wrong answer: refuse to run and surface a
     // non-zero exit here instead of trusting the launcher's exit code.
+    // As in `build::run_build`, the refusal carries the CAUSE code decided by
+    // `compile_single_source`, so a consumer tells a host capability gap from a
+    // compiler regression by CODE rather than by reading the prose.
+    let cause = result
+        .fallback_reason
+        .unwrap_or(FallbackReason::SourceNotNativelyCompilable);
     if !result.entry_native_compiled {
         return Err(anyhow!(
-            "entry module was not natively compiled (embedded as a runtime-JIT \
-             fallback — see the [WARN] above); refusing to run a launcher that \
-             defers to the installed mind-runtime and may exit 0 without \
-             executing your program"
+            "{}",
+            cause.tag(
+                "entry module was not natively compiled (embedded as a runtime-JIT \
+                 fallback — see the [WARN] above); refusing to run a launcher that \
+                 defers to the installed mind-runtime and may exit 0 without \
+                 executing your program"
+            )
         ));
     }
 
@@ -3125,12 +3177,15 @@ pub fn run_project(args: &[String], opts: &BuildOptions) -> Result<i32> {
     // walk should be excluded via explicit `[targets.*].sources` or `single_file`.)
     if !result.fallback_sources.is_empty() {
         return Err(anyhow!(
-            "module(s) not natively compiled (embedded as a runtime-JIT fallback \
-             — see the [WARN] above): {}. The natively-compiled entry can call \
-             into their launcher-stub symbols and reach the installed \
-             mind-runtime at execution, which may exit 0 without executing that \
-             code; refusing to run rather than report a false green",
-            result.fallback_sources.join(", ")
+            "{}",
+            cause.tag(format!(
+                "module(s) not natively compiled (embedded as a runtime-JIT fallback \
+                 — see the [WARN] above): {}. The natively-compiled entry can call \
+                 into their launcher-stub symbols and reach the installed \
+                 mind-runtime at execution, which may exit 0 without executing that \
+                 code; refusing to run rather than report a false green",
+                result.fallback_sources.join(", ")
+            ))
         ));
     }
 

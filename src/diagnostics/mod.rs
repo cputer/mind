@@ -14,6 +14,8 @@
 
 //! Structured diagnostics for the Core v1 compiler pipeline.
 
+pub mod capability;
+
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
 

@@ -77,20 +77,22 @@ pub enum Outcome {
 
 /// Does `stderr` carry a genuine capability signature?
 ///
-/// Exactly two signatures are accepted, both matched against the compiler's
-/// own wording so a new diagnostic cannot silently widen the hole:
+/// Delegates to the compiler's own classifier
+/// (`libmind::diagnostics::capability`), which matches the stable diagnostic
+/// CODE of the refusal cause (`[E5003]` no native backend in this binary,
+/// `[E5004]` no `mlir-opt`/`clang` on PATH) — never its prose.
 ///
-/// * `--emit-shared requires building with the 'mlir-build' feature`
-///   (`src/bin/mindc.rs`) — the binary was built without the backend feature.
-/// * `tool not found: <x>` (`BuildError::ToolNotFound`) — the feature is on
-///   but `mlir-opt`/`clang` is absent from PATH.
+/// This used to be three hand-copied substring tests. They were wrong in both
+/// directions: they could not see the `mindc build` project route's refusal
+/// (`entry module was not natively compiled …`), so a host without
+/// `mlir-build` graded a genuine capability gap as a compiler regression and
+/// hard-failed; and any re-worded diagnostic could silently widen or close the
+/// hole. The code is the contract; prose is not.
 ///
 /// A bare "error" is NOT a capability gap: an undiagnosed failure fails closed.
 #[allow(dead_code)]
 pub fn is_capability_gap(stderr: &str) -> bool {
-    (stderr.contains("mlir-build") && stderr.contains("requires"))
-        || (stderr.contains("mlir-lowering") && stderr.contains("requires"))
-        || stderr.contains("tool not found:")
+    libmind::diagnostics::capability::is_capability_gap(stderr)
 }
 
 /// The pure decision core: no environment, no I/O, so the contract is directly

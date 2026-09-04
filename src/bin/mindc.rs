@@ -1240,7 +1240,9 @@ fn run_mindc_build(
             println!("   Artifact: {} bytes", output.byte_count);
         }
         Err(err) => {
-            eprintln!("error[build]: {}", err);
+            // `render()` owns the prefix so a coded refusal keeps its code on
+            // the wire (`error[build][E5003]: …`); a `{err}` here would drop it.
+            eprintln!("{}", err.render());
             process::exit(err.exit_code());
         }
     }
@@ -1412,7 +1414,14 @@ fn run_workspace_build(
                 );
             }
             Err(err) => {
-                eprintln!("error[workspace][{}]: {}", member.name, err);
+                // Keep the cause code on the wire here too (`code_tag()` is the
+                // single owner of the token's shape).
+                eprintln!(
+                    "error[workspace][{}]{}: {}",
+                    member.name,
+                    err.code_tag(),
+                    err
+                );
                 any_failed = true;
             }
         }
@@ -1802,7 +1811,9 @@ fn lower_to_mlir_compat(
 fn emit_mlir_if_requested(cli: &CompileArgs, _products: &libmind::pipeline::CompileProducts) {
     if cli.emit_mlir {
         eprintln!(
-            "error[mlir]: MLIR emission requires building with the 'mlir-lowering' or 'mlir-build' feature"
+            "error[mlir][{}]: MLIR emission requires building with the 'mlir-lowering' or \
+             'mlir-build' feature",
+            libmind::diagnostics::capability::NO_NATIVE_BACKEND
         );
         process::exit(1);
     }
@@ -3185,7 +3196,10 @@ fn emit_obj_if_requested(cli: &CompileArgs, products: &libmind::pipeline::Compil
 #[cfg(not(feature = "mlir-build"))]
 fn emit_obj_if_requested(cli: &CompileArgs, _products: &libmind::pipeline::CompileProducts) {
     if cli.emit_obj.is_some() {
-        eprintln!("error[build]: --emit-obj requires building with the 'mlir-build' feature");
+        eprintln!(
+            "error[build][{}]: --emit-obj requires building with the 'mlir-build' feature",
+            libmind::diagnostics::capability::NO_NATIVE_BACKEND
+        );
         process::exit(1);
     }
 }
@@ -3293,7 +3307,10 @@ fn emit_shared_if_requested(
     _source: &str,
 ) {
     if cli.emit_shared.is_some() {
-        eprintln!("error[build]: --emit-shared requires building with the 'mlir-build' feature");
+        eprintln!(
+            "error[build][{}]: --emit-shared requires building with the 'mlir-build' feature",
+            libmind::diagnostics::capability::NO_NATIVE_BACKEND
+        );
         process::exit(1);
     }
 }

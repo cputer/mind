@@ -28,15 +28,45 @@ mod common;
 
 use common::gate::{self, Outcome};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+// Every fixture below is the VERBATIM stderr of a real `mindc` refusal, and
+// `fixture_codes_are_the_compilers_own` pins each one's code token against the
+// compiler's own constant — so a code change cannot leave these fixtures
+// asserting about a wire shape that no longer exists.
 
 /// Verbatim stderr of `mindc --emit-shared` built without `mlir-build`
-/// (`src/bin/mindc.rs:3286`). This is the ONLY compile failure that may skip.
+/// (`src/bin/mindc.rs`). A capability gap: this binary has no native backend.
 const CAP_FEATURE: &str =
-    "error[build]: --emit-shared requires building with the 'mlir-build' feature\n";
+    "error[build][E5003]: --emit-shared requires building with the 'mlir-build' feature\n";
 
 /// Verbatim stderr shape when the feature is on but the toolchain binary is
-/// absent from PATH (`BuildError::ToolNotFound`, `src/eval/mlir_build.rs:72`).
-const CAP_TOOL: &str = "error: tool not found: mlir-opt\n";
+/// absent from PATH (`MlirBuildError::ToolMissing`, `src/eval/mlir_build.rs`).
+const CAP_TOOL: &str = "error[build]: [E5004] tool not found: mlir-opt\n";
+
+/// Verbatim stderr of the `mindc build` PROJECT route on a binary with no
+/// native backend (`src/build/mod.rs`). Same condition as `CAP_FEATURE`,
+/// completely different wording — which is exactly why the classifier may not
+/// read wording. Before the cause code existed this refusal was graded a
+/// compiler regression and PANICKED on every host without `mlir-build`,
+/// reddening `mindc_cache_phase_f` in four live CI commands.
+const CAP_PROJECT_BUILD: &str = "error[build][E5003]: entry module was not natively compiled \
+     (embedded as a runtime-JIT fallback -- see the [WARN] above); refusing to report a \
+     successful build for an artifact that is a launcher deferring to the installed \
+     mind-runtime, which may exit 0 without executing your program\n";
+
+/// The SAME prose as `CAP_PROJECT_BUILD`, carrying the real-failure cause code:
+/// the module did not compile. Prose is identical, verdict is opposite — the
+/// negative twin that proves the classifier reads the code.
+const REAL_PROJECT_BUILD: &str = "error[build][E5005]: entry module was not natively compiled \
+     (embedded as a runtime-JIT fallback -- see the [WARN] above); refusing to report a \
+     successful build for an artifact that is a launcher deferring to the installed \
+     mind-runtime, which may exit 0 without executing your program\n";
+
+/// A capability-SOUNDING refusal with no cause code at all — the pre-fix wire
+/// shape. An uncoded refusal must fail closed.
+const UNCODED_PROSE: &str =
+    "error[build]: --emit-shared requires building with the 'mlir-build' feature\n";
 
 /// A real compiler regression: the class that must NEVER grade as a pass.
 const REAL_FAILURE: &str = "error[E0308]: mismatched types in `idiv`\n";
@@ -60,6 +90,59 @@ fn genuine_capability_gap_still_skips_when_not_enforcing() {
         gate::classify(false, CAP_TOOL, false),
         Outcome::CapabilitySkip
     );
+}
+
+#[test]
+fn fixture_codes_are_the_compilers_own() {
+    use libmind::diagnostics::capability as cap;
+    let no_backend = format!("[{}]", cap::NO_NATIVE_BACKEND);
+    let no_tool = format!("[{}]", cap::NATIVE_TOOLCHAIN_ABSENT);
+    let real = format!("[{}]", cap::SOURCE_NOT_NATIVELY_COMPILABLE);
+    assert!(CAP_FEATURE.contains(&no_backend), "{CAP_FEATURE}");
+    assert!(
+        CAP_PROJECT_BUILD.contains(&no_backend),
+        "{CAP_PROJECT_BUILD}"
+    );
+    assert!(CAP_TOOL.contains(&no_tool), "{CAP_TOOL}");
+    assert!(REAL_PROJECT_BUILD.contains(&real), "{REAL_PROJECT_BUILD}");
+    assert!(!UNCODED_PROSE.contains('[') || !UNCODED_PROSE.contains("E50"));
+}
+
+#[test]
+fn project_build_capability_gap_skips_when_not_enforcing() {
+    // MUST NOT CHANGE: `mindc build` on a host with no native backend is a
+    // capability gap, not a compiler regression.
+    assert_eq!(
+        gate::classify(false, CAP_PROJECT_BUILD, false),
+        Outcome::CapabilitySkip
+    );
+}
+
+#[test]
+fn project_build_capability_gap_fails_under_enforcement() {
+    match gate::classify(false, CAP_PROJECT_BUILD, true) {
+        Outcome::Failed(s) => assert!(s.contains("not natively compiled")),
+        other => panic!("MIND_BENCH_REQUIRE=1 must forbid a skip, got {other:?}"),
+    }
+}
+
+#[test]
+fn identical_prose_with_the_real_failure_code_never_skips() {
+    // The whole point of coding the cause: these two differ ONLY in the code.
+    match gate::classify(false, REAL_PROJECT_BUILD, false) {
+        Outcome::Failed(s) => assert!(s.contains("E5005")),
+        other => panic!("a module that did not compile must fail closed, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_uncoded_capability_sounding_refusal_fails_closed() {
+    // Prose is not the contract. A refusal that was never given a cause code
+    // is undiagnosed, and undiagnosed fails closed.
+    match gate::classify(false, UNCODED_PROSE, false) {
+        Outcome::Failed(_) => {}
+        other => panic!("an uncoded refusal must fail closed, got {other:?}"),
+    }
 }
 
 #[test]
@@ -114,10 +197,40 @@ fn stub_compiler(name: &str, exit_code: i32, stderr: &str) -> PathBuf {
     p
 }
 
+/// Execute a just-written stub, retrying through the write-then-exec race.
+///
+/// `ETXTBSY` is TRANSIENT here and has nothing to do with what is being tested:
+/// this harness is multi-threaded, so between one thread writing a stub and
+/// exec'ing it, another thread's `Command::spawn` can fork and inherit the
+/// still-open write fd — the child holds it until its own `exec`, and the
+/// kernel refuses to exec a file open for writing. Measured: adding two tests
+/// that spawn the real `mindc` (a much longer fork→exec window under
+/// `mlir-build`, which shells out to `mlir-opt`/`clang`) turned this into a
+/// 1-in-3 flake that struck a DIFFERENT test each run. A flaky gate is a gate
+/// nobody believes, so the transient condition is waited out rather than
+/// reported as a result; every other spawn error still fails loudly.
 fn run_stub(stub: &Path) -> std::process::Output {
-    std::process::Command::new(stub)
-        .output()
-        .expect("run stub compiler")
+    /// ~500 ms of retries: the window closes as soon as the racing child execs.
+    const MAX_ATTEMPTS: u32 = 50;
+    for _ in 0..MAX_ATTEMPTS {
+        match std::process::Command::new(stub).output() {
+            Ok(out) => return out,
+            Err(e) if e.raw_os_error() == Some(libc_etxtbsy()) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("run stub compiler {}: {e}", stub.display()),
+        }
+    }
+    panic!(
+        "stub {} stayed ETXTBSY for {MAX_ATTEMPTS} attempts",
+        stub.display()
+    )
+}
+
+/// `ETXTBSY`. Hard-coded rather than pulled from a dependency: this harness has
+/// none, and the value is fixed by the Linux ABI the CI matrix runs on.
+const fn libc_etxtbsy() -> i32 {
+    26
 }
 
 #[test]
@@ -387,4 +500,155 @@ fn the_scanner_itself_can_see_the_bad_shape() {
     let end = print_macro_span(&wrapped, 0).expect("span must be found");
     assert_eq!(end, 3);
     assert!(is_skip_announcement(&wrapped, 0, end));
+}
+
+// --- the cause-code anti-drift scan ----------------------------------------
+//
+// The classifier now reads a CODE, which is only as good as the compiler's
+// discipline in stamping one. A new `--emit-<x> requires building with the
+// 'mlir-build' feature` refusal added WITHOUT a code would not widen the hole
+// (uncoded fails closed) but would re-create the original defect from the other
+// side: a genuine capability gap hard-failing every backend-less host. So the
+// wording that names a missing native backend is scanned in `src/`, and every
+// occurrence must carry a code slot on the same line.
+//
+// The scan scope is read out of the thing it checks — the compiler's own
+// wording — rather than from a hand-copied list of file paths, so a new file
+// cannot silently fall outside it.
+
+/// The wording every "this binary has no native backend" refusal shares.
+const NO_BACKEND_WORDING: &str = "requires building with the 'mlir";
+
+/// A rendered code slot (`error[build][{}]:`) or a literal `E50xx` code.
+fn line_carries_a_code(line: &str) -> bool {
+    line.contains("[{}]:") || line.contains("[E50")
+}
+
+/// `src/diagnostics/capability.rs` holds this rule's NEGATIVE controls — the
+/// uncoded prose its unit tests assert is not a capability gap. A scanner that
+/// flagged its own specimen jar could not keep them.
+const CAPABILITY_SELF: &str = "capability.rs";
+
+fn src_sources() -> Vec<(PathBuf, String)> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("read src dir") {
+            let p = e.expect("dir entry").path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                out.push(p);
+            }
+        }
+    }
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut paths = Vec::new();
+    walk(&root, &mut paths);
+    paths.sort();
+    paths
+        .into_iter()
+        .filter(|p| p.file_name().and_then(|s| s.to_str()) != Some(CAPABILITY_SELF))
+        .map(|p| {
+            let text = std::fs::read_to_string(&p).expect("read src source");
+            (p, text)
+        })
+        .collect()
+}
+
+#[test]
+fn every_missing_backend_refusal_carries_its_cause_code() {
+    let mut uncoded = Vec::new();
+    for (path, text) in src_sources() {
+        for (i, line) in text.lines().enumerate() {
+            let t = line.trim_start();
+            if t.starts_with("//") || !line.contains(NO_BACKEND_WORDING) {
+                continue;
+            }
+            if !line_carries_a_code(line) {
+                uncoded.push(format!("{}:{}", path.display(), i + 1));
+            }
+        }
+    }
+    assert!(
+        uncoded.is_empty(),
+        "these refusals name a missing native backend but carry no cause code, \
+         so the harness would grade a genuine capability gap as a compiler \
+         regression and hard-fail every host without the backend. Emit \
+         `error[<phase>][{{}}]:` with \
+         `diagnostics::capability::NO_NATIVE_BACKEND`.\n  {}",
+        uncoded.join("\n  ")
+    );
+}
+
+#[test]
+fn the_cause_code_scan_can_still_see_the_bad_shape() {
+    // Positive control: the scan is only evidence if it fails on the shape it
+    // forbids. This is the exact pre-fix line from `src/bin/mindc.rs`.
+    let bad = r#"        eprintln!("error[build]: --emit-obj requires building with the 'mlir-build' feature");"#;
+    assert!(bad.contains(NO_BACKEND_WORDING) && !line_carries_a_code(bad));
+    let good = r#"            "error[build][{}]: --emit-obj requires building with the 'mlir-build' feature","#;
+    assert!(good.contains(NO_BACKEND_WORDING) && line_carries_a_code(good));
+}
+
+// --- end-to-end: the REAL compiler's refusals, not a fixture of them --------
+//
+// The fixtures above prove the classifier's contract; they cannot prove the
+// compiler still emits that wire shape. These two drive the actual `mindc`
+// binary and are feature-INDEPENDENT: whichever backend this build carries,
+// a well-formed project must never grade as a compiler regression, and a
+// program that does not compile must never grade as a skip.
+
+/// Write a minimal single-source project into `dir`.
+fn write_project(dir: &Path, name: &str, source: &str) {
+    std::fs::create_dir_all(dir.join("src")).expect("mkdir src");
+    std::fs::write(
+        dir.join("Mind.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[build]\nentry = \"src/main.mind\"\n"),
+    )
+    .expect("write Mind.toml");
+    std::fs::write(dir.join("src/main.mind"), source).expect("write entry");
+}
+
+fn run_mindc_build(dir: &Path) -> std::process::Output {
+    Command::new(common::mindc_bin())
+        .arg("build")
+        .current_dir(dir)
+        .output()
+        .expect("spawn mindc")
+}
+
+#[test]
+fn a_well_formed_project_never_grades_as_a_compiler_regression() {
+    // THE REGRESSION THIS GATE EXISTS FOR: on a binary without `mlir-build`,
+    // `mindc build` refuses (the artifact would be a runtime-JIT launcher) —
+    // a HOST capability gap. Grading it `Failed` panicked every converted call
+    // site on every backend-less host.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write_project(tmp.path(), "cap_ok", "fn main() -> i64 { 42 }\n");
+    let out = run_mindc_build(tmp.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let verdict = gate::classify(out.status.success(), &stderr, false);
+    assert!(
+        !matches!(verdict, Outcome::Failed(_)),
+        "a well-formed project graded as a compiler regression: {verdict:?}\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn a_program_that_does_not_compile_is_never_a_capability_skip() {
+    // The negative twin: same refusal wording, different cause. If this ever
+    // grades as a skip, the classifier has been widened back into a fail-open.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write_project(tmp.path(), "cap_broken", "fn broken( -> {\n");
+    let out = run_mindc_build(tmp.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a broken program must not build clean"
+    );
+    match gate::classify(out.status.success(), &stderr, false) {
+        Outcome::Failed(_) => {}
+        other => panic!(
+            "a program that does not compile must fail closed, got {other:?}\nstderr:\n{stderr}"
+        ),
+    }
 }
