@@ -223,7 +223,39 @@ pub fn eval_ir(ir: &IRModule) -> Value {
                     last = v;
                 }
             }
-            _ => {}
+            // The variants below are NOT modelled by this preview evaluator.
+            // They are listed explicitly rather than swallowed by a `_ => {}`
+            // wildcard so that adding an `Instr` variant fails to COMPILE here
+            // instead of being silently ignored at runtime — a wildcard is what
+            // let a control-flow program report the last *handled* value
+            // (`Int(0)`) as if it were the program's result. The conformance
+            // suite no longer uses this function as its runtime-value oracle
+            // (see `conformance::run_value_oracle`); it remains the cheap
+            // constant-fill preview printed by `mindc <file>`.
+            Instr::ConstF64(..)
+            | Instr::ConstDenseTensor { .. }
+            | Instr::SparseAttr { .. }
+            | Instr::FnDef { .. }
+            | Instr::Call { .. }
+            | Instr::Return { .. }
+            | Instr::Param { .. } => {}
+            #[cfg(feature = "std-surface")]
+            Instr::ConstArray { .. }
+            | Instr::ArrayLoad { .. }
+            | Instr::ArrayStore { .. }
+            | Instr::While { .. }
+            | Instr::Break { .. }
+            | Instr::Continue { .. }
+            | Instr::If { .. }
+            | Instr::VecLoad { .. }
+            | Instr::VecLoadI32 { .. }
+            | Instr::VecStore { .. }
+            | Instr::VecFma { .. }
+            | Instr::VecMulAddQ16 { .. }
+            | Instr::VecReduceAdd { .. }
+            | Instr::VecReduceAddI64 { .. }
+            | Instr::Region { .. }
+            | Instr::ExternFnDecl { .. } => {}
         }
     }
 

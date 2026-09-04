@@ -1656,6 +1656,66 @@ jobs:
         # fail-closed cases go red and the runner exits 1.
         run: python3 scripts/run_gate.py tools/test_bench_gate.py
 
+  conformance:
+    name: Core v1 conformance suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Blocking gate for the Core v1 conformance suite (docs/versioning.md sells a
+    # passing profile as evidence of API/IR/MLIR stability for that profile, so
+    # the suite has to actually run somewhere). Two assertions, because an exit
+    # code alone cannot tell "everything passed" from "nothing ran":
+    #   1. `--profile cpu` exits 0 AND reports a non-zero case count.
+    #   2. `--profile gpu` exits NON-ZERO on this build, which carries no
+    #      `mlir-gpu` feature and therefore has zero GPU cases compiled in.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-conformance-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-conformance-
+
+      - name: Build mindc
+        run: cargo build --release --bin mindc
+
+      - name: CPU profile must pass with a non-zero case count
+        run: |
+          set -euo pipefail
+          out=$(./target/release/mindc conformance --profile cpu)
+          echo "$out"
+          case "$out" in
+            *"ran=0"*)
+              echo "::error::conformance reported a pass having run zero cases"
+              exit 1
+              ;;
+            *"ran="*) ;;
+            *)
+              echo "::error::conformance did not report a case count"
+              exit 1
+              ;;
+          esac
+
+      - name: GPU profile must fail closed with zero GPU cases compiled in
+        run: |
+          set -uo pipefail
+          if ./target/release/mindc conformance --profile gpu >gpu.out 2>gpu.err; then
+            echo "::error::gpu profile printed a pass with no GPU cases compiled in"
+            cat gpu.out
+            exit 1
+          fi
+          cat gpu.err
+          grep -qi "no GPU cases compiled in" gpu.err
+
   mindcraft_check:
     name: Mindcraft check (RFC 0007 Phase 6)
     runs-on: ubuntu-latest

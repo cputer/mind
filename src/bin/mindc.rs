@@ -1730,8 +1730,18 @@ fn run_conformance(profile: &str) {
     };
 
     match conformance::run_conformance(ConformanceOptions { profile }) {
-        Ok(()) => {
-            println!("Core v1 conformance passed for profile: {:?}", profile);
+        Ok(report) => {
+            // Report the COUNT the suite executed, not just the exit code: a
+            // profile that ran zero cases verified nothing, and `run_conformance`
+            // now fails closed on exactly that — printing the count keeps the
+            // attestation checkable by whoever reads the CI log.
+            println!(
+                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={})",
+                profile,
+                report.total_ran(),
+                report.cpu_ran,
+                report.gpu_ran
+            );
         }
         Err(err) => {
             eprintln!("conformance failures detected:");

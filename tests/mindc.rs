@@ -247,15 +247,58 @@ fn mindc_color_env_overridden_by_flag() {
 
 #[test]
 fn mindc_runs_conformance_suite() {
-    let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
+    // No early return on a missing binary: `mindc_bin()` is CARGO_BIN_EXE_mindc,
+    // which cargo builds for this test target, so an absent binary is a broken
+    // gate, not a reason to report a silent pass.
+    let binary = mindc_bin();
+    assert!(
+        binary.exists(),
+        "mindc binary missing at {binary:?}; the conformance gate cannot run"
+    );
 
-    let status = Command::new(&binary)
+    let output = Command::new(&binary)
         .args(["conformance", "--profile", "cpu"])
-        .status()
+        .output()
         .expect("run mindc conformance");
 
-    assert!(status.success());
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The suite must report how many cases it executed; a pass with ran=0 is a
+    // vacuous attestation.
+    assert!(
+        stdout.contains("ran="),
+        "conformance must report its case count: {stdout}"
+    );
+    assert!(
+        !stdout.contains("ran=0"),
+        "conformance reported a pass having run nothing: {stdout}"
+    );
+}
+
+/// `--profile gpu` on a binary built without the `mlir-gpu` feature has zero GPU
+/// cases to run, and must exit non-zero naming the empty list instead of
+/// printing "conformance passed for profile: CpuAndGpu".
+#[test]
+fn mindc_conformance_gpu_profile_fails_closed() {
+    let binary = mindc_bin();
+    assert!(
+        binary.exists(),
+        "mindc binary missing at {binary:?}; the conformance gate cannot run"
+    );
+
+    let output = Command::new(&binary)
+        .args(["conformance", "--profile", "gpu"])
+        .output()
+        .expect("run mindc conformance --profile gpu");
+
+    assert!(
+        !output.status.success(),
+        "gpu profile with no compiled-in GPU cases must exit non-zero, stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.to_lowercase().contains("no gpu cases compiled in"),
+        "gpu failure must name the empty case list, stderr: {stderr}"
+    );
 }

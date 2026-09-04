@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1471 | **Est. tokens:** ~2,845,162
-**Generated:** 2026-09-04 18:55 UTC
+**Files:** 1471 | **Est. tokens:** ~2,849,108
+**Generated:** 2026-09-04 18:56 UTC
 
 ## Token Budget Guide
 
@@ -74,7 +74,7 @@
 | `.githooks/` | 4 | ~1,755 |
 | `.github/` | 4 | ~863 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~33,776 |
+| `.github/workflows/` | 9 | ~34,307 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
 | `scripts/` | 29 | ~94,253 |
@@ -88,7 +88,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~34,565 |
+| `src/` | 9 | ~36,850 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -99,7 +99,7 @@
 | `src/diagnostics/` | 1 | ~3,719 |
 | `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
-| `src/eval/` | 16 | ~87,339 |
+| `src/eval/` | 16 | ~87,733 |
 | `src/eval/stdlib/` | 2 | ~8,586 |
 | `src/exec/` | 3 | ~4,592 |
 | `src/ffi/` | 3 | ~5,541 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 341 | ~612,676 |
+| `tests/` | 341 | ~613,412 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,535 |
@@ -858,7 +858,7 @@
 
 - `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~22013 tok, huge) — name: CI
+- `ci.yml` (~22544 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2525 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -1024,7 +1024,7 @@
 - `reporter.rs` (~374 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `conformance.rs` (~1847 tok, huge) — The autodiff_pairwise conformance entry was removed 2026-05-20 — its
+- `conformance.rs` (~4132 tok, huge) — Per-profile execution counts for one conformance run.
 ### `src/deps/`
 
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1051,7 +1051,7 @@
 - `closures.rs` (~9284 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
 - `interp_mem.rs` (~2993 tok, huge) — Copyright 2025 STARGA Inc.
-- `ir_interp.rs` (~3818 tok, huge) — Copyright 2025 STARGA Inc.
+- `ir_interp.rs` (~4212 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_build.rs` (~10824 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_export.rs` (~12220 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_gpu.rs` (~301 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1343,7 +1343,7 @@
 - `backend_unavailable.mind` (~2 tok, tiny)
 ### `tests/`
 
-- `conformance.rs` (~129 tok, small)
+- `conformance.rs` (~443 tok, medium) — Exit status alone cannot distinguish "everything passed" from "nothing
 - `CONFORMANCE_TESTS.md` (~1225 tok, large) — MIND Conformance Test Corpus
 - `const_array_run.rs` (~884 tok, large) — Copyright 2025 STARGA Inc.
 - `const_f64_array_run.rs` (~1148 tok, large) — Copyright 2025 STARGA Inc.
@@ -1690,7 +1690,7 @@
 - `STABILITY_SKIP_LIST.md` (~408 tok, medium) — Formatter Stability Skip List
 ### `tests/`
 
-- `mindc.rs` (~1851 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc.rs` (~2273 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_corpus_floor/`
