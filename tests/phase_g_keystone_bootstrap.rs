@@ -614,11 +614,10 @@ fn phase_g_06_report_artifact_sha256() {
         .output()
         .expect("spawn mindc");
 
-    if !r.status.success() {
-        eprintln!(
-            "SKIP: `mindc build` did not succeed\nstderr: {}",
-            String::from_utf8_lossy(&r.stderr)
-        );
+    // Every sibling keystone test asserts the build; this one printed and passed,
+    // so a keystone build regression graded green here. Only a genuine capability
+    // gap may skip, and under MIND_BENCH_REQUIRE=1 not even that.
+    if !crate::common::gate::compiled("phase_g_keystone_bootstrap", &r) {
         return;
     }
 

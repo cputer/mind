@@ -292,15 +292,12 @@ fn substrate_modules_link_natively_into_consumer_cdylib() {
     std::fs::write(proj.join("Mind.toml"), MIND_TOML).expect("write Mind.toml");
     std::fs::write(proj.join("src").join("main.mind"), MAIN_MIND).expect("write main.mind");
 
-    let status = Command::new(&mindc)
+    let compile_out = Command::new(&mindc)
         .arg("build")
         .current_dir(&proj)
-        .status()
+        .output()
         .expect("spawn mindc build");
-    if !status.success() {
-        // A toolchain without the MLIR backend can't emit a cdylib; skip
-        // rather than fail (mirrors the std_surface_* gating convention).
-        println!("compose: mindc build failed (no MLIR backend?); skipping");
+    if !crate::common::gate::compiled("cross_module_cdylib_compose", &compile_out) {
         return;
     }
 

@@ -333,17 +333,16 @@ pub fn smoke_jv_n_is_int(h: i64) -> i64 {{ jv_n_is_int(h) }}
         let so_path = out_dir.join("libjson_smoke.so");
         std::fs::write(&driver_path, &driver_src).expect("write driver MIND");
 
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 driver_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
 
-        if !status.success() {
-            println!("json_parse_round_trip_via_compiled_so: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_json", &compile_out) {
             return;
         }
 
@@ -514,17 +513,16 @@ pub fn smoke_jv_make_number(n_int: i64, n_frac: i64, n_frac_d: i64, n_neg: i64, 
         let so_path = out_dir.join("libjson_zero_kat.so");
         std::fs::write(&driver_path, &driver_src).expect("write driver MIND");
 
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 driver_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
 
-        if !status.success() {
-            println!("json_dump_integer_zero_kats: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_json", &compile_out) {
             return;
         }
 

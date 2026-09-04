@@ -71,16 +71,15 @@ mod mlir_functional {
             .join("std")
             .join("vec.mind");
 
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
-        if !status.success() {
-            println!("vec_zeroed: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_vec_zeroed", &compile_out) {
             return;
         }
 

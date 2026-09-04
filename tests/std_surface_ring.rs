@@ -81,16 +81,15 @@ mod mlir_functional {
         let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("std")
             .join("ring.mind");
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
-        if !status.success() {
-            println!("ring: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_ring", &compile_out) {
             return;
         }
 

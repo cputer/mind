@@ -377,17 +377,16 @@ pub fn smoke_tv_s_len(h: i64) -> i64 {{ tv_s_len(h) }}
         std::fs::write(&driver_path, &driver_src).expect("write driver MIND");
 
         // Compile to shared library.
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 driver_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
 
-        if !status.success() {
-            println!("toml_parse_mind_toml_via_compiled_so: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_toml", &compile_out) {
             return;
         }
 

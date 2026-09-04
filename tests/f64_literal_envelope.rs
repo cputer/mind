@@ -74,8 +74,16 @@ fn f64_literal_envelope_roundtrip() {
             .expect("run mindc --emit-shared");
         if !out.status.success() {
             let e = String::from_utf8_lossy(&out.stderr);
-            if e.contains("mlir-build") && e.contains("requires") {
-                eprintln!("f64-literal-envelope: mindc --emit-shared needs mlir-build; skipping");
+            // A genuine capability gap may skip the whole envelope; every other
+            // failure is collected and reported (never printed-and-passed), and
+            // under MIND_BENCH_REQUIRE=1 even the gap is a failure.
+            if !crate::common::gate::enforce_real_backend()
+                && crate::common::gate::is_capability_gap(&e)
+            {
+                crate::common::gate::skipped(
+                    "f64_literal_envelope",
+                    "mindc --emit-shared needs mlir-build",
+                );
                 return;
             }
             failures.push(format!("[{src}] build FAILED: {e}"));

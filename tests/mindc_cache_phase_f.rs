@@ -77,6 +77,19 @@ fn run_build(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::process::Exi
         .expect("failed to spawn mindc")
 }
 
+/// Same build, but with stderr CAPTURED so a failure can be classified.
+///
+/// `run_build` inherits stdio and therefore discards the diagnostic, which is
+/// how the caller below came to treat every failure as "backend unavailable".
+fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::process::Output {
+    Command::new(mindc)
+        .arg("build")
+        .args(extra_args)
+        .current_dir(dir)
+        .output()
+        .expect("failed to spawn mindc")
+}
+
 /// Probe the cache for the entry source.
 fn probe_for_source(
     project_root: &Path,
@@ -709,9 +722,10 @@ fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
     let dir = tmp.path();
     make_project(dir, "fp_project", SIMPLE_MIND);
 
-    // Cold build populates the cache under the real mindc's fingerprint.
-    if !run_build(&bin, dir, &[]).success() {
-        eprintln!("SKIP: backend unavailable; cannot populate cache");
+    // Cold build populates the cache under the real mindc's fingerprint. A
+    // missing backend may skip; a build regression must NOT grade as a pass.
+    let cold = run_build_captured(&bin, dir, &[]);
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &cold) {
         return;
     }
     let hit = probe_for_source(

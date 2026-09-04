@@ -108,12 +108,20 @@ fn iouring_nop_roundtrips_user_data() {
 
     let so = std::env::temp_dir().join("mind_iouring_nop.so");
     let src = manifest.join("std").join("iouring.mind");
-    let status = Command::new(&mindc)
-        .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
-        .status()
+    // std/iouring.mind is a raw `syscall()` surface, which the determinism
+    // check rejects by default; the artifact is attested `nondeterministic`.
+    // Without the flag the compile exits 1 and, under the historic fail-OPEN
+    // skip, this gate passed having loaded nothing.
+    let compile_out = Command::new(&mindc)
+        .args([
+            src.to_str().unwrap(),
+            "--allow-nondeterministic",
+            "--emit-shared",
+            so.to_str().unwrap(),
+        ])
+        .output()
         .expect("run mindc");
-    if !status.success() {
-        println!("iouring: mindc compile failed (no MLIR backend?); skipping");
+    if !crate::common::gate::compiled("std_surface_iouring", &compile_out) {
         return;
     }
 
@@ -242,12 +250,16 @@ fn iouring_submit_rejects_invalid_input() {
     }
     let so = std::env::temp_dir().join("mind_iouring_guard.so");
     let src = manifest.join("std").join("iouring.mind");
-    let status = Command::new(&mindc)
-        .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
-        .status()
+    let compile_out = Command::new(&mindc)
+        .args([
+            src.to_str().unwrap(),
+            "--allow-nondeterministic",
+            "--emit-shared",
+            so.to_str().unwrap(),
+        ])
+        .output()
         .expect("run mindc");
-    if !status.success() {
-        println!("iouring-guard: mindc compile failed (no MLIR backend?); skipping");
+    if !crate::common::gate::compiled("std_surface_iouring", &compile_out) {
         return;
     }
     let py = format!(

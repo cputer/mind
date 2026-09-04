@@ -176,9 +176,12 @@ mod mlir_functional {
         let src_path = dir.join(format!("{tag}.mind"));
         let so_path = dir.join(format!("{tag}.so"));
         std::fs::write(&src_path, src).expect("write .mind source");
+        // The HTTP surface calls `getsockname()`, which the determinism check
+        // rejects by default; the artifact is attested `nondeterministic`.
         let status = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
+                "--allow-nondeterministic",
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])

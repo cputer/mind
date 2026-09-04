@@ -12,6 +12,8 @@
 
 // Part of the MIND project (Machine Intelligence Native Design).
 
+mod common;
+
 #[cfg(feature = "mlir-exec")]
 use std::path::PathBuf;
 
@@ -39,12 +41,12 @@ fn mind_binary() -> PathBuf {
 fn mlir_exec_scalar_add() {
     let binary = mind_binary();
     if !binary.exists() {
-        eprintln!("Skipping: mind binary not found at {:?}", binary);
+        crate::common::gate::skipped("mlir_exec", &format!("mind binary not built at {binary:?}"));
         return;
     }
 
     if which::which("mlir-opt").is_err() || which::which("mlir-cpu-runner").is_err() {
-        eprintln!("skipping: mlir tools not found");
+        crate::common::gate::skipped("mlir_exec", "mlir-opt / mlir-cpu-runner not on PATH");
         return;
     }
 
@@ -66,12 +68,12 @@ fn mlir_exec_scalar_add() {
 fn parity_cpu_vs_mlir_exec_simple() {
     let binary = mind_binary();
     if !binary.exists() {
-        eprintln!("Skipping: mind binary not found at {:?}", binary);
+        crate::common::gate::skipped("mlir_exec", &format!("mind binary not built at {binary:?}"));
         return;
     }
 
     if which::which("mlir-opt").is_err() || which::which("mlir-cpu-runner").is_err() {
-        eprintln!("skipping: mlir tools not found");
+        crate::common::gate::skipped("mlir_exec", "mlir-opt / mlir-cpu-runner not on PATH");
         return;
     }
 

@@ -257,15 +257,19 @@ mod mlir_tests {
         let src = include_str!("../std/async.mind");
         std::fs::write(&src_path, src).expect("write async_test.mind");
 
-        let status = std::process::Command::new(mindc_bin())
-            .args(["--emit-shared", "--out"])
-            .arg(&so_path)
+        // `mindc <file> --emit-shared <out>`. The historic form here was
+        // `--emit-shared --out <so> <src>`, which mindc rejects with
+        // `unexpected argument '--out'`; the fail-OPEN skip below swallowed
+        // that exit-2 and every test in this module passed without ever
+        // compiling or loading anything.
+        let compile_out = std::process::Command::new(mindc_bin())
             .arg(&src_path)
-            .status()
+            .arg("--emit-shared")
+            .arg(&so_path)
+            .output()
             .expect("run mindc");
 
-        if !status.success() {
-            println!("mlir_async: mindc --emit-shared failed; skipping functional tests");
+        if !crate::common::gate::compiled("std_surface_async", &compile_out) {
             return None;
         }
         Some(so_path)

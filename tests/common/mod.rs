@@ -25,6 +25,8 @@
 //! The `[[bin]] name = "mindc"` entry in `Cargo.toml` guarantees
 //! `CARGO_BIN_EXE_mindc` is available to every integration test in this crate.
 
+pub mod gate;
+
 use std::path::PathBuf;
 
 /// Return the path to the `mindc` binary for the CURRENT test-profile and

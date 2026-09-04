@@ -210,12 +210,10 @@ fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
             .output()
             .expect("spawn mindc for oracle rebuild");
 
-        if !r.status.success() {
-            println!(
-                "g2_differential_mlir: oracle rebuild failed — MLIR toolchain \
-                 may be unavailable.\nstderr: {}",
-                String::from_utf8_lossy(&r.stderr)
-            );
+        // A rebuild failure used to print and return None, so the whole
+        // differential comparison was skipped and the gate PASSED on a real
+        // oracle-build regression. Only a genuine capability gap may skip now.
+        if !common::gate::compiled("g2_differential_mlir", &r) {
             return None;
         }
 
@@ -225,9 +223,9 @@ fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
             }
         }
 
-        println!(
-            "g2_differential_mlir: rebuilt .so is not an ELF — \
-             MLIR toolchain unavailable, skipping test"
+        common::gate::skipped(
+            "g2_differential_mlir",
+            "rebuilt oracle is not an ELF (MLIR toolchain unavailable)",
         );
         None
     })

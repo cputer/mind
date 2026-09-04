@@ -312,17 +312,16 @@ pub fn smoke_rx_find_all_len(rx: i64, inp: i64, ilen: i64) -> i64 {{
         let so_path = out_dir.join("libregex_smoke.so");
         std::fs::write(&driver_path, &driver_src).expect("write driver MIND");
 
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 driver_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
 
-        if !status.success() {
-            println!("regex_compile_and_match_via_compiled_so: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_regex", &compile_out) {
             return;
         }
 

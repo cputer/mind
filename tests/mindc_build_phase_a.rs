@@ -315,7 +315,7 @@ fn cli_build_invalid_manifest_exits_2() {
 fn cli_build_release_flag_accepted() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 
@@ -359,7 +359,7 @@ fn cli_build_release_flag_accepted() {
 fn cli_build_debug_puts_artifact_in_debug_subdir() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 
@@ -393,7 +393,7 @@ fn cli_build_debug_puts_artifact_in_debug_subdir() {
 fn cli_build_custom_out_path() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 
@@ -427,7 +427,7 @@ fn cli_build_custom_out_path() {
 fn cli_build_emit_cdylib_produces_so() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 
@@ -569,7 +569,7 @@ optimize = "release"
 fn cli_build_self_build_smoke() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 
@@ -593,14 +593,9 @@ fn cli_build_self_build_smoke() {
         .output()
         .expect("spawn mindc");
 
-    if !output.status.success() {
-        // Print diagnostic but do not fail the test — the self-build requires
-        // a working MLIR toolchain including llc/mlir-opt; CI environments
-        // with only the mindc binary can skip this.
-        eprintln!(
-            "self-build did not succeed (toolchain may be incomplete): {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    // A missing toolchain is a capability gap and may skip; ANY other failure is
+    // a self-build regression and must fail the gate rather than print and pass.
+    if !crate::common::gate::compiled("mindc_build_phase_a", &output) {
         return;
     }
 
@@ -632,7 +627,7 @@ fn cli_build_self_build_smoke() {
 fn cli_build_single_file_binary_ignores_broken_sibling() {
     let Some(bin) = require_mindc() else { return };
     if !mlir_available() {
-        eprintln!("SKIP: MLIR tools not available");
+        crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
     }
 

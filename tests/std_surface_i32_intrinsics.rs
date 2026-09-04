@@ -62,12 +62,11 @@ fn i32_load_store_no_clobber_and_zero_extend() {
     let so = dir.join("mind_i32_probe.so");
     std::fs::write(&src, SRC).expect("write src");
 
-    let status = Command::new(&mindc)
+    let compile_out = Command::new(&mindc)
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
-        .status()
+        .output()
         .expect("run mindc");
-    if !status.success() {
-        println!("i32: mindc --emit-shared failed (no MLIR backend?); skipping");
+    if !crate::common::gate::compiled("std_surface_i32_intrinsics", &compile_out) {
         return;
     }
 

@@ -87,16 +87,15 @@ mod mlir_functional {
             .join("std")
             .join("io_canon.mind");
 
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
-        if !status.success() {
-            println!("io_canon: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_io_canon", &compile_out) {
             return;
         }
 
@@ -276,16 +275,15 @@ mod mlir_functional {
         let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("std")
             .join("io_canon.mind");
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .args([
                 src_path.to_str().unwrap(),
                 "--emit-shared",
                 so_path.to_str().unwrap(),
             ])
-            .status()
+            .output()
             .expect("run mindc");
-        if !status.success() {
-            println!("io_canon anchor: mindc compile failed; skipping");
+        if !crate::common::gate::compiled("std_surface_io_canon", &compile_out) {
             return;
         }
 
@@ -415,13 +413,12 @@ mod mlir_functional {
              }\n",
         )
         .expect("write main.mind");
-        let status = Command::new(&mindc)
+        let compile_out = Command::new(&mindc)
             .arg("build")
             .current_dir(&proj)
-            .status()
+            .output()
             .expect("spawn mindc build");
-        if !status.success() {
-            println!("canon_anchor: mindc build failed (no MLIR backend?); skipping");
+        if !crate::common::gate::compiled("std_surface_io_canon", &compile_out) {
             return;
         }
         let so = proj

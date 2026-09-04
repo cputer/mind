@@ -61,12 +61,11 @@ fn int_min_div_and_oversized_shift_are_deterministic() {
     let so = dir.join("mind_int_determinism.so");
     std::fs::write(&src, SRC).expect("write src");
 
-    let status = Command::new(&mindc)
+    let compile_out = Command::new(&mindc)
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
-        .status()
+        .output()
         .expect("run mindc");
-    if !status.success() {
-        println!("int-determinism: mindc --emit-shared failed (no MLIR backend?); skipping");
+    if !crate::common::gate::compiled("int_determinism", &compile_out) {
         return;
     }
 

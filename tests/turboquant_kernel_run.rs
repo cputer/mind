@@ -34,6 +34,8 @@
 
 #![cfg(feature = "mlir-build")]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -76,8 +78,11 @@ fn turboquant_builds_and_its_own_assertions_pass() {
     // Environmental only: no MLIR toolchain on this runner. Anything else is a
     // real failure and must not be swallowed -- this test exists because a
     // silent non-execution is what it is defending against.
-    if !build.status.success() && bstderr.contains("mlir") && bstderr.contains("requires") {
-        println!("turboquant: mindc lacks the MLIR toolchain; skipping");
+    if !build.status.success()
+        && !crate::common::gate::enforce_real_backend()
+        && crate::common::gate::is_capability_gap(&bstderr)
+    {
+        crate::common::gate::skipped("turboquant_kernel_run", "mindc lacks the MLIR toolchain");
         let _ = std::fs::remove_dir_all(&dir);
         return;
     }
