@@ -36,11 +36,11 @@
 //! `println!("... skipping"); return;`, so `MIND_BENCH_REQUIRE=1` cannot make
 //! them hard-fail. They are not hand-edited here — this module is the
 //! deliverable, and the backlog is held under a MECHANICAL two-sided ratchet
-//! (`no_new_fail_open_skip_site_may_be_added` in
-//! `tests/fail_closed_capability_skip.rs`) that forbids a NEW one and demands
-//! the baseline be lowered whenever the count falls. Upgrade path: route each
-//! remaining site through `compiled()` / `skipped()` as its file is next
-//! touched, until the baseline reaches 0.
+//! (the set-valued backlog ratchet in
+//! `tests/fail_open_skip_site_ratchet.rs`) that forbids a NEW one and demands
+//! the frozen per-file entry be lowered whenever a file drains. Upgrade path:
+//! route each remaining site through `compiled()` / `skipped()` as its file is
+//! next touched, until the backlog is empty.
 //!
 //! deferred: `skipped()` prints the `SDLC-GATE <target> ran=0 fail=0` marker
 //! that `scripts/exec_semantics_gate.sh`'s SKIP-MARKER CONSUMER already reads,
