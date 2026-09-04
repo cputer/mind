@@ -36,6 +36,24 @@
 //! shape) or inline at the head of the message (`error[build]: [E5003] …`, for
 //! the `anyhow`-carried refusals of `run_project`). [`is_capability_gap`]
 //! matches the token, so both renderings classify identically.
+//!
+//! # One stderr, several causes
+//!
+//! A verdict is NOT "does a capability code appear somewhere". `mindc build`
+//! over a workspace (`run_workspace_build`) prints one refusal per member and
+//! keeps going, so a single stderr can carry a host-capability refusal for one
+//! member and a real source failure for another. Reading the first kind and
+//! ignoring the second graded that run as a tolerated skip — a fail-OPEN
+//! decision, and a second, disagreeing implementation of the rule
+//! [`FallbackReason::merge`] already applies one layer down.
+//!
+//! So the classifier reads EVERY cause token on the wire and merges them
+//! fail-closed: a gap requires at least one capability cause and NO other
+//! cause. The scan is over the reserved [`CAUSE_CODE_PREFIX`] namespace, which
+//! makes both kinds of omission safe — a cause added without being registered
+//! as a capability reads as unknown and vetoes the skip, while a diagnostic
+//! outside the namespace (a type error's `E0308`) can neither forge a verdict
+//! nor veto one.
 
 /// The binary carries no native backend at all: it was built without the
 /// `mlir-build` feature. A host-capability fact, never a defect.
@@ -128,18 +146,61 @@ pub enum NativeOutcome {
 /// Every code that means "this host lacks the capability".
 ///
 /// The classifier below is defined over exactly this list, so adding a
-/// capability cause is one edit and forgetting one fails closed.
+/// capability cause is one edit and forgetting one fails closed: an
+/// unregistered cause is still IN the reserved namespace, so it is seen, read
+/// as unknown, and vetoes the skip.
 pub const CAPABILITY_CODES: [&str; 2] = [NO_NATIVE_BACKEND, NATIVE_TOOLCHAIN_ABSENT];
 
-/// Does `stderr` carry a genuine capability code?
+/// The prefix reserved for CAUSE codes — the codes that answer "why was this
+/// refused", as opposed to the ordinary diagnostic codes (`E1001`, `E2002`,
+/// `E0308`) that answer "what is wrong with the program".
+///
+/// Scanning the namespace rather than a hand-listed set is what makes an
+/// omission safe in BOTH directions (see the module docs), and
+/// `every_cause_code_is_in_the_reserved_namespace` keeps the codes above inside
+/// it, so a new cause cannot be born outside the scan.
+pub const CAUSE_CODE_PREFIX: &str = "E50";
+
+/// Is `token` (the text between one `[` and the next `]`) a reserved cause
+/// code: [`CAUSE_CODE_PREFIX`] followed by at least one digit and nothing else?
+fn is_cause_code(token: &str) -> bool {
+    match token.strip_prefix(CAUSE_CODE_PREFIX) {
+        Some(digits) => !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// Every reserved cause-code token carried by `stderr`, in wire order.
+///
+/// `error[build][E5003]: …` yields `["E5003"]`: the `build` token is not in the
+/// namespace, and neither is an ordinary diagnostic code.
+pub fn cause_codes(stderr: &str) -> Vec<&str> {
+    let mut found = Vec::new();
+    let mut rest = stderr;
+    while let Some(open) = rest.find('[') {
+        rest = &rest[open + 1..];
+        let Some(close) = rest.find(']') else { break };
+        let token = &rest[..close];
+        if is_cause_code(token) {
+            found.push(token);
+        }
+    }
+    found
+}
+
+/// Does `stderr` report a genuine host-capability gap, and NOTHING else?
 ///
 /// Matched on the CODE token (`[E5003]`), never on diagnostic prose: a
 /// re-worded diagnostic keeps its classification, and a refusal that was never
 /// given a code is NOT a capability gap — it fails closed.
+///
+/// The merge across tokens is the same fail-closed rule as
+/// [`FallbackReason::merge`]: one real cause anywhere on the wire dominates
+/// every capability cause, so a workspace whose first member skipped for a
+/// missing backend and whose second member did not compile is a real failure.
 pub fn is_capability_gap(stderr: &str) -> bool {
-    CAPABILITY_CODES
-        .iter()
-        .any(|code| stderr.contains(&format!("[{code}]")))
+    let codes = cause_codes(stderr);
+    !codes.is_empty() && codes.iter().all(|code| CAPABILITY_CODES.contains(code))
 }
 
 #[cfg(test)]
@@ -192,6 +253,56 @@ mod tests {
             "error[build]: --emit-shared requires building with the 'mlir-build' feature\n"
         ));
         assert!(!is_capability_gap("error: tool not found: mlir-opt\n"));
+    }
+
+    #[test]
+    fn every_cause_code_is_in_the_reserved_namespace() {
+        // `code()` is an exhaustive match, so a new cause must choose a code;
+        // this keeps that code inside the namespace the classifier scans.
+        for reason in [
+            FallbackReason::NoNativeBackend,
+            FallbackReason::NativeToolchainAbsent,
+            FallbackReason::SourceNotNativelyCompilable,
+        ] {
+            assert!(
+                is_cause_code(reason.code()),
+                "cause {reason:?} carries {}, outside the reserved {CAUSE_CODE_PREFIX} namespace",
+                reason.code()
+            );
+        }
+    }
+
+    #[test]
+    fn only_reserved_tokens_are_read_as_causes() {
+        assert_eq!(
+            cause_codes("error[build][E5003]: x"),
+            vec![NO_NATIVE_BACKEND]
+        );
+        // An ordinary diagnostic code is not a cause: it can neither forge a
+        // verdict nor veto one.
+        assert!(cause_codes("error[E0308]: mismatched types").is_empty());
+        assert!(cause_codes("[E50] [E5003x] [build] [WARN]").is_empty());
+        assert!(cause_codes("no brackets at all").is_empty());
+        assert!(cause_codes("unterminated [E5003").is_empty());
+    }
+
+    #[test]
+    fn a_real_cause_beside_a_capability_cause_fails_closed() {
+        // One workspace stderr, two members, opposite causes.
+        let mixed = format!(
+            "error[workspace][core][{}]: not natively compiled\n\
+             error[workspace][tools][{}]: not natively compiled\n",
+            NO_NATIVE_BACKEND, SOURCE_NOT_NATIVELY_COMPILABLE
+        );
+        assert!(!is_capability_gap(&mixed), "{mixed}");
+    }
+
+    #[test]
+    fn an_unregistered_cause_vetoes_the_skip() {
+        // A future cause added without being registered as a capability is
+        // still IN the namespace, so it is seen and fails closed.
+        let stderr = format!("error[build][{NO_NATIVE_BACKEND}]: a\nerror[build][E5099]: b\n");
+        assert!(!is_capability_gap(&stderr), "{stderr}");
     }
 
     #[test]

@@ -71,6 +71,25 @@ const UNCODED_PROSE: &str =
 /// A real compiler regression: the class that must NEVER grade as a pass.
 const REAL_FAILURE: &str = "error[E0308]: mismatched types in `idiv`\n";
 
+/// Verbatim stderr SHAPE of `mindc build` over a WORKSPACE (`run_workspace_build`,
+/// `src/bin/mindc.rs`): the loop prints one `error[workspace][<member>][<code>]:`
+/// per failing member and CONTINUES, so ONE stderr can carry a host-capability
+/// refusal for one member and a REAL source failure for another. The verdict
+/// must be the real failure — the same fail-closed merge `FallbackReason::merge`
+/// already applies one layer down, which a "does any capability code appear?"
+/// scan of the wire silently disagreed with.
+const MIXED_WORKSPACE: &str = "error[workspace][core][E5003]: entry module was not natively \
+     compiled (embedded as a runtime-JIT fallback -- see the [WARN] above)\n\
+     error[workspace][tools][E5005]: entry module was not natively compiled (embedded as a \
+     runtime-JIT fallback -- see the [WARN] above)\n";
+
+/// The words of a capability refusal SCATTERED across unrelated lines: the
+/// feature name in a hint, "requires" in an unrelated type error. Nothing here
+/// refuses for a host-capability reason, so the words must not add up to a skip.
+const SCATTERED_PROSE: &str = "error[E0308]: `mm` requires operands of the same rank\n\
+     note: this build has no 'mlir-build' backend compiled in; \
+     rebuild with --features mlir-build\n";
+
 // --- the pure decision core -------------------------------------------------
 
 #[test]
@@ -106,6 +125,18 @@ fn fixture_codes_are_the_compilers_own() {
     assert!(CAP_TOOL.contains(&no_tool), "{CAP_TOOL}");
     assert!(REAL_PROJECT_BUILD.contains(&real), "{REAL_PROJECT_BUILD}");
     assert!(!UNCODED_PROSE.contains('[') || !UNCODED_PROSE.contains("E50"));
+    // The mixed fixture must carry BOTH a capability cause and the real one,
+    // or it stops testing the merge it exists for.
+    assert!(MIXED_WORKSPACE.contains(&no_backend), "{MIXED_WORKSPACE}");
+    assert!(MIXED_WORKSPACE.contains(&real), "{MIXED_WORKSPACE}");
+    // The scattered fixture must carry NO cause code at all: its whole point is
+    // that prose alone decides nothing.
+    for code in [&no_backend, &no_tool, &real] {
+        assert!(
+            !SCATTERED_PROSE.contains(code.as_str()),
+            "{SCATTERED_PROSE}"
+        );
+    }
 }
 
 #[test]
@@ -132,6 +163,29 @@ fn identical_prose_with_the_real_failure_code_never_skips() {
     match gate::classify(false, REAL_PROJECT_BUILD, false) {
         Outcome::Failed(s) => assert!(s.contains("E5005")),
         other => panic!("a module that did not compile must fail closed, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_capability_code_beside_a_real_failure_code_fails_closed() {
+    // A workspace build prints one refusal per member and keeps going, so both
+    // causes reach one stderr. "Any capability code present" graded that as a
+    // tolerated SKIP and the real failure passed — the same fail-open the coded
+    // classifier was introduced to close, one level up.
+    match gate::classify(false, MIXED_WORKSPACE, false) {
+        Outcome::Failed(s) => assert!(s.contains("E5005"), "{s}"),
+        other => panic!("a real failure beside a capability gap must fail closed, got {other:?}"),
+    }
+}
+
+#[test]
+fn scattered_capability_prose_is_never_a_skip() {
+    // The pre-code classifier tested two INDEPENDENT substrings against the
+    // whole stderr, so a hint naming the feature plus an unrelated "requires"
+    // graded as a capability gap. Prose decides nothing; only a cause code does.
+    match gate::classify(false, SCATTERED_PROSE, false) {
+        Outcome::Failed(s) => assert!(s.contains("E0308"), "{s}"),
+        other => panic!("scattered prose must never grade as a capability gap, got {other:?}"),
     }
 }
 

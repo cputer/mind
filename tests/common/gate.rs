@@ -89,7 +89,9 @@ pub enum Outcome {
 /// hard-failed; and any re-worded diagnostic could silently widen or close the
 /// hole. The code is the contract; prose is not.
 ///
-/// A bare "error" is NOT a capability gap: an undiagnosed failure fails closed.
+/// A bare "error" is NOT a capability gap: an undiagnosed failure fails closed,
+/// and so does a stderr that carries a real cause code ALONGSIDE a capability
+/// one (a workspace build prints one refusal per member and keeps going).
 #[allow(dead_code)]
 pub fn is_capability_gap(stderr: &str) -> bool {
     libmind::diagnostics::capability::is_capability_gap(stderr)
