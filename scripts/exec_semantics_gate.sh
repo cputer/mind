@@ -60,16 +60,24 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # ---------------------------------------------------------------------------
-# TIER DEFINITIONS.  measured@f2a2d87d + the E2621 method-receiver fix.
+# TIER DEFINITIONS.  RE-MEASURED at the wave that added the fail-closed capability
+# gates (`scripts/exec_semantics_gate.sh --print-count`, one run per tier).
 # Floors sit a hair under the measured value: a feature-gating accident erases whole
-# FILES (dozens to hundreds of tests at once), so a ~0.7% margin costs the gate
+# FILES (dozens to hundreds of tests at once), so a ~0.8% margin costs the gate
 # nothing while keeping a one-test environmental difference from redding main.
 # Re-derive after intentionally adding or removing tests: --print-count.
 #
+# A floor is a RATCHET, not a historical note. Left at its first-measured value it
+# accrues slack — and slack is deletable test coverage: at 1900 the exec tier carried
+# 202 tests of headroom, enough to delete EVERY test in the largest gate file in the
+# tree and still print `ok[exec]`. Re-measure at landing, every landing.
+#
 #   tier      features                                   harnesses  executed  floor
-#   exec      mlir-build std-surface cross-module-imports      317      1913   1900
-#   lowering  std-surface,mlir-lowering                        318      1663   1650
-#   pkg       pkg                                              317      1265   1255
+#   exec      mlir-build std-surface cross-module-imports      332      2102   2085
+#   lowering  std-surface,mlir-lowering                        327      1830   1815
+#   pkg       pkg                                              326      1415   1400
+#
+# (Superseded: measured@f2a2d87d was 317/1913, 318/1663, 317/1265.)
 # ---------------------------------------------------------------------------
 TIERS=(exec lowering pkg)
 
@@ -77,8 +85,8 @@ TIERS=(exec lowering pkg)
 # alias-miscompile gate, the array-OOB bounds-trap gate and the array bounds/dtype
 # gate. Dropping ANY of the three features silently erases most of it.
 FEATURES_exec="mlir-build std-surface cross-module-imports"
-FLOOR_TESTS_exec=1900
-FLOOR_HARNESSES_exec=310
+FLOOR_TESTS_exec=2085
+FLOOR_HARNESSES_exec=328
 # MIND_BENCH_REQUIRE=1 turns "MLIR toolchain missing -> skip" into a hard failure, so
 # this tier cannot pass vacuously on a runner where mlir-opt/clang never installed.
 # Correct ONLY here: this is the tier that actually enables mlir-build.
@@ -89,8 +97,8 @@ REQUIRE_TOOLCHAIN_exec=1
 # of those features ALONE (the 'Test (gated ...)' and 'Run gated tests ...' steps of
 # the build_test job) and never together, so the whole group was erased in both runs.
 FEATURES_lowering="std-surface,mlir-lowering"
-FLOOR_TESTS_lowering=1650
-FLOOR_HARNESSES_lowering=310
+FLOOR_TESTS_lowering=1815
+FLOOR_HARNESSES_lowering=323
 # NOT set here. These tiers deliberately build WITHOUT mlir-build, so a target that
 # needs a cdylib emit (phase_g_keystone_bootstrap) correctly reports
 #   error[build]: cdylib emit requires the 'mlir-build' feature
@@ -103,8 +111,8 @@ REQUIRE_TOOLCHAIN_lowering=0
 # "pkg")]`. ci.yml's feature-compile matrix runs `cargo check --features pkg` but never
 # `cargo test`, so neither had ever executed.
 FEATURES_pkg="pkg"
-FLOOR_TESTS_pkg=1255
-FLOOR_HARNESSES_pkg=310
+FLOOR_TESTS_pkg=1400
+FLOOR_HARNESSES_pkg=322
 REQUIRE_TOOLCHAIN_pkg=0
 
 # ---------------------------------------------------------------------------
@@ -145,20 +153,32 @@ REQUIRE_TOOLCHAIN_pkg=0
 # check answers "did the substance run", and a target that ran and FAILED is caught
 # by the quarantine triage below with a message that names the real problem. Counting
 # `passed` here would report a failing gate as "did not run".
+#
+# A row is added by the SAME change that adds the gate it protects: a new gate whose
+# only protection is the aggregate floor is a gate anyone may delete. The two
+# fail-closed skip gates below carry no file-level `cfg` and no `required-features`,
+# so they build and run in ALL THREE tiers — measured per tier (21 and 6 executed in
+# exec, lowering and pkg alike), never assumed from one of them.
 CRITICAL_exec=(
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
+  "fail_closed_capability_skip 20"  # measured 21; the capability-skip helper contract
+  "fail_open_skip_site_ratchet 5"   # measured 6; the shrink-only fail-open backlog
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
 # enabled BOTH features for; 26 of the group's 57 tests live in these two files.
 CRITICAL_lowering=(
   "extern_c_phase_a 1"
   "extern_c_phase_b 1"
+  "fail_closed_capability_skip 20"
+  "fail_open_skip_site_ratchet 5"
 )
 # The entire reason the `pkg` tier exists: ci.yml only ever `cargo check`ed pkg.
 CRITICAL_pkg=(
   "package_basic 1"
   "package_traversal 1"
+  "fail_closed_capability_skip 20"
+  "fail_open_skip_site_ratchet 5"
 )
 
 QUARANTINE_exec=(

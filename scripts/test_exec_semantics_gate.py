@@ -33,6 +33,7 @@ Run: ``python3 scripts/test_exec_semantics_gate.py`` (no third-party deps).
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -40,22 +41,50 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "scripts" / "exec_semantics_gate.sh"
+GATE_TEXT = GATE.read_text(encoding="utf-8") if GATE.is_file() else ""
 
-# Per-tier CRITICAL harnesses and floors, mirrored from the script.  Deliberately a
-# small hand-written mirror: this test must keep working when the script's own
-# parsing is what is under test, and a fixture that clears the floors by a wide
-# margin does not need to track a floor change to the test.
+TIERS = ("exec", "lowering", "pkg")
+
+
+def _array(name: str) -> tuple[str, ...]:
+    """Entries of the bash array literal `name=( ... )` in the gate script."""
+    m = re.search(rf"^{name}=\((.*?)\)\s*$", GATE_TEXT, re.S | re.M)
+    if m is None:
+        raise SystemExit(f"FAIL: {GATE.name} has no {name}=( ... ) array")
+    entries = []
+    for line in m.group(1).splitlines():
+        entry = line.split("#", 1)[0].strip().strip('"')
+        if entry:
+            entries.append(entry)
+    return tuple(entries)
+
+
+def _int(name: str) -> int:
+    m = re.search(rf"^{name}=([0-9]+)$", GATE_TEXT, re.M)
+    if m is None:
+        raise SystemExit(f"FAIL: {GATE.name} has no {name}=<integer>")
+    return int(m.group(1))
+
+
+# READ OUT OF THE SCRIPT, never hand-copied.  A hand-written mirror is the same
+# drift shape this whole gate exists to remove: the moment a CRITICAL row or a floor
+# moves in the script, a stale fixture stops satisfying it and the failure reads as a
+# gate defect instead of a test-fixture defect.  `CRITICAL[tier]` is the parsed
+# `(target, minimum)` pairs; `QUARANTINED[tier]` the targets that must keep FAILING
+# in a baseline fixture, or the shrink-only ratchet reds the tier itself.
 CRITICAL = {
-    "exec": ("alias_miscompile_run", "array_oob_trap_run"),
-    "lowering": ("extern_c_phase_a", "extern_c_phase_b"),
-    "pkg": ("package_basic", "package_traversal"),
+    t: tuple((e.split()[0], int(e.split()[1])) for e in _array(f"CRITICAL_{t}")) for t in TIERS
 }
-# Targets QUARANTINE_<tier> names; a quarantined target that PASSES reds the tier,
-# so a baseline fixture for that tier has to keep failing them.
-QUARANTINED = {"exec": (), "lowering": ("std_surface_intrinsics",), "pkg": ()}
+QUARANTINED = {t: _array(f"QUARANTINE_{t}") for t in TIERS}
+FLOOR_TESTS = {t: _int(f"FLOOR_TESTS_{t}") for t in TIERS}
+FLOOR_HARNESSES = {t: _int(f"FLOOR_HARNESSES_{t}") for t in TIERS}
 
-HARNESSES = 330  # every tier's harness floor is 310
-PER_HARNESS = 7  # 330 * 7 = 2310 executed; the highest tier floor is 1900
+# Sized from the gate's own numbers so the fixture clears every floor with a wide
+# margin whatever they are today — and so PER_HARNESS always satisfies the largest
+# CRITICAL minimum, which is what makes the erasure cases below isolate the
+# per-harness check from the aggregate floor.
+HARNESSES = max(FLOOR_HARNESSES.values()) + 20
+PER_HARNESS = max(10, *(m for rows in CRITICAL.values() for _, m in rows))
 
 
 def result_line(passed: int, failed: int = 0, ignored: int = 0) -> str:
@@ -83,11 +112,17 @@ def tier_log(
     error_lines: tuple[str, ...] = (),
     cargo_exit: int = 0,
     emit_exit_marker: bool = True,
+    erase: tuple[str, ...] = (),
 ) -> str:
-    """A log that clears every floor of `tier`, plus whatever the case injects."""
+    """A log that clears every floor of `tier`, plus whatever the case injects.
+
+    `erase` reproduces what cargo prints for a test file that was DELETED or cfg'd
+    out: the harness is still counted and still reports `ok`, with 0 tests.
+    """
     out = ["   Compiling libmind v0.1.0 (/w)\n    Finished test profile\n"]
-    for name in CRITICAL[tier]:
-        out.append(block(f"Running tests/{name}.rs (target/debug/deps/{name}-01)", PER_HARNESS))
+    for name, _minimum in CRITICAL[tier]:
+        ran = 0 if name in erase else PER_HARNESS
+        out.append(block(f"Running tests/{name}.rs (target/debug/deps/{name}-01)", ran))
     for name in QUARANTINED[tier]:
         # Quarantined targets must stay RED or the ratchet reds the tier itself.
         out.append(
@@ -235,6 +270,27 @@ case(
     ),
     True,
 )
+
+
+# --- 9..N. EVERY CRITICAL row must BITE --------------------------------------
+# One case per row, generated from the script's own lists, so a row added later is
+# proven to gate without anyone remembering to write its test — and a row that is
+# only decorative can never be added unnoticed.
+#
+# These cases isolate the per-harness minimum from the aggregate floors: the fixture
+# clears both floors by a wide margin and loses only PER_HARNESS tests to the
+# erasure, so the ONLY check that can red the tier is the CRITICAL one.  That is the
+# hole the mechanism exists to close — an erased file still prints
+# `test result: ok. 0 passed` and leaves the HARNESS count unmoved, so a tier with
+# slack absorbs the whole file in silence.
+for _tier in TIERS:
+    for _name, _minimum in CRITICAL[_tier]:
+        case(
+            f"an ERASED critical harness reds '{_tier}' ({_name}, min {_minimum})",
+            _tier,
+            tier_log(_tier, erase=(_name,)),
+            True,
+        )
 
 
 def main() -> int:
