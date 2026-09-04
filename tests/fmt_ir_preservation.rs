@@ -20,9 +20,9 @@
 //! Formatter IR-preservation gate — Phase 2A acceptance test (Step 3 of PR #3).
 //!
 //! For every file in scope, asserts that formatting never changes the
-//! compiled MIC IR output:
+//! compiled canonical image:
 //!
-//!   `emit_mic(parse(src)) == emit_mic(parse(format_source(src)))`
+//!   `emit_mic3(compile(src)) == emit_mic3(compile(format_source(src)))`
 //!
 //! This is the semantic-correctness gate: a formatter that changes the
 //! program's meaning (IR) is a compiler bug, not just a style issue.
@@ -31,27 +31,47 @@
 //! per-file tests and by `ir_preservation_summary`, so the two can never
 //! drift apart.
 //!
+//! # Why mic@3 and not mic@1
+//!
+//! This gate used to compare `compile_to_mic_text` (= `ir::save`, the mic@1
+//! *text* form), and was vacuous for its entire life as a result: the mic@1
+//! instruction emitter has arms only for tensor/scalar ops and ends in a
+//! catch-all that drops `FnDef`/`Call`/`Return`/`Param`/`While`/`If`/array
+//! and region instructions. Every file in [`IN_SCOPE_FILES`] is entirely
+//! functions, so all eight compiled to the same ~250 bytes of
+//! `const.i64 0 / O N0` and no change inside any function body could move
+//! the compared text. mic@1 is a debug/inspection form, **not** an
+//! equivalence oracle.
+//!
+//! mic@3 is the canonical artifact: it carries the full body instruction
+//! stream and is the same emitter behind `mindc --emit-mic3` and
+//! `ir::ir_trace_hash`. [`ir_image_oracle_sees_function_body_change`] is the
+//! permanent positive control that pins this property — it mutates one token
+//! inside a function body and requires the two images to differ, so a future
+//! re-point at a blind oracle fails here instead of going quietly vacuous.
+//!
 //! # The gate is fail-closed on skips
 //!
 //! A file whose *original* source does not compile is not an IR-preservation
 //! failure, but a per-file test that silently passes because its file was
 //! never compiled is a gate that cannot fail. So a skip is a FAILURE unless
 //! the file carries an explicit [`SKIP_ALLOWLIST`] entry naming the reason,
-//! and a missing file is always a failure. `ir_preservation_summary` asserts
-//! the exercised/skipped counts against that allowlist rather than merely
-//! printing them.
+//! and a missing file is always a failure. [`Checked`] is `#[must_use]`, so a
+//! call site that drops the verdict does not compile. `ir_preservation_summary`
+//! asserts the exercised/skipped counts against that allowlist rather than
+//! merely printing them.
 //!
-//! # What "byte-identical MIC IR" means
+//! # What "byte-identical canonical image" means
 //!
-//! The MIC (Machine Intelligence Code) IR text is produced by
-//! `compile_to_mic_text`, which: parses → type-checks → lowers to IR →
-//! verifies → canonicalizes → serialises.  Two sources that lower to
-//! identical IR will produce byte-identical MIC text.  Formatting must
-//! not rename variables, reorder top-level items, or alter the AST in
-//! any way that changes the lowered result.
+//! [`ir_image`] parses → type-checks → lowers to IR → verifies →
+//! canonicalizes → emits mic@3.  Two sources that lower to identical IR
+//! produce byte-identical mic@3.  Formatting must not rename variables,
+//! reorder top-level items, or alter the AST in any way that changes the
+//! lowered result.
 
 use libmind::fmt::format_source;
-use libmind::pipeline::{CompileOptions, compile_to_mic_text};
+use libmind::ir::compact::emit_mic3;
+use libmind::pipeline::{CompileError, CompileOptions, compile_source};
 use libmind::project::MindcraftFormatConfig;
 
 fn default_cfg() -> MindcraftFormatConfig {
@@ -103,29 +123,73 @@ fn allowed_skip(rel: &str) -> Option<&'static str> {
 }
 
 // ---------------------------------------------------------------------------
+// Comparison oracle
+// ---------------------------------------------------------------------------
+
+/// Compile `src` to its canonical mic@3 image — the bytes this gate compares.
+///
+/// mic@3 carries the whole body instruction stream, so a change inside a
+/// function body moves these bytes. Do **not** swap this back to
+/// `compile_to_mic_text` (mic@1): that form drops function bodies entirely
+/// and makes every assertion in this file vacuous — see the module docs and
+/// [`ir_image_oracle_sees_function_body_change`].
+fn ir_image(src: &str, opts: &CompileOptions) -> Result<Vec<u8>, CompileError> {
+    Ok(emit_mic3(&compile_source(src, opts)?.ir))
+}
+
+/// Summarise how two canonical images differ without dumping the whole
+/// binary into a failure message.
+fn describe_image_diff(before: &[u8], after: &[u8]) -> String {
+    match before.iter().zip(after.iter()).position(|(a, b)| a != b) {
+        Some(i) => format!(
+            "len {} -> {}; first differing byte at offset {i}: 0x{:02x} -> 0x{:02x}",
+            before.len(),
+            after.len(),
+            before[i],
+            after[i]
+        ),
+        None => format!(
+            "len {} -> {}; the shorter image is a prefix of the longer one",
+            before.len(),
+            after.len()
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Core assertion helper
 // ---------------------------------------------------------------------------
 
-/// Assert IR-preservation for a single source string.
+/// Verdict for one file: either the gate actually ran on it, or it did not.
 ///
-/// Returns `true` if the file was exercised (passed the assertion),
-/// `false` if skipped (compile error on the original source).
-///
-/// `#[must_use]`: discarding the verdict is exactly how this gate went
-/// vacuous — a skipped file then reads as a pass.
+/// `#[must_use]` on the type (not just on the function) is what keeps every
+/// call site honest: dropping the verdict is exactly how this gate went
+/// vacuous, and it now fails to compile rather than reading as a pass.
 #[must_use]
-fn check_ir_preservation(label: &str, src: &str) -> bool {
+#[derive(Debug)]
+enum Checked {
+    /// The original compiled and the before/after images matched.
+    Exercised,
+    /// The *original* source did not compile, so formatting was never checked
+    /// against it. Carries the compile error so a fail-closed skip names its
+    /// cause instead of hiding it.
+    Skipped(String),
+}
+
+/// Assert IR-preservation for a single source string.
+fn check_ir_preservation(label: &str, src: &str) -> Checked {
     let cfg = default_cfg();
     let opts = default_compile_opts();
 
     // Step 1: compile the original source.
-    let ir_before = match compile_to_mic_text(src, &opts) {
+    let ir_before = match ir_image(src, &opts) {
         Ok(ir) => ir,
-        Err(_) => {
-            // Source uses features outside the compile-to-MIC scope
+        Err(e) => {
+            // Source uses features outside the compile-to-IR scope
             // (e.g. tensor intrinsics, __mind_blas_*, cross-module imports).
-            // This is expected for some files; skip without failing.
-            return false;
+            // Never a silent pass: `gate_file` turns this into a failure
+            // unless `SKIP_ALLOWLIST` names the reason.
+            return Checked::Skipped(format!("{e}"));
         }
     };
 
@@ -136,7 +200,7 @@ fn check_ir_preservation(label: &str, src: &str) -> bool {
     };
 
     // Step 3: compile the formatted source.
-    let ir_after = compile_to_mic_text(&formatted, &opts).unwrap_or_else(|e| {
+    let ir_after = ir_image(&formatted, &opts).unwrap_or_else(|e| {
         panic!(
             "ir_preservation: formatted source failed to compile for {label}: {e}\n\
                  Formatted source:\n{formatted}"
@@ -144,15 +208,15 @@ fn check_ir_preservation(label: &str, src: &str) -> bool {
     });
 
     // Step 4: byte-identical assertion.
-    assert_eq!(
-        ir_before, ir_after,
-        "IR changed after formatting for {label}.\n\
+    assert!(
+        ir_before == ir_after,
+        "canonical IR changed after formatting for {label}.\n\
          This means the formatter altered program semantics.\n\
-         IR before formatting:\n{ir_before}\n\
-         IR after formatting:\n{ir_after}",
+         mic@3 diff: {}",
+        describe_image_diff(&ir_before, &ir_after)
     );
 
-    true
+    Checked::Exercised
 }
 
 // ---------------------------------------------------------------------------
@@ -173,17 +237,17 @@ fn gate_file(rel: &str) {
         "ir_preservation: {rel} is missing — the gate cannot be exercised"
     );
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
-    let exercised = check_ir_preservation(rel, &src);
+    let verdict = check_ir_preservation(rel, &src);
 
-    match allowed_skip(rel) {
-        None => assert!(
-            exercised,
+    match (allowed_skip(rel), &verdict) {
+        (None, Checked::Exercised) | (Some(_), Checked::Skipped(_)) => {}
+        (None, Checked::Skipped(why)) => panic!(
             "ir_preservation: {rel} was skipped, not exercised — its original source \
-             failed to compile, so formatting was never checked against it. Fix the \
-             compile failure, or add an explicit SKIP_ALLOWLIST entry with a reason."
+             failed to compile ({why}), so formatting was never checked against it. \
+             Fix the compile failure, or add an explicit SKIP_ALLOWLIST entry with a \
+             reason."
         ),
-        Some(reason) => assert!(
-            !exercised,
+        (Some(reason), Checked::Exercised) => panic!(
             "ir_preservation: {rel} carries a stale SKIP_ALLOWLIST entry ({reason}) \
              but now compiles — remove the entry so the file is gated"
         ),
@@ -250,6 +314,7 @@ fn ir_preservation_summary() {
 
     let mut exercised: Vec<&str> = Vec::new();
     let mut skipped: Vec<&str> = Vec::new();
+    let mut skip_reasons: Vec<String> = Vec::new();
 
     for &rel in IN_SCOPE_FILES {
         let path = base.join(rel);
@@ -259,15 +324,17 @@ fn ir_preservation_summary() {
         );
         let src =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
-        if check_ir_preservation(rel, &src) {
-            exercised.push(rel);
-        } else {
-            skipped.push(rel);
+        match check_ir_preservation(rel, &src) {
+            Checked::Exercised => exercised.push(rel),
+            Checked::Skipped(why) => {
+                skipped.push(rel);
+                skip_reasons.push(format!("{rel}: {why}"));
+            }
         }
     }
 
     eprintln!(
-        "ir_preservation_summary: ran={} exercised={} skipped={} ({skipped:?})",
+        "ir_preservation_summary: ran={} exercised={} skipped={} ({skip_reasons:?})",
         IN_SCOPE_FILES.len(),
         exercised.len(),
         skipped.len(),
@@ -283,5 +350,56 @@ fn ir_preservation_summary() {
         exercised.len(),
         IN_SCOPE_FILES.len() - SKIP_ALLOWLIST.len(),
         "ir_preservation: not every non-allowlisted in-scope file was exercised"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Positive control for the comparison oracle
+// ---------------------------------------------------------------------------
+
+/// A self-contained program whose only interesting content is *inside* a
+/// function body, plus the single-token mutation applied to that body.
+///
+/// Kept next to the control test so the mutation site cannot drift away from
+/// the source it mutates.
+const ORACLE_CONTROL_SRC: &str =
+    "pub fn ir_control_add(x: i64) -> i64 {\n    let total: i64 = x + 1;\n    total\n}\n";
+const ORACLE_CONTROL_NEEDLE: &str = "x + 1";
+const ORACLE_CONTROL_REPLACEMENT: &str = "x + 999";
+
+/// Positive control: the comparison oracle must be able to SEE a semantic
+/// change inside a function body.
+///
+/// Every other test in this file is a negative assertion (`before == after`),
+/// and a negative assertion passes for free when the oracle is blind. This
+/// test is the paired positive control: mutate one token inside a function
+/// body and require the two images to differ. If it fails, the whole gate is
+/// vacuous — the per-file tests are comparing something that does not contain
+/// the program's behaviour.
+#[test]
+fn ir_image_oracle_sees_function_body_change() {
+    let opts = default_compile_opts();
+    assert!(
+        ORACLE_CONTROL_SRC.contains(ORACLE_CONTROL_NEEDLE),
+        "oracle control: mutation site {ORACLE_CONTROL_NEEDLE} is not in the control source"
+    );
+    let mutated = ORACLE_CONTROL_SRC.replacen(ORACLE_CONTROL_NEEDLE, ORACLE_CONTROL_REPLACEMENT, 1);
+    assert_ne!(
+        ORACLE_CONTROL_SRC, mutated,
+        "oracle control: the mutation did not change the source"
+    );
+
+    let before =
+        ir_image(ORACLE_CONTROL_SRC, &opts).expect("oracle control: original must compile");
+    let after = ir_image(&mutated, &opts).expect("oracle control: mutant must compile");
+
+    assert!(
+        before != after,
+        "oracle control: mutating `{ORACLE_CONTROL_NEEDLE}` -> `{ORACLE_CONTROL_REPLACEMENT}` \
+         inside a function body produced a byte-identical image.\n\
+         The IR-preservation comparison cannot see function bodies, so every \
+         `before == after` assertion in this file is vacuous.\n\
+         Image diff: {}",
+        describe_image_diff(&before, &after)
     );
 }

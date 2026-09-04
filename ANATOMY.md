@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1471 | **Est. tokens:** ~2,843,758
-**Generated:** 2026-09-04 18:52 UTC
+**Files:** 1471 | **Est. tokens:** ~2,845,162
+**Generated:** 2026-09-04 18:55 UTC
 
 ## Token Budget Guide
 
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 341 | ~611,272 |
+| `tests/` | 341 | ~612,676 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,535 |
@@ -1528,7 +1528,7 @@
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_idempotence.rs` (~3658 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_ir_preservation.rs` (~2552 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_ir_preservation.rs` (~3956 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
 - `fn_value_call_reject.rs` (~761 tok, large) — Copyright 2025 STARGA Inc.
