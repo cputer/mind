@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1473 | **Est. tokens:** ~2,862,767
-**Generated:** 2026-09-04 21:37 UTC
+**Files:** 1474 | **Est. tokens:** ~2,864,300
+**Generated:** 2026-09-04 21:44 UTC
 
 ## Token Budget Guide
 
@@ -77,7 +77,7 @@
 | `.github/workflows/` | 9 | ~34,427 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 29 | ~95,772 |
+| `scripts/` | 29 | ~95,816 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 342 | ~621,112 |
+| `tests/` | 343 | ~622,601 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -888,7 +888,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~9230 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~9274 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -1468,6 +1468,7 @@
 ### `tests/`
 
 - `crypto_vectors_driver.py` (~2653 tok, huge) — # Official-vector driver for std/aes_gcm.mind + std/hkdf.mind (pure-MIND crypto).
+- `determinism_veto_control.rs` (~1489 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics_parse.rs` (~1112 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics.rs` (~688 tok, large) — Copyright 2025 STARGA Inc.
 - `digit_separator_run.rs` (~651 tok, large) — Copyright 2025 STARGA Inc.

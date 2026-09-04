@@ -160,6 +160,7 @@ REQUIRE_TOOLCHAIN_pkg=0
 # so they build and run in ALL THREE tiers — measured per tier (21 and 6 executed in
 # exec, lowering and pkg alike), never assumed from one of them.
 CRITICAL_exec=(
+  "determinism_veto_control 2"       # the determinism-by-default veto positive control
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
   "fail_closed_capability_skip 20"  # measured 21; the capability-skip helper contract
@@ -168,6 +169,7 @@ CRITICAL_exec=(
 # The two largest members of the std-surface+mlir-lowering group that no CI run
 # enabled BOTH features for; 26 of the group's 57 tests live in these two files.
 CRITICAL_lowering=(
+  "determinism_veto_control 2"       # the determinism-by-default veto positive control
   "extern_c_phase_a 1"
   "extern_c_phase_b 1"
   "fail_closed_capability_skip 20"
