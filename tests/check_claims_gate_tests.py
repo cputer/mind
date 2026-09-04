@@ -6,7 +6,7 @@ compute a number rather than matching a string, and a computed comparison is
 the kind that can stop comparing and still exit 0. This file is the mutation
 proof for both: each case breaks one input and requires the gate to go red.
 
-Both suites live in ONE file on purpose. The product surface of this repository
+All three suites live in ONE file on purpose. The product surface of this repository
 is MIND and Rust; every tracked .py/.sh is harness, and harness that grows by a
 file per gate is the surface nobody decided to grow. A gate's proof belongs
 beside the gate's other proof, and scripts/check_gate_wiring.py holds the whole
@@ -44,6 +44,15 @@ to the DERIVED count. Suite 2 mutates the surface number, the surface sentence
 and the surface file in turn and requires the gate to go red for each, and it
 asserts the LIVE manifest actually wires that leg to the README claims (a new
 check kind nothing uses is not a gate).
+
+SUITE 3 — A FLOOR MUST KEEP RATCHETING
+---------------------------------------
+`mode = "floor"` bounded the tree from below and nothing from above, so a floor
+set once drifted arbitrarily far under the tree while printing `[PASS]`:
+counts[stdlib_modules] declared 13 against 42 files in std/, leaving ~70% of the
+standard library deletable with this gate green. Suite 3 requires a floor to
+declare the maximum lag it may carry, reddens the gate when the lag is exceeded,
+and reddens it for a floor entry that declares no bound at all.
 
 Run:  python3 tests/check_claims_gate_tests.py
 Exit: 0 = all cases pass, 1 = a case failed (prints the offending case).
@@ -286,9 +295,9 @@ canonical_text   = "mic@1"
 canonical_binary = "mic@3"
 
 [counts.fixture_files]
-declared          = 3
+declared          = {declared}
 mode              = "floor"
-kind              = "glob_count"
+{floor_line}kind              = "glob_count"
 globs             = ["tests/**/*.rs"]
 surface           = "README.md"
 surface_regex     = '([\\d,]+)\\+ test files'
@@ -354,6 +363,7 @@ def surface_case(
         caps = root / "caps.toml"
         caps.write_text(
             MANIFEST_TEMPLATE.format(
+                declared=3, floor_line="floor_tolerance   = 99\n",
                 surface_mode=surface_mode, surface_tolerance=surface_tolerance
             ),
             encoding="utf-8",
@@ -452,6 +462,117 @@ def surface_main() -> int:
     return 0
 
 
+# ==========================================================================
+# SUITE 3 — a floor that lags the tree has stopped being a ratchet
+# ==========================================================================
+#
+# `mode = "floor"` only forbids the tree from falling BELOW `declared`. Nothing
+# bounded how far the tree could rise above it, so a floor set once went stale
+# silently and the slack it accumulated became deletable corpus: measured on
+# this repo, counts[stdlib_modules] declared 13 against 42 files in std/, so
+# 29 stdlib modules (~70% of std/) could be deleted with the gate printing
+# `[PASS] floor 13+ <= 42` the whole way down. The same shape held the test
+# corpus at floor 156 against 325 files.
+#
+# The fix is a REQUIRED lag bound: a floor entry declares `floor_tolerance`,
+# the maximum distance it may sit below the tree, and exceeding it is DRIFT
+# that names the value to raise `declared` to. Fail-closed: a floor entry with
+# NO bound is itself DRIFT, because an unbounded floor is the defect above
+# wearing a passing verdict.
+
+
+def floor_case(
+    label: str,
+    *,
+    declared: int,
+    want_red: bool,
+    floor_tolerance: int | None = 0,
+    expect: str = "",
+    n_files: int = FIXTURE_FILES,
+) -> bool:
+    """One manifest-floor fixture run. True when the gate behaved as required."""
+    floor_line = "" if floor_tolerance is None else f"floor_tolerance   = {floor_tolerance}\n"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # The surface prints the derived count exactly, so the SURFACE leg is
+        # silent and every red below is attributable to the manifest leg.
+        write_tree(root, f"A suite across {n_files}+ test files.", n_files)
+        caps = root / "caps.toml"
+        caps.write_text(
+            MANIFEST_TEMPLATE.format(
+                declared=declared, floor_line=floor_line,
+                surface_mode="floor", surface_tolerance=99,
+            ),
+            encoding="utf-8",
+        )
+        rc, out = surface_run_gate(root, caps)
+
+    red = rc != 0
+    ok = red == want_red and (expect in out if want_red else True)
+    print(f"[{'PASS' if ok else 'FAIL'}] {label}: rc={rc} want_red={want_red}")
+    if not ok:
+        print(out)
+    return ok
+
+
+def live_floors() -> bool:
+    """Every floor in the LIVE manifest must carry its ratchet bound.
+
+    Without this the fixture cases could all pass while the real manifest kept
+    an unbounded floor — the exact entry that let ~70% of std/ become
+    deletable. The lag itself is checked by running the gate on the real tree
+    (SUITE 1, case `repo_tree`); this asserts the bound EXISTS to be checked.
+    """
+    caps = tomllib.loads(CAPS.read_text(encoding="utf-8"))
+    ok = True
+    floors = [n for n, spec in caps.get("counts", {}).items()
+              if spec.get("mode") == "floor"]
+    for name in floors:
+        spec = caps["counts"][name]
+        bounded = "floor_tolerance" in spec
+        print(f"[{'PASS' if bounded else 'FAIL'}] live manifest: counts[{name}] "
+              f"declares its ratchet bound")
+        ok &= bounded
+    print(f"[{'PASS' if floors else 'FAIL'}] live manifest: floor entries found "
+          f"({len(floors)})")
+    return bool(ok and floors)
+
+
+def floor_main() -> int:
+    n = FIXTURE_FILES
+    results = [
+        # The ratchet still bites downward: the tree may not fall below.
+        floor_case("floor breached by the tree is DRIFT",
+                   declared=n + 1, want_red=True, floor_tolerance=0,
+                   expect="floor breached"),
+        # Exactly current, no slack: the healthy state.
+        floor_case("floor equal to the tree passes",
+                   declared=n, want_red=False, floor_tolerance=0),
+        # The defect: a floor far below the tree used to print [PASS].
+        floor_case("floor stale beyond its bound is DRIFT",
+                   declared=3, want_red=True, floor_tolerance=0,
+                   expect="ratchets nothing"),
+        # A declared amount of slack is allowed, and no more.
+        floor_case("floor lag within its bound passes",
+                   declared=n - 2, want_red=False, floor_tolerance=3),
+        floor_case("floor lag beyond its bound is DRIFT",
+                   declared=n - 5, want_red=True, floor_tolerance=3,
+                   expect="ratchets nothing"),
+        # Fail-closed: an unbounded floor asserts nothing about growth.
+        floor_case("floor without a bound is DRIFT",
+                   declared=n, want_red=True, floor_tolerance=None,
+                   expect="floor_tolerance"),
+        live_floors(),
+    ]
+    failed = results.count(False)
+    print(f"check_claims floor-ratchet gate: cases={len(results)} failed={failed}")
+    if failed:
+        print("FAILED — a stale floor is still reported as a pass")
+        return 1
+    print("OK — a floor that stops ratcheting reddens the gate")
+    return 0
+
+
 def main() -> int:
     """Both suites, both verdicts. A failure in either fails the gate.
 
@@ -463,12 +584,15 @@ def main() -> int:
     cost_rc = cost_main()
     print("\n=== check_claims: a printed count must equal the derived count ===")
     surface_rc = surface_main()
-    if cost_rc or surface_rc:
+    print("\n=== check_claims: a floor must keep ratcheting ===")
+    floor_rc = floor_main()
+    if cost_rc or surface_rc or floor_rc:
         print(f"\ncheck_claims gate tests: FAILED "
               f"(cost={'FAIL' if cost_rc else 'PASS'}, "
-              f"surface={'FAIL' if surface_rc else 'PASS'})")
+              f"surface={'FAIL' if surface_rc else 'PASS'}, "
+              f"floor={'FAIL' if floor_rc else 'PASS'})")
         return 1
-    print("\ncheck_claims gate tests: OK — both derived comparisons bite")
+    print("\ncheck_claims gate tests: OK — all three derived comparisons bite")
     return 0
 
 

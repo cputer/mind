@@ -83,7 +83,13 @@ jobs:
         #            number, the sentence and the surface file, and asserts the live
         #            manifest still wires that leg to the README claims, since a
         #            check kind nothing uses gates nothing.
-        # One file, two suites, both always run: harness that grows by a file per
+        #   floor -- a `mode = "floor"` entry bounded the tree from below and
+        #            nothing from above, so a floor never re-raised turned its own
+        #            slack into deletable corpus: stdlib_modules declared 13 over
+        #            42 files in std/, i.e. ~70% of the standard library was
+        #            deletable under [PASS]. Mutates the lag past the declared
+        #            bound, and requires a floor with no bound at all to fail.
+        # One file, three suites, all always run: harness that grows by a file per
         # gate is the surface nobody decided to grow (see the ceiling in
         # scripts/check_gate_wiring.py).
         run: python3 scripts/run_gate.py tests/check_claims_gate_tests.py

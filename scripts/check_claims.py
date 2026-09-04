@@ -14,7 +14,9 @@ each was fixed, and this gate stops them from silently drifting back:
      number PRINTED ON THE SURFACE against the tree. The second leg exists because
      the first one cannot see the docs at all: README typed "~1,390 tests across 174
      test files" while the tree held 325 files and 2,217 `#[test]`s, and a manifest
-     floor of 156 kept reporting `[PASS] 156+ <= 325` throughout.
+     floor of 156 kept reporting `[PASS] 156+ <= 325` throughout. A floor is a
+     RATCHET: it also declares `floor_tolerance`, the maximum lag it may sit below
+     the tree, so a floor that stops ratcheting fails instead of passing.
   4. cost claim — the published "MIC saves $N/year" figure RE-DERIVED from the price
      input in config/token_pricing.toml and the tokenizer-measured counts in the
      benchmark output, then required verbatim on every declared surface. It is the
@@ -331,6 +333,24 @@ def _check_surface_number(name: str, spec: dict, derived: int) -> tuple[list[str
     return drift, info
 
 
+# --------------------------------------------------------------------------------
+# FLOORS ARE RATCHETS. A `mode = "floor"` entry says the tree may never fall
+# BELOW `declared`; it says nothing about the tree rising above it, so a floor
+# set once and never re-raised turns its own slack into deletable corpus while
+# printing a pass. Measured here: counts[stdlib_modules] declared 13 against 42
+# files in std/, so 29 stdlib modules (~70%) could have been deleted under
+# `[PASS] floor 13+ <= 42`; counts[rust_test_files] held 156 against 325.
+#
+# So a floor also declares `floor_tolerance`: the maximum lag it may carry below
+# the tree. Exceed it and the gate fails with the value to raise `declared` to —
+# i.e. every time a floor is exceeded by more than its bound, it gets raised.
+# Required, not optional: an unbounded floor is DRIFT, because it is exactly the
+# defect above wearing a passing verdict. The bound governs only how promptly a
+# floor must be re-raised; the protection against deletion is `declared` itself,
+# which is why `declared` belongs at the current tree value and not below it.
+# --------------------------------------------------------------------------------
+
+
 def check_counts() -> tuple[list[str], list[str]]:
     """Return (drift_messages, info_messages). Drift fails the gate; info is advisory."""
     drift: list[str] = []
@@ -353,13 +373,32 @@ def check_counts() -> tuple[list[str], list[str]]:
         declared = int(spec["declared"])
         mode = spec.get("mode", "exact")
         if mode == "floor":
+            lag_bound = spec.get("floor_tolerance")
             if declared > actual:
                 drift.append(
                     f"DRIFT [counts/{name}] floor breached: docs claim {declared}+ "
                     f"but tree has {actual} ({spec.get('surface', '?')})"
                 )
+            elif lag_bound is None:
+                drift.append(
+                    f"DRIFT [counts/{name}] mode=\"floor\" declares no "
+                    f"`floor_tolerance`: an unbounded floor stops ratcheting the "
+                    f"moment the tree grows past it. Declare the maximum lag this "
+                    f"floor may carry below the tree (currently {actual})."
+                )
+            elif actual - declared > int(lag_bound):
+                drift.append(
+                    f"DRIFT [counts/{name}] floor is stale: it declares {declared}+ "
+                    f"but the tree has {actual} — a lag of {actual - declared} past "
+                    f"the ratchet bound {lag_bound}. At {declared} this floor "
+                    f"ratchets nothing: {actual - declared} could be deleted and the "
+                    f"gate would still pass. Raise `declared` to {actual}."
+                )
             else:
-                info.append(f"[PASS] counts[{name}]: floor {declared}+ <= {actual}")
+                info.append(
+                    f"[PASS] counts[{name}]: floor {declared}+ <= {actual} "
+                    f"(lag {actual - declared} <= {lag_bound})"
+                )
         else:  # exact
             tol = int(spec.get("tolerance", 0))
             if abs(declared - actual) > tol:

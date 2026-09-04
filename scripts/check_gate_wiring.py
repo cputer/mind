@@ -152,8 +152,9 @@ REQUIRED_STEPS: dict[tuple[str, str], tuple[str, ...]] = {
         "scripts/check_gate_wiring.py",
         "scripts/test_gate_wiring.py",
         "scripts/check_claims.py",
-        # The mutation proofs for check_claims.py's two derived numbers (cost
-        # and printed counts), in one file with one step. The gate above only
+        # The mutation proofs for check_claims.py's three derived comparisons
+        # (cost, printed counts, and the floor ratchet), in one file with one
+        # step. The gate above only
         # reports that the docs currently agree with the tree; these prove the
         # comparisons BITE. A silently deleted mutation proof leaves a check
         # that can stop comparing and still ride green.
