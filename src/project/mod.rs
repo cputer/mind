@@ -503,9 +503,16 @@ pub struct BuildConfig {
     /// Entry-point source file (relative to manifest). Default `src/main.mind`.
     #[serde(default = "default_entry")]
     pub entry: String,
-    /// Output artifact name without extension. Default: `package.name`.
-    #[serde(default = "default_output")]
-    pub output: String,
+    /// Output artifact name without extension (RFC 0008 §3). `None` when the
+    /// manifest declares none, which is what makes the documented default —
+    /// `package.name` — REACHABLE: a `String` field with a serde default cannot
+    /// distinguish "declared" from "defaulted", so the default had to be a
+    /// literal (`"app"`) that no manifest asked for and that disagreed with both
+    /// this doc and the other resolver. Read it through
+    /// [`artifact_stem`], never directly: that function is the one owner of the
+    /// name, and reading the field alone is how the two spellings diverged.
+    #[serde(default)]
+    pub output: Option<String>,
     /// Legacy optimization string (kept for backwards compat with existing
     /// `Mind.toml` files that set `optimization = "aggressive"`).
     #[serde(default = "default_optimization")]
@@ -525,7 +532,7 @@ impl Default for BuildConfig {
     fn default() -> Self {
         Self {
             entry: default_entry(),
-            output: default_output(),
+            output: None,
             optimization: default_optimization(),
             target: BuildTarget::default(),
             emit: EmitKind::default(),
@@ -538,12 +545,49 @@ fn default_entry() -> String {
     "src/main.mind".to_string()
 }
 
-fn default_output() -> String {
-    "app".to_string()
-}
-
 fn default_optimization() -> String {
     "aggressive".to_string()
+}
+
+/// The `[targets.<name>]` block a build reads when the caller named no target.
+///
+/// One owner for the fallback block name: [`build_project`] and
+/// [`artifact_stem`] must agree on WHICH block is consulted, or a
+/// `[targets.cpu] output` would be honoured by one and not the other — the same
+/// class of split the artifact name itself suffered.
+pub const DEFAULT_TARGET_BLOCK: &str = "cpu";
+
+/// The artifact NAME STEM — no directory, no extension. The ONE owner.
+///
+/// RFC 0008 §3 precedence, highest first:
+///
+/// 1. `[targets.<target_name>] output` — a block may rename its own artifact;
+/// 2. `[build] output` — the project-wide declaration;
+/// 3. `[package] name` — the documented default.
+///
+/// `target_name` is the caller's `--target` / selected block name; `None` means
+/// none was selected and [`DEFAULT_TARGET_BLOCK`] is consulted, exactly as
+/// [`build_project`] does.
+///
+/// # Why this exists
+///
+/// The stem had two owners that disagreed. `build::run_build` derived it from
+/// `package.name` and ignored `[build] output` outright; `build_project`
+/// derived it from `[build] output`, whose default was the literal `"app"`.
+/// Both names reached disk from one manifest — the orchestrator renamed the
+/// compile path's file to its own spelling on success, while a build refused
+/// before that rename (no native backend, `E5003`) left the OTHER spelling
+/// behind. So the artifact's name depended on a host capability, a declared
+/// `[build] output` silently did nothing, and every downstream reader had to
+/// pick one of two rules to hand-type. Extension and directory stay with the
+/// emit-aware caller; only the name is decided here.
+pub fn artifact_stem<'a>(manifest: &'a ProjectManifest, target_name: Option<&str>) -> &'a str {
+    manifest
+        .targets
+        .get(target_name.unwrap_or(DEFAULT_TARGET_BLOCK))
+        .and_then(|block| block.output.as_deref())
+        .or(manifest.build.output.as_deref())
+        .unwrap_or(&manifest.package.name)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -863,7 +907,10 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     let manifest = load_manifest(&project_root)?;
 
     // Determine target
-    let target_name = opts.target.clone().unwrap_or_else(|| "cpu".to_string());
+    let target_name = opts
+        .target
+        .clone()
+        .unwrap_or_else(|| DEFAULT_TARGET_BLOCK.to_string());
     let target_config = manifest.targets.get(&target_name);
 
     // Cross-compilation seam (RFC: multi-target native codegen). A target block
@@ -903,14 +950,10 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     let build_target = crate::target::Target::host();
     let cc_target_triple: Option<&str> = None;
 
-    // Determine output name
-    let output_name = if let Some(cfg) = target_config {
-        cfg.output
-            .clone()
-            .unwrap_or_else(|| manifest.build.output.clone())
-    } else {
-        manifest.build.output.clone()
-    };
+    // Determine output name through the single resolver, so the path this
+    // function WRITES is the path `build::run_build` REPORTS by construction
+    // rather than by two call sites happening to agree.
+    let output_name = artifact_stem(&manifest, Some(&target_name)).to_string();
 
     // Create target directory
     let profile_dir = if opts.release { "release" } else { "debug" };

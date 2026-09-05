@@ -232,6 +232,11 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     let eff_emit = opts.emit.unwrap_or(manifest.build.emit);
     let eff_optimize = opts.optimize.unwrap_or(manifest.build.optimize);
 
+    // The legacy target string `build_project` will see, resolved ONCE here so
+    // the block whose `output` this orchestrator honours is the same block the
+    // compile path honours.
+    let legacy_target = legacy_target_name(eff_target, sel_block);
+
     // 3. Reject targets that have no backend implementation yet.
     validate_target(eff_target)?;
 
@@ -243,7 +248,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         Some(p) => p.clone(),
         None => default_artifact_path(
             &project_root,
-            &manifest.package.name,
+            crate::project::artifact_stem(&manifest, legacy_target.as_deref()),
             eff_emit,
             eff_optimize,
         ),
@@ -342,14 +347,18 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         .unwrap_or(&entry_path)
         .to_string_lossy()
         .replace('\\', "/");
-    let selected_block =
-        legacy_target_name(eff_target, sel_block.clone()).unwrap_or_else(|| "cpu".to_string());
+    // Same resolved target string, same fallback block, as the artifact name and
+    // as `build_project` — the cache key must fingerprint the block the compile
+    // path will actually read.
+    let selected_block = legacy_target
+        .as_deref()
+        .unwrap_or(crate::project::DEFAULT_TARGET_BLOCK);
     let (build_sources, _explicit_sources) = crate::project::resolve_sources(
         &project_root,
         &entry_rel,
         manifest
             .targets
-            .get(&selected_block)
+            .get(selected_block)
             .and_then(|t| t.sources.as_deref()),
         single_file,
     )
@@ -431,8 +440,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // -------------------------------------------------------------------------
 
     let legacy_opts = legacy_opts_from(
-        eff_target,
-        sel_block,
+        legacy_target,
         eff_emit,
         eff_optimize,
         &manifest.exports.c_abi,
@@ -766,9 +774,14 @@ fn resolve_entry(
 }
 
 /// Default artifact path mirrors cargo's convention so both can coexist.
+///
+/// `stem` comes from [`crate::project::artifact_stem`] — the single owner of the
+/// artifact NAME. This function owns only the profile directory and the
+/// emit-dependent decoration (`lib…so` / `.o`); it must never re-derive the name
+/// from the manifest, which is precisely the split it used to be half of.
 fn default_artifact_path(
     project_root: &Path,
-    package_name: &str,
+    stem: &str,
     emit: EmitKind,
     optimize: OptimizeLevel,
 ) -> PathBuf {
@@ -779,15 +792,15 @@ fn default_artifact_path(
     };
     let base = project_root.join("target").join(profile_dir);
     match emit {
-        EmitKind::Binary => base.join(package_name),
+        EmitKind::Binary => base.join(stem),
         EmitKind::Cdylib => {
             #[cfg(target_os = "windows")]
-            let name = format!("{}.dll", package_name);
+            let name = format!("{}.dll", stem);
             #[cfg(not(target_os = "windows"))]
-            let name = format!("lib{}.so", package_name);
+            let name = format!("lib{}.so", stem);
             base.join(name)
         }
-        EmitKind::Object => base.join(format!("{}.o", package_name)),
+        EmitKind::Object => base.join(format!("{}.o", stem)),
     }
 }
 
@@ -811,8 +824,7 @@ fn legacy_target_name(target: BuildTarget, block_name: Option<String>) -> Option
 /// Build the `LegacyBuildOptions` used to call the existing `build_project`.
 #[allow(clippy::too_many_arguments)]
 fn legacy_opts_from(
-    target: BuildTarget,
-    block_name: Option<String>,
+    target_str: Option<String>,
     emit: EmitKind,
     optimize: OptimizeLevel,
     manifest_exports: &[String],
@@ -822,8 +834,6 @@ fn legacy_opts_from(
     project_root: &Path,
     single_file: bool,
 ) -> LegacyBuildOptions {
-    let target_str = legacy_target_name(target, block_name);
-
     LegacyBuildOptions {
         release: optimize.is_release(),
         target: target_str,

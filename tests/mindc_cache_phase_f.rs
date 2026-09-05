@@ -99,13 +99,15 @@ fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::pro
 ///
 /// `mindc build` prints `   Finished <target> [<emit>] <path>` naming the file
 /// it wrote (`src/bin/mindc.rs`). Reading that back is what keeps this harness
-/// from hand-typing a THIRD copy of the artifact-naming rule, and there are two
-/// live rules to get wrong: the native builder names a `binary` after
-/// `package.name` (`src/build/mod.rs::default_artifact_path`), while the
-/// launcher fallback names it after `[build] output`, whose serde default is
-/// `"app"` (`src/project/mod.rs`). Asserting the launcher's name against the
-/// native builder's file is exactly how the revived byte-identity check came to
-/// panic on every host that HAS the backend — the one tier it exists for.
+/// from hand-typing a SECOND copy of the artifact-naming rule. There is one
+/// rule now — `project::artifact_stem`, pinned by `tests/mindc_artifact_name.rs`
+/// — but there were two that disagreed: the native builder named a `binary`
+/// after `package.name` while the launcher fallback named it after
+/// `[build] output`, whose serde default was `"app"`. Asserting the launcher's
+/// name against the native builder's file is exactly how the revived
+/// byte-identity check came to panic on every host that HAS the backend — the
+/// one tier it exists for. Reading the reported path stays right regardless of
+/// which name the rule yields.
 ///
 /// There is no fallback when the line is absent: a build that exits 0 without
 /// naming its artifact is a broken gate, not a skip.
@@ -573,13 +575,13 @@ fn phase_f_09_deterministic_cache_key() {
         return;
     }
 
-    // The artifact is named by the builder, so the builder is asked. On the
-    // native path a `binary` is `<root>/target/<profile>/<package.name>` —
-    // here `determinism_project` (src/build/mod.rs::default_artifact_path);
-    // `<build.output>`, whose serde default is "app", names only the launcher
-    // the backend-less fallback writes. This line hand-typed that "app", so on
-    // every host that HAS the native backend the assertion below panicked
-    // instead of comparing bytes; before that it hand-typed
+    // The artifact is named by the builder, so the builder is asked. A `binary`
+    // with no declared `[build] output` is `<root>/target/<profile>/<package.name>`
+    // — here `determinism_project` — on the native path and on the
+    // launcher-refusal path alike (project::artifact_stem owns that name). This
+    // line once hand-typed "app", the spelling only the backend-less fallback
+    // then wrote, so on every host that HAS the native backend the assertion
+    // below panicked instead of comparing bytes; before that it hand-typed
     // `target/cpu/debug/determinism_project`, a path nothing writes, which made
     // the check vacuous while it reported a pass. Two hand-typed spellings, two
     // failure modes, one cause: reading the reported path removes the spelling.
