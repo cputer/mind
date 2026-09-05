@@ -194,8 +194,23 @@ def main():
             pure_fail_no_construct.append(name)
         fail_records.append((name, reason, sorted(present)))
 
+    # The denominator matters more than the numerator here.
+    #
+    # Each fn is compiled ALONE (PREAMBLE is empty), so any fn that names a
+    # sibling fn or a non-primitive type is refused by the ORACLE with E2003
+    # before the self-host emitter is judged at all. Dividing by n therefore
+    # charges the self-host emitter for the harness's missing context, and the
+    # headline reads as a compiler capability when it is a harness artefact.
+    # Report both, and name which is which.
+    measurable = n - oracle_fail
     print(f"=== CUTOVER COVERAGE — {n} top-level fns ===")
-    print(f"BYTE-EXACT (nfn == --emit-mic3): {byte_exact}/{n} = {100.0*byte_exact/n:.1f}%")
+    print(f"BYTE-EXACT (nfn == --emit-mic3): {byte_exact}/{n} = {100.0*byte_exact/n:.1f}%"
+          f"   [HARNESS-LIMITED headline: the denominator includes fns the oracle cannot compile in isolation]")
+    if measurable > 0:
+        print(f"BYTE-EXACT of what is MEASURABLE: {byte_exact}/{measurable} = "
+              f"{100.0*byte_exact/measurable:.1f}%   [oracle-refused fns excluded from the denominator]")
+    print(f"  ORACLE-REFUSED (unmeasurable in isolation, NOT a self-host failure): "
+          f"{oracle_fail}/{n} = {100.0*oracle_fail/n:.1f}%")
     print(f"  nfn fail-closed (empty buf): {nfn_empty}")
     print(f"  nfn CRASHED (.so segfault, fork-isolated): {nfn_crash}")
     print(f"  oracle wrote artifact: {n - oracle_fail}/{n}")
