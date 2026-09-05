@@ -389,8 +389,29 @@ fn probe_skip_panics_under_enforcement_and_marks_otherwise() {
         "MIND_BENCH_REQUIRE=1 must forbid a capability probe skip"
     );
     // Not enforcing: returns normally and emits the `ran=0` marker the tier
-    // gate's SKIP-MARKER CONSUMER already treats as fatal-unless-tolerated.
-    gate::skipped_with("probe-target", "no mlir-opt", false);
+    // gate's SKIP-MARKER CONSUMER treats as fatal-unless-accounted-for.
+    //
+    // Into a BUFFER, not this harness's stdout: the marker sink is the process
+    // stdout handle (so a real skip survives libtest's capture), and
+    // `probe-target` is a fixture name no gate carries — printing it for real
+    // would hand the tier script a `ran=0` for a gate that does not exist.
+    // Asserting the bytes is also strictly more than the old call proved.
+    let mut sink: Vec<u8> = Vec::new();
+    gate::skipped_because_to(
+        &mut sink,
+        "probe-target",
+        "no mlir-opt",
+        gate::Absent::Toolchain,
+        false,
+    );
+    assert_eq!(
+        String::from_utf8(sink).expect("marker is utf-8").trim_end(),
+        concat!(
+            "SDLC-GATE probe-target ran=0 fail=0 class=toolchain",
+            "  (capability skip: no mlir-opt)"
+        ),
+        "a probe skip must report ran=0 and name its absence CLASS"
+    );
 }
 
 // --- the ENV path lives next door ------------------------------------------

@@ -132,9 +132,26 @@ fn broken_compiler_panics_through_the_call_site_wrapper() {
 fn capability_stub_skips_through_the_call_site_wrapper() {
     let stub = stub_compiler("mindc_no_cap", 1, &cap_feature_stderr());
     let out = run_stub(&stub);
+    // The marker goes to a BUFFER, not this harness's stdout. The default sink
+    // is the process stdout handle so a real skip survives libtest's
+    // capture — which means a fixture using a synthetic target name would print a
+    // real-looking `SDLC-GATE stub-target ran=0` into the tier log, and
+    // scripts/exec_semantics_gate.sh's SKIP-MARKER CONSUMER would red the tier
+    // for a gate that does not exist. Injecting the sink also upgrades this from
+    // "returned false" to an assertion about what the skip actually REPORTED.
+    let mut sink: Vec<u8> = Vec::new();
     assert!(
-        !gate::compiled_with("stub-target", &out, false),
+        !gate::compiled_with_to(&mut sink, "stub-target", &out, false),
         "a genuine capability gap must still skip"
+    );
+    let marker = String::from_utf8(sink).expect("marker is utf-8");
+    assert_eq!(
+        marker.trim_end(),
+        concat!(
+            "SDLC-GATE stub-target ran=0 fail=0 class=toolchain",
+            "  (capability skip: mlir-build capability unavailable)"
+        ),
+        "a compile-site skip must report ran=0 and name its absence CLASS"
     );
 }
 

@@ -350,6 +350,76 @@ case(
 )
 
 
+# --- 8b..8f. the ABSENCE CLASS decides which ran=0 is fatal ------------------
+# Until the marker survived libtest's stdout capture NONE of this could fire: a
+# passing test's stdout is discarded, and a capability skip PASSES, so the
+# consumer above read an empty set on every real run.  Measured on the tip with
+# tests/std_mlir_bindings_smoke.rs, whose `mlir_capi_symbols_present_in_static_libs`
+# takes `gate::skipped_optional` on this host (no libMLIRCAP*.a installed):
+#
+#   cargo test --features std-surface,mlir-lowering --test std_mlir_bindings_smoke
+#     default capture  -> `ok. 4 passed`, ZERO `SDLC-GATE` lines
+#     -- --show-output -> the same 4 passed, ONE
+#
+# Now that the marker always arrives, WHICH ran=0 is fatal must come from the
+# marker's own `class=` field crossed with the tier's REQUIRE_TOOLCHAIN knob --
+# not from prose, and not from a hand-copied list of target names.  These cases
+# pin all three answers; each fixture puts the marker inside a harness that
+# PASSES, which is the shape that used to be invisible.
+
+
+def marker_block(target: str, class_token: str = "") -> str:
+    cls = f" class={class_token}" if class_token else ""
+    return block(
+        f"Running tests/{target}.rs (target/debug/deps/{target}-f6)",
+        1,
+        body=f"SDLC-GATE {target} ran=0 fail=0{cls}  (capability skip: measured)\n",
+    )
+
+
+# An OPTIONAL-INPUT absence is the one class MIND_BENCH_REQUIRE deliberately does
+# not close (tests/common/gate.rs::is_fail_closed), so a tier that failed on it
+# would be a second, contradictory owner of one rule.  It must be COUNTED, and it
+# must not red -- in ANY tier, including the enforcing one.
+for _tier in TIERS:
+    case(
+        f"an OPTIONAL-input ran=0 is counted, not fatal, in '{_tier}'",
+        _tier,
+        tier_log(_tier, extra_blocks=marker_block("some_optional_gate", "optional")),
+        False,
+    )
+
+# A TOOLCHAIN absence is legal exactly where the tier says so.  `lowering` and
+# `pkg` build without mlir-build ON PURPOSE, so phase_g_keystone_bootstrap cannot
+# run there by construction; naming it in ENV_TOLERATED would be a lie about WHY
+# and would also excuse its failures.
+for _tier in ("lowering", "pkg"):
+    case(
+        f"a TOOLCHAIN ran=0 is expected in non-enforcing '{_tier}'",
+        _tier,
+        tier_log(_tier, extra_blocks=marker_block("some_toolchain_gate", "toolchain")),
+        False,
+    )
+
+# ...and fatal in the tier that DEMANDS a real backend.  The helper panics rather
+# than marking under MIND_BENCH_REQUIRE=1, so a toolchain marker reaching the exec
+# log at all came from a producer that never read the rule: fail closed.
+case(
+    "a TOOLCHAIN ran=0 reds the ENFORCING tier 'exec'",
+    "exec",
+    tier_log("exec", extra_blocks=marker_block("some_toolchain_gate", "toolchain")),
+    True,
+)
+
+# A producer that stamps NO class may not buy tolerance by omitting the field.
+case(
+    "an UNCLASSIFIED ran=0 still reds every tier (pkg)",
+    "pkg",
+    tier_log("pkg", extra_blocks=marker_block("some_gate")),
+    True,
+)
+
+
 # --- 9..N. EVERY CRITICAL row must BITE --------------------------------------
 # One case per row, generated from the script's own lists, so a row added later is
 # proven to gate without anyone remembering to write its test — and a row that is

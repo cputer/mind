@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1508 | **Est. tokens:** ~2,916,696
-**Generated:** 2026-09-05 15:54 UTC
+**Files:** 1508 | **Est. tokens:** ~2,919,509
+**Generated:** 2026-09-05 16:48 UTC
 
 ## Token Budget Guide
 
@@ -77,7 +77,7 @@
 | `.github/workflows/` | 9 | ~34,412 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 29 | ~98,504 |
+| `scripts/` | 29 | ~100,369 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 350 | ~648,712 |
+| `tests/` | 350 | ~649,049 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~5,122 |
+| `tests/common/` | 2 | ~5,733 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -888,7 +888,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~10423 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~11527 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -915,7 +915,7 @@
 - `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `test_exec_semantics_gate.py` (~4663 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
+- `test_exec_semantics_gate.py` (~5424 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
 - `test_gate_wiring.py` (~2931 tok, huge) — Regression test for scripts/check_gate_wiring.py.
 - `test_no_ai_attribution.py` (~3509 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
 - `test_smoke_wiring_lint.py` (~2257 tok, huge) — Regression test for the CI-coverage and branch-awareness contracts of
@@ -1328,7 +1328,7 @@
 - `collection_mutation_expr_position_run.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/common/`
 
-- `gate.rs` (~3915 tok, huge) — Copyright 2025 STARGA Inc.
+- `gate.rs` (~4526 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1207 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
@@ -1503,9 +1503,9 @@
 - `f64_call_arg_run.rs` (~977 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1158 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1063 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip_env.rs` (~4101 tok, huge) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip.rs` (~6118 tok, huge) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip_stub_exec.rs` (~1782 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip_env.rs` (~3997 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip.rs` (~6323 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip_stub_exec.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~7161 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1722,7 +1722,7 @@
 - `fuzz_oracle_failure_seed_deadbeef_prog006.mind` (~157 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 ### `tests/`
 
-- `mindfuzz_cross_substrate.rs` (~16556 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindfuzz_cross_substrate.rs` (~16552 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_cross_substrate/staged/`
 
 - `manifest.tsv` (~357 tok, medium) — scalar_arith_step000	f	3735928559	64	5e39820a2a8325417e39057f19ba9bceec01bd2068c

@@ -1013,11 +1013,11 @@ fn toolchain_ready() -> bool {
             // while cross_substrate_identity, routed through the helper, printed
             // its ran=0 marker and passed under the identical environment.
             //
-            // `skipped_visibly` keeps this site's capture-surviving sink: the
-            // marker is what scripts/exec_semantics_gate.sh's SKIP-MARKER
-            // CONSUMER reads out of a plain `cargo test` log, and libtest
-            // DISCARDS println! for a PASSING test — which a skip is.
-            crate::common::gate::skipped_visibly(
+            // `gate::skipped` writes the marker to the PROCESS stdout handle,
+            // so it reaches the plain `cargo test` log that
+            // scripts/exec_semantics_gate.sh's SKIP-MARKER CONSUMER greps —
+            // libtest DISCARDS println! for a PASSING test, which a skip is.
+            crate::common::gate::skipped(
                 "mindfuzz_cross_substrate",
                 &format!(
                     "{tool} not on PATH; install the MLIR toolchain \

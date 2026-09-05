@@ -88,9 +88,6 @@ enum Role {
     /// `gate::skipped_optional` — the opt-in-input class, read from the
     /// environment.
     OptionalSkip,
-    /// `gate::skipped_visibly` — the toolchain class whose `ran=0` marker must
-    /// reach the tier log under libtest's DEFAULT stdout capture.
-    VisibleToolchainSkip,
     /// Not a gate call: print the capability stderr and exit 1, so
     /// [`Role::CompileSite`] classifies an `Output` an actual spawn produced
     /// rather than one manufactured by hand.
@@ -103,7 +100,6 @@ impl Role {
             Role::ToolchainSkip => "toolchain-skip",
             Role::CompileSite => "compile-site",
             Role::OptionalSkip => "optional-skip",
-            Role::VisibleToolchainSkip => "visible-toolchain-skip",
             Role::EmitCapabilityStderr => "emit-capability-stderr",
         }
     }
@@ -113,7 +109,6 @@ impl Role {
             "toolchain-skip" => Role::ToolchainSkip,
             "compile-site" => Role::CompileSite,
             "optional-skip" => Role::OptionalSkip,
-            "visible-toolchain-skip" => Role::VisibleToolchainSkip,
             "emit-capability-stderr" => Role::EmitCapabilityStderr,
             other => panic!("{ROLE_VAR}={other:?} names no child role"),
         }
@@ -158,7 +153,6 @@ fn run_as_child(role: Role) {
         // supplies it. `MIND_BENCH_REQUIRE` says "use a real backend", not
         // "install everything", so this class must survive enforcement.
         Role::OptionalSkip => gate::skipped_optional(CHILD_TARGET, "opt-in corpus not present"),
-        Role::VisibleToolchainSkip => gate::skipped_visibly(CHILD_TARGET, "no mlir-opt on PATH"),
         Role::EmitCapabilityStderr => {
             eprint!("{}", cap_tool_stderr());
             std::process::exit(1);
@@ -375,7 +369,7 @@ fn the_skip_marker_survives_libtest_capture() {
         // nothing" from a green run.
         let out = run_self_captured(
             "the_skip_marker_survives_libtest_capture",
-            Role::VisibleToolchainSkip,
+            Role::ToolchainSkip,
             None,
         );
         let text = child_text(&out);

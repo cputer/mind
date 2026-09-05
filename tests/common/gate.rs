@@ -49,13 +49,37 @@
 //! decision function [`skipped_because`] applies the rule. There is still
 //! exactly one place the skip predicate is written.
 //!
-//! deferred: `skipped()` prints the `SDLC-GATE <target> ran=0 fail=0` marker
-//! that `scripts/exec_semantics_gate.sh`'s SKIP-MARKER CONSUMER already reads,
-//! but cargo captures the stdout of a PASSING test, so the marker only reaches
-//! the tier log under `--nocapture`. The fail-closed guarantee therefore rests
-//! on the `MIND_BENCH_REQUIRE=1` panic, not on the marker. Upgrade path: have
-//! the tier runner pass `--nocapture`, or promote the marker to a harness-level
-//! summary.
+//! # The `ran=0` marker reaches the tier log unconditionally
+//!
+//! A skip is only observable if its marker survives to the log
+//! `scripts/exec_semantics_gate.sh` greps. `println!` does not survive:
+//! libtest swaps the sink `std::io::_print` writes to and DISCARDS a PASSING
+//! test's stdout — and a capability skip passes — so the marker was thrown
+//! away in exactly the case it exists for. Measured on this host, one target,
+//! one skip:
+//!
+//! `--test std_mlir_bindings_smoke` under `std-surface,mlir-lowering`, whose
+//! `mlir_capi_symbols_present_in_static_libs` takes an optional-input skip
+//! here: default capture printed `ok. 4 passed` and ZERO `SDLC-GATE` lines;
+//! `-- --show-output` printed the same 4 passed and ONE. So `skipped_optional`
+//! graded as an invisible PASS — the tier could not tell "asserted nothing"
+//! from "asserted and agreed". The sink is now the PROCESS stdout handle,
+//! which libtest does not shim.
+//!
+//! Making the tier runner pass `--show-output` instead was measured and
+//! REJECTED: it splices every passing test's captured stdout into the log the
+//! tier counts `^test result:` lines in, and this repo has tests that print a
+//! subprocess `mindc test` summary beginning with exactly that prefix. One run
+//! each way, same tree: `lowering` 335 harnesses / 1891 executed -> 340 / 1900,
+//! `pkg` 334 / 1474 -> 339 / 1483 — +5 phantom harnesses and +9 phantom
+//! executed tests each, one of them a phantom FAILING test. The flag corrupts
+//! the very counters the gate rests on; the producer-side sink costs them
+//! nothing.
+//!
+//! Every marker carries its [`Absent`] class (`class=toolchain` /
+//! `class=optional`), so the tier script judges it against its own
+//! `REQUIRE_TOOLCHAIN_<tier>` contract rather than a hand-copied list of target
+//! names that drifts the moment a gate is added.
 
 use std::process::Output;
 
@@ -138,11 +162,33 @@ pub fn classify(ok: bool, stderr: &str, enforce: bool) -> Outcome {
 /// failure with the target name and the captured stderr.
 #[allow(dead_code)]
 pub fn compiled_with(target: &str, out: &Output, enforce: bool) -> bool {
+    compiled_with_to(&mut default_sink(), target, out, enforce)
+}
+
+/// As [`compiled_with`], with the marker SINK supplied explicitly.
+///
+/// The gate's own tests drive this path with a synthetic target name, and a
+/// synthetic `ran=0` printed to the harness stdout is indistinguishable in the
+/// tier log from a real gate that did not run — a self-test manufacturing the
+/// exact evidence the tier consumer treats as fatal. Injecting the sink lets
+/// those tests ASSERT the marker's bytes instead of leaking them.
+#[allow(dead_code)]
+pub fn compiled_with_to<W: std::io::Write>(
+    w: &mut W,
+    target: &str,
+    out: &Output,
+    enforce: bool,
+) -> bool {
     let stderr = String::from_utf8_lossy(&out.stderr);
     match classify(out.status.success(), &stderr, enforce) {
         Outcome::Compiled => true,
         Outcome::CapabilitySkip => {
-            skip_marker(target, "mlir-build capability unavailable");
+            skip_marker_to(
+                w,
+                target,
+                "mlir-build capability unavailable",
+                Absent::Toolchain,
+            );
             false
         }
         Outcome::Failed(s) => {
@@ -266,8 +312,24 @@ fn forbid_skip_if_enforced(target: &str, reason: &str, absent: Absent, enforce: 
 /// rather than an invisible pass.
 #[allow(dead_code)]
 pub fn skipped_because(target: &str, reason: &str, absent: Absent, enforce: bool) {
+    skipped_because_to(&mut default_sink(), target, reason, absent, enforce);
+}
+
+/// As [`skipped_because`], with the marker SINK supplied explicitly.
+///
+/// Same reason as [`compiled_with_to`]: the gate's own tests must be able to
+/// exercise the marker without printing a `ran=0` for a target that does not
+/// exist into the tier log they are testing.
+#[allow(dead_code)]
+pub fn skipped_because_to<W: std::io::Write>(
+    w: &mut W,
+    target: &str,
+    reason: &str,
+    absent: Absent,
+    enforce: bool,
+) {
     forbid_skip_if_enforced(target, reason, absent, enforce);
-    skip_marker(target, reason);
+    skip_marker_to(w, target, reason, absent);
 }
 
 /// A toolchain-capability skip, with the enforcement flag supplied explicitly
@@ -302,43 +364,46 @@ pub fn skipped_optional(target: &str, reason: &str) {
     );
 }
 
-/// A toolchain-capability skip whose `ran=0` marker must reach the tier log even
-/// under libtest's DEFAULT stdout capture.
+/// The [`Absent`] class, spelled INTO the marker.
 ///
-/// Same predicate, same refusal, same marker text as [`skipped`] — only the SINK
-/// differs. `println!` goes through `std::io::_print`, whose sink libtest swaps
-/// per test: a PASSING test's stdout is buffered and discarded unless the run
-/// asks for `--nocapture`, and a capability skip PASSES. Measured, same child,
-/// same skip: 0 occurrences of the marker without `--nocapture`, 1 with. Writing
-/// to the process stdout handle bypasses that shim.
-///
-/// deferred: [`skip_marker`] itself still uses `println!`, so the ~135 targets
-/// that route a toolchain skip through [`skipped`] stay invisible under capture.
-/// That is NOT an oversight to fix here: those targets carry no
-/// `required-features`, so they build and skip in the `lowering` and `pkg` tiers
-/// of `scripts/exec_semantics_gate.sh` (neither exports `MIND_BENCH_REQUIRE`),
-/// and making every one of them visible at once would hand that script ~130
-/// fatal `ran=0` markers and red two tiers that are green today. Upgrade path
-/// (unchanged, and owned by the tier runner, not by this helper): have the
-/// runner pass `--nocapture`, or promote the marker to a harness-level summary —
-/// then this function collapses into [`skipped`] and should be deleted.
-#[allow(dead_code)]
-pub fn skipped_visibly(target: &str, reason: &str) {
-    forbid_skip_if_enforced(target, reason, Absent::Toolchain, enforce_real_backend());
-    use std::io::Write as _;
-    let mut out = std::io::stdout();
-    let _ = writeln!(out, "{}", marker_line(target, reason));
-    let _ = out.flush();
+/// The tier script has to decide whether a `ran=0` is fatal, and that decision
+/// is [`is_fail_closed`] crossed with the tier's own `REQUIRE_TOOLCHAIN_<tier>`
+/// knob. Without the class it could only guess — from the reason PROSE, or from
+/// a hand-maintained list of target names, which is the drift this repo already
+/// pays for elsewhere. The class travels with the marker, so the rule keeps ONE
+/// owner and the script keeps no second list.
+fn class_token(absent: Absent) -> &'static str {
+    match absent {
+        Absent::Toolchain => "toolchain",
+        Absent::OptionalInput => "optional",
+    }
 }
 
-/// The marker `scripts/exec_semantics_gate.sh` already consumes: a gate that did
-/// not run reports `ran=0`, which is fatal unless the target is named in
-/// `ENV_TOLERATED_<tier>`. ONE definition of the text, so the two sinks below can
+/// The marker `scripts/exec_semantics_gate.sh` consumes: a gate that did not run
+/// reports `ran=0`. ONE definition of the text, so producer and consumer can
 /// never drift into two dialects the consumer's regex reads differently.
-fn marker_line(target: &str, reason: &str) -> String {
-    format!("SDLC-GATE {target} ran=0 fail=0  (capability skip: {reason})")
+fn marker_line(target: &str, reason: &str, absent: Absent) -> String {
+    format!(
+        "SDLC-GATE {target} ran=0 fail=0 class={}  (capability skip: {reason})",
+        class_token(absent)
+    )
 }
 
-fn skip_marker(target: &str, reason: &str) {
-    println!("{}", marker_line(target, reason));
+/// Write the marker to `w`.
+fn skip_marker_to<W: std::io::Write>(w: &mut W, target: &str, reason: &str, absent: Absent) {
+    let _ = writeln!(w, "{}", marker_line(target, reason, absent));
+    let _ = w.flush();
+}
+
+/// THE default marker sink: the PROCESS stdout handle.
+///
+/// Never `println!` — see the module header. `std::io::stdout()` is the real
+/// handle rather than the per-test sink libtest swaps in, so the marker reaches
+/// the log a plain `cargo test` writes, under libtest's default capture.
+/// Named once here so the two public wrappers cannot disagree about it, and so
+/// there is exactly one line to revert when proving the guarantee:
+/// `tests/fail_closed_capability_skip_env.rs::the_skip_marker_survives_libtest_capture`
+/// spawns a child WITHOUT `--nocapture` and fails if this becomes `println!`.
+fn default_sink() -> std::io::Stdout {
+    std::io::stdout()
 }
