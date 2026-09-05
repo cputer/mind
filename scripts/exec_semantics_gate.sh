@@ -155,16 +155,24 @@ REQUIRE_TOOLCHAIN_pkg=0
 # `passed` here would report a failing gate as "did not run".
 #
 # A row is added by the SAME change that adds the gate it protects: a new gate whose
-# only protection is the aggregate floor is a gate anyone may delete. The two
-# fail-closed skip gates below carry no file-level `cfg` and no `required-features`,
-# so they build and run in ALL THREE tiers — measured per tier (21 and 6 executed in
-# exec, lowering and pkg alike), never assumed from one of them.
+# only protection is the aggregate floor is a gate anyone may delete. The fail-closed
+# skip gates below carry no `required-features`, so they build and run in ALL THREE
+# tiers — measured per tier (21, 4, 6 and 2 executed in exec, lowering and pkg alike),
+# never assumed from one of them.
+#
+# fail_closed_capability_skip_stub_exec is the ONE with a file-level cfg: `#![cfg(unix)]`,
+# because it spawns a POSIX shell stub and `ci.yml`'s build_test matrix also runs
+# windows-latest. Every tier here runs on a unix host, so the row is a real minimum in
+# all three; on Windows cargo does not build the target at all and there is nothing to
+# count. harness_portability is what keeps that gate at FILE scope instead of per item.
 CRITICAL_exec=(
   "determinism_veto_control 2"       # the determinism-by-default veto positive control
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
   "fail_closed_capability_skip 20"  # measured 21; the capability-skip helper contract
+  "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "fail_open_skip_site_ratchet 5"   # measured 6; the shrink-only fail-open backlog
+  "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
 # enabled BOTH features for; 26 of the group's 57 tests live in these two files.
@@ -173,14 +181,18 @@ CRITICAL_lowering=(
   "extern_c_phase_a 1"
   "extern_c_phase_b 1"
   "fail_closed_capability_skip 20"
+  "fail_closed_capability_skip_stub_exec 4"
   "fail_open_skip_site_ratchet 5"
+  "harness_portability 2"
 )
 # The entire reason the `pkg` tier exists: ci.yml only ever `cargo check`ed pkg.
 CRITICAL_pkg=(
   "package_basic 1"
   "package_traversal 1"
   "fail_closed_capability_skip 20"
+  "fail_closed_capability_skip_stub_exec 4"
   "fail_open_skip_site_ratchet 5"
+  "harness_portability 2"
 )
 
 QUARANTINE_exec=(

@@ -296,107 +296,15 @@ fn enforcement_forbids_even_a_genuine_capability_skip() {
 }
 
 // --- the call-site wrapper the 24 converted sites use -----------------------
-
-fn stub_compiler(name: &str, exit_code: i32, stderr: &str) -> PathBuf {
-    // Per-PROCESS directory: a fixed shared path made two concurrent runs of
-    // this harness write and exec the same file, and the loser saw ETXTBSY —
-    // a flake in the very gate that exists to remove false results.
-    let dir = std::env::temp_dir().join(format!("mind_fail_closed_stub_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir stub dir");
-    let p = dir.join(name);
-    std::fs::write(
-        &p,
-        format!("#!/bin/sh\nprintf '%s' \"{stderr}\" >&2\nexit {exit_code}\n"),
-    )
-    .expect("write stub");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    }
-    p
-}
-
-/// Execute a just-written stub, retrying through the write-then-exec race.
-///
-/// `ETXTBSY` is TRANSIENT here and has nothing to do with what is being tested:
-/// this harness is multi-threaded, so between one thread writing a stub and
-/// exec'ing it, another thread's `Command::spawn` can fork and inherit the
-/// still-open write fd — the child holds it until its own `exec`, and the
-/// kernel refuses to exec a file open for writing. Measured: adding two tests
-/// that spawn the real `mindc` (a much longer fork→exec window under
-/// `mlir-build`, which shells out to `mlir-opt`/`clang`) turned this into a
-/// 1-in-3 flake that struck a DIFFERENT test each run. A flaky gate is a gate
-/// nobody believes, so the transient condition is waited out rather than
-/// reported as a result; every other spawn error still fails loudly.
-fn run_stub(stub: &Path) -> std::process::Output {
-    /// ~500 ms of retries: the window closes as soon as the racing child execs.
-    const MAX_ATTEMPTS: u32 = 50;
-    for _ in 0..MAX_ATTEMPTS {
-        match std::process::Command::new(stub).output() {
-            Ok(out) => return out,
-            Err(e) if e.raw_os_error() == Some(libc_etxtbsy()) => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(e) => panic!("run stub compiler {}: {e}", stub.display()),
-        }
-    }
-    panic!(
-        "stub {} stayed ETXTBSY for {MAX_ATTEMPTS} attempts",
-        stub.display()
-    )
-}
-
-/// `ETXTBSY`. Hard-coded rather than pulled from a dependency: this harness has
-/// none, and the value is fixed by the Linux ABI the CI matrix runs on.
-const fn libc_etxtbsy() -> i32 {
-    26
-}
-
-#[test]
-fn broken_compiler_panics_through_the_call_site_wrapper() {
-    let stub = stub_compiler("mindc_broken", 1, "error: mismatched types");
-    let out = run_stub(&stub);
-    let r = std::panic::catch_unwind(|| gate::compiled_with("stub-target", &out, false));
-    let msg = r.expect_err("a broken compiler must PANIC, not skip");
-    let text = msg
-        .downcast_ref::<String>()
-        .cloned()
-        .unwrap_or_else(|| String::from("<non-string panic>"));
-    assert!(
-        text.contains("stub-target") && text.contains("mismatched types"),
-        "panic must name the target and quote stderr, got: {text}"
-    );
-}
-
-#[test]
-fn capability_stub_skips_through_the_call_site_wrapper() {
-    let stub = stub_compiler("mindc_no_cap", 1, CAP_FEATURE.trim_end());
-    let out = run_stub(&stub);
-    assert!(
-        !gate::compiled_with("stub-target", &out, false),
-        "a genuine capability gap must still skip"
-    );
-}
-
-#[test]
-fn capability_stub_panics_under_enforcement() {
-    let stub = stub_compiler("mindc_no_cap_req", 1, CAP_FEATURE.trim_end());
-    let out = run_stub(&stub);
-    let r = std::panic::catch_unwind(|| gate::compiled_with("stub-target", &out, true));
-    assert!(
-        r.is_err(),
-        "MIND_BENCH_REQUIRE=1 must turn a capability skip into a hard failure"
-    );
-}
-
-#[test]
-fn working_compiler_reports_compiled() {
-    let stub = stub_compiler("mindc_ok", 0, "");
-    let out = run_stub(&stub);
-    assert!(gate::compiled_with("stub-target", &out, false));
-    assert!(gate::compiled_with("stub-target", &out, true));
-}
+//
+// `gate::compiled_with`'s four end-to-end tests spawn a REAL stub compiler, and
+// the stub is a POSIX shell script. They therefore live in
+// `tests/fail_closed_capability_skip_stub_exec.rs`, which carries a file-scope
+// `#![cfg(unix)]`: `ci.yml`'s `build_test` matrix also runs `windows-latest`,
+// where exec'ing a non-PE image fails with ERROR_BAD_EXE_FORMAT (os error 193).
+// Everything in THIS file is platform-independent and runs on all four rows —
+// which is why the split is by portability, not by subject.
+// `tests/harness_portability.rs` keeps that boundary mechanically.
 
 // --- the capability-probe marker (which::which / mlir_available sites) ------
 
