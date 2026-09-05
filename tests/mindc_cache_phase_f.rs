@@ -104,13 +104,20 @@ fn probe_for_source(
     // (`mindc_bin()` == CARGO_BIN_EXE_mindc), NOT this test executable. A bare
     // `module_cache_key` with `CARGO_PKG_VERSION` would never match the
     // subprocess-populated cache once the fingerprint is in the key.
+    // The key also fingerprints every source the build compiles, so the probe
+    // must hand over the SAME set `run_build` resolved — here the single
+    // `src/main.mind` these fixtures contain.
     let key = libmind::build::compile_cache_key(
         source,
-        target,
-        optimize,
-        EmitKind::Binary,
+        libmind::build::CacheKeyFlags {
+            target,
+            optimize,
+            emit: EmitKind::Binary,
+            edition: 2024,
+        },
         &mindc_bin(),
-        2024,
+        project_root,
+        &[project_root.join("src").join("main.mind")],
     )
     .expect("compiler identity for CARGO_BIN_EXE_mindc");
     let c_root = cache_root(project_root, target, optimize);
@@ -615,11 +622,15 @@ fn phase_f_10_concurrent_builds_no_corruption() {
     // fingerprint (issue #96) — same binary the subprocess builds populated.
     let key = libmind::build::compile_cache_key(
         SIMPLE_MIND.as_bytes(),
-        BuildTarget::Cpu,
-        OptimizeLevel::Debug,
-        EmitKind::Binary,
+        libmind::build::CacheKeyFlags {
+            target: BuildTarget::Cpu,
+            optimize: OptimizeLevel::Debug,
+            emit: EmitKind::Binary,
+            edition: 2024,
+        },
         &mindc,
-        2024,
+        dir,
+        &[dir.join("src").join("main.mind")],
     )
     .expect("compiler identity for CARGO_BIN_EXE_mindc");
     let c_root = cache_root(dir, BuildTarget::Cpu, OptimizeLevel::Debug);
@@ -750,20 +761,28 @@ fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
 
     let key_real = libmind::build::compile_cache_key(
         SIMPLE_MIND.as_bytes(),
-        BuildTarget::Cpu,
-        OptimizeLevel::Debug,
-        EmitKind::Binary,
+        libmind::build::CacheKeyFlags {
+            target: BuildTarget::Cpu,
+            optimize: OptimizeLevel::Debug,
+            emit: EmitKind::Binary,
+            edition: 2024,
+        },
         &bin,
-        2024,
+        dir,
+        &[dir.join("src").join("main.mind")],
     )
     .unwrap();
     let key_rebuilt = libmind::build::compile_cache_key(
         SIMPLE_MIND.as_bytes(),
-        BuildTarget::Cpu,
-        OptimizeLevel::Debug,
-        EmitKind::Binary,
+        libmind::build::CacheKeyFlags {
+            target: BuildTarget::Cpu,
+            optimize: OptimizeLevel::Debug,
+            emit: EmitKind::Binary,
+            edition: 2024,
+        },
         &copied,
-        2024,
+        dir,
+        &[dir.join("src").join("main.mind")],
     )
     .unwrap();
     assert_ne!(

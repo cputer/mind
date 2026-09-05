@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1486 | **Est. tokens:** ~2,892,457
-**Generated:** 2026-09-05 11:03 UTC
+**Files:** 1489 | **Est. tokens:** ~2,901,150
+**Generated:** 2026-09-05 11:38 UTC
 
 ## Token Budget Guide
 
@@ -92,7 +92,7 @@
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
-| `src/build/` | 4 | ~20,465 |
+| `src/build/` | 5 | ~22,187 |
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
@@ -116,7 +116,7 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 6 | ~18,527 |
+| `src/project/` | 7 | ~20,857 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 348 | ~635,269 |
+| `tests/` | 349 | ~639,910 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -1012,7 +1012,8 @@
 - `cache.rs` (~6766 tok, huge) — Copyright 2025 STARGA Inc.
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~10978 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~10580 tok, huge) — Copyright 2025 STARGA Inc.
+- `source_key.rs` (~2120 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/cache/`
 
 - `entry.rs` (~977 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1182,6 +1183,7 @@
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
+- `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `toolchain_pin.rs` (~3657 tok, huge) — The `[mind]` table is the ONLY *declared* cross-repo compatibility contract
@@ -1613,7 +1615,7 @@
 - `mic3_parser_dos.rs` (~1891 tok, huge) — Copyright 2025 STARGA Inc.
 - `micb_dos_reject.rs` (~2341 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_build_phase_a.rs` (~5588 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_cache_phase_f.rs` (~6375 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_cache_phase_f.rs` (~6584 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_doc_phase1.rs` (~2957 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
@@ -1758,6 +1760,7 @@
 - `module_enum_match_run.rs` (~1034 tok, large) — Copyright 2025 STARGA Inc.
 - `module_non_fn_call_reject.rs` (~1215 tok, large) — Copyright 2025 STARGA Inc.
 - `module_size_ratchet.rs` (~2251 tok, huge) — Copyright 2025 STARGA Inc.
+- `multimodule_determinism_run.rs` (~4275 tok, huge) — Copyright 2025 STARGA Inc.
 - `narrow_call_abi.rs` (~1374 tok, large) — Copyright 2025 STARGA Inc.
 - `narrowing_check.rs` (~438 tok, medium) — Regression test for the silent i64->i32 narrowing miscompile found by MIND-Fuzz
 - `narrow_local_mask_run.rs` (~838 tok, large) — Copyright 2025 STARGA Inc.
@@ -1784,7 +1787,7 @@
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `parse_try_operator.rs` (~1194 tok, large) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~945 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~6387 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~6544 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.

@@ -30,6 +30,13 @@ pub mod module_table;
 mod compiled_sources;
 mod link;
 
+/// Project source-set resolution — the single owner of WHICH `.mind` files are
+/// translation units of a build and in what ORDER (the walked set is sorted on
+/// path bytes so the emitted artifact never depends on filesystem layout).
+mod sources;
+
+pub use sources::{collect_sources, resolve_sources};
+
 /// RFC 0005 Phase C — std/*.mind sources baked into the binary at
 /// compile time. The project loader prepends these to the module
 /// table so `use std.vec` resolves in any project, no vendoring
@@ -843,122 +850,6 @@ pub fn load_manifest(project_root: &Path) -> Result<ProjectManifest> {
     Ok(manifest)
 }
 
-/// Collect all .mind source files from a project
-pub fn collect_sources(project_root: &Path, entry: &str) -> Result<Vec<PathBuf>> {
-    let entry_path = project_root.join(entry);
-    if !entry_path.exists() {
-        return Err(anyhow!("Entry file not found: {}", entry_path.display()));
-    }
-
-    let src_dir = entry_path.parent().unwrap_or(project_root);
-    let mut sources = Vec::new();
-
-    fn collect_recursive(dir: &Path, sources: &mut Vec<PathBuf>) -> Result<()> {
-        if dir.is_dir() {
-            // Skip a directory we cannot read (e.g. a root-owned `/tmp/systemd-private-*`
-            // sibling of a source compiled from `/tmp`) instead of failing the whole
-            // build with EACCES — an unreadable sibling dir holds no MIND sources we
-            // could import, so silently excluding it keeps `mindc` usable from any cwd.
-            let rd = match fs::read_dir(dir) {
-                Ok(rd) => rd,
-                Err(e) => {
-                    eprintln!("mindc: skipping unreadable dir {}: {e}", dir.display());
-                    return Ok(());
-                }
-            };
-            for entry in rd.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    // Prune non-source subtrees: the build output dir (`target/`),
-                    // version control (`.git/`) and any hidden `.dir` never hold
-                    // importable MIND modules. Descending them only inflates the
-                    // walk — the `.git` of a repo alone can be tens of thousands of
-                    // objects. Defense-in-depth alongside the bounded root: even a
-                    // legitimately large project dir stays cheap to collect.
-                    let name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    if name == "target" || name.starts_with('.') {
-                        continue;
-                    }
-                    collect_recursive(&path, sources)?;
-                } else if path.extension().map(|e| e == "mind").unwrap_or(false) {
-                    sources.push(path);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    collect_recursive(src_dir, &mut sources)?;
-    Ok(sources)
-}
-
-/// Resolve a target's explicitly declared `sources = [...]` list against the
-/// project root, preserving DECLARED order (no sorting — the manifest order is
-/// the author's contract). Every declared path must exist: a missing declared
-/// source fails the build loudly, because a silently dropped module is exactly
-/// the class of bug an explicit source list exists to prevent. The manifest
-/// entry is appended when the list omits it, so the entry is always a
-/// translation unit of the build (the compile loop keys `is_entry` off it).
-fn resolve_declared_sources(
-    project_root: &Path,
-    declared: &[String],
-    entry: &str,
-) -> Result<Vec<PathBuf>> {
-    let mut sources: Vec<PathBuf> = Vec::with_capacity(declared.len() + 1);
-    for decl in declared {
-        // Contract: project-root-relative, inside the root, no duplicates.
-        // An absolute or `..`-escaping path would fall outside the
-        // project-root-relative keying downstream (module keys and object
-        // names would silently derive from machine-dependent absolute paths),
-        // and a duplicate would compile twice into ONE object name — both are
-        // author errors worth failing loudly at the boundary.
-        let decl_path = Path::new(decl);
-        if decl_path.is_absolute()
-            || decl_path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            return Err(anyhow!(
-                "declared source \"{}\" in Mind.toml [targets.*].sources must be a \
-                 project-root-relative path without \"..\" components",
-                decl
-            ));
-        }
-        let path = project_root.join(decl);
-        if !path.is_file() {
-            return Err(anyhow!(
-                "declared source not found: {} (listed as \"{}\" in Mind.toml [targets.*].sources)",
-                path.display(),
-                decl
-            ));
-        }
-        if sources.contains(&path) {
-            return Err(anyhow!(
-                "declared source \"{}\" appears more than once in Mind.toml [targets.*].sources",
-                decl
-            ));
-        }
-        sources.push(path);
-    }
-    let entry_path = project_root.join(entry);
-    if !entry_path.is_file() {
-        return Err(anyhow!("Entry file not found: {}", entry_path.display()));
-    }
-    let entry_canonical = entry_path
-        .canonicalize()
-        .unwrap_or_else(|_| entry_path.clone());
-    let entry_listed = sources
-        .iter()
-        .any(|s| s.canonicalize().unwrap_or_else(|_| s.clone()) == entry_canonical);
-    if !entry_listed {
-        sources.push(entry_path);
-    }
-    Ok(sources)
-}
-
 /// Build a MIND project
 pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     // Prefer the orchestrator's pre-resolved (bounded) root; only fall back to
@@ -1033,32 +924,16 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     // every path validated) — the walk default only sees the entry file's own
     // subtree, which silently excludes modules outside it. A target without a
     // declared list keeps the entry-parent walk EXACTLY as before.
-    let (sources, explicit_sources) = if opts.single_file {
-        // Explicit single-file build (`mindc build <file>`, no governing
-        // Mind.toml). The "project" is exactly the named entry — compiling every
-        // sibling `.mind` in the entry's directory as a translation unit (the
-        // walk below) drags in unrelated (and often individually non-compiling)
-        // files from a shared dir like `/tmp` or `$HOME`, which is exactly what
-        // broke `mindc build <file> --emit=binary` for a trivial program. Mirror
-        // the cdylib single-entry path: `use std.*` still resolves via the seeded
-        // stdlib module table + substrate-object import BFS (import-driven).
-        let entry = project_root.join(&manifest.build.entry);
-        if !entry.exists() {
-            return Err(anyhow!("Entry file not found: {}", entry.display()));
-        }
-        (vec![entry], false)
-    } else {
-        match target_config.and_then(|cfg| cfg.sources.as_deref()) {
-            Some(declared) => (
-                resolve_declared_sources(&project_root, declared, &manifest.build.entry)?,
-                true,
-            ),
-            None => (
-                collect_sources(&project_root, &manifest.build.entry)?,
-                false,
-            ),
-        }
-    };
+    // Single selector (`sources::resolve_sources`) — the same one the `run_build`
+    // incremental cache key fingerprints, so the set this build COMPILES and the
+    // set it is KEYED on are the same list in the same order by construction, not
+    // by two call sites agreeing.
+    let (sources, explicit_sources) = resolve_sources(
+        &project_root,
+        &manifest.build.entry,
+        target_config.and_then(|cfg| cfg.sources.as_deref()),
+        opts.single_file,
+    )?;
 
     if opts.verbose {
         println!(

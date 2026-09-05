@@ -20,7 +20,15 @@ pub mod cache;
 mod driver_error;
 mod error;
 
+/// Incremental-cache KEY construction — every input that can change the
+/// artifact, fingerprinted in one place and failing closed when it cannot be.
+mod source_key;
+
 pub use error::BuildError;
+pub use source_key::{
+    CacheKeyFlags, cache_dep_entries, compile_cache_key, source_set_dep_entries,
+    toolchain_dep_entries,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,103 +43,8 @@ use crate::project::{
 };
 
 use cache::{
-    BuildDecision, BuildManifest, CacheProbe, ObjectMeta, cache_root, module_cache_key, probe,
-    write_object,
+    BuildDecision, BuildManifest, CacheProbe, ObjectMeta, cache_root, probe, write_object,
 };
-
-// ---------------------------------------------------------------------------
-// Cache-key construction (issue #96: compiler + toolchain binary identity)
-// ---------------------------------------------------------------------------
-
-/// Emit-kind discriminator entries folded into the module cache key. A
-/// `cdylib` shared object, a `binary` PIE, and a relocatable `object` are
-/// distinct artifacts from identical source/target/optimize inputs and must
-/// never share a slot. `cdylib` contributes NO entry (historical value);
-/// `binary` / `object` get a labelled `emit=` entry.
-fn emit_discriminator(emit: EmitKind) -> Vec<String> {
-    match emit {
-        EmitKind::Cdylib => Vec::new(),
-        other => vec![format!("emit={}", other.as_str())],
-    }
-}
-
-/// Toolchain-identity dep entries (clang / mlir-opt / mlir-translate). Each is
-/// `toolchain=<name>|<resolved-path>|<size>|<mtime-ns>|<--version banner>` so a
-/// toolchain swap — even one reporting an identical `--version` — invalidates
-/// the cache (scan-finding S4, sibling of the runtime-obj cache in
-/// `mlir_build::clang_identity_string`). Computed once per process. When the
-/// `mlir-build` feature is off (no real backend) this is empty.
-pub fn toolchain_dep_entries() -> Vec<String> {
-    #[cfg(feature = "mlir-build")]
-    {
-        use std::sync::OnceLock;
-        static ENTRIES: OnceLock<Vec<String>> = OnceLock::new();
-        ENTRIES
-            .get_or_init(|| match crate::eval::mlir_build::resolve_tools() {
-                Ok(tools) => vec![
-                    format!(
-                        "toolchain=clang|{}",
-                        crate::eval::mlir_build::tool_identity_string(&tools.clang)
-                    ),
-                    format!(
-                        "toolchain=mlir-opt|{}",
-                        crate::eval::mlir_build::tool_identity_string(&tools.mlir_opt)
-                    ),
-                    format!(
-                        "toolchain=mlir-translate|{}",
-                        crate::eval::mlir_build::tool_identity_string(&tools.mlir_translate)
-                    ),
-                ],
-                // Tools unresolvable => the full compile would fail anyway and
-                // no cache is written, so an empty toolchain set is safe here.
-                Err(_) => Vec::new(),
-            })
-            .clone()
-    }
-    #[cfg(not(feature = "mlir-build"))]
-    {
-        Vec::new()
-    }
-}
-
-/// Full dep-hash entry set for a module cache key: emit-kind discriminator plus
-/// toolchain identity. `module_cache_key` sorts these, so order is irrelevant.
-pub fn cache_dep_entries(emit: EmitKind) -> Vec<String> {
-    let mut deps = emit_discriminator(emit);
-    deps.extend(toolchain_dep_entries());
-    deps
-}
-
-/// Compute the full module cache key for a compile of `source_bytes` produced
-/// by the `mindc` binary at `mindc_exe`, or `None` (fail-closed) when that
-/// binary's identity cannot be probed.
-///
-/// This is the single source of truth for the key shared by the build path
-/// (which passes `std::env::current_exe()`) and the integration tests (which
-/// pass `CARGO_BIN_EXE_mindc`): both MUST derive byte-identical keys or a
-/// subprocess-populated cache would spuriously miss on an in-process probe
-/// (issue #96 lockstep hazard). A `None` return MUST be treated as a cache MISS
-/// — the cache is neither read nor written under any sentinel key.
-pub fn compile_cache_key(
-    source_bytes: &[u8],
-    target: BuildTarget,
-    optimize: OptimizeLevel,
-    emit: EmitKind,
-    mindc_exe: &Path,
-    edition: u32,
-) -> Option<String> {
-    let identity = cache::compiler_identity_string(mindc_exe)?;
-    let compiler_version = format!("{}+{}", env!("CARGO_PKG_VERSION"), identity);
-    let deps = cache_dep_entries(emit);
-    Some(module_cache_key(
-        source_bytes,
-        target,
-        optimize,
-        &deps,
-        &compiler_version,
-        edition,
-    ))
-}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -407,6 +320,41 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // keystone probe (test 5) also calls against `CARGO_BIN_EXE_mindc` — so a
     // subprocess-populated cache and an in-process probe derive byte-identical
     // keys.
+    //
+    // The key also fingerprints EVERY OTHER SOURCE the build compiles, resolved
+    // here through the same single selector `build_project` uses. Keying on the
+    // entry alone was a silent-staleness hole: editing a sibling module left the
+    // key unchanged, the probe HIT, and `mindc build` copied out a binary built
+    // from the OLD sibling — exit 0, no diagnostic, wrong program.
+    //
+    // The entry fed to the selector is the RESOLVED one, not `manifest.build.entry`:
+    // an explicit `mindc build <file>` rewrites that manifest key further down, so
+    // the pre-patch value would fingerprint a different project than the one that
+    // is about to be compiled.
+    //
+    // A resolution failure is a PROJECT-DRIVER error (a declared source that does
+    // not exist, an escaping path), so it is typed by `classify_driver_error` —
+    // the one seam that turns a driver error into a `BuildError` while KEEPING its
+    // cause code. Hand-rolling a refusal here would strip that code and an
+    // undiagnosed refusal fails closed at every consumer.
+    let entry_rel = entry_path
+        .strip_prefix(&project_root)
+        .unwrap_or(&entry_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let selected_block =
+        legacy_target_name(eff_target, sel_block.clone()).unwrap_or_else(|| "cpu".to_string());
+    let (build_sources, _explicit_sources) = crate::project::resolve_sources(
+        &project_root,
+        &entry_rel,
+        manifest
+            .targets
+            .get(&selected_block)
+            .and_then(|t| t.sources.as_deref()),
+        single_file,
+    )
+    .map_err(classify_driver_error)?;
+
     let current_exe = std::env::current_exe().ok();
     let compiler_identity = current_exe
         .as_deref()
@@ -414,11 +362,15 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     let cache_key: Option<String> = current_exe.as_deref().and_then(|exe| {
         compile_cache_key(
             &source_bytes,
-            eff_target,
-            eff_optimize,
-            eff_emit,
+            CacheKeyFlags {
+                target: eff_target,
+                optimize: eff_optimize,
+                emit: eff_emit,
+                edition,
+            },
             exe,
-            edition,
+            &project_root,
+            &build_sources,
         )
     });
 
@@ -493,12 +445,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
 
     let manifest_path = project_root.join("Mind.toml");
     let manifest_existed = manifest_path.exists();
-
-    let entry_rel = entry_path
-        .strip_prefix(&project_root)
-        .unwrap_or(&entry_path)
-        .to_string_lossy()
-        .replace('\\', "/");
 
     let orig_manifest_text: Option<String> = if manifest_existed {
         Some(
@@ -845,6 +791,23 @@ fn default_artifact_path(
     }
 }
 
+/// The `[targets.<name>]` block name `build_project` will select for this build.
+///
+/// Prefer the explicitly-selected block so `build_project` picks THAT block (its
+/// sources / native_sources / `.target` triple). With no block selected this
+/// falls back to the historical class mapping (`Cpu => None`, so the default
+/// host path is byte-identical).
+///
+/// ONE owner: both the legacy options handed to `build_project` and the source
+/// set the cache key fingerprints resolve the block through this function, so
+/// they cannot select different `[targets.*].sources` lists.
+fn legacy_target_name(target: BuildTarget, block_name: Option<String>) -> Option<String> {
+    block_name.or(match target {
+        BuildTarget::Cpu => None,
+        other => Some(other.as_str().to_string()),
+    })
+}
+
 /// Build the `LegacyBuildOptions` used to call the existing `build_project`.
 #[allow(clippy::too_many_arguments)]
 fn legacy_opts_from(
@@ -859,14 +822,7 @@ fn legacy_opts_from(
     project_root: &Path,
     single_file: bool,
 ) -> LegacyBuildOptions {
-    // Prefer the explicitly-selected `[targets.<name>]` block name so
-    // `build_project` picks THAT block (its sources / native_sources / `.target`
-    // triple). With no block selected this falls back to the historical class
-    // mapping (`Cpu => None`, so the default host path is byte-identical).
-    let target_str = block_name.or(match target {
-        BuildTarget::Cpu => None,
-        other => Some(other.as_str().to_string()),
-    });
+    let target_str = legacy_target_name(target, block_name);
 
     LegacyBuildOptions {
         release: optimize.is_release(),

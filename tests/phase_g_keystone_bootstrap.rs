@@ -538,13 +538,24 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
     // executable — otherwise the compiler fingerprint (issue #96) would never
     // match the subprocess-populated cache and this warm-cache probe would
     // spuriously miss.
+    // The key fingerprints EVERY source the build compiles, not just the entry
+    // (an edit to a sibling module must invalidate). Resolve that set through
+    // the compiler's own selector so this probe and the build cannot disagree
+    // about which files — or in which order — the key covers.
+    let build_sources =
+        libmind::project::collect_sources(&repo_root(), "examples/mindc_mind/main.mind")
+            .expect("collect the keystone project sources");
     let cache_key = libmind::build::compile_cache_key(
         &source_bytes,
-        BuildTarget::Cpu,
-        OptimizeLevel::Release,
-        EmitKind::Cdylib,
+        libmind::build::CacheKeyFlags {
+            target: BuildTarget::Cpu,
+            optimize: OptimizeLevel::Release,
+            emit: EmitKind::Cdylib,
+            edition: 2024,
+        },
         &bin,
-        2024,
+        &repo_root(),
+        &build_sources,
     )
     .expect("compiler identity for CARGO_BIN_EXE_mindc");
     let c_root = cache_root(&repo_root(), BuildTarget::Cpu, OptimizeLevel::Release);
