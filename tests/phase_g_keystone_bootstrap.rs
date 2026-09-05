@@ -602,10 +602,32 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6 — Artifact SHA-256 report (informational, always passes).
+// Test 6 — Artifact SHA-256 evidence: the reported hash is REPRODUCIBLE.
 //
-// Prints the SHA-256 of the Phase G artifact for reproducibility records.
-// This is the "evidence" the milestone commit carries.
+// This test used to be annotated "informational, always passes": it printed a
+// hash, asserted nothing, and held the only unguarded skip in this file. It was
+// still counted in the suite's "7/7 byte-identical" headline, so one seventh of
+// that number was a print statement. A gate that cannot fail is not evidence.
+//
+// What it now asserts, and why it is not a duplicate of 03/04:
+//   * 03 compares the Mind.toml route against the direct-path route, both
+//     through the BUILD CACHE.
+//   * 04 compares two `--no-cache` builds against each other.
+//   * Nothing compared the CACHED route against the CACHE-FREE one — so a cache
+//     that returned subtly different bytes would satisfy both, and the hash this
+//     test records into the milestone commit would be a hash no cache-free
+//     rebuild reproduces. That is exactly the claim an evidence record makes.
+//
+// So the recorded hash is re-derived from an independent `--no-cache` rebuild
+// and must match, bytes and all. The byte compare backs the hash compare so a
+// degenerate hash function cannot launder a mismatch, and the artifact hash is
+// required to differ from the hash of an empty input so the assertion cannot
+// pass on a hash that ignores its argument.
+//
+// Both build steps route their skip through the one fail-closed capability
+// decision (`common::gate::compiled`) rather than open-coding the enforcement
+// check: a genuine capability gap still skips, an undiagnosed build failure
+// panics with the stderr quoted, and under MIND_BENCH_REQUIRE=1 neither skips.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -613,6 +635,7 @@ fn phase_g_06_report_artifact_sha256() {
     let Some(bin) = require_mindc() else { return };
 
     let out = std::env::temp_dir().join("phase_g_06_report.so");
+    let out_recheck = std::env::temp_dir().join("phase_g_06_report_nocache.so");
 
     let r = Command::new(&bin)
         .args([
@@ -636,10 +659,7 @@ fn phase_g_06_report_artifact_sha256() {
     let built_hash = sha256_hex(&built_bytes);
 
     eprintln!("=== Phase G — Keystone artifact hash ===");
-    eprintln!(
-        "Built via mindc build (Mind.toml):  SHA256 = {}",
-        built_hash
-    );
+    eprintln!("Built via mindc build (Mind.toml):  SHA256 = {built_hash}");
     eprintln!(
         "Artifact kind: {}",
         if built_bytes.starts_with(b"\x7fELF") {
@@ -650,9 +670,83 @@ fn phase_g_06_report_artifact_sha256() {
     );
     eprintln!("Artifact size: {} bytes", built_bytes.len());
 
-    // This test always passes — it is a reporting gate, not a boolean assertion.
-    // Test 4 (phase_g_04_self_consistent_byte_identity) is the hard assertion:
-    // it builds the self-host `.so` twice in this environment and requires the
-    // two artifacts to be byte-identical (deterministic-compiler self-consistency),
-    // rather than matching a committed cross-toolchain oracle.
+    // The report has to be about a real artifact before it can be about
+    // anything: a 0-byte file hashes just fine.
+    assert!(
+        !built_bytes.is_empty(),
+        "the artifact at {} is empty — an evidence record over 0 bytes states nothing",
+        out.display()
+    );
+
+    // Positive control: a hash that ignores its input would satisfy every
+    // equality below. Require the recorded hash to depend on the artifact.
+    assert_ne!(
+        built_hash,
+        sha256_hex(&[]),
+        "the recorded artifact hash equals the hash of an EMPTY input — the hash \
+         function is not reading the artifact, so the evidence record is vacuous"
+    );
+    assert!(
+        built_hash.len() == 64 && built_hash.bytes().all(|b| b.is_ascii_hexdigit()),
+        "the recorded hash must be a 64-character hex SHA-256; got {built_hash:?}"
+    );
+
+    // #306 / PITFALLS B4: under enforcement the evidence must be about a real
+    // ELF — a launcher stub's hash records the stub, not the compiler.
+    assert!(
+        !enforce_real_backend() || built_bytes.starts_with(b"\x7fELF"),
+        "MIND_BENCH_REQUIRE is set but the recorded artifact is a {}-byte stub, \
+         not a real ELF — an evidence hash over a stub proves nothing about the \
+         deterministic-compiler wedge (#306).",
+        built_bytes.len()
+    );
+
+    // Re-derive the recorded hash through the CACHE-FREE route. If the build
+    // cache is not byte-transparent, the hash carried by the milestone commit is
+    // not the hash a clean rebuild produces.
+    let r2 = Command::new(&bin)
+        .args([
+            "build",
+            "--release",
+            "--emit=cdylib",
+            "--no-cache",
+            &format!("--out={}", out_recheck.display()),
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn mindc (--no-cache recheck)");
+
+    // Same one fail-closed decision as the first build: a capability gap skips,
+    // anything else panics with the stderr quoted.
+    if !crate::common::gate::compiled("phase_g_keystone_bootstrap", &r2) {
+        return;
+    }
+
+    let recheck_bytes = fs::read(&out_recheck).expect("read --no-cache artifact");
+    let recheck_hash = sha256_hex(&recheck_bytes);
+
+    assert_eq!(
+        built_hash,
+        recheck_hash,
+        "KEYSTONE EVIDENCE VIOLATION: the recorded artifact hash is not reproducible \
+         through a cache-free rebuild — the build cache is not byte-transparent, so \
+         the hash this gate records is a hash no clean rebuild produces.\n\
+         cached build:   {} bytes (SHA256 {built_hash})\n\
+         --no-cache:     {} bytes (SHA256 {recheck_hash})",
+        built_bytes.len(),
+        recheck_bytes.len()
+    );
+    assert_eq!(
+        built_bytes, recheck_bytes,
+        "KEYSTONE EVIDENCE VIOLATION: cached and --no-cache artifacts hash alike but \
+         differ byte-for-byte — the recorded hash is not identifying the artifact"
+    );
+
+    eprintln!(
+        "phase_g_06 EVIDENCE: recorded hash reproduced by a cache-free rebuild \
+         ({} bytes, ELF={}, SHA256 prefix {}...)",
+        built_bytes.len(),
+        built_bytes.starts_with(b"\x7fELF"),
+        &built_hash[..16]
+    );
 }

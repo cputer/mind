@@ -7,18 +7,23 @@ against the Rust oracle `mindc --emit-mic3`. The corpus is a fuzz-discovered reg
 spanning struct-lit / field-read / value-if-expr / fall-through-shadow / mixed-prefix /
 call-arg / unary-neg construct families.
 
-Locks in the FULLY GENERAL front-end milestone (v0.8.0): the driver is byte-exact on every
-fixture — 0 fail-closed, 0 wrong-bytes. The gate enforces two invariants:
+The gate enforces three invariants:
 
   * WRONG_BYTES == 0   — the cardinal invariant: the driver NEVER emits incorrect bytes
                          (a silent miscompile is the worst failure mode for a deterministic
                          compiler). Always hard-fails.
-  * FAIL_CLOSED == 0   — the generality invariant: every catalogued construct lowers
-                         byte-exactly (no refusals). Hard-fails when MINDC_SO is set (CI).
+  * BYTE_EXACT >= FLOOR — the coverage ratchet: no catalogued construct may regress from
+                         byte-exact to fail-closed or wrong.
+  * AST-KIND COVERAGE  — every AST node kind the self-host parser declares must be
+                         exercised by at least one fixture. A survey can only speak about
+                         constructs somebody wrote a fixture for; without this the corpus
+                         reports PASS while whole construct families go uncompared.
+                         See `ast_kind_coverage` for why the kind list is read out of
+                         main.mind rather than restated here.
 
 Verdicts:
-  PASS    — every fixture byte-exact (N/N), 0 fail-closed, 0 wrong-bytes
-  FAIL    — any wrong-bytes (lists them) or any fail-closed regression
+  PASS    — 0 wrong-bytes, byte-exact >= floor, every AST node kind covered
+  FAIL    — any wrong-bytes, a coverage-floor regression, or an unexercised node kind
   BLOCKED — .so / mindc missing
 
 CI: point MINDC_SO at the freshly built self-host .so; a missing .so then HARD-FAILS
@@ -28,6 +33,7 @@ CI: point MINDC_SO at the freshly built self-host .so; a missing .so then HARD-F
 import ctypes
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -133,6 +139,149 @@ def nfn_mic3(src: str):
     return buf[4:4 + n], "OK"
 
 
+# ---------------------------------------------------------------------------
+# AST-node-kind coverage lint
+#
+# The byte survey above can only speak about constructs someone thought to write
+# a fixture for. Ten of the self-host parser's AST node kinds had ZERO fixtures
+# in this corpus, and four of them (`ast_cast`, `ast_unsupported`, `ast_while`,
+# `ast_method`) name construct families that emit wrong bytes or refuse today —
+# the corpus reported PASS while the hole was invisible. A survey with no
+# coverage floor measures the fixtures, not the compiler.
+#
+# So the kind list is READ OUT OF `main.mind` (the thing under test) rather than
+# hand-copied here: a kind added to the parser with no entry below is a HARD
+# FAIL, not a silent omission. Every kind must land in exactly one of three
+# buckets, each of which has to justify itself:
+#
+#   SOURCE_PROBES        — has a source-level spelling; needs >= 1 fixture.
+#   SYNTHETIC            — never produced from a distinct source construct
+#                          (built by the emitter/desugar), so no fixture can
+#                          target it directly.
+#   NO_ORACLE_CONSTRUCT  — the self-host front end accepts it but the Rust
+#                          oracle cannot compile any source that produces it,
+#                          so a BYTE-COMPARABLE fixture is impossible today.
+#
+# The probes are deliberately syntactic and conservative: a probe that is too
+# loose reports coverage that does not exist, which is the exact failure this
+# lint replaces. When a probe and a construct disagree, tighten the probe.
+# ---------------------------------------------------------------------------
+
+#: `pub fn ast_<name>() -> i64` — the self-host AST node-kind constructors.
+_AST_KIND_DECL = re.compile(r"^pub fn (ast_[a-z_0-9]+)\(\) -> i64", re.M)
+
+#: kind -> regex that a fixture's SOURCE must match to exercise that kind.
+SOURCE_PROBES = {
+    "ast_int_lit": r"(?<![\w.])\d+(?![\w.])",
+    "ast_ident": r"\b[a-z_][A-Za-z_0-9]*\b",
+    "ast_binop": r"[a-zA-Z0-9_)\]]\s*(?:\+|-|\*|/|%|<<|>>|&&|\|\||==|!=|<=|>=|[<>&|^])\s*[a-zA-Z0-9_(\[]",
+    "ast_call": r"\b[a-z_][A-Za-z_0-9]*\s*\(",
+    "ast_fn_def": r"\bfn\s+[A-Za-z_]",
+    "ast_let": r"\blet\b",
+    "ast_use": r"^\s*use\b",
+    "ast_return": r"\breturn\b",
+    "ast_param": r"\bfn\s+[A-Za-z_][A-Za-z_0-9]*\s*\(\s*[A-Za-z_]",
+    "ast_block": r"\{",
+    "ast_paren": r"=\s*\(|\(\s*[a-z_][A-Za-z_0-9]*\s*[-+*/]",
+    "ast_struct_def": r"^\s*(pub\s+)?struct\s+[A-Z]",
+    # prefix `-`, never the binary minus in `a - b`
+    "ast_neg": r"(?:^|[=(,\[]|\breturn|\{)\s*-\s*[a-zA-Z_(0-9]",
+    "ast_not": r"!\s*[a-zA-Z_(]",
+    "ast_if": r"\bif\b",
+    "ast_field": r"\.[a-z_][A-Za-z_0-9]*(?!\s*\()",
+    "ast_method": r"\.[a-z_][A-Za-z_0-9]*\s*\(",
+    "ast_struct_lit": r"\b[A-Z][A-Za-z_0-9]*\s*\{",
+    "ast_while": r"\bwhile\b",
+    "ast_assign": r"^\s*[a-z_][A-Za-z_0-9]*\s*=[^=]",
+    "ast_break": r"\bbreak\b",
+    "ast_continue": r"\bcontinue\b",
+    "ast_float_lit": r"(?<![\w.])\d+\.\d+",
+    "ast_cast": r"\bas\s+[iuf]\d|\bas\s+bool",
+    # the parser's poison marker — an item-level attribute is the reachable
+    # source spelling that folds an item into `ast_unsupported`
+    "ast_unsupported": r"#\[",
+    "ast_array_lit": r"=\s*\[|\breturn\s*\[",
+    "ast_index": r"[a-z_][A-Za-z_0-9]*\s*\[[^\];]*\]\s*(?!=[^=])",
+    "ast_index_assign": r"[a-z_][A-Za-z_0-9]*\s*\[[^\];]*\]\s*=[^=]",
+    "ast_str_lit": r"\"",
+    "ast_enum_ctor": r"\b[A-Z][A-Za-z_0-9]*::[A-Z]",
+    # prefix `&`, never the binary bit-and in `a & b` nor `&&`
+    "ast_addr_of": r"(?:[=(,:]|\breturn)\s*&(?!&)\s*[a-zA-Z_]",
+    "ast_field_assign": r"[a-z_][A-Za-z_0-9]*\.[a-z_][A-Za-z_0-9]*\s*=[^=]",
+}
+
+#: kinds with no source spelling of their own — the emitter/desugar builds them.
+SYNTHETIC = {
+    "ast_program": "the module root — present in every fixture by construction",
+    "ast_alloc": "synthesised by the struct-lit lowering, never parsed",
+}
+
+#: kinds the self-host front end accepts but for which no ORACLE BYTES exist, so
+#: no fixture can compare anything. Measured: `mindc --emit-mic3` writes no
+#: artifact for `*p` / `*p = v` under an `i64`, `&i64`, `&mut i64` or `*i64`
+#: receiver. `oracle_parity_lint.py` reaches the same construct from the other
+#: side — its `deref-read` / `deref-write` arms are pinned "native-ELF-only;
+#: mic@3 must fail closed EMPTY" — so a refusal here is the agreed behaviour and
+#: an empty-vs-empty comparison would assert nothing.
+#: deferred: give the oracle a mic@3 pointer surface so these become
+#: byte-comparable — upgrade path: a deref/addr-of `ast::Expr` variant in
+#: src/ast/mod.rs plus its mic@3 lowering, after which both kinds move into
+#: SOURCE_PROBES and this bucket empties.
+NO_ORACLE_CONSTRUCT = {
+    "ast_deref": "`*p` — no oracle mic@3 bytes exist for any spelling tried",
+    "ast_deref_assign": "`*p = v` — same: no oracle-compilable spelling exists",
+}
+
+
+def ast_kind_coverage(fixture_texts):
+    """Every parser AST node kind must be exercised by >= 1 corpus fixture.
+
+    Returns (ok, ran, failures). `ran` is the number of kinds actually checked —
+    a gate that asserts nothing must never read as a pass, so a run that
+    resolves zero kinds is itself a failure.
+    """
+    main_mind = _HERE / "main.mind"
+    try:
+        kinds = _AST_KIND_DECL.findall(main_mind.read_text())
+    except OSError as exc:
+        return False, 0, [f"cannot read {main_mind}: {exc}"]
+
+    failures = []
+    if not kinds:
+        return False, 0, [
+            f"no `pub fn ast_*() -> i64` declarations found in {main_mind} — the "
+            "coverage lint cannot state anything about a kind list it did not "
+            "resolve (refusing to pass vacuously)."
+        ]
+
+    mapped = set(SOURCE_PROBES) | set(SYNTHETIC) | set(NO_ORACLE_CONSTRUCT)
+    for k in kinds:
+        if k not in mapped:
+            failures.append(
+                f"{k}: NEW AST node kind with no entry in this lint. Add a "
+                "SOURCE_PROBES regex plus a fixture, or classify it as SYNTHETIC / "
+                "NO_ORACLE_CONSTRUCT with the reason. A kind nobody classified is a "
+                "construct that can hide a miscompile."
+            )
+    for k in sorted(mapped - set(kinds)):
+        failures.append(
+            f"{k}: classified here but no longer declared in {main_mind.name} — the "
+            "lint's scope has drifted from the parser it claims to cover."
+        )
+
+    for k in kinds:
+        probe = SOURCE_PROBES.get(k)
+        if probe is None:
+            continue
+        if not any(re.search(probe, t, re.M) for t in fixture_texts):
+            failures.append(
+                f"{k}: ZERO fixtures exercise this AST node kind. Add one to "
+                f"tests/selfhost_gaps/ (or never_wrong/ if the driver refuses it) — "
+                "an unexercised kind is a construct whose bytes nothing compares."
+            )
+    return not failures, len(kinds), failures
+
+
 def main():
     if not SO.exists():
         if os.environ.get("MINDC_SO"):
@@ -190,7 +339,10 @@ def main():
     # not_call_branch_then is byte-exact (+1); the 4 neg_call_branch_* fixtures are
     # pinned safe fail-closed (the general path refuses rather than mis-emits) — a
     # regression to wrong-bytes trips the `wrong` assert above regardless of FLOOR.
-    FLOOR = 143
+    # 143 -> 145: the AST-node-kind coverage batch added `use_item_1` (ast_use)
+    # and `while_counter_1` (ast_while), both byte-exact. The floor ratchets with
+    # them so neither can silently regress to fail-closed.
+    FLOOR = 145
     ok = True
     if wrong:
         print("FAIL: WRONG-BYTES (silent miscompile) — the cardinal invariant is violated:")
@@ -251,10 +403,26 @@ def main():
                 print(f"   {w}")
             ok = False
 
+    # --- AST-node-kind coverage (the hole the byte survey cannot see) --------
+    cov_ok, cov_ran, cov_fail = ast_kind_coverage(
+        [f.read_text() for f in fixtures] + [f.read_text() for f in nw]
+    )
+    print(
+        f"ast-kind coverage: ran={cov_ran} fail={len(cov_fail)} "
+        f"({len(SOURCE_PROBES)} probed, {len(SYNTHETIC)} synthetic, "
+        f"{len(NO_ORACLE_CONSTRUCT)} no-oracle-construct)"
+    )
+    if not cov_ok:
+        print("FAIL: AST-node-kind coverage — a construct family nothing compares:")
+        for c in cov_fail:
+            print(f"   {c}")
+        ok = False
+
     if ok:
         print(
             f"PASS: 0 wrong-bytes; {byte_exact}/{total} byte-exact "
-            f"(>= floor {FLOOR}), {len(fail_closed)} safe fail-closed"
+            f"(>= floor {FLOOR}), {len(fail_closed)} safe fail-closed, "
+            f"{cov_ran} AST node kinds covered"
         )
         return 0
     return 1

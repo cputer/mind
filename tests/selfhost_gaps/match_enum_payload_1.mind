@@ -1,0 +1,11 @@
+enum E {
+    A(i64),
+    B,
+}
+
+fn f(e: E) -> i64 {
+    match e {
+        E::A(x) => x,
+        E::B => 0,
+    }
+}

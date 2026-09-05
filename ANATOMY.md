@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1489 | **Est. tokens:** ~2,901,150
-**Generated:** 2026-09-05 11:38 UTC
+**Files:** 1507 | **Est. tokens:** ~2,905,370
+**Generated:** 2026-09-05 11:50 UTC
 
 ## Token Budget Guide
 
@@ -61,7 +61,7 @@
 | `examples/grammar_mask/` | 2 | ~4,636 |
 | `examples/halbach_q16/` | 2 | ~7,856 |
 | `examples/lexer/` | 6 | ~8,888 |
-| `examples/mindc_mind/` | 167 | ~423,808 |
+| `examples/mindc_mind/` | 167 | ~425,866 |
 | `examples/mindc_mind/testdata/` | 3 | ~4,159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 349 | ~639,910 |
+| `tests/` | 349 | ~640,988 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -176,8 +176,8 @@
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2,832 |
 | `tests/runtime/` | 2 | ~135 |
-| `tests/selfhost_gaps/` | 148 | ~9,289 |
-| `tests/selfhost_gaps/never_wrong/` | 9 | ~184 |
+| `tests/selfhost_gaps/` | 158 | ~10,231 |
+| `tests/selfhost_gaps/never_wrong/` | 17 | ~326 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~7,506 |
@@ -606,7 +606,7 @@
 - `fixed_point_smoke.py` (~3275 tok, huge)
 - `fixture.mind` (~183 tok, small) — Phase 6.4 emit_ir smoke fixture.
 - `full_strtab_smoke.py` (~1663 tok, huge)
-- `gap_corpus_smoke.py` (~2682 tok, huge)
+- `gap_corpus_smoke.py` (~4740 tok, huge)
 - `general_float_netverify.py` (~1986 tok, huge) — general_float_netverify.py — GENERAL-path f64 value battery (B0 gate lift).
 - `.gitignore` (~5 tok, tiny) — __pycache__/
 - `lockstep_lint.py` (~4127 tok, huge) — lockstep_lint.py -- native-ELF walker lockstep linter for the pure-MIND self-host compiler.
@@ -1787,7 +1787,7 @@
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `parse_try_operator.rs` (~1194 tok, large) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~945 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~6544 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~7622 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1832,6 +1832,7 @@
 - `array-nonconst_3.mind` (~18 tok, tiny) — fn g(a: i64, b: i64, c: i64) -> i64 {
 - `array-nonconst_4.mind` (~17 tok, tiny) — fn h(a: i64, b: i64) -> i64 {
 - `array_of_struct.mind` (~29 tok, tiny) — fn f(a: i64, b: i64) -> i64 {
+- `attr_item_dropped_1.mind` (~24 tok, tiny) — fn g(a: i64) -> i64 {
 - `builtin_option_none_1.mind` (~10 tok, tiny)
 - `builtin_option_some_1.mind` (~11 tok, tiny)
 - `builtin_option_some_return_1.mind` (~10 tok, tiny)
@@ -1847,6 +1848,10 @@
 - `call-arg-nesting_8.mind` (~50 tok, small)
 - `call-arg-nesting_9.mind` (~10 tok, tiny)
 - `callarg_then_field_recv.mind` (~40 tok, tiny)
+- `cast_i32_1.mind` (~12 tok, tiny) — fn f(a: i64) -> i32 {
+- `cast_i64_neg_1.mind` (~12 tok, tiny) — fn f(a: i64) -> i64 {
+- `cast_i64_pair_1.mind` (~17 tok, tiny) — fn f(a: i64, b: i64) -> i64 {
+- `cast_u8_1.mind` (~11 tok, tiny) — fn f(a: i64) -> u8 {
 - `chained_field_pqz.mind` (~37 tok, tiny)
 - `const_false_lone_1.mind` (~8 tok, tiny) — fn f() -> bool {
 - `const_ref_lone_1.mind` (~11 tok, tiny) — fn f() -> i64 {
@@ -1882,12 +1887,13 @@
 - `field-read_3.mind` (~27 tok, tiny)
 - `field-read_4.mind` (~29 tok, tiny)
 - `field-read_5.mind` (~61 tok, small)
+- `for_nonliteral_end_1.mind` (~27 tok, tiny) — fn f(n: i64) -> i64 {
 - `for_range_bound10_1.mind` (~24 tok, tiny) — fn f(a: i64) -> i64 {
 - `for_range_continue_1.mind` (~35 tok, tiny) — fn f() -> i64 {
 - `for_range_multistmt_1.mind` (~29 tok, tiny) — fn f(a: i64) -> i64 {
 - `for_range_simple_1.mind` (~24 tok, tiny) — fn f(a: i64) -> i64 {
 - `for_range_zero_1.mind` (~24 tok, tiny) — fn f(a: i64) -> i64 {
-- `GAPS.md` (~4982 tok, huge) — Self-host nfn driver — gap inventory (fuzz-discovered)
+- `GAPS.md` (~5736 tok, huge) — Self-host nfn driver — gap inventory (fuzz-discovered)
 - `index-in-if_1.mind` (~19 tok, tiny)
 - `int_underscore_group_1.mind` (~7 tok, tiny) — fn f() -> i64 {
 - `int_underscore_million_1.mind` (~8 tok, tiny) — fn f() -> i64 {
@@ -1899,10 +1905,12 @@
 - `let-ifexpr-seq_5.mind` (~19 tok, tiny)
 - `let-ifexpr-seq_6.mind` (~27 tok, tiny)
 - `let-ifexpr-seq_7.mind` (~46 tok, tiny)
+- `let_shadow_param_1.mind` (~16 tok, tiny) — fn f(n: i64) -> i64 {
 - `matchcall_letinit_1.mind` (~34 tok, tiny) — fn g(a: i64) -> i64 {
 - `matchcall-scrutinee_0arg.mind` (~24 tok, tiny) — fn g() -> i64 {
 - `matchcall-scrutinee_1arg.mind` (~33 tok, tiny) — fn g(a: i64) -> i64 {
 - `matchcall-scrutinee_arith.mind` (~21 tok, tiny) — fn f(a: i64) -> i64 {
+- `match_enum_payload_1.mind` (~29 tok, tiny) — fn f(e: E) -> i64 {
 - `mixed-prefix_10.mind` (~32 tok, tiny)
 - `mixed-prefix_11.mind` (~27 tok, tiny)
 - `mixed-prefix_12.mind` (~40 tok, tiny)
@@ -1933,15 +1941,23 @@
 - `nested_slit_field.mind` (~30 tok, tiny)
 ### `tests/selfhost_gaps/never_wrong/`
 
+- `addr_of_local_1.mind` (~15 tok, tiny) — fn f(a: i64) -> i64 {
 - `array_lit_in_if_const_1.mind` (~19 tok, tiny)
 - `array_lit_in_if_var_1.mind` (~20 tok, tiny)
+- `bin_lit_return_1.mind` (~10 tok, tiny) — fn f() -> i64 {
+- `field_assign_1.mind` (~28 tok, tiny) — fn f(a: i64) -> i64 {
+- `hex_lit_mask_1.mind` (~12 tok, tiny) — fn f(a: i64) -> i64 {
+- `hex_lit_return_1.mind` (~9 tok, tiny) — fn f() -> i64 {
+- `index_assign_1.mind` (~23 tok, tiny) — fn f(a: i64) -> i64 {
 - `index_call_binop_1.mind` (~28 tok, tiny) — fn g(a: i64) -> i64 { a + 1 }
 - `index_call_in_if_1.mind` (~27 tok, tiny) — fn g(a: i64) -> i64 { a + 1 }
 - `index_call_nested_1.mind` (~35 tok, tiny) — fn h(a: i64) -> i64 { a + 1 }
+- `method_call_1.mind` (~36 tok, tiny) — fn p_get(s: P) -> i64 {
 - `neg_float_1.mind` (~9 tok, tiny)
 - `neg_float_in_if_1.mind` (~15 tok, tiny)
 - `neg_index_in_if_1.mind` (~20 tok, tiny)
 - `neg_index_trailing_1.mind` (~11 tok, tiny)
+- `oct_lit_return_1.mind` (~9 tok, tiny) — fn f() -> i64 {
 ### `tests/selfhost_gaps/`
 
 - `not_call_branch_then_1.mind` (~21 tok, tiny) — fn g(a: i64) -> i64 { a + 1 }
@@ -1971,6 +1987,7 @@
 - `struct-lit-field-recv_2.mind` (~23 tok, tiny)
 - `struct-lit-field-recv_3.mind` (~25 tok, tiny)
 - `two_scalar_prior.mind` (~38 tok, tiny)
+- `use_item_1.mind` (~13 tok, tiny) — fn f(a: i64) -> i64 {
 - `value-ifexpr_1.mind` (~98 tok, small) — MISMATCH: a `let`-block in a NESTED (else-if) branch of a value if-expr.
 - `value-ifexpr_2.mind` (~79 tok, small) — MISMATCH: same-named `let` in two SIBLING branches of a value if-expr.
 - `value-ifexpr_3.mind` (~71 tok, small) — MISMATCH: a `let` inside a NESTED if-expr that sits in the THEN-side of an
@@ -1979,6 +1996,7 @@
 - `value-ifexpr_6.mind` (~77 tok, small) — FAIL_CLOSED (in-subset): `let outer; if .. { use outer } else { use outer }`
 - `value-ifexpr_7.mind` (~78 tok, small) — FAIL_CLOSED (in-subset): struct-lit construction as a value if-expr branch.
 - `value-ifexpr_8.mind` (~64 tok, small) — FAIL_CLOSED (in-subset): field-read `recv.field` as a value if-expr branch.
+- `while_counter_1.mind` (~27 tok, tiny) — fn f(n: i64) -> i64 {
 ### `tests/`
 
 - `set_surface_run.rs` (~931 tok, large) — Copyright 2025 STARGA Inc.

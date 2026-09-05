@@ -268,3 +268,50 @@ Rust IR verifier (E3001) — no oracle artifact exists to match, so the nfn
 driver stays permissive there (never promoted without an oracle reference).
 gap-corpus floor 135 -> 136; never_wrong corpus EMPTY (directory retired);
 loop anchor re-frozen; flip byte-identical (674147 B).
+
+## OPEN — six wrong-bytes classes the corpus never contained (WS1-09)
+
+Before this batch the survey printed `PASS: 0 wrong-bytes` while six proven
+wrong-bytes classes reproduced on the same tree. The corpus could not see them
+because it had no fixture for the construct, and nothing checked that every AST
+node kind the parser declares has a fixture at all. Ten of 36 kinds had ZERO —
+`ast_use`, `ast_method`, `ast_while`, `ast_cast`, `ast_unsupported`,
+`ast_index_assign`, `ast_addr_of`, `ast_deref`, `ast_deref_assign`,
+`ast_field_assign`. A survey with no coverage floor measures the fixtures, not
+the compiler; `gap_corpus_smoke.py` now hard-fails on an unexercised kind, and
+reads the kind list out of `main.mind` so a NEW kind fails closed rather than
+going unnoticed.
+
+These fixtures are RED on purpose. Each is a measured self-host-vs-oracle mic@3
+mismatch; they turn green when the emitter is fixed, never by relaxing the
+compare.
+
+| fixture | class | measured |
+|---|---|---|
+| `attr_item_dropped_1.mind` | item attribute drops the annotated fn | nfn 49 B vs oracle 73 B, diff@7 |
+| `let_shadow_param_1.mind` | body `let` shadowing a param ignored at later use | 45 B vs 45 B, diff@19 — IDENTICAL LENGTH, no size check can catch it |
+| `cast_i64_pair_1.mind` | two `as i64` in one body: conv callee index unresolved | 78 B vs 76 B — emits `ULEB(0xFFFFFFFFFFFFFFFF)` for callee −1 |
+| `cast_i64_neg_1.mind` | `-(x as i64)` — same unresolved callee | 59 B vs 66 B — same `ff ff ff ff ff ff ff ff ff 01` |
+| `cast_u8_1.mind` | narrow cast `as u8` | 46 B vs 66 B, diff@5 |
+| `cast_i32_1.mind` | narrow cast `as i32` | 53 B vs 58 B, diff@5 |
+| `for_nonliteral_end_1.mind` | `for i in 0..n` (non-literal bound) hidden-counter desugar | 91 B vs 83 B, diff@12 |
+| `match_enum_payload_1.mind` | `match` on an enum with a payload binding | 80 B vs 129 B, diff@5 |
+
+Added byte-exact (they close a zero-fixture kind and ratchet the floor 143 → 145):
+`use_item_1.mind` (`ast_use`), `while_counter_1.mind` (`ast_while`).
+
+Added to `never_wrong/` — the driver REFUSES these today (0 B), which is safe;
+they are pinned so a future "support" that emits the wrong bytes goes red:
+`hex_lit_return_1`, `hex_lit_mask_1`, `oct_lit_return_1`, `bin_lit_return_1`
+(non-decimal integer literals — the mic@3 emitter refuses them here; the
+separate finding that the EXECUTION path compiles them as 0 is about the native
+backend, not these bytes), `addr_of_local_1` (`ast_addr_of`),
+`index_assign_1` (`ast_index_assign`), `field_assign_1` (`ast_field_assign`),
+`method_call_1` (`ast_method`).
+
+`ast_deref` / `ast_deref_assign` have NO fixture and cannot get one: the Rust
+oracle rejects every deref spelling tried (`*p`, `*p = v`, with `i64`, `&i64`,
+`&mut i64` and `*i64` receivers), so no byte comparison exists. They are
+classified `NO_ORACLE_CONSTRUCT` in the lint with the upgrade path recorded —
+the self-host front end accepts a construct the oracle cannot compile, which is
+a divergence in its own right.

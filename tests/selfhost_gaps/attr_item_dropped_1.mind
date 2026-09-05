@@ -1,0 +1,8 @@
+#[inline]
+fn g(a: i64) -> i64 {
+    return a + 1;
+}
+
+fn f(a: i64) -> i64 {
+    return g(a);
+}

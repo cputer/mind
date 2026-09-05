@@ -1,0 +1,3 @@
+fn f(a: i64) -> u8 {
+    return a as u8;
+}

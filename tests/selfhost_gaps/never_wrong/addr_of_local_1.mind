@@ -1,0 +1,4 @@
+fn f(a: i64) -> i64 {
+    let p: i64 = &a;
+    return a;
+}

@@ -1,0 +1,5 @@
+fn f(a: i64) -> i64 {
+    let mut xs: [i64; 2] = [0, 0];
+    xs[0] = a;
+    return xs[0];
+}

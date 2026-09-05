@@ -1,0 +1,9 @@
+struct P {
+    x: i64,
+}
+
+fn f(a: i64) -> i64 {
+    let mut p: P = P { x: 0 };
+    p.x = a;
+    return p.x;
+}

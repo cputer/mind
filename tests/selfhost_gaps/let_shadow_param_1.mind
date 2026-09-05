@@ -1,0 +1,4 @@
+fn f(n: i64) -> i64 {
+    let n: i64 = n - 1;
+    return n;
+}

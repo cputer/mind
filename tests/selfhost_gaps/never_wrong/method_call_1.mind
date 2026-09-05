@@ -1,0 +1,12 @@
+struct P {
+    x: i64,
+}
+
+fn p_get(s: P) -> i64 {
+    return s.x;
+}
+
+fn f(a: i64) -> i64 {
+    let p: P = P { x: a };
+    return p.p_get();
+}
