@@ -95,6 +95,41 @@ fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::pro
         .expect("failed to spawn mindc")
 }
 
+/// The artifact path the builder ITSELF reported for this run.
+///
+/// `mindc build` prints `   Finished <target> [<emit>] <path>` naming the file
+/// it wrote (`src/bin/mindc.rs`). Reading that back is what keeps this harness
+/// from hand-typing a THIRD copy of the artifact-naming rule, and there are two
+/// live rules to get wrong: the native builder names a `binary` after
+/// `package.name` (`src/build/mod.rs::default_artifact_path`), while the
+/// launcher fallback names it after `[build] output`, whose serde default is
+/// `"app"` (`src/project/mod.rs`). Asserting the launcher's name against the
+/// native builder's file is exactly how the revived byte-identity check came to
+/// panic on every host that HAS the backend — the one tier it exists for.
+///
+/// There is no fallback when the line is absent: a build that exits 0 without
+/// naming its artifact is a broken gate, not a skip.
+fn reported_artifact(out: &std::process::Output) -> PathBuf {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let path = stdout
+        .lines()
+        .find_map(|line| {
+            let rest = line.trim_start().strip_prefix("Finished ")?;
+            // `Finished <target> [<emit>] <path>`: neither the target nor the
+            // emit token contains `]`, so the first `] ` closes the emit
+            // bracket and the remainder is the path verbatim.
+            rest.split_once("] ").map(|(_, p)| p.trim())
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "`mindc build` exited 0 but printed no `Finished <target> \
+                 [<emit>] <path>` line naming its artifact, so the cache \
+                 byte-identity check has nothing to read.\n--- stdout ---\n{stdout}"
+            )
+        });
+    PathBuf::from(path)
+}
+
 /// Probe the cache for the entry source.
 fn probe_for_source(
     project_root: &Path,
@@ -538,13 +573,17 @@ fn phase_f_09_deterministic_cache_key() {
         return;
     }
 
-    // `mindc build` writes `<root>/target/<profile>/<build.output>`
-    // (src/project/mod.rs), with `build.output` defaulting to "app". This used
-    // to look for `target/cpu/debug/determinism_project`, a path the builder
-    // never writes, so the byte-identity assertion below could not run: the
-    // `if !artifact.exists() { return; }` made the whole gate vacuous while it
-    // reported a pass.
-    let artifact = dir.join("target").join("debug").join("app");
+    // The artifact is named by the builder, so the builder is asked. On the
+    // native path a `binary` is `<root>/target/<profile>/<package.name>` —
+    // here `determinism_project` (src/build/mod.rs::default_artifact_path);
+    // `<build.output>`, whose serde default is "app", names only the launcher
+    // the backend-less fallback writes. This line hand-typed that "app", so on
+    // every host that HAS the native backend the assertion below panicked
+    // instead of comparing bytes; before that it hand-typed
+    // `target/cpu/debug/determinism_project`, a path nothing writes, which made
+    // the check vacuous while it reported a pass. Two hand-typed spellings, two
+    // failure modes, one cause: reading the reported path removes the spelling.
+    let artifact = reported_artifact(&s1);
     assert!(
         artifact.exists(),
         "the build succeeded but wrote no artifact at {}; the cache \
@@ -560,13 +599,22 @@ fn phase_f_09_deterministic_cache_key() {
     let s2 = run_build(&mindc, dir, &[]);
     assert!(s2.success(), "second build should succeed");
 
-    if artifact.exists() {
-        let bytes2 = fs::read(&artifact).unwrap();
-        assert_eq!(
-            bytes1, bytes2,
-            "artifact must be byte-identical across cache-hit rebuild"
-        );
-    }
+    // Unconditional. `if artifact.exists() { .. }` guarded the ONE comparison
+    // this test exists to make, so a rebuild that restored nothing graded as a
+    // pass having asserted nothing — the same vacuity the hand-typed path
+    // above produced, one line further down. Build 2 exited 0, so the artifact
+    // it was asked to produce has to be there.
+    assert!(
+        artifact.exists(),
+        "the cache-hit rebuild exited 0 but restored no artifact at {}; the \
+         byte-identity comparison cannot run",
+        artifact.display()
+    );
+    let bytes2 = fs::read(&artifact).unwrap();
+    assert_eq!(
+        bytes1, bytes2,
+        "artifact must be byte-identical across cache-hit rebuild"
+    );
 }
 
 // ---------------------------------------------------------------------------
