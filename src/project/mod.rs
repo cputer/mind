@@ -14,6 +14,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, anyhow};
 
 use crate::diagnostics::capability::{FallbackReason, NativeOutcome};
+use crate::diagnostics::refusal::CodedRefusal;
 use serde::Deserialize;
 
 /// Cross-module import resolution (Phase 10.6 item 9 / Phase 15
@@ -1199,8 +1200,18 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
         compiled
     };
 
-    // Link into final binary
-    link_binary(&compiled, &output_path, &backend, opts, &build_target)?;
+    // Link into final binary.
+    //
+    // A link-time HOST-capability refusal may not out-rank what the COMPILE step
+    // already learned. `FallbackReason::merge` is the single owner of that
+    // precedence — a module that did not compile is a real failure and dominates
+    // every capability cause — so the link's cause is re-ranked against the
+    // compile's before it reaches the wire. Without this, a project whose entry
+    // failed to parse on a host with no runtime library reports a PURE capability
+    // gap (the link refuses first, and the fallback facts below are never
+    // reached), and a consumer grades a program that does not compile as a SKIP.
+    link_binary(&compiled, &output_path, &backend, opts, &build_target)
+        .map_err(|e| outranked_by_compile(e, fallback_reason))?;
 
     if opts.verbose {
         println!("  Output: {}", output_path.display());
@@ -2791,6 +2802,36 @@ fn get_target_triple(backend: &str) -> &'static str {
     }
 }
 
+/// Re-rank a link-time refusal against the cause the compile step recorded.
+///
+/// Returns `err` unchanged unless it is a [`CodedRefusal`] that the compile
+/// cause outranks; in that case a refusal carrying the DOMINATING cause is
+/// returned, naming both facts so the report is honest about what was found
+/// first and what actually decides. The message states no verdict of its own —
+/// `merged` is the verdict, and it is a real failure or a capability gap
+/// depending on the causes, so prose asserting either would be wrong half the
+/// time.
+fn outranked_by_compile(
+    err: anyhow::Error,
+    compile_cause: Option<FallbackReason>,
+) -> anyhow::Error {
+    let (Some(refusal), Some(compile_cause)) = (CodedRefusal::of(&err), compile_cause) else {
+        return err;
+    };
+    let merged = refusal.reason().merge(compile_cause);
+    if merged == refusal.reason() {
+        return err;
+    }
+    anyhow::Error::new(CodedRefusal::new(
+        merged,
+        format!(
+            "module(s) were not natively compiled (see the [WARN] above); that cause \
+             outranks the host-capability fact the link stopped on first: {}",
+            refusal.message()
+        ),
+    ))
+}
+
 /// Link object files into a native executable binary
 fn link_binary(
     objects: &[PathBuf],
@@ -3127,10 +3168,18 @@ fn find_runtime_lib(backend: &str) -> Result<PathBuf> {
         return Ok(mind_lib);
     }
 
-    Err(anyhow!(
-        "MIND runtime not found for backend '{}'. See https://mindlang.dev/enterprise for licensing.",
-        backend
-    ))
+    // A HOST-capability fact, not a defect: the runtime ships separately under a
+    // commercial licence, so a public checkout and a stock CI runner both lack
+    // it by default. The cause travels as a TYPED payload (see
+    // `diagnostics::refusal`) because the build orchestrator re-wraps this error
+    // and would otherwise erase the only fact its consumer needs.
+    Err(anyhow::Error::new(CodedRefusal::new(
+        FallbackReason::RuntimeLibraryAbsent,
+        format!(
+            "MIND runtime not found for backend '{backend}'. \
+             See https://mindlang.dev/enterprise for licensing."
+        ),
+    )))
 }
 
 /// Run a built project

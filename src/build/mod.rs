@@ -17,6 +17,7 @@
 //! logic lives in [`cache`]; this module integrates it into the build flow.
 
 pub mod cache;
+mod driver_error;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::diagnostics::capability::FallbackReason;
+use driver_error::classify_driver_error;
 
 use crate::project::{
     BuildOptions as LegacyBuildOptions, BuildTarget, EmitKind, OptimizeLevel, build_project,
@@ -603,7 +605,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         }
     }
 
-    let build_result = build_result.map_err(|e| BuildError::failed(format!("{e}")))?;
+    let build_result = build_result.map_err(classify_driver_error)?;
 
     // ISSUE #244 — `mindc build` was not fail-closed.
     //

@@ -169,8 +169,9 @@ CRITICAL_exec=(
   "determinism_veto_control 2"       # the determinism-by-default veto positive control
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
-  "fail_closed_capability_skip 20"  # measured 21; the capability-skip helper contract
+  "fail_closed_capability_skip 20"  # measured 22; the capability-skip helper contract
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
+  "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
   "fail_open_skip_site_ratchet 5"   # measured 6; the shrink-only fail-open backlog
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
@@ -182,6 +183,7 @@ CRITICAL_lowering=(
   "extern_c_phase_b 1"
   "fail_closed_capability_skip 20"
   "fail_closed_capability_skip_stub_exec 4"
+  "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 5"
   "harness_portability 2"
 )
@@ -191,6 +193,7 @@ CRITICAL_pkg=(
   "package_traversal 1"
   "fail_closed_capability_skip 20"
   "fail_closed_capability_skip_stub_exec 4"
+  "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 5"
   "harness_portability 2"
 )

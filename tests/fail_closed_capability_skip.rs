@@ -31,7 +31,7 @@
 mod common;
 
 use common::gate::{self, Outcome};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 // Every fixture below is the VERBATIM stderr of a real `mindc` refusal, and
@@ -394,90 +394,11 @@ fn probe_skip_panics_under_enforcement_and_marks_otherwise() {
 
 // --- the cause-code anti-drift scan ----------------------------------------
 //
-// The classifier now reads a CODE, which is only as good as the compiler's
-// discipline in stamping one. A new `--emit-<x> requires building with the
-// 'mlir-build' feature` refusal added WITHOUT a code would not widen the hole
-// (uncoded fails closed) but would re-create the original defect from the other
-// side: a genuine capability gap hard-failing every backend-less host. So the
-// wording that names a missing native backend is scanned in `src/`, and every
-// occurrence must carry a code slot on the same line.
-//
-// The scan scope is read out of the thing it checks — the compiler's own
-// wording — rather than from a hand-copied list of file paths, so a new file
-// cannot silently fall outside it.
-
-/// The wording every "this binary has no native backend" refusal shares.
-const NO_BACKEND_WORDING: &str = "requires building with the 'mlir";
-
-/// A rendered code slot (`error[build][{}]:`) or a literal `E50xx` code.
-fn line_carries_a_code(line: &str) -> bool {
-    line.contains("[{}]:") || line.contains("[E50")
-}
-
-/// `src/diagnostics/capability.rs` holds this rule's NEGATIVE controls — the
-/// uncoded prose its unit tests assert is not a capability gap. A scanner that
-/// flagged its own specimen jar could not keep them.
-const CAPABILITY_SELF: &str = "capability.rs";
-
-fn src_sources() -> Vec<(PathBuf, String)> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        for e in std::fs::read_dir(dir).expect("read src dir") {
-            let p = e.expect("dir entry").path();
-            if p.is_dir() {
-                walk(&p, out);
-            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
-                out.push(p);
-            }
-        }
-    }
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut paths = Vec::new();
-    walk(&root, &mut paths);
-    paths.sort();
-    paths
-        .into_iter()
-        .filter(|p| p.file_name().and_then(|s| s.to_str()) != Some(CAPABILITY_SELF))
-        .map(|p| {
-            let text = std::fs::read_to_string(&p).expect("read src source");
-            (p, text)
-        })
-        .collect()
-}
-
-#[test]
-fn every_missing_backend_refusal_carries_its_cause_code() {
-    let mut uncoded = Vec::new();
-    for (path, text) in src_sources() {
-        for (i, line) in text.lines().enumerate() {
-            let t = line.trim_start();
-            if t.starts_with("//") || !line.contains(NO_BACKEND_WORDING) {
-                continue;
-            }
-            if !line_carries_a_code(line) {
-                uncoded.push(format!("{}:{}", path.display(), i + 1));
-            }
-        }
-    }
-    assert!(
-        uncoded.is_empty(),
-        "these refusals name a missing native backend but carry no cause code, \
-         so the harness would grade a genuine capability gap as a compiler \
-         regression and hard-fail every host without the backend. Emit \
-         `error[<phase>][{{}}]:` with \
-         `diagnostics::capability::NO_NATIVE_BACKEND`.\n  {}",
-        uncoded.join("\n  ")
-    );
-}
-
-#[test]
-fn the_cause_code_scan_can_still_see_the_bad_shape() {
-    // Positive control: the scan is only evidence if it fails on the shape it
-    // forbids. This is the exact pre-fix line from `src/bin/mindc.rs`.
-    let bad = r#"        eprintln!("error[build]: --emit-obj requires building with the 'mlir-build' feature");"#;
-    assert!(bad.contains(NO_BACKEND_WORDING) && !line_carries_a_code(bad));
-    let good = r#"            "error[build][{}]: --emit-obj requires building with the 'mlir-build' feature","#;
-    assert!(good.contains(NO_BACKEND_WORDING) && line_carries_a_code(good));
-}
+// Lives in its own file: `tests/capability_refusal_cause_scan.rs`. THIS file
+// owns the classifier's runtime contract (given a wire, what is the verdict);
+// that one owns the compiler's SOURCE discipline (does every host-capability
+// refusal in `src/` mint its cause). Different subject, different inputs, and
+// keeping them together pushed this file past the size limit.
 
 // --- end-to-end: the REAL compiler's refusals, not a fixture of them --------
 //

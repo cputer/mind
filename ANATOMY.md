@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1479 | **Est. tokens:** ~2,878,456
-**Generated:** 2026-09-05 02:35 UTC
+**Files:** 1482 | **Est. tokens:** ~2,883,501
+**Generated:** 2026-09-05 03:53 UTC
 
 ## Token Budget Guide
 
@@ -77,7 +77,7 @@
 | `.github/workflows/` | 9 | ~34,427 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 29 | ~96,000 |
+| `scripts/` | 29 | ~96,043 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -92,11 +92,11 @@
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
-| `src/build/` | 2 | ~18,979 |
+| `src/build/` | 3 | ~19,689 |
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
-| `src/diagnostics/` | 2 | ~12,242 |
+| `src/diagnostics/` | 3 | ~13,949 |
 | `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
 | `src/eval/` | 16 | ~87,806 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 345 | ~627,597 |
+| `tests/` | 346 | ~630,182 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -888,7 +888,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~9458 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~9501 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -1010,7 +1010,8 @@
 ### `src/build/`
 
 - `cache.rs` (~6766 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~12213 tok, huge) — Copyright 2025 STARGA Inc.
+- `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~12224 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/cache/`
 
 - `entry.rs` (~977 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1030,8 +1031,9 @@
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/diagnostics/`
 
-- `capability.rs` (~8518 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~3724 tok, huge) — Copyright 2025 STARGA Inc.
+- `capability.rs` (~8866 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~3729 tok, huge) — Copyright 2025 STARGA Inc.
+- `refusal.rs` (~1354 tok, large) — Copyright 2025 STARGA Inc.
 ### `src/distributed/`
 
 - `allgather.rs` (~813 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1306,6 +1308,7 @@
 - `bytes_buffer_run.rs` (~715 tok, large) — Copyright 2025 STARGA Inc.
 - `bytes_fixed_into_vec_run.rs` (~1660 tok, huge) — Copyright 2025 STARGA Inc.
 - `bytes_zero_run.rs` (~889 tok, large) — Copyright 2025 STARGA Inc.
+- `capability_refusal_cause_scan.rs` (~3400 tok, huge) — Copyright 2025 STARGA Inc.
 - `cerebras_stencil_tile.rs` (~1929 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `chacha20_poly1305_smoke.rs` (~2222 tok, huge) — Copyright 2025 STARGA Inc.
 - `char_literal_run.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
@@ -1496,7 +1499,7 @@
 - `f64_call_arg_run.rs` (~1028 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1139 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1122 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip.rs` (~6776 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip.rs` (~5961 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~1782 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~4500 tok, huge) — Copyright 2025 STARGA Inc.

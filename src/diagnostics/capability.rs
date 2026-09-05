@@ -101,12 +101,26 @@
 //! cause — so a non-cause diagnostic can no longer be born inside the
 //! namespace and veto a legitimate skip, and a new cause cannot be added
 //! without registering it.
+//!
+//! That scan sees codes, so it cannot see a refusal that has NO code at all —
+//! which fails closed, and therefore hard-fails every host that genuinely has
+//! the gap. The complementary direction (every host-capability refusal in
+//! `src/` MINTS a cause) is enforced by
+//! `tests/capability_refusal_cause_scan.rs`, one case per registered
+//! capability cause, keyed on [`CAPABILITY_CODES`] in both directions.
 
 /// A backend for the requested target is not available in this build: the
 /// target lowers to canonical IR here, but final emission needs the matching
 /// `mind-runtime` backend library. A host/build capability fact, never a
 /// defect — see `pipeline::CompileError::BackendUnavailable`.
 pub const TARGET_BACKEND_UNAVAILABLE: &str = "E5001";
+
+/// The MIND runtime library for the requested backend is not installed on this
+/// host: neither `MIND_LIB_DIR` nor `~/.mind/lib` holds it. The runtime ships
+/// separately under a commercial licence, so its absence is the DEFAULT state
+/// of a public checkout and of a stock CI runner — a host-capability fact,
+/// never a defect.
+pub const RUNTIME_LIBRARY_ABSENT: &str = "E5002";
 
 /// The binary carries no native backend at all: it was built without the
 /// `mlir-build` feature. A host-capability fact, never a defect.
@@ -139,6 +153,9 @@ pub enum FallbackReason {
     /// This build has no backend for the requested target — see
     /// [`TARGET_BACKEND_UNAVAILABLE`].
     TargetBackendUnavailable,
+    /// The backend's runtime library is not installed on this host — see
+    /// [`RUNTIME_LIBRARY_ABSENT`].
+    RuntimeLibraryAbsent,
     /// No `mlir-build` feature in this binary — see [`NO_NATIVE_BACKEND`].
     NoNativeBackend,
     /// `mlir-opt` / `clang` absent — see [`NATIVE_TOOLCHAIN_ABSENT`].
@@ -154,8 +171,9 @@ impl FallbackReason {
     /// Hand-listed, but it cannot drift silently: a variant left out of it is
     /// still a code LITERAL in this file, and the namespace scan reads that
     /// literal, finds no registered owner for it, and fails the build.
-    pub const ALL: [FallbackReason; 4] = [
+    pub const ALL: [FallbackReason; 5] = [
         FallbackReason::TargetBackendUnavailable,
+        FallbackReason::RuntimeLibraryAbsent,
         FallbackReason::NoNativeBackend,
         FallbackReason::NativeToolchainAbsent,
         FallbackReason::SourceNotNativelyCompilable,
@@ -166,6 +184,7 @@ impl FallbackReason {
     pub const fn code(self) -> &'static str {
         match self {
             FallbackReason::TargetBackendUnavailable => TARGET_BACKEND_UNAVAILABLE,
+            FallbackReason::RuntimeLibraryAbsent => RUNTIME_LIBRARY_ABSENT,
             FallbackReason::NoNativeBackend => NO_NATIVE_BACKEND,
             FallbackReason::NativeToolchainAbsent => NATIVE_TOOLCHAIN_ABSENT,
             FallbackReason::SourceNotNativelyCompilable => SOURCE_NOT_NATIVELY_COMPILABLE,
@@ -177,6 +196,7 @@ impl FallbackReason {
     pub const fn is_capability(self) -> bool {
         match self {
             FallbackReason::TargetBackendUnavailable
+            | FallbackReason::RuntimeLibraryAbsent
             | FallbackReason::NoNativeBackend
             | FallbackReason::NativeToolchainAbsent => true,
             FallbackReason::SourceNotNativelyCompilable => false,
@@ -195,11 +215,15 @@ impl FallbackReason {
             FallbackReason::TargetBackendUnavailable => 0,
             // About this host's PATH.
             FallbackReason::NativeToolchainAbsent => 1,
+            // About what is INSTALLED on this host: broader than one missing
+            // build tool on `PATH`, narrower than "this binary has no native
+            // backend at all".
+            FallbackReason::RuntimeLibraryAbsent => 2,
             // Broadest capability statement: this whole binary has no native
             // backend, so it wins a tie among capability causes.
-            FallbackReason::NoNativeBackend => 2,
+            FallbackReason::NoNativeBackend => 3,
             // A real failure dominates every capability cause.
-            FallbackReason::SourceNotNativelyCompilable => 3,
+            FallbackReason::SourceNotNativelyCompilable => 4,
         }
     }
 
@@ -241,8 +265,9 @@ pub enum NativeOutcome {
 /// capability cause is one edit and forgetting one fails closed: an
 /// unregistered cause is still IN the reserved namespace, so it is seen, read
 /// as unknown, and vetoes the skip.
-pub const CAPABILITY_CODES: [&str; 3] = [
+pub const CAPABILITY_CODES: [&str; 4] = [
     TARGET_BACKEND_UNAVAILABLE,
+    RUNTIME_LIBRARY_ABSENT,
     NO_NATIVE_BACKEND,
     NATIVE_TOOLCHAIN_ABSENT,
 ];
