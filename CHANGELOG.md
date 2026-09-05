@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the capability classifier's "reserved" cause-code namespace was not reserved
+- `src/diagnostics/capability.rs` classifies a refusal by reading every code in the reserved
+  `E50xx` namespace off the wire and merging fail-closed, on the stated premise that an
+  ordinary diagnostic can neither forge a capability verdict nor veto one. Two ordinary
+  diagnostics were already inside the namespace, so the premise did not hold: `mindc x.mind
+  --target gpu` refused with `error[backend][E5001]`, an unregistered in-namespace token,
+  which the classifier read as an unknown refusal cause and used to VETO its own skip —
+  grading a genuine host-capability gap as a compiler regression on every host without that
+  backend, the exact inversion the module exists to prevent. Only the inclusion direction
+  (every cause code is inside the namespace) had a test.
+- Both occupants are resolved at the root. `CompileError::BackendUnavailable` IS a
+  host-capability cause and is now registered as one
+  (`FallbackReason::TargetBackendUnavailable`), listed in `CAPABILITY_CODES`, and emitted
+  from the registry rather than from a code literal, so the refusal and the classifier cannot
+  disagree. `CompileError::InvalidManifestExport` is an ordinary user error and moved to the
+  new `E6xxx` manifest range, out of the cause namespace.
+- The exclusion direction is now MECHANICAL: `the_reserved_namespace_holds_only_registered_causes`
+  walks `$CARGO_MANIFEST_DIR/src` (scope derived, not a hand-copied file list) and fails the
+  build on any `E50<digits>` token — literal or prose — that no `FallbackReason` owns, with a
+  positive control proving the scan still sees an intruder and a non-vacuity assertion that it
+  read files and found codes. `FallbackReason::ALL` replaces the hand-copied variant lists, and
+  `the_capability_list_agrees_with_the_registry` pins `CAPABILITY_CODES` against
+  `is_capability()` in both directions.
+- `FallbackReason::merge` is now a precedence maximum over an exhaustive `precedence()` match
+  instead of a pairwise special case, so it is commutative and associative (a workspace verdict
+  cannot depend on which member printed first) and a new cause cannot be added without placing
+  itself in the order. Existing verdicts are unchanged.
+- Pinned end to end: the real `mindc --target gpu` refusal now grades `CapabilitySkip` (and
+  still fails under `MIND_BENCH_REQUIRE=1`), while the manifest-export twin grades `Failed` and
+  cannot veto a genuine gap sharing its stderr.
+
+
 ### Fixed — the release workflow could publish binaries from a commit CI had never checked
 - `.github/workflows/release.yml` gated publication on `needs: build` alone, and that build
   job's entire step list was Checkout / Install Rust / Cache / Install cross / Build /

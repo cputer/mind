@@ -92,6 +92,56 @@ fn manifest_exports_reject_oversized_list() {
     assert!(matches!(err, CompileError::InvalidManifestExport { .. }));
 }
 
+/// Both emission sites of the cause-namespace rule, pinned where the codes are
+/// actually minted.
+///
+/// The manifest-export error is an ordinary USER error: it must carry a code
+/// OUTSIDE the reserved `E50xx` cause namespace, because the harness
+/// classifier reads any in-namespace code it does not recognise as an unknown
+/// refusal cause and vetoes every capability skip on the same stderr. The
+/// backend-unavailable refusal is the opposite case — a genuine host-capability
+/// fact, which must carry a REGISTERED capability cause code.
+#[test]
+fn manifest_and_backend_diagnostics_sit_on_the_right_side_of_the_cause_namespace() {
+    use libmind::diagnostics::capability;
+    use libmind::pipeline::{CompileError, CompileOptions, compile_source};
+    use libmind::runtime::types::BackendTarget;
+
+    let opts = CompileOptions {
+        manifest_exports: vec!["bad name".to_string()],
+        ..Default::default()
+    };
+    let err = compile_source("1 + 1", &opts).expect_err("invalid export must error");
+    assert!(matches!(err, CompileError::InvalidManifestExport { .. }));
+    for d in err.into_diagnostics(None) {
+        let rendered = format!("error[{}][{}]: {}", d.phase, d.code, d.message);
+        assert!(
+            capability::cause_codes(&rendered).is_empty(),
+            "an ordinary user error minted a code inside the reserved cause \
+             namespace, which vetoes every capability skip printed beside it: {rendered}"
+        );
+    }
+
+    let opts = CompileOptions {
+        target: BackendTarget::Gpu,
+        ..Default::default()
+    };
+    let err = compile_source("fn main() -> i64 { 0 }", &opts)
+        .expect_err("a target with no backend must refuse");
+    assert!(matches!(err, CompileError::BackendUnavailable { .. }));
+    let diags = err.into_diagnostics(None);
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    let rendered = format!(
+        "error[{}][{}]: {}",
+        diags[0].phase, diags[0].code, diags[0].message
+    );
+    assert!(
+        capability::is_capability_gap(&rendered),
+        "a build without the target's backend is a HOST-capability gap, not a \
+         compiler regression: {rendered}"
+    );
+}
+
 #[test]
 fn manifest_exports_reject_non_identifier() {
     use libmind::pipeline::{CompileError, CompileOptions, compile_source};

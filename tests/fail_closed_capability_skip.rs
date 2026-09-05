@@ -67,6 +67,20 @@ const REAL_PROJECT_BUILD: &str = "error[build][E5005]: entry module was not nati
      successful build for an artifact that is a launcher deferring to the installed \
      mind-runtime, which may exit 0 without executing your program\n";
 
+/// Verbatim stderr of `mindc x.mind --target gpu` (`pipeline.rs`): this build
+/// carries no backend for the requested target, a HOST-capability fact. Its
+/// code sits in the reserved cause namespace, but was not REGISTERED as a
+/// cause until the namespace reservation was made mechanical — so the
+/// classifier read it as an unknown cause, vetoed its own skip, and graded a
+/// capability gap as a compiler regression on every backend-less host.
+const CAP_TARGET_BACKEND: &str = "error[backend][E5001]: no backend available for target gpu\n";
+
+/// An ordinary user error that used to occupy the cause namespace and now sits
+/// outside it (`E6xxx`): an invalid `Mind.toml [exports] c_abi` entry. It must
+/// neither forge a capability verdict nor veto one.
+const REAL_MANIFEST_EXPORT: &str = "error[manifest][E6001]: invalid Mind.toml [exports] c_abi entry `bad name`: \
+     not a C identifier\n";
+
 /// A capability-SOUNDING refusal with no cause code at all — the pre-fix wire
 /// shape. An uncoded refusal must fail closed.
 const UNCODED_PROSE: &str =
@@ -133,6 +147,17 @@ fn fixture_codes_are_the_compilers_own() {
     // or it stops testing the merge it exists for.
     assert!(MIXED_WORKSPACE.contains(&no_backend), "{MIXED_WORKSPACE}");
     assert!(MIXED_WORKSPACE.contains(&real), "{MIXED_WORKSPACE}");
+    let no_target_backend = format!("[{}]", cap::TARGET_BACKEND_UNAVAILABLE);
+    assert!(
+        CAP_TARGET_BACKEND.contains(&no_target_backend),
+        "{CAP_TARGET_BACKEND}"
+    );
+    // The manifest fixture must carry NO cause code: an ordinary user error
+    // inside the cause namespace is the defect this pins shut.
+    assert!(
+        cap::cause_codes(REAL_MANIFEST_EXPORT).is_empty(),
+        "{REAL_MANIFEST_EXPORT}"
+    );
     // The scattered fixture must carry NO cause code at all: its whole point is
     // that prose alone decides nothing.
     for code in [&no_backend, &no_tool, &real] {
@@ -180,6 +205,43 @@ fn a_capability_code_beside_a_real_failure_code_fails_closed() {
         Outcome::Failed(s) => assert!(s.contains("E5005"), "{s}"),
         other => panic!("a real failure beside a capability gap must fail closed, got {other:?}"),
     }
+}
+
+#[test]
+fn an_unavailable_target_backend_skips_when_not_enforcing() {
+    // A host/build capability gap: `--target gpu` on a build with no GPU
+    // backend. Grading it `Failed` panics the call site with "this is a
+    // compiler regression" — the forbidden outcome.
+    assert_eq!(
+        gate::classify(false, CAP_TARGET_BACKEND, false),
+        Outcome::CapabilitySkip
+    );
+}
+
+#[test]
+fn an_unavailable_target_backend_fails_under_enforcement() {
+    // Still a gap, but a tier that demands a real backend may not skip it.
+    match gate::classify(false, CAP_TARGET_BACKEND, true) {
+        Outcome::Failed(s) => assert!(s.contains("no backend available"), "{s}"),
+        other => panic!("MIND_BENCH_REQUIRE=1 must forbid a skip, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_ordinary_manifest_error_is_never_a_capability_skip() {
+    // The other direction of the same reservation: a user error renumbered out
+    // of the cause namespace must fail closed, and must not veto a real gap
+    // that shares the stderr.
+    match gate::classify(false, REAL_MANIFEST_EXPORT, false) {
+        Outcome::Failed(s) => assert!(s.contains("E6001"), "{s}"),
+        other => panic!("an invalid manifest entry must fail closed, got {other:?}"),
+    }
+    let beside = format!("{REAL_MANIFEST_EXPORT}{CAP_FEATURE}");
+    assert_eq!(
+        gate::classify(false, &beside, false),
+        Outcome::CapabilitySkip,
+        "an out-of-namespace user error must not veto a genuine capability gap"
+    );
 }
 
 #[test]
@@ -497,6 +559,34 @@ fn a_program_that_does_not_compile_is_never_a_capability_skip() {
         Outcome::Failed(_) => {}
         other => panic!(
             "a program that does not compile must fail closed, got {other:?}\nstderr:\n{stderr}"
+        ),
+    }
+}
+
+#[test]
+fn an_unavailable_target_backend_is_a_capability_gap_end_to_end() {
+    // The fixtures above prove the classifier's contract; only the real binary
+    // proves the compiler still stamps that code. Feature-INDEPENDENT: every
+    // non-CPU target is refused in this crate regardless of the build's
+    // features, so this asserts on every host.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("t.mind");
+    std::fs::write(&src, "fn main() -> i64 { 0 }\n").expect("write source");
+    let out = Command::new(common::mindc_bin())
+        .arg(&src)
+        .args(["--target", "gpu"])
+        .output()
+        .expect("spawn mindc");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a target with no backend must refuse: {stderr}"
+    );
+    match gate::classify(out.status.success(), &stderr, false) {
+        Outcome::CapabilitySkip => {}
+        other => panic!(
+            "a host without the target's backend must grade as a capability gap, \
+             got {other:?}\nstderr:\n{stderr}"
         ),
     }
 }

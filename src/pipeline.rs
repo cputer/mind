@@ -20,6 +20,7 @@
 //! is enabled.
 
 use crate::diagnostics::Diagnostic;
+use crate::diagnostics::capability::FallbackReason;
 use crate::eval;
 use crate::ir;
 use crate::opt;
@@ -152,14 +153,25 @@ impl CompileError {
                 "E4002",
                 "--autodiff requires --func <name>",
             )],
+            // A HOST-capability fact, not a defect: this build carries no
+            // backend for the requested target. The code comes from the cause
+            // registry (`diagnostics::capability`) rather than a literal, so the
+            // refusal and the classifier cannot disagree — the classifier grades
+            // this a capability gap, never a compiler regression.
             CompileError::BackendUnavailable { target } => vec![Diagnostic::error(
                 "backend",
-                "E5001",
+                FallbackReason::TargetBackendUnavailable.code(),
                 format!("no backend available for target {target}"),
             )],
+            // E6xxx: manifest / project-configuration errors. Deliberately
+            // OUTSIDE the E50xx cause-code namespace reserved by
+            // `diagnostics::capability` — an invalid `Mind.toml` entry is an
+            // ordinary user error, and a code inside that namespace would be
+            // read as an unknown refusal cause and veto every legitimate
+            // capability skip printed on the same stderr.
             CompileError::InvalidManifestExport { name, reason } => vec![Diagnostic::error(
                 "manifest",
-                "E5002",
+                "E6001",
                 format!("invalid Mind.toml [exports] c_abi entry `{name}`: {reason}"),
             )],
             #[cfg(feature = "autodiff")]

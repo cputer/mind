@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1477 | **Est. tokens:** ~2,868,000
-**Generated:** 2026-09-04 22:07 UTC
+**Files:** 1477 | **Est. tokens:** ~2,872,957
+**Generated:** 2026-09-05 00:33 UTC
 
 ## Token Budget Guide
 
@@ -88,7 +88,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~40,022 |
+| `src/` | 9 | ~40,250 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
@@ -96,7 +96,7 @@
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
-| `src/diagnostics/` | 2 | ~7,099 |
+| `src/diagnostics/` | 2 | ~10,293 |
 | `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
 | `src/eval/` | 16 | ~87,806 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 343 | ~622,696 |
+| `tests/` | 343 | ~624,231 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -1030,7 +1030,7 @@
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/diagnostics/`
 
-- `capability.rs` (~3375 tok, huge) — Copyright 2025 STARGA Inc.
+- `capability.rs` (~6569 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~3724 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/distributed/`
 
@@ -1173,7 +1173,7 @@
 - `mod.rs` (~4955 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `pipeline.rs` (~5750 tok, huge) — Copyright 2025 STARGA Inc.
+- `pipeline.rs` (~5978 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
 - `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
@@ -1496,7 +1496,7 @@
 - `f64_call_arg_run.rs` (~1028 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1139 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1122 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip.rs` (~5461 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip.rs` (~6452 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~4500 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1562,7 +1562,7 @@
 - `invariant_check_run.rs` (~695 tok, large) — Copyright 2025 STARGA Inc.
 - `ir_core.rs` (~1689 tok, huge) — Ensure the unused const is kept alive in the SSA namespace but removed from code.
 - `ir_load_save.rs` (~1257 tok, large) — Copyright 2025 STARGA Inc.
-- `ir_lower.rs` (~1331 tok, large) — Copyright 2025 STARGA Inc.
+- `ir_lower.rs` (~1875 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_negative_literals.rs` (~1722 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_stub.rs` (~219 tok, medium) — Copyright 2025 STARGA Inc.
 ### `tests/ir_verification/`
