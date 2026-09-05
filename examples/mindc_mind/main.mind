@@ -10848,6 +10848,25 @@ pub fn collect_expr_strings(strbuf: i64, offs: i64, ccell: i64, src: i64, node: 
         let callee: i64 = ast_child0(node);
         return intern_span(strbuf, offs, ccell, src, ast_span_lo(callee), ast_span_hi(callee));
     }
+    if k == ast_paren() {
+        // `( EXPR )` is TRANSPARENT in the reference lowering (src/eval/lower.rs
+        // `Node::Paren(inner, _) => lower_expr(inner, ..)`), and the oracle's
+        // collect_strings walks the LOWERED instruction list — it never sees the
+        // wrapper and interns the inner expression's names at the inner position.
+        // Without this arm the walk stopped AT the paren, so a CALL under it was
+        // never interned: `f(acc + (g(x) << n))` emitted OP_CALL with
+        // name_idx = uleb128(-1) (ffffffffffffffff01) against a strtab missing "g"
+        // — fail-OPEN WRONG BYTES, not a refusal (Bound by MIND-CONSTITUTION §I).
+        // deferred: the unary wrappers ast_neg/ast_not carry their operand at child0
+        // too and node_has_call already treats them as call-bearing, but no fn in this
+        // source hides a call under one (the whole-source uleb128(-1) scan is now 0 of
+        // 1975), so no fixture would exercise an arm added here. Upgrade path when one
+        // appears: mirror this arm for neg/not, AND make the residual case fail CLOSED
+        // by threading the per-fn `ok_cell` (emit_mic3_module_fndef) — store 0 when a
+        // CALL's callee span is not found by intern_find, so an uninterned callee
+        // refuses the module instead of emitting uleb128(-1).
+        return collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
+    }
     if k == ast_binop() {
         let rl: i64 = collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
         return collect_expr_strings(strbuf, offs, ccell, src, ast_child1(node), ebuf, en);

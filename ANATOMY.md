@@ -6,7 +6,7 @@
 
 **Project:** `mind`
 **Files:** 1517 | **Est. tokens:** ~2958142
-**Generated:** 2026-09-06 06:40 UTC
+**Generated:** 2026-09-06 06:54 UTC
 
 ## Token Budget Guide
 
@@ -632,7 +632,7 @@
 - `VERDICT_SHAPE_RESIDUAL.txt` (~1116 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `_ref_add.note` (~16 tok, tiny) — 6fa59a74687e6bac38c983655d4d93ab1873299f130f68cbe481cf92041f6610
 - `_ref_if_ret.note` (~16 tok, tiny) — 3fdc70390e9e12d8030552d11b2194078e8579fbcfac19b14d1beed77174cb07
-- `_ref_main.note` (~16 tok, tiny) — 5c09107874e19b9fd1063f23561d7635b1bf622fa16b3bca50dca3e3de4138a9
+- `_ref_main.note` (~16 tok, tiny) — 641c06d594084dc29762eaee24589dfb484dfea00ddcad6575e14335e1df8004
 - `_ref_recursion.note` (~16 tok, tiny) — 6d125a946243b0550700d9aa6bc2058b51a3b8bf6e536a8b0b3f545d79b7346f
 - `_ref_struct_field.note` (~16 tok, tiny) — 2f7f2ea32ee47138e1b0162bd51f418b4e5005b4569054f5f3c392ebd2258d96
 - `_ref_value_if.note` (~16 tok, tiny) — ae565a5154b76ee1f44a32c16db2e9a8387f2f60c5fca92bba2dc9bb70afb599
