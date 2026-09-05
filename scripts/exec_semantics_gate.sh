@@ -73,9 +73,21 @@ cd "$(dirname "$0")/.."
 # tree and still print `ok[exec]`. Re-measure at landing, every landing.
 #
 #   tier      features                                   harnesses  executed  floor
-#   exec      mlir-build std-surface cross-module-imports      336      2133   2115
-#   lowering  std-surface,mlir-lowering                        331      1861   1846
-#   pkg       pkg                                              330      1444   1432
+#   exec      mlir-build std-surface cross-module-imports      337      2138   2120
+#   lowering  std-surface,mlir-lowering                        332      1866   1851
+#   pkg       pkg                                              331      1449   1437
+#
+# The +1 harness / +5 tests above are ARITHMETIC on the AGGREGATES, not a
+# re-run of the three tiers. What was measured is the addend: the landing added
+# exactly one test file (tests/fail_closed_capability_skip_env.rs) carrying
+# neither a `#![cfg(...)]` nor a `required-features` entry, and it was run under
+# each tier's own feature set -- 5 executed under `mlir-build std-surface
+# cross-module-imports` (with MIND_BENCH_REQUIRE=1), 5 under
+# `std-surface,mlir-lowering`, 5 under `pkg`. Adding the same constant to the
+# floor and to the measured value preserves the margin exactly, so the ratchet
+# accrues no slack and cannot red a tier that is green today. Its CRITICAL rows
+# below are the real protection: an aggregate floor cannot protect a specific
+# gate.
 #
 # Re-measured AT THE TIP of the landing, not mid-wave: floors pinned at 332/2102
 # mid-wave and then left alone while four further commits added test files sat 4
@@ -95,8 +107,8 @@ TIERS=(exec lowering pkg)
 # alias-miscompile gate, the array-OOB bounds-trap gate and the array bounds/dtype
 # gate. Dropping ANY of the three features silently erases most of it.
 FEATURES_exec="mlir-build std-surface cross-module-imports"
-FLOOR_TESTS_exec=2115
-FLOOR_HARNESSES_exec=332
+FLOOR_TESTS_exec=2120
+FLOOR_HARNESSES_exec=333
 # MIND_BENCH_REQUIRE=1 turns "MLIR toolchain missing -> skip" into a hard failure, so
 # this tier cannot pass vacuously on a runner where mlir-opt/clang never installed.
 # Correct ONLY here: this is the tier that actually enables mlir-build.
@@ -107,8 +119,8 @@ REQUIRE_TOOLCHAIN_exec=1
 # of those features ALONE (the 'Test (gated ...)' and 'Run gated tests ...' steps of
 # the build_test job) and never together, so the whole group was erased in both runs.
 FEATURES_lowering="std-surface,mlir-lowering"
-FLOOR_TESTS_lowering=1846
-FLOOR_HARNESSES_lowering=327
+FLOOR_TESTS_lowering=1851
+FLOOR_HARNESSES_lowering=328
 # NOT set here. These tiers deliberately build WITHOUT mlir-build, so a target that
 # needs a cdylib emit (phase_g_keystone_bootstrap) correctly reports
 #   error[build]: cdylib emit requires the 'mlir-build' feature
@@ -121,8 +133,8 @@ REQUIRE_TOOLCHAIN_lowering=0
 # "pkg")]`. ci.yml's feature-compile matrix runs `cargo check --features pkg` but never
 # `cargo test`, so neither had ever executed.
 FEATURES_pkg="pkg"
-FLOOR_TESTS_pkg=1432
-FLOOR_HARNESSES_pkg=326
+FLOOR_TESTS_pkg=1437
+FLOOR_HARNESSES_pkg=327
 REQUIRE_TOOLCHAIN_pkg=0
 
 # ---------------------------------------------------------------------------
@@ -180,6 +192,7 @@ CRITICAL_exec=(
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
   "fail_closed_capability_skip 20"  # measured 22; the capability-skip helper contract
+  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
   "fail_open_skip_site_ratchet 5"   # measured 6; the fail-open skip prohibition
@@ -192,6 +205,7 @@ CRITICAL_lowering=(
   "extern_c_phase_a 1"
   "extern_c_phase_b 1"
   "fail_closed_capability_skip 20"
+  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 5"
@@ -202,6 +216,7 @@ CRITICAL_pkg=(
   "package_basic 1"
   "package_traversal 1"
   "fail_closed_capability_skip 20"
+  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 5"

@@ -393,6 +393,16 @@ fn probe_skip_panics_under_enforcement_and_marks_otherwise() {
     gate::skipped_with("probe-target", "no mlir-opt", false);
 }
 
+// --- the ENV path lives next door ------------------------------------------
+//
+// Every test in THIS file supplies `enforce` explicitly, which is what makes
+// the contract provable without touching process-global state — and is exactly
+// why none of them can see the flag's READER. `gate::enforce_real_backend`,
+// `gate::skipped`, `gate::skipped_optional` and `gate::compiled` are pinned in
+// `tests/fail_closed_capability_skip_env.rs`, which varies `MIND_BENCH_REQUIRE`
+// the only sound way: in a child process. Measured before it existed: mutating
+// `enforce_real_backend` to `false` left this file at 22 passed; 0 failed.
+
 // --- the cause-code anti-drift scan ----------------------------------------
 //
 // Lives in its own file: `tests/capability_refusal_cause_scan.rs`. THIS file

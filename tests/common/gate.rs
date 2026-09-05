@@ -59,13 +59,27 @@
 
 use std::process::Output;
 
+/// The variable `scripts/exec_semantics_gate.sh` exports for the `exec` tier.
+///
+/// Spelled ONCE, here. Every reader below names this constant, and so does the
+/// gate that varies it in a child process
+/// (`tests/fail_closed_capability_skip.rs`) — a second hand-typed spelling is
+/// exactly the drift that would leave the enforcement path untested while its
+/// test looked green.
+#[allow(dead_code)]
+pub const REQUIRE_VAR: &str = "MIND_BENCH_REQUIRE";
+
 /// True when the run demands a real backend and forbids every capability skip.
 ///
 /// `scripts/exec_semantics_gate.sh` sets `MIND_BENCH_REQUIRE=1` for the `exec`
 /// tier precisely so that tier cannot pass vacuously.
+///
+/// The value must be exactly `1`. `.is_ok()` here would make `=0` and an empty
+/// value enforce — the mirror of the defect [`bless_mode`] documents, where
+/// `.is_ok()` let a value that reads as "off" switch a mode ON.
 #[allow(dead_code)]
 pub fn enforce_real_backend() -> bool {
-    std::env::var("MIND_BENCH_REQUIRE")
+    std::env::var(REQUIRE_VAR)
         .map(|v| v == "1")
         .unwrap_or(false)
 }
@@ -191,7 +205,7 @@ pub fn bless_mode() -> bool {
         return false;
     }
     assert!(
-        std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
+        std::env::var_os(REQUIRE_VAR).is_none(),
         "MIND_BENCH_BLESS=1 and MIND_BENCH_REQUIRE are both set. BLESS mode \
          asserts NOTHING — it prints computed hashes — so a run that demanded a \
          real, asserting backend cannot also be a bless run. Unset one."

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1507 | **Est. tokens:** ~2,907,608
-**Generated:** 2026-09-05 13:01 UTC
+**Files:** 1508 | **Est. tokens:** ~2,911,609
+**Generated:** 2026-09-05 15:08 UTC
 
 ## Token Budget Guide
 
@@ -77,7 +77,7 @@
 | `.github/workflows/` | 9 | ~34,412 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 29 | ~98,243 |
+| `scripts/` | 29 | ~98,504 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 349 | ~640,607 |
+| `tests/` | 350 | ~644,179 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~4,400 |
+| `tests/common/` | 2 | ~4,568 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -888,7 +888,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~10162 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~10423 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -1328,7 +1328,7 @@
 - `collection_mutation_expr_position_run.rs` (~1102 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/common/`
 
-- `gate.rs` (~3193 tok, huge) — Copyright 2025 STARGA Inc.
+- `gate.rs` (~3361 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1207 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
@@ -1503,7 +1503,8 @@
 - `f64_call_arg_run.rs` (~977 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1158 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1063 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip.rs` (~5959 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip_env.rs` (~3413 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip.rs` (~6118 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~1782 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~3372 tok, huge) — Copyright 2025 STARGA Inc.
