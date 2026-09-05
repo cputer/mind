@@ -1003,35 +1003,27 @@ mod mic3vm {
 fn toolchain_ready() -> bool {
     for tool in ["mlir-opt", "mlir-translate", "clang"] {
         if which::which(tool).is_err() {
-            assert!(
-                std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                 differential determinism fuzzer cannot run. Install the MLIR \
-                 toolchain (mlir-opt / mlir-translate / clang) on this runner."
+            // ONE owner for the fail-closed rule. This site used to hand-roll
+            // `assert!(var_os("MIND_BENCH_REQUIRE").is_none(), ..)`, which made
+            // ANY value enforce, while `gate::enforce_real_backend` — the rule
+            // every other gate consults — requires exactly `1`. Two readers had
+            // become two RULES: measured with the MLIR tools off PATH and
+            // MIND_BENCH_REQUIRE=0, this fuzzer hard-failed ("MIND_BENCH_REQUIRE
+            // is set but 'mlir-opt' is not on PATH ... test result: FAILED")
+            // while cross_substrate_identity, routed through the helper, printed
+            // its ran=0 marker and passed under the identical environment.
+            //
+            // `skipped_visibly` keeps this site's capture-surviving sink: the
+            // marker is what scripts/exec_semantics_gate.sh's SKIP-MARKER
+            // CONSUMER reads out of a plain `cargo test` log, and libtest
+            // DISCARDS println! for a PASSING test — which a skip is.
+            crate::common::gate::skipped_visibly(
+                "mindfuzz_cross_substrate",
+                &format!(
+                    "{tool} not on PATH; install the MLIR toolchain \
+                     (mlir-opt / mlir-translate / clang) on this runner"
+                ),
             );
-            // Emit the gate's OWN skip protocol, not an ad-hoc line.
-            //
-            // scripts/exec_semantics_gate.sh grants environmental tolerance on evidence:
-            // a target's own `SDLC-GATE <name> ran=0` marker. This printed a bespoke
-            // sentence instead, so the tier could not tell "the MLIR toolchain is absent"
-            // from "this fuzzer failed", and the ENV_TOLERATED entry naming this target
-            // had nothing to match against. A skip that the runner cannot parse is, to the
-            // runner, indistinguishable from silence.
-            //
-            // Written with a direct stdout write: libtest DISCARDS println! for a PASSING
-            // test unless --show-output, and this test passes when it skips -- so the
-            // marker would be swallowed exactly when it matters.
-            {
-                use std::io::Write as _;
-                let _ = std::io::stdout().write_all(
-                    format!(
-                        "SDLC-GATE mindfuzz_cross_substrate ran=0 fail=0 SKIPPED \
-                         ({tool} not on PATH)\n"
-                    )
-                    .as_bytes(),
-                );
-                let _ = std::io::stdout().flush();
-            }
             return false;
         }
     }

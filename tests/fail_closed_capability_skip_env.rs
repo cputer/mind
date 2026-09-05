@@ -88,6 +88,9 @@ enum Role {
     /// `gate::skipped_optional` — the opt-in-input class, read from the
     /// environment.
     OptionalSkip,
+    /// `gate::skipped_visibly` — the toolchain class whose `ran=0` marker must
+    /// reach the tier log under libtest's DEFAULT stdout capture.
+    VisibleToolchainSkip,
     /// Not a gate call: print the capability stderr and exit 1, so
     /// [`Role::CompileSite`] classifies an `Output` an actual spawn produced
     /// rather than one manufactured by hand.
@@ -100,6 +103,7 @@ impl Role {
             Role::ToolchainSkip => "toolchain-skip",
             Role::CompileSite => "compile-site",
             Role::OptionalSkip => "optional-skip",
+            Role::VisibleToolchainSkip => "visible-toolchain-skip",
             Role::EmitCapabilityStderr => "emit-capability-stderr",
         }
     }
@@ -109,6 +113,7 @@ impl Role {
             "toolchain-skip" => Role::ToolchainSkip,
             "compile-site" => Role::CompileSite,
             "optional-skip" => Role::OptionalSkip,
+            "visible-toolchain-skip" => Role::VisibleToolchainSkip,
             "emit-capability-stderr" => Role::EmitCapabilityStderr,
             other => panic!("{ROLE_VAR}={other:?} names no child role"),
         }
@@ -153,6 +158,7 @@ fn run_as_child(role: Role) {
         // supplies it. `MIND_BENCH_REQUIRE` says "use a real backend", not
         // "install everything", so this class must survive enforcement.
         Role::OptionalSkip => gate::skipped_optional(CHILD_TARGET, "opt-in corpus not present"),
+        Role::VisibleToolchainSkip => gate::skipped_visibly(CHILD_TARGET, "no mlir-opt on PATH"),
         Role::EmitCapabilityStderr => {
             eprint!("{}", cap_tool_stderr());
             std::process::exit(1);
@@ -166,14 +172,31 @@ fn run_as_child(role: Role) {
 /// `require = None` REMOVES the variable, so a tier that exports it cannot leak
 /// into the cases that must observe its absence.
 fn run_self(test_name: &str, role: Role, require: Option<&str>) -> Output {
-    let exe = std::env::current_exe().expect("current_exe");
-    let mut cmd = Command::new(exe);
     // `--nocapture` so the child's `ran=0` marker and panic text reach the pipe:
     // libtest swallows the stdout of a PASSING test, which is the very
     // invisibility the marker exists to defeat.
-    cmd.args([test_name, "--exact", "--nocapture", "--test-threads", "1"])
+    run_self_inner(test_name, role, require, true)
+}
+
+/// As [`run_self`], but the child runs under libtest's DEFAULT stdout capture —
+/// the way `scripts/exec_semantics_gate.sh` actually runs the suite.
+///
+/// Every other spawn here passes `--nocapture`, which is precisely the condition
+/// under which the marker cannot be swallowed, so none of them can observe
+/// whether it survives a normal run.
+fn run_self_captured(test_name: &str, role: Role, require: Option<&str>) -> Output {
+    run_self_inner(test_name, role, require, false)
+}
+
+fn run_self_inner(test_name: &str, role: Role, require: Option<&str>, nocapture: bool) -> Output {
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut cmd = Command::new(exe);
+    cmd.args([test_name, "--exact", "--test-threads", "1"])
         .env(ROLE_VAR, role.as_str())
         .env_remove(gate::REQUIRE_VAR);
+    if nocapture {
+        cmd.arg("--nocapture");
+    }
     if let Some(v) = require {
         cmd.env(gate::REQUIRE_VAR, v);
     }
@@ -327,6 +350,45 @@ fn an_optional_input_skip_survives_the_enforced_environment() {
         assert!(
             text.contains(&marker()),
             "an optional-input skip must still be COUNTED:\n{text}"
+        );
+        return;
+    };
+    run_as_child(role);
+}
+
+#[test]
+fn the_skip_marker_survives_libtest_capture() {
+    let Some(role) = child_role() else {
+        // THE DEFECT THIS PINS: the marker was written with `println!`, whose
+        // sink libtest swaps per test — a PASSING test's stdout is buffered and
+        // thrown away unless the run asks for `--nocapture`. A capability skip
+        // PASSES, so the marker was discarded in exactly the case it exists for,
+        // while every test in this file spawned its child WITH `--nocapture` and
+        // could not see it. Measured on the tip, same child, same role:
+        //
+        //   without --nocapture -> 0 occurrences of the marker
+        //   with    --nocapture -> 1
+        //
+        // scripts/exec_semantics_gate.sh's SKIP-MARKER CONSUMER greps a plain
+        // `cargo test` log. Evidence that exists only under a flag nobody passes
+        // is documentation, not a gate: the tier could not tell "asserted
+        // nothing" from a green run.
+        let out = run_self_captured(
+            "the_skip_marker_survives_libtest_capture",
+            Role::VisibleToolchainSkip,
+            None,
+        );
+        let text = child_text(&out);
+        assert!(
+            out.status.success(),
+            "the child must SKIP and PASS, so the capture is the only thing \
+             under test here:\n{text}"
+        );
+        assert!(
+            text.contains(&marker()),
+            "the `{}` marker did not survive libtest's stdout capture, so a \
+             gate that asserted NOTHING reads as a green run in the tier log.\n{text}",
+            marker()
         );
         return;
     };

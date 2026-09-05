@@ -192,10 +192,10 @@ CRITICAL_exec=(
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
   "array_oob_trap_run 1"      # ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
   "fail_closed_capability_skip 20"  # measured 22; the capability-skip helper contract
-  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
+  "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
-  "fail_open_skip_site_ratchet 8"   # measured 9; the fail-open skip prohibition
+  "fail_open_skip_site_ratchet 8"   # measured 11; the fail-open skip prohibition
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
@@ -205,7 +205,7 @@ CRITICAL_lowering=(
   "extern_c_phase_a 1"
   "extern_c_phase_b 1"
   "fail_closed_capability_skip 20"
-  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
+  "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 8"
@@ -216,7 +216,7 @@ CRITICAL_pkg=(
   "package_basic 1"
   "package_traversal 1"
   "fail_closed_capability_skip 20"
-  "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
+  "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
   "fail_open_skip_site_ratchet 8"

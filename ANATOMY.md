@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1508 | **Est. tokens:** ~2,914,354
-**Generated:** 2026-09-05 15:39 UTC
+**Files:** 1508 | **Est. tokens:** ~2,916,696
+**Generated:** 2026-09-05 15:54 UTC
 
 ## Token Budget Guide
 
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 350 | ~646,924 |
+| `tests/` | 350 | ~648,712 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~4,568 |
+| `tests/common/` | 2 | ~5,122 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -1328,7 +1328,7 @@
 - `collection_mutation_expr_position_run.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/common/`
 
-- `gate.rs` (~3361 tok, huge) — Copyright 2025 STARGA Inc.
+- `gate.rs` (~3915 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1207 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
@@ -1503,11 +1503,11 @@
 - `f64_call_arg_run.rs` (~977 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1158 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1063 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip_env.rs` (~3413 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip_env.rs` (~4101 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip.rs` (~6118 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~1782 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
-- `fail_open_skip_site_ratchet.rs` (~5996 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_open_skip_site_ratchet.rs` (~7161 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 ### `tests/fixtures/`
 
@@ -1722,7 +1722,7 @@
 - `fuzz_oracle_failure_seed_deadbeef_prog006.mind` (~157 tok, small) — DIVERGENCE REPRODUCER (issue #72 fuzzer)
 ### `tests/`
 
-- `mindfuzz_cross_substrate.rs` (~16621 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindfuzz_cross_substrate.rs` (~16556 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_cross_substrate/staged/`
 
 - `manifest.tsv` (~357 tok, medium) — scalar_arith_step000	f	3735928559	64	5e39820a2a8325417e39057f19ba9bceec01bd2068c

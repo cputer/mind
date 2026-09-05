@@ -247,13 +247,9 @@ pub fn is_fail_closed(absent: Absent) -> bool {
     matches!(absent, Absent::Toolchain)
 }
 
-/// THE skip decision, with the enforcement flag supplied explicitly (tests).
-///
-/// Panics when the run demands a real backend and the absence is a toolchain
-/// gap; otherwise emits the `ran=0` marker so the skip is a countable event
-/// rather than an invisible pass.
-#[allow(dead_code)]
-pub fn skipped_because(target: &str, reason: &str, absent: Absent, enforce: bool) {
+/// The fail-closed half of the skip decision, factored out so that EVERY sink
+/// below refuses on the same rule and dies with the same sentence.
+fn forbid_skip_if_enforced(target: &str, reason: &str, absent: Absent, enforce: bool) {
     if enforce && is_fail_closed(absent) {
         panic!(
             "{target}: MIND_BENCH_REQUIRE=1 forbids a toolchain skip, but this \
@@ -261,6 +257,16 @@ pub fn skipped_because(target: &str, reason: &str, absent: Absent, enforce: bool
              MIND_BENCH_REQUIRE — a skip here asserts NOTHING."
         );
     }
+}
+
+/// THE skip decision, with the enforcement flag supplied explicitly (tests).
+///
+/// Panics when the run demands a real backend and the absence is a toolchain
+/// gap; otherwise emits the `ran=0` marker so the skip is a countable event
+/// rather than an invisible pass.
+#[allow(dead_code)]
+pub fn skipped_because(target: &str, reason: &str, absent: Absent, enforce: bool) {
+    forbid_skip_if_enforced(target, reason, absent, enforce);
     skip_marker(target, reason);
 }
 
@@ -296,9 +302,43 @@ pub fn skipped_optional(target: &str, reason: &str) {
     );
 }
 
-/// Emit the marker `scripts/exec_semantics_gate.sh` already consumes: a gate
-/// that did not run reports `ran=0`, which is fatal unless the target is named
-/// in `ENV_TOLERATED_<tier>`.
+/// A toolchain-capability skip whose `ran=0` marker must reach the tier log even
+/// under libtest's DEFAULT stdout capture.
+///
+/// Same predicate, same refusal, same marker text as [`skipped`] — only the SINK
+/// differs. `println!` goes through `std::io::_print`, whose sink libtest swaps
+/// per test: a PASSING test's stdout is buffered and discarded unless the run
+/// asks for `--nocapture`, and a capability skip PASSES. Measured, same child,
+/// same skip: 0 occurrences of the marker without `--nocapture`, 1 with. Writing
+/// to the process stdout handle bypasses that shim.
+///
+/// deferred: [`skip_marker`] itself still uses `println!`, so the ~135 targets
+/// that route a toolchain skip through [`skipped`] stay invisible under capture.
+/// That is NOT an oversight to fix here: those targets carry no
+/// `required-features`, so they build and skip in the `lowering` and `pkg` tiers
+/// of `scripts/exec_semantics_gate.sh` (neither exports `MIND_BENCH_REQUIRE`),
+/// and making every one of them visible at once would hand that script ~130
+/// fatal `ran=0` markers and red two tiers that are green today. Upgrade path
+/// (unchanged, and owned by the tier runner, not by this helper): have the
+/// runner pass `--nocapture`, or promote the marker to a harness-level summary —
+/// then this function collapses into [`skipped`] and should be deleted.
+#[allow(dead_code)]
+pub fn skipped_visibly(target: &str, reason: &str) {
+    forbid_skip_if_enforced(target, reason, Absent::Toolchain, enforce_real_backend());
+    use std::io::Write as _;
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", marker_line(target, reason));
+    let _ = out.flush();
+}
+
+/// The marker `scripts/exec_semantics_gate.sh` already consumes: a gate that did
+/// not run reports `ran=0`, which is fatal unless the target is named in
+/// `ENV_TOLERATED_<tier>`. ONE definition of the text, so the two sinks below can
+/// never drift into two dialects the consumer's regex reads differently.
+fn marker_line(target: &str, reason: &str) -> String {
+    format!("SDLC-GATE {target} ran=0 fail=0  (capability skip: {reason})")
+}
+
 fn skip_marker(target: &str, reason: &str) {
-    println!("SDLC-GATE {target} ran=0 fail=0  (capability skip: {reason})");
+    println!("{}", marker_line(target, reason));
 }

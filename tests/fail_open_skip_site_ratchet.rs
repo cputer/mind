@@ -310,6 +310,102 @@ fn no_test_source_holds_a_fail_open_skip_site() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// ONE OWNER for the fail-closed predicate itself.
+// ---------------------------------------------------------------------------
+
+/// The single file allowed to read `MIND_BENCH_REQUIRE` out of the environment.
+const PREDICATE_OWNER: &str = "common/gate.rs";
+
+/// The env accessors that READ a variable's value.
+///
+/// `Command::env` / `Command::env_remove` SET a child's environment and are how
+/// the enforcement path is tested, so they are deliberately absent: writing the
+/// variable for a child is not a second reader of the rule.
+const ENV_READS: &[&str] = &["var_os(", "var("];
+
+/// Does `line` read the fail-closed variable straight from the environment?
+///
+/// Matched by ACCESSOR plus the variable's identity — its literal name or the
+/// `REQUIRE_VAR` constant that spells it — never by the surrounding shape. The
+/// site this closes on is an `assert!(var_os(..).is_none(), ..)` inside a
+/// `-> bool` helper: it announces no skip and returns no bare `return`, so it
+/// was structurally invisible to BOTH detectors above while implementing a
+/// competing copy of the very rule they enforce routing to.
+fn reads_require_var_from_env(line: &str) -> bool {
+    let t = line.trim_start();
+    if t.starts_with("//") {
+        return false; // prose naming the variable is not a second reader
+    }
+    let names_it = t.contains("MIND_BENCH_REQUIRE") || t.contains("REQUIRE_VAR");
+    names_it && ENV_READS.iter().any(|r| t.contains(r))
+}
+
+#[test]
+fn the_fail_closed_predicate_has_exactly_one_owner() {
+    // THE DEFECT THIS PINS: two readers of one variable drifted into two
+    // DIFFERENT rules. `gate::enforce_real_backend` requires the value `1`; the
+    // hand-rolled `assert!(var_os("MIND_BENCH_REQUIRE").is_none())` made ANY
+    // value enforce, so a value that reads as "off" hard-failed one gate while
+    // its neighbour skipped cleanly under the identical environment. Measured
+    // before this arm existed, MLIR tools off PATH and MIND_BENCH_REQUIRE=0:
+    //
+    //   mindfuzz_cross_substrate  -> panicked "MIND_BENCH_REQUIRE is set but
+    //                                'mlir-opt' is not on PATH" -> FAILED
+    //   cross_substrate_identity  -> SDLC-GATE ... ran=0 fail=0 -> ok, 1 passed
+    //
+    // One variable, one rule, one reader.
+    let mut second_owners = Vec::new();
+    for (rel, text) in test_sources() {
+        if rel == PREDICATE_OWNER {
+            continue;
+        }
+        for (i, line) in text.lines().enumerate() {
+            if reads_require_var_from_env(line) {
+                second_owners.push(format!("{}:{}", rel, i + 1));
+            }
+        }
+    }
+    assert!(
+        second_owners.is_empty(),
+        "these sites read MIND_BENCH_REQUIRE from the environment instead of \
+         asking common::gate, which owns the rule. A second reader is a second \
+         RULE: the two spellings measured here disagreed about the value `0`. \
+         Route the decision through common::gate::{{skipped, skipped_optional, \
+         compiled, enforce_real_backend}}.\n  {}",
+        second_owners.join("\n  ")
+    );
+}
+
+#[test]
+fn the_scanner_can_see_a_second_owner_of_the_predicate() {
+    // Positive control for the FIFTH detector. A prohibition that matches
+    // nothing is the ran=0 defect this file exists to forbid, in its active
+    // form — and this detector's whole reason to exist is that the two above it
+    // reported a clean tree while a competing predicate was live.
+    let var = "MIND_BENCH_REQUIRE";
+    for spelling in [
+        format!("            std::env::var_os(\"{var}\").is_none(),"),
+        format!("    if std::env::var(\"{var}\").is_ok() {{"),
+        format!("    let on = env::var_os(\"{var}\").is_some();"),
+        // Reading the OWNER's constant is still a second reader of the rule.
+        "    let on = std::env::var_os(gate::REQUIRE_VAR).is_some();".to_string(),
+    ] {
+        assert!(reads_require_var_from_env(&spelling), "missed: {spelling}");
+    }
+    // Routing through the owner, SETTING a child's environment, and prose that
+    // merely names the variable are all legitimate and must not be flagged.
+    for ok in [
+        "    if crate::common::gate::enforce_real_backend() {".to_string(),
+        "        cmd.env(gate::REQUIRE_VAR, v);".to_string(),
+        "            .env_remove(gate::REQUIRE_VAR);".to_string(),
+        format!("    // NOTE: this gate does not honour {var}"),
+        format!("        \"{var} is set but the artifact is a stub\","),
+    ] {
+        assert!(!reads_require_var_from_env(&ok), "false positive: {ok}");
+    }
+}
+
 /// The exact fail-OPEN string a prior finding named, ASSEMBLED at run time.
 ///
 /// Spelling it as one literal would make this scanner a hit on its own scan and
