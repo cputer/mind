@@ -93,7 +93,10 @@ fn mlir_build_available() -> bool {
 #[test]
 fn unsigned_narrow_div_by_zero_is_deterministic_zero() {
     if !mlir_build_available() {
-        println!("unsigned-div-zero: mindc/mlir-build unavailable; skipping");
+        crate::common::gate::skipped(
+            "narrow_unsigned_div_zero_run",
+            "unsigned-div-zero: mindc/mlir-build unavailable; skipping",
+        );
         return;
     }
 

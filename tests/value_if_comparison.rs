@@ -43,7 +43,10 @@ pub fn f(c: i64, x: i64, y: i64) -> i64 {
 fn value_if_yielding_a_comparison_lowers() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("value-if-comparison: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "value_if_comparison",
+            "value-if-comparison: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -55,13 +58,8 @@ fn value_if_yielding_a_comparison_lowers() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("value-if-comparison: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("value-if-comparison: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("value_if_comparison", &out) {
+        return;
     }
 
     let py = format!(

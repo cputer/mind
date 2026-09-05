@@ -89,7 +89,10 @@ c_abi = ["ref_param_read", "val_param_read"]
 fn cross_module_field_access_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("cross-module-field-access-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "cross_module_field_access_run",
+            "cross-module-field-access-run: mindc not found; skipping",
+        );
         return;
     }
 
@@ -119,16 +122,8 @@ fn cross_module_field_access_runs() {
         ])
         .output()
         .expect("run mindc build");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("cross-module-field-access-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!(
-            "cross-module-field-access-run: mindc build failed:\nstdout: {}\nstderr: {stderr}",
-            String::from_utf8_lossy(&out.stdout),
-        );
+    if !crate::common::gate::compiled("cross_module_field_access_run", &out) {
+        return;
     }
 
     // Pass &Point{x, y}; assert the cross-module field reads return the stored

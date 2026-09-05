@@ -31,7 +31,10 @@ use std::process::Command;
 fn collection_mutation_in_expr_position_is_rejected() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("collmut-expr: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "collection_mutation_expr_position_run",
+            "collmut-expr: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn run() -> i64 {\n\
@@ -50,7 +53,10 @@ fn collection_mutation_in_expr_position_is_rejected() {
         .expect("run mindc");
     let err = String::from_utf8_lossy(&out.stderr);
     if err.contains("mlir-build") && err.contains("requires") {
-        println!("collmut-expr: needs mlir-build; skipping");
+        crate::common::gate::skipped(
+            "collection_mutation_expr_position_run",
+            "collmut-expr: needs mlir-build; skipping",
+        );
         return;
     }
     assert!(
@@ -68,7 +74,10 @@ fn collection_mutation_in_expr_position_is_rejected() {
 fn statement_position_mutation_still_works() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("collmut-stmt: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "collection_mutation_expr_position_run",
+            "collmut-stmt: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn run() -> i64 {\n\
@@ -88,7 +97,10 @@ fn statement_position_mutation_still_works() {
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         if err.contains("mlir-build") && err.contains("requires") {
-            println!("collmut-stmt: needs mlir-build; skipping");
+            crate::common::gate::skipped(
+                "collection_mutation_expr_position_run",
+                "collmut-stmt: needs mlir-build; skipping",
+            );
             return;
         }
         panic!("collmut-stmt: statement-position push must compile:\n{err}");

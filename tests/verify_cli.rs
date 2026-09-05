@@ -51,7 +51,10 @@ fn tempfile_path(name: &str) -> String {
 /// Returns `false` (skip) if the mindc binary is not built.
 fn emit_evidence(bin: &PathBuf, out: &str) -> bool {
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found at {bin:?}");
+        crate::common::gate::skipped(
+            "verify_cli",
+            &format!("Skipping: mindc binary not found at {bin:?}"),
+        );
         return false;
     }
     let res = Command::new(bin)
@@ -205,7 +208,7 @@ fn verify_tampered_artifact_fails() {
 fn verify_unattested_artifact_reports_unattested() {
     let bin = mindc_bin();
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found");
+        crate::common::gate::skipped("verify_cli", "Skipping: mindc binary not found");
         return;
     }
 
@@ -249,7 +252,7 @@ fn verify_unattested_artifact_reports_unattested() {
 fn verify_missing_file_exit_two() {
     let bin = mindc_bin();
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found");
+        crate::common::gate::skipped("verify_cli", "Skipping: mindc binary not found");
         return;
     }
 
@@ -321,7 +324,7 @@ fn verify_require_strict_fp_passes_strict_attested_artifact() {
 fn verify_require_strict_fp_rejects_unattested_artifact() {
     let bin = mindc_bin();
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found");
+        crate::common::gate::skipped("verify_cli", "Skipping: mindc binary not found");
         return;
     }
 

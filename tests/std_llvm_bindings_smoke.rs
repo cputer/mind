@@ -180,7 +180,7 @@ pub fn create_and_dispose_llvm_context(dummy: i64) -> i64 {
 }
 "#;
 
-    let tmp_dir = std::env::temp_dir();
+    let tmp_dir = crate::common::scratch_dir("std_llvm_bindings_smoke");
     let src_path = tmp_dir.join("llvm_ctx_smoke.mind");
     std::fs::write(&src_path, src).expect("write llvm_ctx_smoke.mind");
 
@@ -217,10 +217,14 @@ pub fn create_and_dispose_llvm_context(dummy: i64) -> i64 {
 fn llvm_core_symbols_present_in_shared_lib() {
     let libs = find_llvm_shared_libs();
     if libs.is_empty() {
-        println!(
-            "std_llvm_bindings_smoke(symbols): no libLLVM*.so* files found in \
-             /usr/lib/llvm-{{17,18}}/lib, /usr/local/lib, /opt/homebrew/lib; \
-             skipping symbol presence gate (LLVM shared libraries not installed locally)"
+        // OPTIONAL INPUT: the LLVM shared libraries are a local dev artifact
+        // the product does not ship and the CI toolchain pin (mlir-20-tools,
+        // clang-20) does not install, so this may not fail closed.
+        crate::common::gate::skipped_optional(
+            "std_llvm_bindings_smoke",
+            "no libLLVM*.so* files found in /usr/lib/llvm-{17,18}/lib, \
+             /usr/local/lib, /opt/homebrew/lib; LLVM shared libraries are not \
+             installed on this host",
         );
         return;
     }

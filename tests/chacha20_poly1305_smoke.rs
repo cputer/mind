@@ -56,7 +56,10 @@ fn build_chacha_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("chacha20_poly1305_smoke: {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "chacha20_poly1305_smoke",
+                    &format!("chacha20_poly1305_smoke: {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
@@ -68,7 +71,7 @@ fn build_chacha_so() -> Option<&'static PathBuf> {
             "std/chacha20_poly1305.mind not found at {src_path:?}"
         );
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("chacha20_poly1305_smoke");
         let so_path = dir.join("mind_chacha20_poly1305_smoke.so");
 
         let status = Command::new(mindc_bin())

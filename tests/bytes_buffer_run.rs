@@ -47,7 +47,10 @@ pub fn run() -> i64 {
 fn bytes_buffer_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bytes-buffer-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_buffer_run",
+            "bytes-buffer-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -59,13 +62,8 @@ fn bytes_buffer_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("bytes-buffer-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("bytes-buffer-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("bytes_buffer_run", &out) {
+        return;
     }
 
     // three pushes onto an empty bytes buffer → vec_len == 3.

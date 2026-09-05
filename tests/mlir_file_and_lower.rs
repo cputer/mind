@@ -13,34 +13,22 @@
 // Part of the MIND project (Machine Intelligence Native Design).
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 use tempfile::tempdir;
 
-/// Get the path to the mind binary from the cargo target directory
-fn mind_binary() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("target");
-
-    #[cfg(debug_assertions)]
-    path.push("debug");
-    #[cfg(not(debug_assertions))]
-    path.push("release");
-
-    #[cfg(target_os = "windows")]
-    path.push("mind.exe");
-    #[cfg(not(target_os = "windows"))]
-    path.push("mind");
-
-    path
-}
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
 
 #[test]
 fn stdout_emit_default_lowering() {
-    let binary = mind_binary();
+    let binary = crate::common::mind_bin();
     if !binary.exists() {
-        eprintln!("Skipping: mind binary not found at {:?}", binary);
+        crate::common::gate::skipped(
+            "mlir_file_and_lower",
+            &format!("Skipping: mind binary not found at {:?}", binary),
+        );
         return;
     }
 
@@ -60,9 +48,12 @@ fn stdout_emit_default_lowering() {
 
 #[test]
 fn file_emit_with_preset() {
-    let binary = mind_binary();
+    let binary = crate::common::mind_bin();
     if !binary.exists() {
-        eprintln!("Skipping: mind binary not found at {:?}", binary);
+        crate::common::gate::skipped(
+            "mlir_file_and_lower",
+            &format!("Skipping: mind binary not found at {:?}", binary),
+        );
         return;
     }
 

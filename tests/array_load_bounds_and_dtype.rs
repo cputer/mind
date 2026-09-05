@@ -9,10 +9,13 @@
 //!
 //! * **A1 (bounds, wedge):** an out-of-bounds runtime index used to lower to an
 //!   out-of-bounds `tensor.extract` — UB after bufferization whose result differs
-//!   by substrate (a byte-identity break on the executable path). The load now
-//!   clamps the index to `[0, len-1]`, giving OOB a PINNED, substrate-independent
-//!   result (element 0 for a negative index, element len-1 for `>= len`). This
-//!   test dlopens a real `.so` and asserts that determinism.
+//!   by substrate (a byte-identity break on the executable path). The contract is
+//!   now `ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP` (docs/ARRAY_SEMANTICS.md
+//!   Q11): an out-of-bounds load TRAPS. It does not clamp — commit 80cb1f73
+//!   removed the clamp because a pinned wrong value still diverged from the
+//!   native-ELF backend, which already trapped. This test dlopens a real `.so`
+//!   and asserts the trap by its `_Exit(77)` in a python subprocess, since an
+//!   out-of-bounds call never returns to its caller.
 //! * **A2/A3 (element type):** the recovery used `elem_dtype.as_str()` (yielding
 //!   the invalid MLIR `tensor<Nxq16>`) and fell every non-f32/f64 element through
 //!   to `ScalarI64` (an i64-arith width miscompile on an i32/f16 value). An
@@ -67,7 +70,10 @@ pub fn pick(i: i64) -> f16 {
 fn oob_index_is_a_deterministic_bounds_trap() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("array-load-bounds: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "array_load_bounds_and_dtype",
+            "array-load-bounds: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -79,13 +85,8 @@ fn oob_index_is_a_deterministic_bounds_trap() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("array-load-bounds: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("array-load-bounds: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("array_load_bounds_and_dtype", &out) {
+        return;
     }
 
     // PSI = [1, -3, 2, -6, 4, 18]. In-bounds loads must still be exact.
@@ -156,7 +157,10 @@ fn oob_index_is_a_deterministic_bounds_trap() {
 fn unsupported_element_type_fails_loud() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("array-load-dtype: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "array_load_bounds_and_dtype",
+            "array-load-dtype: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -169,8 +173,14 @@ fn unsupported_element_type_fails_loud() {
         .output()
         .expect("run mindc");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    if stderr.contains("mlir-build") && stderr.contains("requires") {
-        println!("array-load-dtype: mindc --emit-shared needs mlir-build; skipping");
+    // This gate EXPECTS the compile to fail, so it cannot use `gate::compiled`
+    // (which panics on any failure). The capability question is still answered
+    // by the one shared classifier, and the skip is still fail-closed.
+    if crate::common::gate::is_capability_gap(&stderr) {
+        crate::common::gate::skipped(
+            "array_load_bounds_and_dtype",
+            "mindc --emit-shared: host capability gap (no native backend)",
+        );
         return;
     }
     assert!(

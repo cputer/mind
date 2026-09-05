@@ -71,7 +71,10 @@ pub fn cast_i8_signext() -> i64 {
 fn scalar_cast_unsigned_narrow_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("scalar-cast-unsigned-narrow-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "scalar_cast_unsigned_narrow_run",
+            "scalar-cast-unsigned-narrow-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -83,13 +86,8 @@ fn scalar_cast_unsigned_narrow_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("scalar-cast-unsigned-narrow-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("scalar-cast-unsigned-narrow-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("scalar_cast_unsigned_narrow_run", &out) {
+        return;
     }
 
     let py = format!(

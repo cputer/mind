@@ -87,7 +87,10 @@ backend = "cpu"
 fn non_entry_substrate_import_links_and_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("substrate-nonentry-import-link: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "substrate_nonentry_import_link",
+            "substrate-nonentry-import-link: mindc not found; skipping",
+        );
         return;
     }
 
@@ -105,19 +108,12 @@ fn non_entry_substrate_import_links_and_runs() {
         .current_dir(&proj)
         .output()
         .expect("run mindc build");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("substrate-nonentry-import-link: needs mlir-build; skipping");
-            return;
-        }
-        // The exact failure this test guards against: `hash`/`sha256` undefined
-        // at native link because the non-entry `import std.sha256` never seeded
-        // the substrate-object BFS.
-        panic!(
-            "substrate-nonentry-import-link: `mindc build` failed (this is the \
-             undefined-`hash`/`sha256` native-link regression):\n{stderr}"
-        );
+    // The exact failure this test guards against: `hash`/`sha256` undefined at
+    // native link because the non-entry `import std.sha256` never seeded the
+    // substrate-object BFS. That is a real link regression, not a capability
+    // gap, so the shared classifier panics on it and quotes the stderr.
+    if !crate::common::gate::compiled("substrate_nonentry_import_link", &out) {
+        return;
     }
 
     // Locate the produced native executable under target/.

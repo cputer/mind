@@ -100,7 +100,10 @@ pub fn run() -> i64 {
 fn closure_i64_capture_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("closure-i64-capture: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "closure_i64_capture",
+            "closure-i64-capture: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -112,13 +115,8 @@ fn closure_i64_capture_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("closure-i64-capture: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("closure-i64-capture: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("closure_i64_capture", &out) {
+        return;
     }
 
     let py = format!(
@@ -151,7 +149,10 @@ fn closure_i64_capture_runs() {
 fn closure_multi_capture_rejected() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("closure-multi-capture-reject: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "closure_i64_capture",
+            "closure-multi-capture-reject: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -164,8 +165,14 @@ fn closure_multi_capture_rejected() {
         .output()
         .expect("run mindc");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    if stderr.contains("mlir-build") && stderr.contains("requires") {
-        println!("closure-multi-capture-reject: mindc --emit-shared needs mlir-build; skipping");
+    // This gate EXPECTS the compile to be REJECTED, so it cannot use
+    // `gate::compiled`; the capability question is still answered by the one
+    // shared classifier, and the skip is still fail-closed.
+    if crate::common::gate::is_capability_gap(&stderr) {
+        crate::common::gate::skipped(
+            "closure_i64_capture",
+            "mindc --emit-shared: host capability gap (no native backend)",
+        );
         return;
     }
     assert!(

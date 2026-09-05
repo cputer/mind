@@ -56,7 +56,10 @@ const CASES: &[&str] = &[
 fn f64_literal_envelope_roundtrip() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        eprintln!("f64-literal-envelope: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "f64_literal_envelope",
+            "f64-literal-envelope: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();

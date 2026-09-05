@@ -102,7 +102,7 @@ fn iouring_nop_roundtrips_user_data() {
     // Binary resolved via tests/common::mindc_bin() (CARGO_BIN_EXE_mindc).
     let mindc = common::mindc_bin();
     if !mindc.exists() {
-        println!("iouring: mindc not found; skipping");
+        crate::common::gate::skipped("std_surface_iouring", "iouring: mindc not found; skipping");
         return;
     }
 
@@ -245,7 +245,10 @@ fn iouring_submit_rejects_invalid_input() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mindc = common::mindc_bin();
     if !mindc.exists() {
-        println!("iouring-guard: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "std_surface_iouring",
+            "iouring-guard: mindc not found; skipping",
+        );
         return;
     }
     let so = std::env::temp_dir().join("mind_iouring_guard.so");

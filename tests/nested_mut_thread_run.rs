@@ -82,7 +82,10 @@ pub fn ctrl() -> i64 {
 fn nested_mutation_threads_at_all_sites() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("nested-mut-thread-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "nested_mut_thread_run",
+            "nested-mut-thread-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -94,13 +97,8 @@ fn nested_mutation_threads_at_all_sites() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("nested-mut-thread-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("nested-mut-thread-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("nested_mut_thread_run", &out) {
+        return;
     }
 
     let py = format!(
@@ -136,7 +134,10 @@ fn nested_mutation_threads_at_all_sites() {
 fn for_counter_does_not_leak() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("for-counter-leak: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "nested_mut_thread_run",
+            "for-counter-leak: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();

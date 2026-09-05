@@ -81,7 +81,7 @@ fn build_and_run(mindc: &Path, src: &str) -> i32 {
 fn array_store_straight_line_runs_correctly() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        eprintln!("skip: release mindc not built");
+        crate::common::gate::skipped("array_store_run", "skip: release mindc not built");
         return;
     }
     // a[0] = 9; read it back -> 9 (the write is observed, not dropped).
@@ -131,7 +131,7 @@ fn array_store_straight_line_runs_correctly() {
 fn array_store_in_loop_runs_correctly() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        eprintln!("skip: release mindc not built");
+        crate::common::gate::skipped("array_store_run", "skip: release mindc not built");
         return;
     }
     // for-loop body: the F2 region-exit rebind threads the mutated `[i64; 3]` as
@@ -176,7 +176,7 @@ fn array_store_in_loop_runs_correctly() {
 fn array_store_in_branch_runs_correctly() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        eprintln!("skip: release mindc not built");
+        crate::common::gate::skipped("array_store_run", "skip: release mindc not built");
         return;
     }
     // if-taken store is observed: the mutated `[i64; 3]` is threaded as a

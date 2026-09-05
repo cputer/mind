@@ -118,7 +118,10 @@ pub fn scrut_pure() -> i64 {
 fn match_scrutinee_evaluated_once() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("match-scrutinee-once: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "match_scrutinee_once",
+            "match-scrutinee-once: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -130,13 +133,8 @@ fn match_scrutinee_evaluated_once() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("match-scrutinee-once: needs mlir-build; skipping");
-            return;
-        }
-        panic!("match-scrutinee-once: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("match_scrutinee_once", &out) {
+        return;
     }
 
     let py = format!(

@@ -43,7 +43,10 @@ fn classify(c: i64) -> i64 {
 fn typed_literal_match_patterns_run() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("typed-literal-match-pattern-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "typed_literal_match_pattern_run",
+            "typed-literal-match-pattern-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -55,13 +58,8 @@ fn typed_literal_match_patterns_run() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("typed-literal-match-pattern-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("typed-literal-match-pattern-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("typed_literal_match_pattern_run", &out) {
+        return;
     }
 
     let py = format!(

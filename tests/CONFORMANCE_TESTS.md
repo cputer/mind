@@ -78,13 +78,37 @@ For error tests, include the expected error code (E1xxx-E6xxx) in comments.
 # Run full conformance suite
 cargo test --test conformance
 
-# Run specific category
+# Run one documented category
 cargo test --test conformance -- lexical
 cargo test --test conformance -- type_checker
+cargo test --test conformance -- shapes
+cargo test --test conformance -- ir_verification
 
 # Generate conformance report
 cargo test --test conformance -- --nocapture > conformance_report.txt
 ```
+
+### What those commands assert TODAY (measured, not aspirational)
+
+Each category filter selects a real test that asserts its corpus directory is
+present, non-empty, and that every fixture declares an `// Expected:` line. Until
+2026-09-05 the filters matched ZERO tests and exited 0, so the documented entry
+point to this suite was a guaranteed vacuous green.
+
+They do NOT yet execute the fixtures. The `.mind` files in `lexical/`,
+`type_checker/`, `shapes/` and `ir_verification/` are written in a pre-1.0
+surface (`tensor<f32[2, 3]>`), and `ir_verification/undefined_operand.mind` says
+in its own body that it is a placeholder for an IR-level test — running them
+today would assert only that the compiler rejects its own documentation.
+
+The executing profile is separate and small: `libmind::conformance::cpu_cases()`
+drives the CPU-baseline profile, and `tests/conformance/cpu_baseline/` +
+`tests/conformance/gpu_profile/` are its fixtures. The coverage targets below are
+GOALS for v1.0, not a description of the current corpus.
+
+deferred: port each category fixture to the current surface syntax and drive it
+through the conformance-cell grid (plan of record Phase 19.3); the per-category
+tests then become execution gates instead of corpus-shape gates.
 
 ## Conformance Levels
 

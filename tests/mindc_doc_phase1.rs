@@ -21,6 +21,10 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 fn mindc() -> Command {
     Command::new(env!("CARGO_BIN_EXE_mindc"))
 }
@@ -256,7 +260,7 @@ fn doc_exit_code_2_on_bad_args() {
 fn doc_std_vec_mind_produces_vec_html() {
     let std_vec = repo_root().join("std/vec.mind");
     if !std_vec.exists() {
-        eprintln!("skipping: std/vec.mind not found");
+        crate::common::gate::skipped("mindc_doc_phase1", "skipping: std/vec.mind not found");
         return;
     }
 

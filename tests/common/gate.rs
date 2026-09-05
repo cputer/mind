@@ -32,15 +32,22 @@
 //! still skips. That behaviour is load-bearing for the non-exec tiers and is
 //! asserted by `tests/fail_closed_capability_skip.rs`.
 //!
-//! deferred: 256 further skip-and-return sites still open-code their own
-//! `println!("... skipping"); return;`, so `MIND_BENCH_REQUIRE=1` cannot make
-//! them hard-fail. They are not hand-edited here — this module is the
-//! deliverable, and the backlog is held under a MECHANICAL two-sided ratchet
-//! (the set-valued backlog ratchet in
-//! `tests/fail_open_skip_site_ratchet.rs`) that forbids a NEW one and demands
-//! the frozen per-file entry be lowered whenever a file drains. Upgrade path:
-//! route each remaining site through `compiled()` / `skipped()` as its file is
-//! next touched, until the backlog is empty.
+//! # The backlog is drained
+//!
+//! Every skip-and-return site in `tests/**/*.rs` now routes through this
+//! module. `tests/fail_open_skip_site_ratchet.rs` scans the tree and fails on any
+//! site that does not, so the count this module governs can never silently
+//! grow back.
+//!
+//! # Two honest classes of absence, ONE decision function
+//!
+//! `MIND_BENCH_REQUIRE=1` says "use a real backend", not "install everything".
+//! Conflating those two claims is what would make the fail-closed guarantee
+//! unusable: an opt-in corpus directory or a VNNI rung nobody asked for is not
+//! a toolchain gap, and hard-failing on it would red a tier for a non-defect.
+//! So the caller names WHICH absence it met ([`Absent`]) and the single
+//! decision function [`skipped_because`] applies the rule. There is still
+//! exactly one place the skip predicate is written.
 //!
 //! deferred: `skipped()` prints the `SDLC-GATE <target> ran=0 fail=0` marker
 //! that `scripts/exec_semantics_gate.sh`'s SKIP-MARKER CONSUMER already reads,
@@ -124,17 +131,31 @@ pub fn compiled_with(target: &str, out: &Output, enforce: bool) -> bool {
             skip_marker(target, "mlir-build capability unavailable");
             false
         }
-        Outcome::Failed(s) => panic!(
-            "{target}: mindc compile FAILED (exit {}) — this is a compiler \
-             regression, not a capability gap, and must never grade as a \
-             pass.\nstderr:\n{}",
-            out.status.code().unwrap_or(-1),
-            if s.trim().is_empty() {
-                "<empty: the call site captured no stderr>"
+        Outcome::Failed(s) => {
+            // Both causes must fail, and they need DIFFERENT instructions: one
+            // says "fix the compiler", the other says "install the toolchain or
+            // drop MIND_BENCH_REQUIRE". Printing the regression sentence for a
+            // host that simply has no backend sends the reader hunting a bug
+            // that is not there.
+            let why = if enforce && is_capability_gap(&s) {
+                "MIND_BENCH_REQUIRE=1 forbids a toolchain skip, and this host \
+                 lacks the native backend this gate needs. Install the \
+                 toolchain or run without MIND_BENCH_REQUIRE — a skip here \
+                 asserts NOTHING."
             } else {
-                s.trim_end()
-            }
-        ),
+                "this is a compiler regression, not a capability gap, and must \
+                 never grade as a pass."
+            };
+            panic!(
+                "{target}: mindc compile FAILED (exit {}) — {why}\nstderr:\n{}",
+                out.status.code().unwrap_or(-1),
+                if s.trim().is_empty() {
+                    "<empty: the call site captured no stderr>"
+                } else {
+                    s.trim_end()
+                }
+            )
+        }
     }
 }
 
@@ -147,16 +168,81 @@ pub fn compiled(target: &str, out: &Output) -> bool {
     compiled_with(target, out, enforce_real_backend())
 }
 
-/// A capability PROBE skip (`which::which(...)`, `mlir_available()`), with the
-/// enforcement flag supplied explicitly (tests).
-///
-/// Panics under enforcement; otherwise emits the `ran=0` marker so the skip is
-/// a countable event rather than an invisible pass.
 #[allow(dead_code)]
-pub fn skipped_with(target: &str, reason: &str, enforce: bool) {
-    if enforce {
+/// Is this a BLESS run — the one mode in which every identity gate asserts
+/// NOTHING and merely prints the hash it computed?
+///
+/// Three defects lived in the `bless_mode()` this
+/// replaced, copied at 13 sites:
+///
+/// * `.is_ok()` is true for ANY value. `MIND_BENCH_BLESS=0` and
+///   `MIND_BENCH_BLESS=` both disabled all 26 canaries while the suite still
+///   printed `26 passed` — a value that reads as "off" turning the wedge's
+///   merge gate into a no-op.
+/// * Nothing forbade BLESS and `MIND_BENCH_REQUIRE` being set together, so a
+///   stray job-scope export could void a tier that had explicitly demanded a
+///   real, asserting run. That combination is now a hard failure: the two flags
+///   make contradictory claims and the fail-closed one wins.
+/// * A bless log was indistinguishable from a green gate. It now opens with one
+///   unmissable banner, printed once per process.
+pub fn bless_mode() -> bool {
+    let on = matches!(std::env::var("MIND_BENCH_BLESS").as_deref(), Ok("1"));
+    if !on {
+        return false;
+    }
+    assert!(
+        std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
+        "MIND_BENCH_BLESS=1 and MIND_BENCH_REQUIRE are both set. BLESS mode \
+         asserts NOTHING — it prints computed hashes — so a run that demanded a \
+         real, asserting backend cannot also be a bless run. Unset one."
+    );
+    static BANNER: std::sync::Once = std::sync::Once::new();
+    BANNER.call_once(|| {
+        println!(
+            "GATE MODE: BLESS — every cross-substrate identity gate below \
+             asserts NOTHING and only prints its computed hash. This log is NOT \
+             evidence of a green gate."
+        );
+    });
+    true
+}
+
+/// WHICH absence a gate met. The class, not the call site, decides whether
+/// `MIND_BENCH_REQUIRE=1` forbids the skip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum Absent {
+    /// The COMPILER's own capability: the `mindc` binary, its native backend,
+    /// or the MLIR/clang tools it shells out to. The exec tier's
+    /// `MIND_BENCH_REQUIRE` contract is written about exactly this, so it FAILS
+    /// CLOSED — a tier that demands a real backend may not report a green run
+    /// it never performed.
+    Toolchain,
+    /// An input the gate never demanded: an opt-in corpus directory, opt-in
+    /// silicon, an optional local dev artifact the product does not ship.
+    /// Reported as `ran=0` so it is counted, never a hard failure — measured
+    /// case: the LLVM/MLIR C-API archives the binding smokes probe for are not
+    /// installed by the `mlir-20-tools` package CI pins, so fail-closing on
+    /// them would red a tier for a package that was never required.
+    OptionalInput,
+}
+
+/// Does this absence forbid a skip under `MIND_BENCH_REQUIRE=1`?
+#[allow(dead_code)]
+pub fn is_fail_closed(absent: Absent) -> bool {
+    matches!(absent, Absent::Toolchain)
+}
+
+/// THE skip decision, with the enforcement flag supplied explicitly (tests).
+///
+/// Panics when the run demands a real backend and the absence is a toolchain
+/// gap; otherwise emits the `ran=0` marker so the skip is a countable event
+/// rather than an invisible pass.
+#[allow(dead_code)]
+pub fn skipped_because(target: &str, reason: &str, absent: Absent, enforce: bool) {
+    if enforce && is_fail_closed(absent) {
         panic!(
-            "{target}: MIND_BENCH_REQUIRE=1 forbids a capability skip, but this \
+            "{target}: MIND_BENCH_REQUIRE=1 forbids a toolchain skip, but this \
              gate tried to skip: {reason}. Install the toolchain or run without \
              MIND_BENCH_REQUIRE — a skip here asserts NOTHING."
         );
@@ -164,10 +250,36 @@ pub fn skipped_with(target: &str, reason: &str, enforce: bool) {
     skip_marker(target, reason);
 }
 
-/// A capability PROBE skip reading `MIND_BENCH_REQUIRE` from the environment.
+/// A toolchain-capability skip, with the enforcement flag supplied explicitly
+/// (tests).
+#[allow(dead_code)]
+pub fn skipped_with(target: &str, reason: &str, enforce: bool) {
+    skipped_because(target, reason, Absent::Toolchain, enforce);
+}
+
+/// A toolchain-capability PROBE skip (`which::which(...)`, `mlir_available()`,
+/// a missing `mindc`) reading `MIND_BENCH_REQUIRE` from the environment.
+///
+/// This is the default: a gate that cannot reach the compiler's own backend has
+/// not run, and a tier that demanded one must hear about it.
 #[allow(dead_code)]
 pub fn skipped(target: &str, reason: &str) {
-    skipped_with(target, reason, enforce_real_backend());
+    skipped_because(target, reason, Absent::Toolchain, enforce_real_backend());
+}
+
+/// A skip for an input the gate never demanded — opt-in corpus, opt-in silicon,
+/// an optional local artifact. Counted (`ran=0`), never fail-closed.
+///
+/// Every call site is greppable (`grep -rn 'gate::skipped_optional' tests/`) and
+/// must carry a one-line comment naming what is optional and who supplies it.
+#[allow(dead_code)]
+pub fn skipped_optional(target: &str, reason: &str) {
+    skipped_because(
+        target,
+        reason,
+        Absent::OptionalInput,
+        enforce_real_backend(),
+    );
 }
 
 /// Emit the marker `scripts/exec_semantics_gate.sh` already consumes: a gate

@@ -861,10 +861,11 @@ fn g2_1_differential_coverage() {
         // g2_differential_mlir is named there, so this skip is reported and counted
         // rather than fatal — but it can no longer read as a green run.
         emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
-        println!(
+        crate::common::gate::skipped(
+            "g2_differential_mlir",
             "g2_differential_mlir: SKIP -- could not obtain a valid \
              libmindc_mind.so (MLIR toolchain absent). This asserted NOTHING; do not \
-             read it as a pass."
+             read it as a pass.",
         );
         return;
     };

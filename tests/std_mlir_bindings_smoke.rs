@@ -237,7 +237,7 @@ pub fn check_mlir_context(dummy: i64) -> i64 {
 }
 "#;
 
-    let tmp_dir = std::env::temp_dir();
+    let tmp_dir = crate::common::scratch_dir("std_mlir_bindings_smoke");
     let src_path = tmp_dir.join("mlir_ctx_smoke.mind");
     std::fs::write(&src_path, src).expect("write smoke .mind source");
 
@@ -291,10 +291,14 @@ pub fn check_mlir_context(dummy: i64) -> i64 {
 fn mlir_capi_symbols_present_in_static_libs() {
     let libs = find_mlir_capi_libs();
     if libs.is_empty() {
-        println!(
-            "std_mlir_bindings_smoke(symbols): no libMLIRCAP*.a files found in \
-             /usr/lib/llvm-{{17,18}}/lib, /usr/local/lib, /opt/homebrew/lib; \
-             skipping symbol presence gate (MLIR static libs not installed locally)"
+        // OPTIONAL INPUT: the MLIR C-API archives ship in libmlir-*-dev, which
+        // the CI toolchain pin (mlir-20-tools, clang-20) does not install, so
+        // this may not fail closed.
+        crate::common::gate::skipped_optional(
+            "std_mlir_bindings_smoke",
+            "no libMLIRCAP*.a files found in /usr/lib/llvm-{17,18}/lib, \
+             /usr/local/lib, /opt/homebrew/lib; the MLIR static libs are not \
+             installed on this host",
         );
         return;
     }
@@ -308,9 +312,12 @@ fn mlir_capi_symbols_present_in_static_libs() {
     }
 
     if all_syms.is_empty() {
-        println!(
-            "std_mlir_bindings_smoke(symbols): `nm` returned no symbols (nm may \
-             not be installed or the .a files may be stripped); skipping symbol gate"
+        // OPTIONAL INPUT: `nm` (binutils) is a host tool the compiler never
+        // shells out to; its absence is not a backend gap.
+        crate::common::gate::skipped_optional(
+            "std_mlir_bindings_smoke",
+            "`nm` returned no symbols (nm may not be installed, or the .a files \
+             may be stripped)",
         );
         return;
     }

@@ -62,7 +62,10 @@ fn build_sha512_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("sha512_smoke: {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "sha512_smoke",
+                    &format!("sha512_smoke: {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
@@ -75,7 +78,7 @@ fn build_sha512_so() -> Option<&'static PathBuf> {
             "std/sha512.mind not found at {src_path:?}"
         );
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("sha512_smoke");
         let so_path = dir.join("mind_sha512_smoke.so");
 
         let status = Command::new(mindc_bin())

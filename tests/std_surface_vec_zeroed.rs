@@ -57,7 +57,10 @@ mod mlir_functional {
     fn vec_zeroed_zero_fill_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("vec_zeroed: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_vec_zeroed",
+                "vec_zeroed: mindc not found; skipping",
+            );
             return;
         }
 

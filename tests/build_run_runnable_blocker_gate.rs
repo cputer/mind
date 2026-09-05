@@ -52,7 +52,10 @@ fn manifest(entry: &str) -> String {
 fn build_and_run_reject_runnable_blocker() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("build-run-runnable-blocker-gate: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "build_run_runnable_blocker_gate",
+            "build-run-runnable-blocker-gate: mindc not found; skipping",
+        );
         return;
     }
     let td = tempfile::tempdir().expect("tempdir");
@@ -73,7 +76,10 @@ fn build_and_run_reject_runnable_blocker() {
         .expect("run mindc --emit-shared");
     let es_err = String::from_utf8_lossy(&es.stderr);
     if es_err.contains("mlir-build") && es_err.contains("requires") {
-        println!("build-run-runnable-blocker-gate: needs mlir-build; skipping");
+        crate::common::gate::skipped(
+            "build_run_runnable_blocker_gate",
+            "build-run-runnable-blocker-gate: needs mlir-build; skipping",
+        );
         return;
     }
     assert!(

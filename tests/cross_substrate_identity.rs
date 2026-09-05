@@ -735,7 +735,7 @@ fn run_dot_workload(w: &DotWorkload) {
     let computed = canonical_hash(vec_result);
     let substrate = host_substrate();
 
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(w.id, substrate, &computed);
         return;
     }
@@ -843,7 +843,7 @@ fn gemv_q16_reproducibility_gate() {
     // 2. Canonical hash pinned to the committed per-substrate reference.
     let computed = canonical_hash_i32s(&y);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1298,7 +1298,7 @@ fn gemm_q16_reproducibility_gate() {
     // 2. Canonical hash pinned to the committed per-substrate reference.
     let computed = canonical_hash_i32s(&c);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1391,7 +1391,7 @@ fn gemm_i8_reproducibility_gate() {
     // 2. Canonical hash pinned to the committed per-substrate reference.
     let computed = canonical_hash_i32s(&c);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1505,7 +1505,7 @@ fn gemm_i8_mt_reproducibility_gate() {
     //    single-thread gemm-i8 hash — the MT and ST kernels are byte-identical.
     let computed = canonical_hash_i32s(&c_mt);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1621,11 +1621,17 @@ fn gemm_i8_vnni_reproducibility_gate() {
         } else {
             "host lacks AVX-512-VNNI (vpdpbusd) — the rung cannot RUN here"
         };
-        // DEFER LOUDLY — never a stub-green.
-        println!(
-            "DEFER {id}: {why}. The rung is byte-identical to the committed gemm-i8 \
-             hash (917d353b…) by the signed-bias identity, but MUST NOT be reported \
-             as passing until measured on VNNI silicon. Honest deferral, not a skip."
+        // DEFER LOUDLY — never a stub-green. OPTIONAL INPUT, not a toolchain
+        // gap: the vpdpbusd rung needs VNNI silicon plus an explicit
+        // MIND_INTDOT_VNNI_VERIFY=1 opt-in, neither of which MIND_BENCH_REQUIRE
+        // asks any runner to supply, so this may not fail closed.
+        crate::common::gate::skipped_optional(
+            "cross_substrate_identity",
+            &format!(
+                "DEFER {id}: {why}. The rung is byte-identical to the committed \
+                 gemm-i8 hash (917d353b…) by the signed-bias identity, but MUST \
+                 NOT be reported as passing until measured on VNNI silicon."
+            ),
         );
         return;
     }
@@ -1659,7 +1665,7 @@ fn gemm_i8_vnni_reproducibility_gate() {
 
     let computed = canonical_hash_i32s(&c);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1752,7 +1758,7 @@ fn gemv_i16_reproducibility_gate() {
     // 2. Canonical hash pinned to the committed per-substrate reference.
     let computed = canonical_hash_i32s(&y);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1840,7 +1846,7 @@ fn scalar_float_f64_reproducibility_gate() {
     //    construction (RFC 0015 §3.1).
     let computed = canonical_hash(result.to_bits() as i64);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -1961,7 +1967,7 @@ fn scalar_cast_conv_reproducibility_gate() {
     //    reference. avx2 == neon by IEEE construction (RFC 0015 §3.1).
     let computed = canonical_hash(result);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -2226,7 +2232,7 @@ fn array_store_branch_reproducibility_gate() {
 /// MIND_BENCH_BLESS. Same contract as the per-test inline blocks above.
 fn pin_or_bless(id: &str, computed: &str, result: i64) {
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -2344,7 +2350,7 @@ fn gemm_q16_fused_reproducibility_gate() {
 
     let computed = canonical_hash_i32s(&c);
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -2654,7 +2660,7 @@ fn ref_dot_f32_strict(a: &[f32], b: &[f32]) -> f32 {
 /// Under MIND_BENCH_BLESS it prints the bless line instead (RFC 0020 §13).
 fn pin_strict_fp(id: &str, computed: &str, bits: u32) {
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &computed);
         return;
     }
@@ -3005,7 +3011,7 @@ fn bimap_phf_construction_identity_gate() {
     //    neon (RFC 0015 §3.1); a drift is a real construction change and a hard
     //    failure — re-bless only per RFC 0020 §13, never automatically.
     let substrate = host_substrate();
-    if std::env::var("MIND_BENCH_BLESS").is_ok() {
+    if common::gate::bless_mode() {
         emit_bless(id, substrate, &trace_hash);
         return;
     }

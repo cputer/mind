@@ -280,7 +280,10 @@ mod mlir_functional {
     fn regex_compile_and_match_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("regex_compile_and_match_via_compiled_so: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_regex",
+                "regex_compile_and_match_via_compiled_so: mindc not found; skipping",
+            );
             return;
         }
 

@@ -12,7 +12,7 @@
 //!
 //! Run: `cargo test --features "std-surface cross-module-imports" --test bimap_derive`
 
-use libmind::ast::{Module, Node};
+use libmind::ast::{BinOp, Literal, Module, Node};
 use libmind::parser::{parse, parse_with_diagnostics};
 
 /// Names of every function defined in the module.
@@ -53,11 +53,19 @@ fn derives_the_three_functions() {
 fn generated_functions_are_pub() {
     let src = "#[bimap]\nenum Currency { AUD, JPY, USD }\n";
     let m = parse(src).expect("parse");
+    // POSITIVE CONTROL. The only assertion below sits inside two filters
+    // (`Node::FnDef`, then the `currency_` prefix). With no counter, a derive
+    // that emitted zero functions — or emitted them under a different prefix,
+    // which this same file tests the derivation of separately — would assert
+    // NOTHING about pub-ness and stay green, while `use crate.a` resolution of
+    // the derived fns silently lost the export it depends on.
+    let mut seen = 0usize;
     for it in &m.items {
         if let Node::FnDef(fd, _) = it {
             let name = &fd.name;
             let is_pub = &fd.is_pub;
             if name.starts_with("currency_") {
+                seen += 1;
                 assert!(
                     *is_pub,
                     "generated `{name}` must be pub (cross-module exportable)"
@@ -65,6 +73,11 @@ fn generated_functions_are_pub() {
             }
         }
     }
+    assert_eq!(
+        seen, 3,
+        "expected the 3 derived `currency_*` fns, saw {seen}; the pub-ness \
+         contract was asserted over {seen} function(s)"
+    );
 }
 
 #[test]
@@ -614,5 +627,145 @@ fn const_form_inverse_reuses_the_phf_ladder() {
         from_str_mode(&small, "k_from_str").as_deref(),
         Some("phf-v1"),
         "in-envelope number<->string inverse must reuse phf-v1"
+    );
+}
+
+// ── VALUE gate: the bijection's answers, not merely its function names ─────
+
+/// The `(ordinal, string)` pairs the derived `<base>_to_str` actually maps.
+///
+/// The generated forward body is a chain of `if k == <ord> { return "<lit>"; }`
+/// closed by `return "";`, so the mapping is recoverable from the AST exactly —
+/// no execution engine, no blessed byte string, no substring guessing.
+fn forward_pairs(m: &Module, fn_name: &str) -> Vec<(i64, String)> {
+    let fd = m
+        .items
+        .iter()
+        .find_map(|it| match it {
+            Node::FnDef(fd, _) if fd.name == fn_name => Some(fd),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("derived `{fn_name}` must exist"));
+    let mut out = Vec::new();
+    for stmt in &fd.body {
+        let Node::If {
+            cond, then_branch, ..
+        } = stmt
+        else {
+            continue;
+        };
+        let Node::Binary {
+            op: BinOp::Eq,
+            left,
+            right,
+            ..
+        } = cond.as_ref()
+        else {
+            continue;
+        };
+        let Node::Lit(Literal::Ident(p), _) = left.as_ref() else {
+            continue;
+        };
+        if p != "k" {
+            continue;
+        }
+        let Node::Lit(Literal::Int(ord), _) = right.as_ref() else {
+            continue;
+        };
+        let Some(Node::Return { value: Some(v), .. }) = then_branch.first() else {
+            continue;
+        };
+        let Node::Lit(Literal::Str(s), _) = v.as_ref() else {
+            continue;
+        };
+        out.push((*ord, s.clone()));
+    }
+    out
+}
+
+/// The cardinality the derived `<base>_count` returns.
+fn derived_count(m: &Module, fn_name: &str) -> i64 {
+    let fd = m
+        .items
+        .iter()
+        .find_map(|it| match it {
+            Node::FnDef(fd, _) if fd.name == fn_name => Some(fd),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("derived `{fn_name}` must exist"));
+    match fd.body.first() {
+        Some(Node::Return { value: Some(v), .. }) => match v.as_ref() {
+            Node::Lit(Literal::Int(n), _) => *n,
+            other => panic!("`{fn_name}` must return an int literal, got {other:?}"),
+        },
+        other => panic!("`{fn_name}` must be a single return, got {other:?}"),
+    }
+}
+
+#[test]
+fn derived_forward_map_carries_the_declared_strings_in_order() {
+    // THE GAP THIS CLOSES: every other gate over `#[bimap]` asserts function
+    // NAMES, diagnostic CODES, or mic@3 BYTES. A byte pin freezes whatever
+    // mapping existed at bless time — its own manifest says it pins the TABLE,
+    // not the answers — so a derive that emitted a consistently WRONG table
+    // satisfied all of them. Nothing asserted what `currency_to_str` maps to.
+    let m = parse("#[bimap]\nenum Currency { AUD, JPY, USD }\n").expect("parse");
+    let pairs = forward_pairs(&m, "currency_to_str");
+    assert_eq!(
+        pairs,
+        vec![
+            (0, "AUD".to_string()),
+            (1, "JPY".to_string()),
+            (2, "USD".to_string())
+        ],
+        "the derived forward map is not the declared table"
+    );
+}
+
+#[test]
+fn derived_map_is_a_bijection_over_its_whole_domain() {
+    // The property the feature is NAMED for, checked over the full domain
+    // rather than one sample: the ordinals are exactly 0..count, and no two
+    // ordinals share a string.
+    let m = parse("#[bimap]\nenum Currency { AUD, JPY, USD }\n").expect("parse");
+    let pairs = forward_pairs(&m, "currency_to_str");
+    let count = derived_count(&m, "currency_count");
+    assert_eq!(count, 3, "currency_count() must be the cardinality");
+    assert_eq!(
+        pairs.len() as i64,
+        count,
+        "the forward map covers {} ordinal(s) but count() says {count}",
+        pairs.len()
+    );
+    let ords: Vec<i64> = pairs.iter().map(|(o, _)| *o).collect();
+    assert_eq!(
+        ords,
+        (0..count).collect::<Vec<_>>(),
+        "ordinals must be exactly 0..count, densely and in order"
+    );
+    let mut strs: Vec<&str> = pairs.iter().map(|(_, s)| s.as_str()).collect();
+    strs.sort_unstable();
+    let before = strs.len();
+    strs.dedup();
+    assert_eq!(
+        strs.len(),
+        before,
+        "two ordinals map to the same string — not a bijection"
+    );
+    assert!(
+        !strs.contains(&""),
+        "the empty string is the to_str MISS sentinel and may not be a value"
+    );
+}
+
+#[test]
+fn an_explicit_pair_override_changes_the_mapped_value() {
+    // `= "euro"` must actually land in the table, not merely keep the derive
+    // from erroring: a name-only gate cannot tell the override from a no-op.
+    let m = parse("#[bimap]\nenum Currency { AUD, EUR = \"euro\" }\n").expect("parse");
+    assert_eq!(
+        forward_pairs(&m, "currency_to_str"),
+        vec![(0, "AUD".to_string()), (1, "euro".to_string())],
+        "the `= \"euro\"` override must be the mapped value for ordinal 1"
     );
 }

@@ -42,6 +42,10 @@ use std::sync::{Mutex, OnceLock};
 
 use libloading::{Library, Symbol};
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 const RUNTIME_SUPPORT_REL: &str = "runtime-support/mind_intrinsics.c";
 
 /// Process-wide cache of the compiled `.so` path so the cargo-test
@@ -332,7 +336,7 @@ fn with_lib<F: FnOnce(&Library)>(f: F) {
     let so = match so {
         Some(p) => p,
         None => {
-            println!("blas_smoke: clang not on PATH; skipping");
+            crate::common::gate::skipped("blas_smoke", "blas_smoke: clang not on PATH; skipping");
             return;
         }
     };

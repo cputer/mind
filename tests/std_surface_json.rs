@@ -301,7 +301,10 @@ mod mlir_functional {
     fn json_parse_round_trip_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("json_parse_round_trip_via_compiled_so: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_json",
+                "json_parse_round_trip_via_compiled_so: mindc not found; skipping",
+            );
             return;
         }
 
@@ -487,7 +490,10 @@ pub fn smoke_jv_n_is_int(h: i64) -> i64 {{ jv_n_is_int(h) }}
     fn json_dump_integer_zero_kats() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("json_dump_integer_zero_kats: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_json",
+                "json_dump_integer_zero_kats: mindc not found; skipping",
+            );
             return;
         }
 

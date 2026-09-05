@@ -182,7 +182,7 @@ CRITICAL_exec=(
   "fail_closed_capability_skip 20"  # measured 22; the capability-skip helper contract
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
-  "fail_open_skip_site_ratchet 5"   # measured 6; the shrink-only fail-open backlog
+  "fail_open_skip_site_ratchet 5"   # measured 6; the fail-open skip prohibition
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
@@ -244,8 +244,12 @@ ENV_TOLERATED_exec=(g2_differential_mlir)
 # it is not built there at all, so tolerating its failure was dead configuration
 # describing a target those tiers never see. g2 stays listed for `exec`, where it IS
 # built and can fail for the documented environmental reason.
-ENV_TOLERATED_lowering=(g2_differential_mlir)
-ENV_TOLERATED_pkg=(g2_differential_mlir)
+# ...and REMOVED from lowering/pkg by the same argument: with
+# `required-features = ["mlir-build"]` cargo does not build g2 in either tier, so
+# those entries tolerated a ran=0 that can no longer be emitted there. The
+# TOLERANCE SHRINK-RATCHET below now fails the tier on exactly this shape.
+ENV_TOLERATED_lowering=()
+ENV_TOLERATED_pkg=()
 
 # ---------------------------------------------------------------------------
 print_only=0
@@ -490,6 +494,35 @@ for tier in "${want[@]}"; do
   if [ ${#zero_ok[@]} -gt 0 ]; then
     echo "gates that did NOT run : ${#zero_ok[@]}  (env-tolerated ran=0 — a skip, never a pass)"
     for z in "${zero_ok[@]}"; do echo "  - $z"; done
+  fi
+
+  # --- TOLERANCE SHRINK-RATCHET (the missing half of the quarantine ratchet) --
+  # A quarantined target that starts PASSING must leave its list, or the
+  # quarantine "quietly grows into a permanent excuse". ENV_TOLERATED had no such
+  # rule, so an entry naming a target this tier does not even BUILD produced no
+  # signal at all — the mindfuzz entries sat dead until a human noticed them.
+  # Dead tolerance is not harmless: it is pre-granted permission for a target to
+  # report ran=0 the day it becomes buildable here, with nobody deciding that.
+  #
+  # The test is the tier's OWN log, not a hand-copied expectation: cargo prints
+  # `Running tests/<t>.rs` for every target it built, so a tolerated name absent
+  # from that set is tolerance for something this tier never ran.
+  mapfile -t tier_targets < <(
+    grep -oE 'Running tests/[A-Za-z0-9_]+\.rs' "$log" | sed -e 's|Running tests/||' -e 's|\.rs$||' | sort -u
+  )
+  dead_tolerance=()
+  for tname in ${tolerated[@]+"${tolerated[@]}"}; do
+    in_list "$tname" ${tier_targets[@]+"${tier_targets[@]}"} || dead_tolerance+=("$tname")
+  done
+  if [ ${#dead_tolerance[@]} -gt 0 ] && [ "$harnesses" -ge "$floor_h" ]; then
+    echo
+    echo "FAIL[$tier]: ENV_TOLERATED_$tier names ${#dead_tolerance[@]} target(s) this tier never built."
+    for d in "${dead_tolerance[@]}"; do echo "  - $d"; done
+    echo "  Tolerance for a target that does not run here is dead configuration: it"
+    echo "  cannot excuse anything today and silently pre-approves a ran=0 the day the"
+    echo "  target becomes buildable. Remove the entry (structural absence beats runtime"
+    echo "  tolerance), or restore the target to this tier."
+    rc=1
   fi
 
   # --- FAILURE TRIAGE against the quarantine ratchet -----------------------

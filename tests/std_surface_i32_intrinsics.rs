@@ -54,7 +54,10 @@ pub fn i32_probe() -> i64 {
 fn i32_load_store_no_clobber_and_zero_extend() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("i32: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "std_surface_i32_intrinsics",
+            "i32: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();

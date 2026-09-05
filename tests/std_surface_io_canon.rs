@@ -73,7 +73,10 @@ mod mlir_functional {
     fn canonical_ordering_is_deterministic_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("io_canon: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_io_canon",
+                "io_canon: mindc not found; skipping",
+            );
             return;
         }
 
@@ -264,7 +267,10 @@ mod mlir_functional {
     fn canon_anchor_over_flat_emit_shared_matches_fips_kat() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("io_canon anchor: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_io_canon",
+                "io_canon anchor: mindc not found; skipping",
+            );
             return;
         }
         let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -387,7 +393,10 @@ mod mlir_functional {
         // undefined `sha256` symbol. Also exercises canon_anchor end-to-end.
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("canon_anchor: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_io_canon",
+                "canon_anchor: mindc not found; skipping",
+            );
             return;
         }
         let proj = std::env::temp_dir().join("mind_canon_anchor_probe");

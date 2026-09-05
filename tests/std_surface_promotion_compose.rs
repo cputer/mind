@@ -97,7 +97,10 @@ fn count_calls_named(instrs: &[Instr], target: &str) -> usize {
 fn run_probe(tag: &str, src: &str) -> Option<i64> {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        eprintln!("compose[{tag}]: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "std_surface_promotion_compose",
+            &format!("compose[{tag}]: mindc not found"),
+        );
         return None;
     }
     let dir = std::env::temp_dir();
@@ -115,9 +118,14 @@ fn run_probe(tag: &str, src: &str) -> Option<i64> {
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         // A toolchain without the MLIR backend cannot emit a shared object;
-        // skip rather than fail (the std_surface_* gating convention).
-        if stderr.contains("MLIR") || stderr.contains("mlir-opt") || stderr.contains("clang") {
-            eprintln!("compose[{tag}]: mindc --emit-shared unavailable; skipping\n{stderr}");
+        // skip rather than fail. The three floating substring probes this
+        // replaced graded ANY failure naming a tool as a capability gap — the
+        // shared classifier reads the stable refusal CODE instead.
+        if crate::common::gate::is_capability_gap(&stderr) {
+            crate::common::gate::skipped(
+                "std_surface_promotion_compose",
+                &format!("compose[{tag}]: mindc --emit-shared unavailable\n{stderr}"),
+            );
             return None;
         }
         panic!(

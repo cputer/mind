@@ -199,6 +199,10 @@ use std::sync::OnceLock;
 
 use libloading::{Library, Symbol};
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 const RUNTIME_SUPPORT_REL: &str = "runtime-support/mind_intrinsics.c";
 
 static GENREF_SO: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -298,7 +302,10 @@ fn call_gen_free(lib: &Library, handle: i64) -> i64 {
 fn genref_runtime_alloc_then_deref_returns_live_ptr() {
     let so = GENREF_SO.get_or_init(build_genref_so);
     let Some(ref so_path) = *so else {
-        println!("clang not found — skipping genref C-shim smoke test");
+        crate::common::gate::skipped(
+            "genref_phase_jb",
+            "clang not found — skipping genref C-shim smoke test",
+        );
         return;
     };
     let _serial = GENREF_RUNTIME_LOCK
@@ -321,7 +328,10 @@ fn genref_runtime_alloc_then_deref_returns_live_ptr() {
 fn genref_runtime_free_makes_deref_return_zero() {
     let so = GENREF_SO.get_or_init(build_genref_so);
     let Some(ref so_path) = *so else {
-        println!("clang not found — skipping genref C-shim smoke test");
+        crate::common::gate::skipped(
+            "genref_phase_jb",
+            "clang not found — skipping genref C-shim smoke test",
+        );
         return;
     };
     let _serial = GENREF_RUNTIME_LOCK
@@ -352,7 +362,10 @@ fn genref_runtime_free_makes_deref_return_zero() {
 fn genref_runtime_stale_handle_returns_zero_after_slot_reuse() {
     let so = GENREF_SO.get_or_init(build_genref_so);
     let Some(ref so_path) = *so else {
-        println!("clang not found — skipping genref C-shim smoke test");
+        crate::common::gate::skipped(
+            "genref_phase_jb",
+            "clang not found — skipping genref C-shim smoke test",
+        );
         return;
     };
     let _serial = GENREF_RUNTIME_LOCK
@@ -381,7 +394,10 @@ fn genref_runtime_stale_handle_returns_zero_after_slot_reuse() {
 fn genref_runtime_null_handle_returns_zero() {
     let so = GENREF_SO.get_or_init(build_genref_so);
     let Some(ref so_path) = *so else {
-        println!("clang not found — skipping genref C-shim smoke test");
+        crate::common::gate::skipped(
+            "genref_phase_jb",
+            "clang not found — skipping genref C-shim smoke test",
+        );
         return;
     };
     let _serial = GENREF_RUNTIME_LOCK

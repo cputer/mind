@@ -76,7 +76,10 @@ pub fn some_val() -> i64 {
 fn bare_variant_ctor_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bare-variant-ctor-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bare_variant_ctor_run",
+            "bare-variant-ctor-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -88,13 +91,8 @@ fn bare_variant_ctor_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("bare-variant-ctor-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("bare-variant-ctor-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("bare_variant_ctor_run", &out) {
+        return;
     }
 
     let py = format!(

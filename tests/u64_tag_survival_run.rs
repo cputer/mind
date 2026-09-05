@@ -90,7 +90,10 @@ const U64_MAX_DIV_2: i64 = 9_223_372_036_854_775_807;
 fn assert_carrier(stem: &str, src: &str, expected: &[(&str, i64)]) {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("u64-tag-survival[{stem}]: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "u64_tag_survival_run",
+            &format!("u64-tag-survival[{stem}]: mindc not found; skipping"),
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -106,13 +109,8 @@ fn assert_carrier(stem: &str, src: &str, expected: &[(&str, i64)]) {
         ])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("u64-tag-survival[{stem}]: needs mlir-build; skipping");
-            return;
-        }
-        panic!("u64-tag-survival[{stem}]: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("u64_tag_survival_run", &out) {
+        return;
     }
 
     let mut script = format!(

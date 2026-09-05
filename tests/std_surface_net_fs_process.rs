@@ -262,7 +262,10 @@ mod mlir_functional {
     fn compile_to_so(src: &str, tag: &str) -> Option<PathBuf> {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("{tag}: mindc not found at {mindc:?}; skipping");
+            crate::common::gate::skipped(
+                "std_surface_net_fs_process",
+                &format!("{tag}: mindc not found at {mindc:?}; skipping"),
+            );
             return None;
         }
         let dir = out_dir();

@@ -44,6 +44,48 @@ pub fn mindc_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mindc"))
 }
 
+/// A scratch directory private to ONE test target in ONE process.
+///
+/// The std smokes wrote their `.so` to a FIXED shared path
+/// (`std::env::temp_dir().join("mind_<x>_smoke.so")`). On a machine running two
+/// test processes at once — two agents, two CI jobs on one runner, a `cargo
+/// test` beside a preflight — one process's `mindc` truncates the artifact
+/// another has just `dlopen`ed, and the flake reads as a compiler regression.
+/// The path is also world-writable and predictable, so another user can
+/// pre-create it as a symlink and redirect the write.
+///
+/// The directory carries the target name and the pid; the FILE names inside are
+/// left alone so an artifact's identity is unchanged.
+///
+/// deferred: the std smokes named in the finding are routed; the remaining
+/// `std::env::temp_dir()` sites across `tests/*.rs` still write to the shared
+/// root. Upgrade path: route each through this helper as its file is next
+/// touched — one helper, no per-file policy.
+#[allow(dead_code)]
+pub fn scratch_dir(target: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("mind-{target}-{}", std::process::id()));
+    std::fs::create_dir_all(&d)
+        .unwrap_or_else(|e| panic!("create scratch dir {}: {e}", d.display()));
+    d
+}
+
+/// Return the path to the `mind` CLI binary for the CURRENT test-profile and
+/// feature set.
+///
+/// Same staleness argument as [`mindc_bin`], and the same defect it was written
+/// for. Nine CLI/exec harnesses each hand-rolled
+/// `CARGO_MANIFEST_DIR/target/{debug,release}/mind`, which is wrong twice over:
+/// it ignores `CARGO_TARGET_DIR` (so the probe misses entirely whenever the
+/// build is directed elsewhere) and it names a profile directory rather than the
+/// binary cargo actually built for this run. The miss then landed on a
+/// `println!("skipping"); return;`, so nine CLI gates asserted nothing and
+/// reported green. `CARGO_BIN_EXE_mind` is baked in at the test binary's own
+/// compile time by the `[[bin]] name = "mind"` entry and cannot be stale.
+#[allow(dead_code)]
+pub fn mind_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_mind"))
+}
+
 /// Return `Some(path)` if the mindc binary exists, or `None` (suitable for
 /// soft-skip inside a `#[test]`) if it does not.
 ///

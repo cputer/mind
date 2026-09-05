@@ -69,7 +69,7 @@ mod mlir_functional {
     fn fifo_full_wrap_partial_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("ring: mindc not found; skipping");
+            crate::common::gate::skipped("std_surface_ring", "ring: mindc not found; skipping");
             return;
         }
         let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

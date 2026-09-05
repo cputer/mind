@@ -55,7 +55,10 @@ pub fn t_struct_u32() -> i64 {
 fn struct_field_from_narrow_ssa_value_lowers() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("struct-narrow-field: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "struct_narrow_field",
+            "struct-narrow-field: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -67,13 +70,8 @@ fn struct_field_from_narrow_ssa_value_lowers() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("struct-narrow-field: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("struct-narrow-field: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("struct_narrow_field", &out) {
+        return;
     }
 
     let py = format!(

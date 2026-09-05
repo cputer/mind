@@ -55,7 +55,10 @@ pub fn run() -> i64 {
 fn struct_array_field_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("struct-array-field-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "struct_array_field_run",
+            "struct-array-field-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -67,13 +70,8 @@ fn struct_array_field_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("struct-array-field-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("struct-array-field-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("struct_array_field_run", &out) {
+        return;
     }
 
     // push 10 + 20 + 30, persisted, read back at [0]/[1]/[2] → 60.

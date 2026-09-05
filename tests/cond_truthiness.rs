@@ -46,7 +46,10 @@ pub fn count(n: i64) -> i64 {
 fn integer_condition_is_true_iff_nonzero() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("cond-truthiness: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "cond_truthiness",
+            "cond-truthiness: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -58,13 +61,8 @@ fn integer_condition_is_true_iff_nonzero() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("cond-truthiness: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("cond-truthiness: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("cond_truthiness", &out) {
+        return;
     }
 
     let py = format!(

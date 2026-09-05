@@ -62,7 +62,10 @@ pub fn empty_lit_idx() -> i64 {
 fn array_ctor_push_get_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("array-ctor-push-get-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "array_ctor_push_get_run",
+            "array-ctor-push-get-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -74,13 +77,8 @@ fn array_ctor_push_get_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("array-ctor-push-get-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("array-ctor-push-get-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("array_ctor_push_get_run", &out) {
+        return;
     }
 
     let py = format!(

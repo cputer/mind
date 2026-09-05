@@ -52,7 +52,10 @@ fn compile(src: &str, tag: &str) -> (bool, String) {
 fn fixed_bytes_into_vec_param_is_rejected() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug38-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_fixed_into_vec_run",
+            "bug38-run: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn take_bytes(input: bytes) -> i64 { return input.length }\n\
@@ -73,7 +76,10 @@ fn fixed_bytes_into_vec_param_is_rejected() {
 fn growable_bytes_arg_still_compiles() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug38-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_fixed_into_vec_run",
+            "bug38-run: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn take_bytes(input: bytes) -> i64 { return input.length }\n\
@@ -93,7 +99,10 @@ fn growable_bytes_arg_still_compiles() {
 fn fixed_bytes_used_as_fixed_compiles() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug38-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_fixed_into_vec_run",
+            "bug38-run: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn run() -> i64 { let h = bytes[32].zero(); return 1 }\n";
@@ -116,7 +125,10 @@ fn fixed_bytes_used_as_fixed_compiles() {
 fn fixed_bytes_local_into_vec_param_is_rejected() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug38-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_fixed_into_vec_run",
+            "bug38-run: mindc not found; skipping",
+        );
         return;
     }
     let src = "fn take_bytes(input: bytes) -> i64 { return __mind_load_i64(input + 8) }\n\
@@ -144,7 +156,10 @@ fn fixed_bytes_local_into_vec_param_is_rejected() {
 fn fixed_bytes_local_into_fixed_param_compiles() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug38-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bytes_fixed_into_vec_run",
+            "bug38-run: mindc not found; skipping",
+        );
         return;
     }
     let src = "fn first(buf: bytes[32]) -> i64 { return __mind_load_i64(buf) }\n\

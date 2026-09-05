@@ -111,12 +111,15 @@ fn build_vec_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("blas_vec_q16_smoke: {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "blas_vec_q16_smoke",
+                    &format!("blas_vec_q16_smoke: {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("blas_vec_q16_smoke");
         let src_path = dir.join("mind_blas_vec_q16_smoke.mind");
         let so_path = dir.join("mind_blas_vec_q16_smoke.so");
         std::fs::write(&src_path, SRC).expect("write test .mind source");
@@ -144,12 +147,15 @@ fn build_matmul_q16_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("blas_vec_q16_smoke(matmul_q16): {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "blas_vec_q16_smoke",
+                    &format!("blas_vec_q16_smoke(matmul_q16): {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("blas_vec_q16_smoke");
         let src_path = dir.join("mind_blas_vec_matmul_q16_smoke.mind");
         let so_path = dir.join("mind_blas_vec_matmul_q16_smoke.so");
         std::fs::write(&src_path, SRC_MATMUL_Q16).expect("write Q16 matmul test .mind source");
@@ -177,12 +183,15 @@ fn build_matmul_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("blas_vec_q16_smoke(matmul): {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "blas_vec_q16_smoke",
+                    &format!("blas_vec_q16_smoke(matmul): {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("blas_vec_q16_smoke");
         let src_path = dir.join("mind_blas_vec_matmul_smoke.mind");
         let so_path = dir.join("mind_blas_vec_matmul_smoke.so");
         std::fs::write(&src_path, SRC_MATMUL).expect("write matmul test .mind source");

@@ -71,7 +71,10 @@ fn emit_shared(
 fn f64_abi_negative_control_and_positive() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("f64-abi-negative-control: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "f64_abi_negative_control",
+            "f64-abi-negative-control: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -84,13 +87,8 @@ fn f64_abi_negative_control_and_positive() {
 
     // ---- POSITIVE control: the identical call with an f64 arg must BUILD. ----
     let pout = emit_shared(&mindc, &pos, &pos_so);
-    if !pout.status.success() {
-        let stderr = String::from_utf8_lossy(&pout.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("f64-abi-negative-control: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("POSITIVE control (f64 arg) must compile, but failed:\n{stderr}");
+    if !crate::common::gate::compiled("f64_abi_negative_control", &pout) {
+        return;
     }
 
     // ---- NEGATIVE: --emit-shared must FAIL at the f64 call-ABI boundary. ----

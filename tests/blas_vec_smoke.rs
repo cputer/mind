@@ -83,12 +83,15 @@ fn build_vec_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("blas_vec_smoke: {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "blas_vec_smoke",
+                    &format!("blas_vec_smoke: {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("blas_vec_smoke");
         let src_path = dir.join("mind_blas_vec_smoke.mind");
         let so_path = dir.join("mind_blas_vec_smoke.so");
         std::fs::write(&src_path, SRC).expect("write test .mind source");

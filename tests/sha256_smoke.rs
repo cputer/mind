@@ -57,7 +57,10 @@ fn build_sha256_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                println!("sha256_smoke: {tool} not on PATH; skipping");
+                crate::common::gate::skipped(
+                    "sha256_smoke",
+                    &format!("sha256_smoke: {tool} not on PATH; skipping"),
+                );
                 return None;
             }
         }
@@ -71,7 +74,7 @@ fn build_sha256_so() -> Option<&'static PathBuf> {
             "std/sha256.mind not found at {src_path:?}"
         );
 
-        let dir = std::env::temp_dir();
+        let dir = crate::common::scratch_dir("sha256_smoke");
         let so_path = dir.join("mind_sha256_smoke.so");
 
         let status = Command::new(mindc_bin())

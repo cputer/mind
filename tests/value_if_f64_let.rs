@@ -68,7 +68,10 @@ pub fn t_i64_else() -> i64 { i64_let(1) }
 fn value_if_with_f64_branch_let_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("value-if-f64-let: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "value_if_f64_let",
+            "value-if-f64-let: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -80,13 +83,8 @@ fn value_if_with_f64_branch_let_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("value-if-f64-let: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("value-if-f64-let: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("value_if_f64_let", &out) {
+        return;
     }
 
     // Flat statements (the `\`-continuation strips leading whitespace).

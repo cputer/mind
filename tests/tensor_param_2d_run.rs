@@ -42,7 +42,10 @@ pub fn msum2(t: tensor<f64[2,2]>) -> f64 {
 fn tensor_param_2d_sum_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("tensor-param-2d-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "tensor_param_2d_run",
+            "tensor-param-2d-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -56,13 +59,8 @@ fn tensor_param_2d_sum_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("tensor-param-2d-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("tensor-param-2d-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("tensor_param_2d_run", &out) {
+        return;
     }
     assert!(
         so.exists(),

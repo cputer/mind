@@ -92,7 +92,10 @@ pub fn kat_u64_index() -> i64 {
 fn bug6_tuple_destructure_u64_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("bug6-tuple-destructure-u64-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bug6_tuple_destructure_u64_run",
+            "bug6-tuple-destructure-u64-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -104,13 +107,8 @@ fn bug6_tuple_destructure_u64_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("bug6-tuple-destructure-u64-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("bug6-tuple-destructure-u64-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("bug6_tuple_destructure_u64_run", &out) {
+        return;
     }
 
     let py = format!(

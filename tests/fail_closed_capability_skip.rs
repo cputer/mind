@@ -24,9 +24,10 @@
 //! the `mlir-opt`/`clang` binaries — is asserted to SURVIVE, because removing
 //! it would be a different bug, not a fix.
 //!
-//! The BACKLOG of sites that have not been routed through the helper yet is
-//! held under its own set-valued ratchet in `tests/fail_open_skip_site_ratchet.rs`;
-//! this file owns the helper's contract, that one owns the conversion progress.
+//! The BACKLOG of unrouted sites is drained:
+//! `tests/fail_open_skip_site_ratchet.rs` now holds the tree to a FLAT
+//! prohibition (floor zero, no backlog table). This file owns the helper's
+//! CONTRACT; that one owns its COVERAGE.
 
 mod common;
 

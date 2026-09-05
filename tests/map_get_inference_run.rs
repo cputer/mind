@@ -49,7 +49,10 @@ pub fn run() -> i64 {
 fn map_get_inference_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("map-get-inference-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "map_get_inference_run",
+            "map-get-inference-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -61,13 +64,8 @@ fn map_get_inference_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("map-get-inference-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("map-get-inference-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("map_get_inference_run", &out) {
+        return;
     }
 
     // from_const(7)=42, from_const(8)=99, from_field reads TABLE[3] (absent → 0)

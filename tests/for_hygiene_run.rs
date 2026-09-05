@@ -98,7 +98,10 @@ fn main() -> i64 { return 0; }
 fn range_for_hygiene_runs_correctly() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("for-hygiene-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "for_hygiene_run",
+            "for-hygiene-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -110,13 +113,8 @@ fn range_for_hygiene_runs_correctly() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("for-hygiene-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("for-hygiene-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("for_hygiene_run", &out) {
+        return;
     }
 
     let py = format!(

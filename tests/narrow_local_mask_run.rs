@@ -59,7 +59,10 @@ fn run_returning(body: &str, tag: &str) -> i64 {
 fn narrow_local_masks_and_sign_extends() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("narrow-local: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "narrow_local_mask_run",
+            "narrow-local: mindc not found; skipping",
+        );
         return;
     }
     // probe for mlir-build
@@ -77,7 +80,10 @@ fn narrow_local_masks_and_sign_extends() {
             .unwrap();
         let e = String::from_utf8_lossy(&o.stderr);
         if e.contains("mlir-build") && e.contains("requires") {
-            println!("narrow-local: needs mlir-build; skipping");
+            crate::common::gate::skipped(
+                "narrow_local_mask_run",
+                "narrow-local: needs mlir-build; skipping",
+            );
             return;
         }
     }

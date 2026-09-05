@@ -15,6 +15,10 @@
 
 use libmind::{CompileOptions, compile_source, parser};
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 // This file is a PARSER-acceptance suite (see the module docstring): each test
 // asserts a Phase-10 surface construct *parses*. It deliberately stops at the
 // parser — using a full `compile_source` here conflated parser coverage with
@@ -509,13 +513,26 @@ const TRACKING_CORPUS_WATERMARK: usize = 21;
 
 #[test]
 fn parses_tracking_corpus_watermark() {
+    // OPTIONAL INPUT: the tracking corpus lives outside this repo and is
+    // supplied by the operator through MIND_TRACKING_CORPUS_DIR. Nothing in CI
+    // sets it, so it may not fail closed.
     let Some(dir_str) = std::env::var_os("MIND_TRACKING_CORPUS_DIR") else {
-        eprintln!("MIND_TRACKING_CORPUS_DIR not set; skipping sweep");
+        crate::common::gate::skipped_optional(
+            "parse_phase10_surface",
+            "MIND_TRACKING_CORPUS_DIR not set; the tracking-corpus sweep has no input",
+        );
         return;
     };
     let dir = std::path::PathBuf::from(&dir_str);
     if !dir.exists() {
-        eprintln!("{} not present; skipping sweep", dir.display());
+        // OPTIONAL INPUT: same operator-supplied corpus as above.
+        crate::common::gate::skipped_optional(
+            "parse_phase10_surface",
+            &format!(
+                "{} not present; the tracking-corpus sweep has no input",
+                dir.display()
+            ),
+        );
         return;
     }
     let mut passed = 0usize;

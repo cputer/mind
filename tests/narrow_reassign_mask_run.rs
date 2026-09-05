@@ -65,7 +65,10 @@ fn run_with(body: &str, tag: &str, arg: i64) -> i64 {
 fn narrow_reassign_re_masks_to_declared_width() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("narrow-reassign: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "narrow_reassign_mask_run",
+            "narrow-reassign: mindc not found; skipping",
+        );
         return;
     }
     // probe for mlir-build
@@ -83,7 +86,10 @@ fn narrow_reassign_re_masks_to_declared_width() {
             .unwrap();
         let e = String::from_utf8_lossy(&o.stderr);
         if e.contains("mlir-build") && e.contains("requires") {
-            println!("narrow-reassign: needs mlir-build; skipping");
+            crate::common::gate::skipped(
+                "narrow_reassign_mask_run",
+                "narrow-reassign: needs mlir-build; skipping",
+            );
             return;
         }
     }

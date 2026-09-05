@@ -61,7 +61,10 @@ pub fn ctor_tag() -> i64 {
 fn cross_module_enum_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("cross-module-enum-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "cross_module_enum_run",
+            "cross-module-enum-run: mindc not found; skipping",
+        );
         return;
     }
 
@@ -83,13 +86,8 @@ fn cross_module_enum_runs() {
         .current_dir(&proj)
         .output()
         .expect("run mindc build");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("cross-module-enum-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("cross-module-enum-run: mindc build failed:\n{stderr}");
+    if !crate::common::gate::compiled("cross_module_enum_run", &out) {
+        return;
     }
 
     // Locate the produced cdylib under target/.

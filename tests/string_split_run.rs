@@ -68,7 +68,10 @@ pub fn run() -> i64 {
 fn string_split_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("string-split-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "string_split_run",
+            "string-split-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -80,13 +83,8 @@ fn string_split_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("string-split-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("string-split-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("string_split_run", &out) {
+        return;
     }
 
     // "A+B+C".split("+") = 3 parts; each trims to length 1 → 3*100 + 3 = 303.

@@ -18,11 +18,15 @@ use libmind::eval;
 
 use libmind::parser;
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 #[test]
 fn mlir_opt_runs_when_available() {
     let bin = std::env::var("MLIR_OPT").unwrap_or_else(|_| "mlir-opt".into());
     if which::which(&bin).is_err() {
-        eprintln!("mlir-opt not found, skipping test");
+        crate::common::gate::skipped("mlir_opt", "mlir-opt not found, skipping test");
         return;
     }
 

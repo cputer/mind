@@ -137,7 +137,10 @@ pub fn unann(x: i64) -> i64 {
 fn narrow_signedness_batch2_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("narrow-signedness-batch2-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "narrow_signedness_batch2_run",
+            "narrow-signedness-batch2-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -149,13 +152,8 @@ fn narrow_signedness_batch2_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("narrow-signedness-batch2-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("narrow-signedness-batch2-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("narrow_signedness_batch2_run", &out) {
+        return;
     }
 
     // (fn, ctypes-arg exprs, expected) — one case per finding + controls.

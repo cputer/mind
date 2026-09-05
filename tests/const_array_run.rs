@@ -52,7 +52,10 @@ pub fn w_weighted() -> i64 {
 fn const_array_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("const-array-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "const_array_run",
+            "const-array-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -64,13 +67,8 @@ fn const_array_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("const-array-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("const-array-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("const_array_run", &out) {
+        return;
     }
 
     let py = format!(

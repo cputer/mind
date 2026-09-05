@@ -100,7 +100,10 @@ pub fn t_u32_zero_extend() -> i64 {
 fn narrow_int_inter_function_abi() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("narrow-call-abi: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "narrow_call_abi",
+            "narrow-call-abi: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -112,15 +115,11 @@ fn narrow_int_inter_function_abi() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        // A genuinely-missing MLIR backend is a skip; a type-mismatch / lowering
-        // error is the regression this gate exists to catch — fail loud.
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("narrow-call-abi: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("narrow-call-abi: mindc --emit-shared failed:\n{stderr}");
+    // A genuinely-missing MLIR backend is a skip; a type-mismatch / lowering
+    // error is the regression this gate exists to catch — fail loud. The two
+    // outcomes are separated by the shared classifier, never by this call site.
+    if !crate::common::gate::compiled("narrow_call_abi", &out) {
+        return;
     }
 
     // NOTE: flat top-level statements only — Rust's `\`-line-continuation strips

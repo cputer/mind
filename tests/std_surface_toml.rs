@@ -336,8 +336,11 @@ mod mlir_functional {
     fn toml_parse_mind_toml_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!(
-                "toml_parse_mind_toml_via_compiled_so: mindc not found at {mindc:?}; skipping"
+            crate::common::gate::skipped(
+                "std_surface_toml",
+                &format!(
+                    "toml_parse_mind_toml_via_compiled_so: mindc not found at {mindc:?}; skipping"
+                ),
             );
             return;
         }

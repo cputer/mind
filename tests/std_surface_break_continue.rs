@@ -51,7 +51,10 @@ mod functional {
     fn break_continue_round_trip_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("break_continue_round_trip: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_break_continue",
+                "break_continue_round_trip: mindc not found; skipping",
+            );
             return;
         }
         let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

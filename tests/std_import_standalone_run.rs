@@ -61,7 +61,10 @@ pub fn lookups() -> i64 {
 fn std_import_map_resolves_standalone_and_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("std-import-standalone-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "std_import_standalone_run",
+            "std-import-standalone-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -73,20 +76,13 @@ fn std_import_map_resolves_standalone_and_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("std-import-standalone-run: needs mlir-build; skipping");
-            return;
-        }
-        // The exact failure this test guards against: a featureless binary
-        // sprays `E2003 unsupported call to map_new` (one per std call) because
-        // its bundled std surface is empty. With the prescribed features this
-        // path must NOT be hit — surface the stderr so a regression is obvious.
-        panic!(
-            "std-import-standalone-run: `import std.map` failed to resolve \
-             standalone (this is the E2003 stale-binary regression):\n{stderr}"
-        );
+    // The exact failure this test guards against: a featureless binary sprays
+    // `E2003 unsupported call to map_new` (one per std call) because its bundled
+    // std surface is empty — i.e. `import std.map` failed to resolve standalone.
+    // That is NOT a capability gap, so the shared classifier panics on it and
+    // quotes the stderr; only a coded host-capability refusal may skip here.
+    if !crate::common::gate::compiled("std_import_standalone_run", &out) {
+        return;
     }
 
     let py = format!(

@@ -124,6 +124,10 @@ CRITICAL = {
     t: tuple((e.split()[0], int(e.split()[1])) for e in _array(f"CRITICAL_{t}")) for t in TIERS
 }
 QUARANTINED = {t: _array(f"QUARANTINE_{t}") for t in TIERS}
+# Read out of the gate script itself, never hand-copied: the TOLERANCE
+# SHRINK-RATCHET fails a tier whose ENV_TOLERATED list names a target the tier
+# never built, so a faithful fixture must RUN every tolerated target.
+TOLERATED = {t: _array(f"ENV_TOLERATED_{t}") for t in TIERS}
 FLOOR_TESTS = {t: _int(f"FLOOR_TESTS_{t}") for t in TIERS}
 FLOOR_HARNESSES = {t: _int(f"FLOOR_HARNESSES_{t}") for t in TIERS}
 
@@ -131,6 +135,7 @@ FLOOR_HARNESSES = {t: _int(f"FLOOR_HARNESSES_{t}") for t in TIERS}
 # margin whatever they are today — and so PER_HARNESS always satisfies the largest
 # CRITICAL minimum, which is what makes the erasure cases below isolate the
 # per-harness check from the aggregate floor.
+CRITICAL_NAMES = {t: [n for n, _ in rows] for t, rows in CRITICAL.items()}
 HARNESSES = max(FLOOR_HARNESSES.values()) + 20
 PER_HARNESS = max(10, *(m for rows in CRITICAL.values() for _, m in rows))
 
@@ -161,6 +166,7 @@ def tier_log(
     cargo_exit: int = 0,
     emit_exit_marker: bool = True,
     erase: tuple[str, ...] = (),
+    omit_tolerated: bool = False,
 ) -> str:
     """A log that clears every floor of `tier`, plus whatever the case injects.
 
@@ -177,7 +183,18 @@ def tier_log(
             block(f"Running tests/{name}.rs (target/debug/deps/{name}-02)", PER_HARNESS - 1, 1)
         )
         error_lines = error_lines + (f"error: test failed, to rerun pass `--test {name}`",)
-    filler = HARNESSES - len(CRITICAL[tier]) - len(QUARANTINED[tier])
+    tolerated = (
+        []
+        if omit_tolerated
+        else [n for n in TOLERATED[tier] if n not in CRITICAL_NAMES[tier] and n not in QUARANTINED[tier]]
+    )
+    for name in tolerated:
+        # An env-tolerated target that the tier BUILDS and that passes. Tolerance
+        # is for its ran=0, not for its absence.
+        out.append(
+            block(f"Running tests/{name}.rs (target/debug/deps/{name}-04)", PER_HARNESS)
+        )
+    filler = HARNESSES - len(CRITICAL[tier]) - len(QUARANTINED[tier]) - len(tolerated)
     for i in range(filler):
         out.append(
             block(f"Running tests/filler_{i:03d}.rs (target/debug/deps/filler_{i:03d}-03)", PER_HARNESS)
@@ -211,6 +228,19 @@ def case(name: str, tier: str, log_text: str, want_nonzero: bool) -> None:
 
 # --- 0. POSITIVE CONTROL -----------------------------------------------------
 case("baseline exec log is GREEN (fixture sanity)", "exec", tier_log("exec"), False)
+
+# --- 0b. TOLERANCE SHRINK-RATCHET -------------------------------------------
+# The missing half of the quarantine ratchet. A quarantined target that starts
+# passing must leave its list; an ENV_TOLERATED name the tier never BUILDS had no
+# such rule and produced no signal at all, so dead tolerance accumulated silently
+# and pre-approved a ran=0 for the day the target became buildable again.
+if TOLERATED["exec"]:
+    case(
+        "an ENV_TOLERATED target this tier never built reds 'exec'",
+        "exec",
+        tier_log("exec", omit_tolerated=True),
+        True,
+    )
 
 # --- 1..3. the three harness kinds cargo names with a non---test selector ----
 case(

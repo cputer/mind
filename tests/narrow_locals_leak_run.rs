@@ -28,6 +28,10 @@ use libmind::eval::lower::lower_to_ir;
 use libmind::ir::compact::emit_mic3;
 use libmind::parser::parse;
 
+/// Shared fail-closed capability gate (`common::gate`): a skip must panic
+/// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
+mod common;
+
 /// Cross-module leak: module A leaves a `c -> u8` entry; module B's i64 `c`
 /// must lower IDENTICALLY whether or not A ran first on the same thread. The
 /// reset added to `lower_to_ir` makes B independent of A; without it, B's
@@ -104,7 +108,10 @@ mod block_run {
     fn block_local_narrow_let_does_not_mask_outer_i64() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("narrow-leak block: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "narrow_locals_leak_run",
+                "narrow-leak block: mindc not found; skipping",
+            );
             return;
         }
         // probe for mlir-build availability
@@ -122,7 +129,10 @@ mod block_run {
                 .unwrap();
             let e = String::from_utf8_lossy(&o.stderr);
             if e.contains("mlir-build") && e.contains("requires") {
-                println!("narrow-leak block: needs mlir-build; skipping");
+                crate::common::gate::skipped(
+                    "narrow_locals_leak_run",
+                    "narrow-leak block: needs mlir-build; skipping",
+                );
                 return;
             }
         }

@@ -42,7 +42,10 @@ pub fn digit_byte(c: i64) -> i64 { return c - '0'.byte() }
 fn char_literal_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("char-literal-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "char_literal_run",
+            "char-literal-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -54,13 +57,8 @@ fn char_literal_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("char-literal-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("char-literal-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("char_literal_run", &out) {
+        return;
     }
 
     let py = format!(

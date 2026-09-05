@@ -100,7 +100,10 @@ fn tree_eval_call(func: &str, arg: i64) -> i64 {
 fn early_return_tree_eval_matches_native() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("return-flow-tree-eval-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "return_flow_tree_eval_run",
+            "return-flow-tree-eval-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -116,13 +119,8 @@ fn early_return_tree_eval_matches_native() {
         ])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("return-flow-tree-eval-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("return-flow-tree-eval-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("return_flow_tree_eval_run", &out) {
+        return;
     }
 
     // (function, argument) probes spanning all four shapes and both branch sides.

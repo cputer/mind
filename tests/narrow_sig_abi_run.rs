@@ -95,7 +95,10 @@ pub fn t_u8_tail_wrap() -> i64 {
 fn narrow_signature_i64_slot_abi() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("narrow-sig-abi: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "narrow_sig_abi_run",
+            "narrow-sig-abi: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -107,13 +110,8 @@ fn narrow_signature_i64_slot_abi() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("narrow-sig-abi: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("narrow-sig-abi: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("narrow_sig_abi_run", &out) {
+        return;
     }
 
     // Flat top-level python statements only — see narrow_call_abi.rs for why

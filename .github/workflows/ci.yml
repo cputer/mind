@@ -5,24 +5,24 @@ name: CI
 # Every gate a workflow step invokes goes through scripts/run_gate.py, which
 # refuses a gate that exits 0 while publishing no `asserted=<N>` evidence and
 # refuses a gate that announced a SKIP. `cargo test` cannot publish that line,
-# so the ~15 cargo steps in this file are outside the contract. Two known
-# vacuity holes live in that gap and are NOT closed by the runner:
+# so the ~15 cargo steps in this file are outside the contract. ONE known
+# vacuity hole is left in that gap and is NOT closed by the runner:
 #
-#   * a capability skip inside a Rust test (`println!("... skipping"); return;`)
-#     turns a FAILING compile into a PASSING test; the fail-closed
-#     `MIND_BENCH_REQUIRE` guard is honoured in 3 of 322 test files. Upgrade
-#     path: one shared test helper that panics when MIND_BENCH_REQUIRE is set
-#     and otherwise reports `ran=0`, with the ~273 skip sites routed through it
-#     instead of 273 hand-written copies.
 #   * the differential fuzzer reads its program count from MINDFUZZ_ITERS with
 #     no floor, so MINDFUZZ_ITERS=0 digests zero programs on BOTH runners —
 #     equal, non-empty and green on `mindfuzz_cross_runner_identity`. Upgrade
 #     path: emit `iters=<n>` into MINDFUZZ_DIGEST_OUT and have that job assert
 #     n >= the default alongside the digest compare.
 #
+# CLOSED: the capability-skip hole (`println!("... skipping"); return;` turning a
+# FAILING compile into a PASSING test) is gone. Every skip-and-return site in
+# tests/**/*.rs routes through `tests/common/gate.rs`, which panics under
+# MIND_BENCH_REQUIRE=1 and otherwise emits `SDLC-GATE <target> ran=0 fail=0`;
+# `tests/fail_open_skip_site_ratchet.rs` fails on any site that does not.
+#
 # scripts/gate_runner_wiring_lint.py holds this declaration to the deferral, and
 # removes it the moment these steps stop being invoked directly.
-# run_gate-exempt: cargo-test - deferred: a cargo step cannot publish asserted=N; upgrade path is the shared skip helper + the fuzzer program-count floor described above
+# run_gate-exempt: cargo-test - deferred: a cargo step cannot publish asserted=N; upgrade path is the fuzzer program-count floor described above
 
 on:
   push:

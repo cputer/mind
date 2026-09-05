@@ -70,7 +70,10 @@ pub fn run() -> i64 {
 fn trait_static_dispatch_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("trait-static-dispatch-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "trait_static_dispatch_run",
+            "trait-static-dispatch-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -82,13 +85,8 @@ fn trait_static_dispatch_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("trait-static-dispatch-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("trait-static-dispatch-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("trait_static_dispatch_run", &out) {
+        return;
     }
 
     let py = format!(
@@ -115,7 +113,10 @@ fn trait_static_dispatch_runs() {
 fn trait_call_without_impl_is_rejected() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("trait-no-impl: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "trait_static_dispatch_run",
+            "trait-no-impl: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();

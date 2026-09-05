@@ -37,7 +37,10 @@ use std::process::Command;
 fn compile(stem: &str, src: &str) -> Option<Result<std::path::PathBuf, String>> {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("{stem}: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "bare_variant_ambiguity_run",
+            &format!("{stem}: mindc not found; skipping"),
+        );
         return None;
     }
     let dir = std::env::temp_dir();
@@ -56,8 +59,14 @@ fn compile(stem: &str, src: &str) -> Option<Result<std::path::PathBuf, String>> 
     if out.status.success() {
         Some(Ok(so))
     } else {
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("{stem}: mindc --emit-shared needs mlir-build; skipping");
+        // The caller distinguishes Ok/Err itself, so `gate::compiled` (which
+        // panics on any failure) does not fit; the capability question is still
+        // answered by the one shared classifier and the skip is fail-closed.
+        if crate::common::gate::is_capability_gap(&stderr) {
+            crate::common::gate::skipped(
+                "bare_variant_ambiguity_run",
+                &format!("{stem}: mindc --emit-shared: host capability gap"),
+            );
             return None;
         }
         Some(Err(stderr))

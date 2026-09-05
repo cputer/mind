@@ -217,7 +217,10 @@ fn tempfile_path(name: &str) -> String {
 fn cli_verify_reports_ssa_valid_on_well_formed_artifact() {
     let bin = mindc_bin();
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found at {bin:?}");
+        crate::common::gate::skipped(
+            "verify_ssa",
+            &format!("Skipping: mindc binary not found at {bin:?}"),
+        );
         return;
     }
 
@@ -245,7 +248,10 @@ fn cli_verify_reports_ssa_valid_on_well_formed_artifact() {
 fn cli_verify_fails_on_ssa_corrupted_artifact() {
     let bin = mindc_bin();
     if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found at {bin:?}");
+        crate::common::gate::skipped(
+            "verify_ssa",
+            &format!("Skipping: mindc binary not found at {bin:?}"),
+        );
         return;
     }
 

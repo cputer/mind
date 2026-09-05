@@ -66,7 +66,10 @@ mod mlir_functional {
     fn monotonic_req_ids_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("reactor: mindc not found; skipping");
+            crate::common::gate::skipped(
+                "std_surface_reactor",
+                "reactor: mindc not found; skipping",
+            );
             return;
         }
         let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

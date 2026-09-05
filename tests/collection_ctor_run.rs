@@ -34,7 +34,7 @@ pub fn run() -> i64 {
 fn collection_ctor_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("skip: no mindc");
+        crate::common::gate::skipped("collection_ctor_run", "skip: no mindc");
         return;
     }
     let dir = std::env::temp_dir();
@@ -48,7 +48,7 @@ fn collection_ctor_runs() {
     if !out.status.success() {
         let e = String::from_utf8_lossy(&out.stderr);
         if e.contains("mlir-build") && e.contains("requires") {
-            println!("skip: needs mlir-build");
+            crate::common::gate::skipped("collection_ctor_run", "skip: needs mlir-build");
             return;
         }
         panic!("compile failed:\n{e}");

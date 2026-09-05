@@ -62,7 +62,10 @@ pub fn kat_i64_slt() -> i64 {
 fn u64_cast_signed_compare_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("u64-cast-signed-compare-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "u64_cast_signed_compare_run",
+            "u64-cast-signed-compare-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -74,13 +77,8 @@ fn u64_cast_signed_compare_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("u64-cast-signed-compare-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("u64-cast-signed-compare-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("u64_cast_signed_compare_run", &out) {
+        return;
     }
 
     let py = format!(

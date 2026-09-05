@@ -68,7 +68,7 @@ mod mlir_functional {
     fn bump_alloc_align_reset_overflow_via_compiled_so() {
         let mindc = mindc_bin();
         if !mindc.exists() {
-            println!("arena: mindc not found; skipping");
+            crate::common::gate::skipped("std_surface_arena", "arena: mindc not found; skipping");
             return;
         }
 

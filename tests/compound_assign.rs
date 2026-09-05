@@ -79,7 +79,10 @@ pub fn t_xor() -> i64 {
 fn compound_assignment_desugars_and_computes() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("compound-assign: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "compound_assign",
+            "compound-assign: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -91,13 +94,8 @@ fn compound_assignment_desugars_and_computes() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("compound-assign: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("compound-assign: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("compound_assign", &out) {
+        return;
     }
 
     let py = format!(

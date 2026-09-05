@@ -106,7 +106,10 @@ pub fn ctor_in_branch(flag: i64) -> i64 {
 fn enum_struct_variant_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("enum-struct-variant-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "enum_struct_variant_run",
+            "enum-struct-variant-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -118,13 +121,8 @@ fn enum_struct_variant_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("enum-struct-variant-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("enum-struct-variant-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("enum_struct_variant_run", &out) {
+        return;
     }
 
     let py = format!(

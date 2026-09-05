@@ -127,7 +127,10 @@ fn check_rejects(mindc: &Path, src: &str) -> (bool, String) {
 fn array_oob_is_a_deterministic_trap_not_a_clamp() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("array-oob-trap: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "array_oob_trap_run",
+            "array-oob-trap: mindc not found; skipping",
+        );
         return;
     }
 

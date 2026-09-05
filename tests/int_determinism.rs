@@ -53,7 +53,10 @@ pub fn imod32(a: i32, b: i32) -> i32 {
 fn int_min_div_and_oversized_shift_are_deterministic() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("int-determinism: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "int_determinism",
+            "int-determinism: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();

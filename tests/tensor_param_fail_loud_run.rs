@@ -78,7 +78,10 @@ fn emit_shared(src: &str, tag: &str) -> (bool, bool, String) {
 fn tensor_param_emit_shared_fails_loud() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("track15: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "tensor_param_fail_loud_run",
+            "track15: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn r(x: tensor<f32[2]>) -> tensor<f32[2]> {\n\
@@ -147,7 +150,10 @@ fn tensor_param_emit_shared_fails_loud() {
 fn tensor_param_lowers_whether_or_not_the_body_uses_it() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("track15: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "tensor_param_fail_loud_run",
+            "track15: mindc not found; skipping",
+        );
         return;
     }
 
@@ -180,7 +186,10 @@ fn tensor_param_lowers_whether_or_not_the_body_uses_it() {
 fn internal_tensor_in_i64_fn_fails_loud() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("track15: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "tensor_param_fail_loud_run",
+            "track15: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn r(n: i64) -> i64 {\n\
@@ -209,7 +218,10 @@ fn internal_tensor_in_i64_fn_fails_loud() {
 fn scalar_i64_fn_still_compiles() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("track15: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "tensor_param_fail_loud_run",
+            "track15: mindc not found; skipping",
+        );
         return;
     }
     let src = "pub fn r(x: i64) -> i64 { return x + 1 }\n";

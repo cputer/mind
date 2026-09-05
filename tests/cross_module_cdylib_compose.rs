@@ -281,7 +281,10 @@ entry = "src/main.mind"
 fn substrate_modules_link_natively_into_consumer_cdylib() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("compose: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "cross_module_cdylib_compose",
+            "compose: mindc not found; skipping",
+        );
         return;
     }
 

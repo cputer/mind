@@ -244,7 +244,10 @@ mod mlir_tests {
     fn compile_async_so(dir: &std::path::Path) -> Option<PathBuf> {
         let tool = "mlir-translate";
         if !tool_on_path(tool) && !tool_on_path("mlir-opt") {
-            println!("mlir_async: MLIR tools not on PATH; skipping");
+            crate::common::gate::skipped(
+                "std_surface_async",
+                "mlir_async: MLIR tools not on PATH; skipping",
+            );
             return None;
         }
 

@@ -229,7 +229,10 @@ pub fn t_mixi() -> i64 { mix_i(Mix::Pair(9, 3.25)) }
 fn boxed_enum_match_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("enum-match-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "enum_match_run",
+            "enum-match-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -241,13 +244,8 @@ fn boxed_enum_match_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("enum-match-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("enum-match-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("enum_match_run", &out) {
+        return;
     }
 
     // Flat top-level statements only (Rust's `\`-line-continuation strips each

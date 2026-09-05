@@ -68,7 +68,7 @@ pub fn lorenz(steps: i64) -> f64 {
 fn f64_loop_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("f64-loop-run: mindc not found; skipping");
+        crate::common::gate::skipped("f64_loop_run", "f64-loop-run: mindc not found; skipping");
         return;
     }
     let dir = std::env::temp_dir();
@@ -80,13 +80,8 @@ fn f64_loop_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("f64-loop-run: mindc --emit-shared needs mlir-build; skipping");
-            return;
-        }
-        panic!("f64-loop-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("f64_loop_run", &out) {
+        return;
     }
 
     // Euler-integrated Lorenz reference, computed the same way the .mind does,

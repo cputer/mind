@@ -58,7 +58,10 @@ pub fn run() -> i64 {
 fn struct_field_collection_runs() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("struct-field-collection-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "struct_field_collection_run",
+            "struct-field-collection-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -70,13 +73,8 @@ fn struct_field_collection_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("struct-field-collection-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("struct-field-collection-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("struct_field_collection_run", &out) {
+        return;
     }
 
     // val=7*1000 + has=1*100 + flagged=1*10 + missing=0 + ids.len=1 = 7111.

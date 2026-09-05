@@ -65,7 +65,10 @@ pub fn t_z_bar() -> i64 { gz(Zeta::Bar(3)) }
 fn cross_enum_bare_variant_collision_takes_correct_arm() {
     let mindc = mindc_bin();
     if !mindc.exists() {
-        println!("enum-match-collision-run: mindc not found; skipping");
+        crate::common::gate::skipped(
+            "enum_match_collision_run",
+            "enum-match-collision-run: mindc not found; skipping",
+        );
         return;
     }
     let dir = std::env::temp_dir();
@@ -77,13 +80,8 @@ fn cross_enum_bare_variant_collision_takes_correct_arm() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("enum-match-collision-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("enum-match-collision-run: mindc --emit-shared failed:\n{stderr}");
+    if !crate::common::gate::compiled("enum_match_collision_run", &out) {
+        return;
     }
 
     // Flat top-level Python only (Rust `\`-continuation strips leading
