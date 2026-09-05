@@ -89,6 +89,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// The artifact root for this target: private to the test BINARY and to the
+/// PROCESS (`common::scratch_dir` appends target + pid).
+///
+/// The keystone artifacts used a FIXED shared temp path
+/// (`/tmp/phase_g_03_direct.so` and siblings). Two runs of this gate on one box
+/// — two agents, two CI jobs on one runner, a `cargo test` beside a preflight —
+/// write the SAME file, so one build can truncate the artifact the other is
+/// about to read and byte-compare. The load-bearing byte-identity claim would
+/// then be reported as violated by a collision it never made. File names are
+/// unchanged; only the directory moves off the shared root.
+fn scratch() -> PathBuf {
+    crate::common::scratch_dir("phase_g_keystone_bootstrap")
+}
+
 /// Guard the self-host bootstrap fixed point: the pure-MIND parser in
 /// `examples/mindc_mind/main.mind` is attribute-BLIND and fails OPEN (it would
 /// consume `#[` as a stray token, desyncing). The byte-identity oracle holds
@@ -197,7 +211,7 @@ fn phase_g_01_mind_toml_exists_and_is_valid() {
 fn phase_g_02_mindc_build_via_mind_toml_exits_0() {
     let Some(bin) = require_mindc() else { return };
 
-    let out = std::env::temp_dir().join("phase_g_02_libmindc_mind.so");
+    let out = scratch().join("phase_g_02_libmindc_mind.so");
 
     let result = Command::new(&bin)
         .args(["build", "--release", &format!("--out={}", out.display())])
@@ -259,8 +273,8 @@ fn phase_g_02_mindc_build_via_mind_toml_exits_0() {
 fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
     let Some(bin) = require_mindc() else { return };
 
-    let out_manifest = std::env::temp_dir().join("phase_g_03_mind_toml.so");
-    let out_direct = std::env::temp_dir().join("phase_g_03_direct.so");
+    let out_manifest = scratch().join("phase_g_03_mind_toml.so");
+    let out_direct = scratch().join("phase_g_03_direct.so");
 
     let src_path = repo_root().join("examples/mindc_mind/main.mind");
     // The keystone source is TRACKED in this repo, so its absence is a broken
@@ -381,8 +395,8 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
 fn phase_g_04_self_consistent_byte_identity() {
     let Some(bin) = require_mindc() else { return };
 
-    let out_a = std::env::temp_dir().join("phase_g_04_build_a.so");
-    let out_b = std::env::temp_dir().join("phase_g_04_build_b.so");
+    let out_a = scratch().join("phase_g_04_build_a.so");
+    let out_b = scratch().join("phase_g_04_build_b.so");
 
     let src_path = repo_root().join("examples/mindc_mind/main.mind");
     // The keystone source is TRACKED in this repo, so its absence is a broken
@@ -501,7 +515,7 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
         src_path.display()
     );
 
-    let out = std::env::temp_dir().join("phase_g_05_warm.so");
+    let out = scratch().join("phase_g_05_warm.so");
 
     // First build — populates the cache.
     let r1 = Command::new(&bin)
@@ -627,8 +641,8 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
 fn phase_g_06_report_artifact_sha256() {
     let Some(bin) = require_mindc() else { return };
 
-    let out = std::env::temp_dir().join("phase_g_06_report.so");
-    let out_recheck = std::env::temp_dir().join("phase_g_06_report_nocache.so");
+    let out = scratch().join("phase_g_06_report.so");
+    let out_recheck = scratch().join("phase_g_06_report_nocache.so");
 
     let r = Command::new(&bin)
         .args([

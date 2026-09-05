@@ -57,10 +57,15 @@ pub fn mindc_bin() -> PathBuf {
 /// The directory carries the target name and the pid; the FILE names inside are
 /// left alone so an artifact's identity is unchanged.
 ///
-/// deferred: the std smokes named in the finding are routed; the remaining
-/// `std::env::temp_dir()` sites across `tests/*.rs` still write to the shared
-/// root. Upgrade path: route each through this helper as its file is next
-/// touched — one helper, no per-file policy.
+/// deferred: 147 shared-root artifact paths across 125 `tests/**.rs` files are
+/// still unrouted (measured, not estimated). The two wedge gates are routed:
+/// `cross_substrate_identity` (9 sites) and `phase_g_keystone_bootstrap` (8).
+/// That count is NOT maintained in this sentence: the gate in
+/// `tests/harness_scratch_isolation.rs` records the backlog as a SET with
+/// per-file counts and fails in BOTH directions, so a new shared path is red
+/// and a row that outlived its debt is red. Upgrade path: route a file through
+/// this helper as it is next touched, keeping the file names, and delete its
+/// row in that gate — one helper, no per-file policy.
 #[allow(dead_code)]
 pub fn scratch_dir(target: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("mind-{target}-{}", std::process::id()));

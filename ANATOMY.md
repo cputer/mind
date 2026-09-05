@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1508 | **Est. tokens:** ~2,919,509
-**Generated:** 2026-09-05 16:48 UTC
+**Files:** 1509 | **Est. tokens:** ~2,923,203
+**Generated:** 2026-09-05 17:20 UTC
 
 ## Token Budget Guide
 
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 350 | ~649,049 |
+| `tests/` | 351 | ~652,645 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~5,733 |
+| `tests/common/` | 2 | ~5,831 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -1329,7 +1329,7 @@
 ### `tests/common/`
 
 - `gate.rs` (~4526 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~1207 tok, large) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~1305 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
 - `compound_assign.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
@@ -1558,6 +1558,7 @@
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.
 - `grad_wrt_resolve.rs` (~730 tok, large) — Copyright 2025 STARGA Inc.
 - `harness_portability.rs` (~1260 tok, large) — Copyright 2025 STARGA Inc.
+- `harness_scratch_isolation.rs` (~3431 tok, huge) — Copyright 2025 STARGA Inc.
 - `hpack_driver.py` (~3027 tok, huge) — # Official-vector driver for std/hpack.mind (pure-MIND HPACK decoding,
 - `http2_frame_driver.py` (~4195 tok, huge) — # Reference-vector driver for std/http2_frame.mind (pure-MIND HTTP/2 framing,
 - `if_expr.rs` (~429 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1788,7 +1789,7 @@
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `parse_try_operator.rs` (~1194 tok, large) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~7477 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~7642 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.

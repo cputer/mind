@@ -43,7 +43,7 @@
 mod common;
 use common::mindc_bin;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
@@ -415,6 +415,63 @@ type LorenzFn = unsafe extern "C" fn(i64, i64) -> i64;
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
+/// The artifact root for this target: private to the test BINARY and to the
+/// PROCESS (`common::scratch_dir` appends target + pid). Every path below moves
+/// off the world-writable shared temp root, where a second `cargo test`, a
+/// preflight, or another agent compiling the same fixed name truncates the
+/// `.so` between `--emit-shared` and `dlopen` — a flake that reads as a
+/// compiler regression and does not reproduce. The FILE names are unchanged:
+/// only the directory moves, so each artifact's identity is preserved.
+fn scratch() -> PathBuf {
+    crate::common::scratch_dir("cross_substrate_identity")
+}
+
+/// Write an embedded workload source into this target's scratch dir.
+fn scratch_src(name: &str, text: &str) -> PathBuf {
+    let p = scratch().join(name);
+    std::fs::write(&p, text).unwrap_or_else(|e| panic!("write {}: {e}", p.display()));
+    p
+}
+
+/// Compile `src` to `scratch()/out_name` with `mindc --emit-shared`, quoting
+/// mindc's OWN stdout and stderr in the panic when it fails.
+///
+/// Eight builders each hand-rolled the same `Command…status()` +
+/// `assert!(status.success(), "…failed for the <x> workload")` pair. `status()`
+/// INHERITS the child's stderr, which bypasses libtest's capture and lands
+/// unattributed in the raw run output — never in the panic message, and never
+/// beside the test that failed. A run of this binary that reported nineteen
+/// failures, every one of them the bare sentence `mindc --emit-shared failed
+/// for the dot-q16 workload`, therefore carried no cause at all. `.output()`
+/// captures both streams and the assertion quotes them, so the next occurrence
+/// names itself.
+fn emit_shared(workload: &str, src: &Path, out_name: &str, env: &[(&str, &str)]) -> PathBuf {
+    let out = scratch().join(out_name);
+    let mut cmd = Command::new(mindc_bin());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let r = cmd
+        .args([
+            src.to_str().unwrap(),
+            "--emit-shared",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap_or_else(|e| panic!("spawn mindc --emit-shared for the {workload} workload: {e}"));
+    assert!(
+        r.status.success(),
+        "mindc --emit-shared failed for the {workload} workload\n  \
+         src:    {}\n  out:    {}\n  status: {}\n  stdout: {}\n  stderr: {}",
+        src.display(),
+        out.display(),
+        r.status,
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr),
+    );
+    out
+}
+
 /// Compile SRC to a temp `.so` once for the whole test binary. Returns `None`
 /// if the MLIR toolchain is shadowed (sandbox self-skip, like the smoke tests).
 fn build_dot_so() -> Option<&'static PathBuf> {
@@ -444,23 +501,13 @@ fn build_dot_so() -> Option<&'static PathBuf> {
                 return None;
             }
         }
-        let dir = std::env::temp_dir();
-        let src_path = dir.join("mind_xsi_dot_q16.mind");
-        let so_path = dir.join("mind_xsi_dot_q16.so");
-        std::fs::write(&src_path, SRC).expect("write workload .mind source");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the dot-q16 workload"
-        );
-        Some(so_path)
+        let src_path = scratch_src("mind_xsi_dot_q16.mind", SRC);
+        Some(emit_shared(
+            "dot-q16",
+            &src_path,
+            "mind_xsi_dot_q16.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -486,23 +533,13 @@ fn build_array_store_so() -> Option<&'static PathBuf> {
                 return None;
             }
         }
-        let dir = std::env::temp_dir();
-        let src_path = dir.join("mind_xsi_array_store.mind");
-        let so_path = dir.join("mind_xsi_array_store.so");
-        std::fs::write(&src_path, ARRAY_STORE_SRC).expect("write array-store .mind source");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the array-store-loop workload"
-        );
-        Some(so_path)
+        let src_path = scratch_src("mind_xsi_array_store.mind", ARRAY_STORE_SRC);
+        Some(emit_shared(
+            "array-store-loop",
+            &src_path,
+            "mind_xsi_array_store.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -525,24 +562,13 @@ fn build_array_store_branch_so() -> Option<&'static PathBuf> {
                 return None;
             }
         }
-        let dir = std::env::temp_dir();
-        let src_path = dir.join("mind_xsi_array_store_branch.mind");
-        let so_path = dir.join("mind_xsi_array_store_branch.so");
-        std::fs::write(&src_path, ARRAY_STORE_BRANCH_SRC)
-            .expect("write array-store-branch .mind source");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the array-store-branch workload"
-        );
-        Some(so_path)
+        let src_path = scratch_src("mind_xsi_array_store_branch.mind", ARRAY_STORE_BRANCH_SRC);
+        Some(emit_shared(
+            "array-store-branch",
+            &src_path,
+            "mind_xsi_array_store_branch.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -574,20 +600,12 @@ fn build_lorenz_so() -> Option<&'static PathBuf> {
         let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("examples")
             .join("lorenz_q16.mind");
-        let so_path = std::env::temp_dir().join("mind_xsi_lorenz_q16.so");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared for lorenz_q16");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the lorenz-q16 workload"
-        );
-        Some(so_path)
+        Some(emit_shared(
+            "lorenz-q16",
+            &src_path,
+            "mind_xsi_lorenz_q16.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -1573,24 +1591,13 @@ fn build_dot_so_vnni() -> Option<PathBuf> {
             return None;
         }
     }
-    let dir = std::env::temp_dir();
-    let src_path = dir.join("mind_xsi_dot_q16_vnni.mind");
-    let so_path = dir.join("mind_xsi_dot_q16_vnni.so");
-    std::fs::write(&src_path, SRC).expect("write vnni workload .mind source");
-    let status = Command::new(mindc_bin())
-        .env("MIND_INTDOT", "vnni")
-        .args([
-            src_path.to_str().unwrap(),
-            "--emit-shared",
-            so_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("spawn mindc --emit-shared (vnni)");
-    assert!(
-        status.success(),
-        "mindc --emit-shared failed for the VNNI int8 workload"
-    );
-    Some(so_path)
+    let src_path = scratch_src("mind_xsi_dot_q16_vnni.mind", SRC);
+    Some(emit_shared(
+        "VNNI int8",
+        &src_path,
+        "mind_xsi_dot_q16_vnni.so",
+        &[("MIND_INTDOT", "vnni")],
+    ))
 }
 
 /// Runtime VNNI capability of the host. AVX-512-VNNI is the rung the build
@@ -2816,20 +2823,12 @@ fn build_grammar_mask_so() -> Option<&'static PathBuf> {
             .join("examples")
             .join("grammar_mask")
             .join("main.mind");
-        let so_path = std::env::temp_dir().join("mind_xsi_grammar_mask.so");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared for grammar_mask");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the grammar-mask workload"
-        );
-        Some(so_path)
+        Some(emit_shared(
+            "grammar-mask",
+            &src_path,
+            "mind_xsi_grammar_mask.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -2938,9 +2937,10 @@ fn bimap_trace_hash() -> (String, String, String) {
         .join("examples")
         .join("bimap_currency")
         .join("main.mind");
-    // Unique per-process artifact path so parallel test binaries never collide.
-    let ev_path =
-        std::env::temp_dir().join(format!("mind_xsi_bimap_ev_{}.json", std::process::id()));
+    // Artifact path private to this target AND this process (scratch_dir):
+    // the hand-rolled pid suffix this replaces was a per-file uniqueness
+    // policy, and the helper exists so there is exactly one.
+    let ev_path = scratch().join("mind_xsi_bimap_ev.json");
 
     let emit = Command::new(mindc_bin())
         .args([
@@ -3088,20 +3088,12 @@ fn build_collatz_so() -> Option<&'static PathBuf> {
         let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("examples")
             .join("collatz.mind");
-        let so_path = std::env::temp_dir().join("mind_xsi_collatz.so");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared for collatz");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the collatz workload"
-        );
-        Some(so_path)
+        Some(emit_shared(
+            "collatz",
+            &src_path,
+            "mind_xsi_collatz.so",
+            &[],
+        ))
     })
     .as_ref()
 }
@@ -3128,20 +3120,12 @@ fn build_galperin_so() -> Option<&'static PathBuf> {
         let src_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("examples")
             .join("galperin_pi.mind");
-        let so_path = std::env::temp_dir().join("mind_xsi_galperin.so");
-        let status = Command::new(mindc_bin())
-            .args([
-                src_path.to_str().unwrap(),
-                "--emit-shared",
-                so_path.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn mindc --emit-shared for galperin_pi");
-        assert!(
-            status.success(),
-            "mindc --emit-shared failed for the galperin-pi workload"
-        );
-        Some(so_path)
+        Some(emit_shared(
+            "galperin-pi",
+            &src_path,
+            "mind_xsi_galperin.so",
+            &[],
+        ))
     })
     .as_ref()
 }
