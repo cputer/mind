@@ -79,7 +79,7 @@ fn narrow_local_masks_and_sign_extends() {
             .output()
             .unwrap();
         let e = String::from_utf8_lossy(&o.stderr);
-        if e.contains("mlir-build") && e.contains("requires") {
+        if crate::common::gate::is_capability_gap(&e) {
             crate::common::gate::skipped(
                 "narrow_local_mask_run",
                 "narrow-local: needs mlir-build; skipping",

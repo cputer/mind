@@ -528,21 +528,27 @@ fn phase_f_09_deterministic_cache_key() {
         None => return,
     };
 
-    // Build 1.
-    let s1 = run_build(&mindc, dir, &[]);
-    if !s1.success() {
+    // Build 1. A failure is classified, never silently returned: the bare
+    // `if !s1.success() { return; }` this replaced graded a real build
+    // regression as a pass.
+    let s1 = run_build_captured(&mindc, dir, &[]);
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &s1) {
         return;
     }
 
-    let artifact = dir
-        .join("target")
-        .join("cpu")
-        .join("debug")
-        .join("determinism_project");
-    if !artifact.exists() {
-        // Binary might be at a different path on this machine; skip byte-identity check.
-        return;
-    }
+    // `mindc build` writes `<root>/target/<profile>/<build.output>`
+    // (src/project/mod.rs), with `build.output` defaulting to "app". This used
+    // to look for `target/cpu/debug/determinism_project`, a path the builder
+    // never writes, so the byte-identity assertion below could not run: the
+    // `if !artifact.exists() { return; }` made the whole gate vacuous while it
+    // reported a pass.
+    let artifact = dir.join("target").join("debug").join("app");
+    assert!(
+        artifact.exists(),
+        "the build succeeded but wrote no artifact at {}; the cache \
+         byte-identity check cannot run",
+        artifact.display()
+    );
     let bytes1 = fs::read(&artifact).unwrap();
 
     // Clean the artifact but keep the cache.

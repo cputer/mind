@@ -75,7 +75,7 @@ fn build_and_run_reject_runnable_blocker() {
         .output()
         .expect("run mindc --emit-shared");
     let es_err = String::from_utf8_lossy(&es.stderr);
-    if es_err.contains("mlir-build") && es_err.contains("requires") {
+    if crate::common::gate::is_capability_gap(&es_err) {
         crate::common::gate::skipped(
             "build_run_runnable_blocker_gate",
             "build-run-runnable-blocker-gate: needs mlir-build; skipping",

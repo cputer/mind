@@ -34,7 +34,25 @@
 //! ```
 
 mod common;
+use common::gate;
 use common::mindc_bin;
+
+/// RFC 0015 / `#306` fail-closed gate, re-exported from its ONE owner.
+///
+/// When `MIND_BENCH_REQUIRE=1` is set, the keystone tests must NOT silently
+/// skip or report PASS on a launcher stub: a missing backend toolchain or a
+/// stub-vs-ELF artifact mismatch becomes a hard failure. This closes the
+/// false-green documented in `docs/byte-store-migration.md` ("DO NOT capture
+/// the oracle from a stub-producing environment") — when `mindc build` falls
+/// back to a ~1245-byte launcher script, byte-identity between two stubs is
+/// vacuous, yet the suite still reported PASS.
+///
+/// This file used to define its own copy reading
+/// `var_os("MIND_BENCH_REQUIRE").is_some()`, which made `MIND_BENCH_REQUIRE=0`
+/// ENFORCE — the same defect `gate::bless_mode` documents, where a value that
+/// reads as "off" switched a mode ON. `gate::enforce_real_backend` requires the
+/// value to be exactly `1`, and there is now one spelling of the predicate.
+use common::gate::enforce_real_backend;
 
 use std::fs;
 use std::path::PathBuf;
@@ -53,17 +71,15 @@ fn require_mindc() -> Option<PathBuf> {
     } else {
         // Fail-closed under enforcement: a missing mindc must NOT let the
         // keystone suite pass vacuously (#306 false-green guard). Only a
-        // non-enforced (local convenience) run is allowed to skip.
-        assert!(
-            !enforce_real_backend(),
-            "KEYSTONE: mindc binary not found at {} but MIND_BENCH_REQUIRE=1 — build it \
-             (cargo build --release --features \"mlir-build std-surface cross-module-imports\" --bin mindc); \
-             the gate must not pass when the toolchain is absent",
-            bin.display()
-        );
-        eprintln!(
-            "SKIP: mindc binary not found at {}; run `cargo build --release` first",
-            bin.display()
+        // non-enforced (local convenience) run is allowed to skip, and the
+        // skip is COUNTED (`ran=0`) rather than announced into cargo's capture.
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!(
+                "mindc binary not found at {}; build it (cargo build --release \
+                 --features \"mlir-build std-surface cross-module-imports\" --bin mindc)",
+                bin.display()
+            ),
         );
         None
     }
@@ -71,24 +87,6 @@ fn require_mindc() -> Option<PathBuf> {
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// RFC 0015 / `#306` fail-closed gate.
-///
-/// When `MIND_BENCH_REQUIRE=1` is set, the keystone tests must NOT silently
-/// skip or report PASS on a launcher stub. A missing backend toolchain or a
-/// stub-vs-ELF artifact mismatch becomes a hard failure instead.
-///
-/// This closes the false-green documented in `docs/byte-store-migration.md`
-/// ("DO NOT capture the oracle from a stub-producing environment") and in the
-/// 2026-05-29 ecosystem audit (PITFALLS B4): when `mindc build` falls back to a
-/// ~1245-byte launcher script, byte-identity between two stubs is vacuous, yet
-/// the suite still reported PASS — masking the broken real-ELF keystone. The
-/// default (env unset) behaviour is unchanged: these environments legitimately
-/// lack the proprietary `~/.mind/lib` runtime, so they skip. Enforcement mode
-/// (the same flag the cross-substrate gate already uses) demands a real ELF.
-fn enforce_real_backend() -> bool {
-    std::env::var_os("MIND_BENCH_REQUIRE").is_some()
 }
 
 /// Guard the self-host bootstrap fixed point: the pure-MIND parser in
@@ -223,12 +221,7 @@ fn phase_g_02_mindc_build_via_mind_toml_exits_0() {
             String::from_utf8_lossy(&result.stdout),
             String::from_utf8_lossy(&result.stderr)
         );
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but the keystone build did not succeed — \
-             refusing to skip (#306).\n{detail}"
-        );
-        eprintln!("SKIP: {detail}");
+        gate::skipped("phase_g_keystone_bootstrap", &detail);
         return;
     }
 
@@ -270,15 +263,16 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
     let out_direct = std::env::temp_dir().join("phase_g_03_direct.so");
 
     let src_path = repo_root().join("examples/mindc_mind/main.mind");
-    if !src_path.exists() {
-        assert!(
-            !enforce_real_backend(),
-            "KEYSTONE: examples/mindc_mind/main.mind not found but MIND_BENCH_REQUIRE=1 — \
-             the keystone source must be present when the gate is enforced"
-        );
-        eprintln!("SKIP: examples/mindc_mind/main.mind not found");
-        return;
-    }
+    // The keystone source is TRACKED in this repo, so its absence is a broken
+    // checkout, never a capability gap. The MIND_BENCH_REQUIRE-conditional skip
+    // this replaced graded a broken checkout as a PASS on every run that did not
+    // set the variable.
+    assert!(
+        src_path.exists(),
+        "KEYSTONE: {} is tracked in this repo but missing; the keystone gate \
+         cannot run",
+        src_path.display()
+    );
 
     // Build A: driven by Mind.toml (Phase G path).
     let r_manifest = Command::new(&bin)
@@ -294,13 +288,12 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
 
     if !r_manifest.status.success() {
         let detail = String::from_utf8_lossy(&r_manifest.stderr);
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but the Mind.toml build did not succeed — \
-             refusing to skip (#306).\nstderr: {detail}"
-        );
-        eprintln!(
-            "SKIP: Mind.toml build did not succeed (toolchain may be incomplete)\nstderr: {detail}"
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!(
+                "Mind.toml build did not succeed (toolchain may be \
+                 incomplete)\nstderr: {detail}"
+            ),
         );
         return;
     }
@@ -320,12 +313,10 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
 
     if !r_direct.status.success() {
         let detail = String::from_utf8_lossy(&r_direct.stderr);
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but the direct-path build did not succeed — \
-             refusing to skip (#306).\nstderr: {detail}"
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!("direct-path build did not succeed\nstderr: {detail}"),
         );
-        eprintln!("SKIP: direct-path build did not succeed\nstderr: {detail}");
         return;
     }
 
@@ -394,15 +385,16 @@ fn phase_g_04_self_consistent_byte_identity() {
     let out_b = std::env::temp_dir().join("phase_g_04_build_b.so");
 
     let src_path = repo_root().join("examples/mindc_mind/main.mind");
-    if !src_path.exists() {
-        assert!(
-            !enforce_real_backend(),
-            "KEYSTONE: examples/mindc_mind/main.mind not found but MIND_BENCH_REQUIRE=1 — \
-             the keystone source must be present when the gate is enforced"
-        );
-        eprintln!("SKIP: examples/mindc_mind/main.mind not found");
-        return;
-    }
+    // The keystone source is TRACKED in this repo, so its absence is a broken
+    // checkout, never a capability gap. The MIND_BENCH_REQUIRE-conditional skip
+    // this replaced graded a broken checkout as a PASS on every run that did not
+    // set the variable.
+    assert!(
+        src_path.exists(),
+        "KEYSTONE: {} is tracked in this repo but missing; the keystone gate \
+         cannot run",
+        src_path.display()
+    );
 
     // Build the self-host `.so` twice, each a fresh `mindc build` process in
     // this same environment, writing to distinct `--out` paths so the two
@@ -424,24 +416,26 @@ fn phase_g_04_self_consistent_byte_identity() {
     let r_a = build(&out_a);
     if !r_a.status.success() {
         let detail = String::from_utf8_lossy(&r_a.stderr);
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but build A did not succeed — refusing to \
-             skip the self-consistency keystone (#306).\nstderr: {detail}"
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!(
+                "build A did not succeed (toolchain may be \
+                 incomplete)\nstderr: {detail}"
+            ),
         );
-        eprintln!("SKIP: build A did not succeed (toolchain may be incomplete)\nstderr: {detail}");
         return;
     }
 
     let r_b = build(&out_b);
     if !r_b.status.success() {
         let detail = String::from_utf8_lossy(&r_b.stderr);
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but build B did not succeed — refusing to \
-             skip the self-consistency keystone (#306).\nstderr: {detail}"
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!(
+                "build B did not succeed (toolchain may be \
+                 incomplete)\nstderr: {detail}"
+            ),
         );
-        eprintln!("SKIP: build B did not succeed (toolchain may be incomplete)\nstderr: {detail}");
         return;
     }
 
@@ -496,15 +490,16 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
     let Some(bin) = require_mindc() else { return };
 
     let src_path = repo_root().join("examples/mindc_mind/main.mind");
-    if !src_path.exists() {
-        assert!(
-            !enforce_real_backend(),
-            "KEYSTONE: examples/mindc_mind/main.mind not found but MIND_BENCH_REQUIRE=1 — \
-             the keystone source must be present when the gate is enforced"
-        );
-        eprintln!("SKIP: examples/mindc_mind/main.mind not found");
-        return;
-    }
+    // The keystone source is TRACKED in this repo, so its absence is a broken
+    // checkout, never a capability gap. The MIND_BENCH_REQUIRE-conditional skip
+    // this replaced graded a broken checkout as a PASS on every run that did not
+    // set the variable.
+    assert!(
+        src_path.exists(),
+        "KEYSTONE: {} is tracked in this repo but missing; the keystone gate \
+         cannot run",
+        src_path.display()
+    );
 
     let out = std::env::temp_dir().join("phase_g_05_warm.so");
 
@@ -522,12 +517,10 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
 
     if !r1.status.success() {
         let detail = String::from_utf8_lossy(&r1.stderr);
-        assert!(
-            !enforce_real_backend(),
-            "MIND_BENCH_REQUIRE is set but the first build did not succeed — \
-             refusing to skip the warm-cache check (#306).\nstderr: {detail}"
+        gate::skipped(
+            "phase_g_keystone_bootstrap",
+            &format!("first build did not succeed\nstderr: {detail}"),
         );
-        eprintln!("SKIP: first build did not succeed\nstderr: {detail}");
         return;
     }
 

@@ -31,11 +31,18 @@ use std::process::Command;
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
+/// The `mindc` binary under test.
+///
+/// NO early return on absence: `mindc_bin()` is `CARGO_BIN_EXE_mindc`, which
+/// cargo builds for this test target, so an absent binary is a broken harness
+/// and never a reason to report a silent pass.
 fn require_mindc() -> PathBuf {
     let bin = mindc_bin();
-    if !bin.exists() {
-        eprintln!("Skipping: mindc binary not found at {bin:?}");
-    }
+    assert!(
+        bin.exists(),
+        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
+         for this target, so its absence is a broken gate, not a skip"
+    );
     bin
 }
 
@@ -55,9 +62,6 @@ fn fixture(name: &str) -> String {
 #[test]
 fn emit_mic3_writes_parseable_binary() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let tmp = tempfile_path("mic3_output.bin");
     let out = Command::new(&bin)
@@ -102,9 +106,6 @@ fn emit_mic3_writes_parseable_binary() {
 #[test]
 fn emit_evidence_report_validates() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let tmp = tempfile_path("evidence_output.bin");
     let out = Command::new(&bin)
@@ -156,9 +157,6 @@ fn emit_evidence_report_validates() {
 #[test]
 fn emit_mic3_matches_library_emit() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let tmp = tempfile_path("mic3_crosscheck.bin");
     let out = Command::new(&bin)
@@ -192,9 +190,6 @@ fn emit_mic3_matches_library_emit() {
 #[test]
 fn emit_mic1_unchanged_after_rfc0021_step3() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let out = Command::new(&bin)
         .args([&fixture("simple.mind"), "--emit-mic"])
@@ -221,9 +216,6 @@ fn emit_mic1_unchanged_after_rfc0021_step3() {
 #[test]
 fn default_invocation_still_prints_ir() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let out = Command::new(&bin)
         .args([&fixture("simple.mind")])
@@ -251,9 +243,6 @@ fn default_invocation_still_prints_ir() {
 #[test]
 fn evidence_body_prefix_equals_plain_mic3() {
     let bin = require_mindc();
-    if !bin.exists() {
-        return;
-    }
 
     let tmp_plain = tempfile_path("mic3_plain.bin");
     let tmp_ev = tempfile_path("mic3_ev.bin");

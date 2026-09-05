@@ -195,7 +195,7 @@ CRITICAL_exec=(
   "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
-  "fail_open_skip_site_ratchet 5"   # measured 6; the fail-open skip prohibition
+  "fail_open_skip_site_ratchet 8"   # measured 9; the fail-open skip prohibition
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
@@ -208,7 +208,7 @@ CRITICAL_lowering=(
   "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
-  "fail_open_skip_site_ratchet 5"
+  "fail_open_skip_site_ratchet 8"
   "harness_portability 2"
 )
 # The entire reason the `pkg` tier exists: ci.yml only ever `cargo check`ed pkg.
@@ -219,7 +219,7 @@ CRITICAL_pkg=(
   "fail_closed_capability_skip_env 4"  # measured 5; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
-  "fail_open_skip_site_ratchet 5"
+  "fail_open_skip_site_ratchet 8"
   "harness_portability 2"
 )
 

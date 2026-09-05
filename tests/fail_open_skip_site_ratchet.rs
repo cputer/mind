@@ -43,18 +43,43 @@
 //! the routed-detection is the same `ROUTED_MARKERS` list applied to every one
 //! of them. Scope and detection cannot drift apart because neither is written
 //! down twice.
+//!
+//! # Three ways this prohibition was text-satisfiable, and what closed them
+//!
+//! Measured against the tip by mutating the tree under the built scanner:
+//!
+//! 1. `ROUTED_MARKERS` accepted the bare strings `MIND_BENCH_REQUIRE` and
+//!    `enforce_real_backend`, so a *comment* reading
+//!    `// NOTE: this gate does not honour MIND_BENCH_REQUIRE` two lines above a
+//!    bare `println!("skipping"); return;` bought the site a pass. Only
+//!    `gate::`-qualified call syntax counts now. The 17 sites that had been
+//!    riding the bare-name form (8 in `cross_substrate_identity`, 9 in
+//!    `phase_g_keystone_bootstrap`) hand-rolled the predicate as
+//!    `var_os("MIND_BENCH_REQUIRE").is_some()`, which made
+//!    `MIND_BENCH_REQUIRE=0` ENFORCE; they now call `gate::skipped`.
+//! 2. The scan was keyed on a print macro, so a *silent* probe-and-return
+//!    (`if !bin.exists() { return; }`) was structurally invisible — a separate
+//!    set of 17 sites was live and unseen. [`silent_probe_sites`] is the second
+//!    detector.
+//! 3. The banned two-substring capability test was spelled with one variable
+//!    name (`stderr.`), so the same predicate under any other name was
+//!    invisible — eight live sites kept it. The matcher is variable-agnostic.
 
 use std::path::{Path, PathBuf};
 
-/// Text that proves a skip decision consulted the shared fail-closed helper (or
-/// the environment variable it reads). One list, used for every file — the scan
-/// scope and the routed-detection live in the same place by construction.
+/// Text that proves a skip decision consulted the shared fail-closed helper.
+///
+/// ONLY `gate::`-qualified call syntax. The bare names `MIND_BENCH_REQUIRE` and
+/// `enforce_real_backend` used to appear here, which made the prohibition
+/// satisfiable by PROSE: a comment that merely mentions the variable is not
+/// evidence that any decision consulted it, and a site can name the variable in
+/// the very sentence that says it ignores it. A marker a comment can supply
+/// grades text, not routing.
 const ROUTED_MARKERS: &[&str] = &[
     "gate::compiled",
     "gate::skipped",
     "gate::classify",
-    "enforce_real_backend",
-    "MIND_BENCH_REQUIRE",
+    "gate::is_capability_gap",
 ];
 
 /// The last line index of the print macro starting at `lines[i]`, or `None` if
@@ -143,30 +168,107 @@ fn test_sources() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Sites that announce a skip, return, and never consult the fail-closed helper,
-/// as `<path relative to tests/>:<line>`.
+/// Sites that ANNOUNCE a skip, return, and never consult the fail-closed
+/// helper, as `<path relative to tests/>:<line>`.
+fn announced_skip_sites(rel: &str, lines: &[&str]) -> Vec<String> {
+    let mut open = Vec::new();
+    for i in 0..lines.len() {
+        let Some(end) = print_macro_span(lines, i) else {
+            continue;
+        };
+        if !is_skip_announcement(lines, i, end) {
+            continue;
+        }
+        let tail_end = (end + 4).min(lines.len());
+        if !lines[i..tail_end].iter().any(|l| l.contains("return")) {
+            continue;
+        }
+        let head = i.saturating_sub(8);
+        let window = lines[head..tail_end].join("\n");
+        if ROUTED_MARKERS.iter().any(|m| window.contains(m)) {
+            continue;
+        }
+        open.push(format!("{}:{} (announced skip)", rel, i + 1));
+    }
+    open
+}
+
+/// The identifier run starting at byte 0 of `s`, as a byte length.
+///
+/// Rust identifiers are ASCII here, so a byte count is exact and lets the
+/// caller index straight back into the slice.
+fn ident_len(s: &str) -> usize {
+    s.bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        .count()
+}
+
+/// Does `t` open a capability PROBE that decides whether the gate can run?
+///
+/// The three measured shapes: a filesystem existence check, a PATH lookup, an
+/// environment read. Each is matched by its METHOD call, never by the name of
+/// the receiver — a needle spelled with one variable name is evaded by picking
+/// another, which is exactly how the superstring capability test stayed hidden
+/// at eight sites.
+fn is_capability_probe(t: &str) -> bool {
+    let t = t.trim_start();
+    if t.starts_with("//") {
+        return false; // prose quoting the bad shape is not the bad shape
+    }
+    let ordered = |open: &str, close: &str| t.find(open).is_some_and(|p| t[p..].contains(close));
+    // The RECEIVER is deliberately not pinned to a bare identifier.
+    // `if !bin.exists()`, `if !Path::new(p).exists()` and
+    // `if !std::path::Path::new(p).exists()` are one decision written three
+    // ways, and a detector keyed on `if !<ident>.exists()` sees only the first —
+    // measured while building this scanner: the inline-path specimen walked
+    // straight past that draft, which is the same variable-name blindness that
+    // hid eight superstring capability tests.
+    ordered("if !", ".exists()")
+        || ordered("which(", ".is_err()")
+        || ordered("var_os(", ".is_none()")
+}
+
+/// A `return` that hands the caller nothing it can tell apart from success.
+fn is_bare_return(line: &str) -> bool {
+    matches!(line.trim(), "return;" | "return None;" | "return Ok(());")
+}
+
+/// How many lines after the probe a bare `return` still counts as its body.
+const PROBE_RETURN_SPAN: usize = 2;
+
+/// Sites where a probe skips WITHOUT announcing anything.
+///
+/// THE BLIND SPOT THIS CLOSES: [`announced_skip_sites`] is keyed on a print
+/// macro, so `if !bin.exists() { return; }` — no print, no panic, exit 0 — was
+/// structurally invisible to it. Measured at the tip: 17 live sites, every one
+/// of them reported clean.
+fn silent_probe_sites(rel: &str, lines: &[&str]) -> Vec<String> {
+    let mut open = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if !is_capability_probe(line) {
+            continue;
+        }
+        let end = (i + PROBE_RETURN_SPAN + 1).min(lines.len());
+        let window = &lines[i..end];
+        if !window.iter().any(|l| is_bare_return(l)) {
+            continue;
+        }
+        if window.iter().any(|l| l.contains("gate::")) {
+            continue;
+        }
+        open.push(format!("{}:{} (silent probe)", rel, i + 1));
+    }
+    open
+}
+
+/// Every skip-and-return site that does not consult the fail-closed helper,
+/// announced or silent, as `<path relative to tests/>:<line> (<shape>)`.
 fn open_skip_sites() -> Vec<String> {
     let mut open = Vec::new();
     for (rel, text) in test_sources() {
         let lines: Vec<&str> = text.lines().collect();
-        for i in 0..lines.len() {
-            let Some(end) = print_macro_span(&lines, i) else {
-                continue;
-            };
-            if !is_skip_announcement(&lines, i, end) {
-                continue;
-            }
-            let tail_end = (end + 4).min(lines.len());
-            if !lines[i..tail_end].iter().any(|l| l.contains("return")) {
-                continue;
-            }
-            let head = i.saturating_sub(8);
-            let window = lines[head..tail_end].join("\n");
-            if ROUTED_MARKERS.iter().any(|m| window.contains(m)) {
-                continue;
-            }
-            open.push(format!("{}:{}", rel, i + 1));
-        }
+        open.extend(announced_skip_sites(&rel, &lines));
+        open.extend(silent_probe_sites(&rel, &lines));
     }
     open
 }
@@ -174,7 +276,7 @@ fn open_skip_sites() -> Vec<String> {
 #[test]
 fn the_scan_scope_is_not_empty() {
     // A prohibition over an empty set is the `ran=0` defect it exists to
-    // forbid. This asserts the scanner actually read the tree before the three
+    // forbid. This asserts the scanner actually read the tree before the
     // negative assertions below are allowed to mean anything.
     let sources = test_sources();
     assert!(
@@ -218,20 +320,41 @@ fn banned_literal() -> String {
     format!("{}{}", "compile failed", "; skipping")
 }
 
-/// The two-substring capability test, assembled at run time for the same reason.
+/// Does `line` re-implement the banned two-substring capability test?
 ///
-/// The banned predicate ANDed two floating `stderr.contains(...)` probes for the
+/// The banned predicate ANDed two floating `contains(...)` probes for the
 /// feature name and the word "requires". It is superstring-satisfiable: ANY
 /// compiler failure whose stderr happens to carry both tokens anywhere graded as
 /// a capability gap. The classifier that replaced it matches the stable
-/// diagnostic CODE, owned by `libmind::diagnostics::capability`. The needle is
-/// assembled here rather than spelled out so a repo-wide grep for the bad shape
-/// returns call sites only.
-fn banned_substring_test() -> String {
-    format!(
-        "contains(\"{}\") && stderr.contains(\"{}\")",
-        "mlir-build", "requires"
-    )
+/// diagnostic CODE, owned by `libmind::diagnostics::capability`.
+///
+/// VARIABLE-AGNOSTIC BY CONSTRUCTION. The needle used to be one literal spelled
+/// with the receiver name `stderr.`, so the identical predicate written over
+/// `e.`, `err.` or `es_err.` was invisible — measured, eight live sites kept it
+/// while this gate reported the shape gone. Only the two method calls and the
+/// `&&` between them are matched; the receivers are read as identifier runs of
+/// any name. The tokens are assembled at run time so a repo-wide grep for the
+/// bad shape returns call sites only.
+fn is_superstring_capability_test(line: &str) -> bool {
+    let feature = format!(".contains(\"{}\")", "mlir-build");
+    let word = format!(".contains(\"{}\")", "requires");
+    let Some(p) = line.find(&feature) else {
+        return false;
+    };
+    // A receiver of ANY name must sit left of the first probe.
+    if !line.as_bytes()[..p]
+        .last()
+        .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+    {
+        return false;
+    }
+    let rest = line[p + feature.len()..].trim_start();
+    let Some(rest) = rest.strip_prefix("&&") else {
+        return false; // an `||` of unrelated tokens is not the banned AND-pair
+    };
+    let rest = rest.trim_start();
+    let n = ident_len(rest);
+    n > 0 && rest[n..].starts_with(&word)
 }
 
 #[test]
@@ -250,18 +373,38 @@ fn the_two_substring_capability_test_is_gone() {
     // A re-worded diagnostic must not silently widen or close the skip hole, and
     // a program that merely NAMES the tokens must not be able to buy a pass.
     // The prose is not the contract; the code is.
-    let needle = banned_substring_test();
-    let hits: Vec<String> = test_sources()
-        .into_iter()
-        .filter(|(_, t)| t.contains(&needle))
-        .map(|(p, _)| p)
-        .collect();
+    let mut hits = Vec::new();
+    for (rel, text) in test_sources() {
+        for (i, line) in text.lines().enumerate() {
+            if is_superstring_capability_test(line) {
+                hits.push(format!("{}:{}", rel, i + 1));
+            }
+        }
+    }
     assert!(
         hits.is_empty(),
-        "these files re-implement the superstring-satisfiable capability test \
-         instead of calling common::gate (which delegates to \
-         libmind::diagnostics::capability): {hits:?}"
+        "these sites re-implement the superstring-satisfiable capability test \
+         instead of calling common::gate::is_capability_gap (which delegates to \
+         libmind::diagnostics::capability).\n  {}",
+        hits.join("\n  ")
     );
+}
+
+/// The literal token every `skipped_optional` call site must carry overhead.
+///
+/// The check used to accept any comment containing the substring "opt", which
+/// `// needs mlir-opt` satisfies — a comment naming a TOOLCHAIN gap bought a
+/// pass for the one outcome `MIND_BENCH_REQUIRE` does not close. The token is
+/// deliberately shouty and unlikely to appear by accident; all six current call
+/// sites already carry it.
+const OPTIONAL_INPUT_TOKEN: &str = "OPTIONAL INPUT";
+
+/// Does a comment in the eight lines above `lines[i]` carry the token?
+fn names_optional_input(lines: &[&str], i: usize) -> bool {
+    let head = i.saturating_sub(8);
+    lines[head..i]
+        .iter()
+        .any(|l| l.trim_start().starts_with("//") && l.contains(OPTIONAL_INPUT_TOKEN))
 }
 
 #[test]
@@ -280,20 +423,16 @@ fn every_optional_input_skip_names_what_is_optional() {
             if !line.contains("gate::skipped_optional") || line.trim_start().starts_with("//") {
                 continue;
             }
-            let head = i.saturating_sub(8);
-            let documented = lines[head..i].iter().any(|l| {
-                l.trim_start().starts_with("//") && l.to_ascii_lowercase().contains("opt")
-            });
-            if !documented {
+            if !names_optional_input(&lines, i) {
                 undocumented.push(format!("{}:{}", rel, i + 1));
             }
         }
     }
     assert!(
         undocumented.is_empty(),
-        "these opt-in skips carry no comment naming what is optional and who \
-         supplies it; an undocumented one is indistinguishable from a fail-open \
-         escape hatch.\n  {}",
+        "these opt-in skips carry no `{OPTIONAL_INPUT_TOKEN}` comment naming \
+         what is optional and who supplies it; an undocumented one is \
+         indistinguishable from a fail-open escape hatch.\n  {}",
         undocumented.join("\n  ")
     );
 }
@@ -327,4 +466,103 @@ fn the_scanner_itself_can_see_the_bad_shape() {
     let end = print_macro_span(&wrapped, 0).expect("span must be found");
     assert_eq!(end, 3);
     assert!(is_skip_announcement(&wrapped, 0, end));
+}
+
+#[test]
+fn the_scanner_can_see_the_silent_probe_shape() {
+    // Positive control for the SECOND detector. A detector that matches nothing
+    // is the `ran=0` defect this file exists to forbid, in its active form: the
+    // announced-skip scan reported a clean tree while 17 silent sites were live.
+    let silent = ["if !bin.exists() {", "        return;", "    }"];
+    assert_eq!(
+        silent_probe_sites("specimen.rs", &silent),
+        vec!["specimen.rs:1 (silent probe)".to_string()]
+    );
+
+    // Variable-agnostic: renaming the receiver must not escape the prohibition.
+    for probe in [
+        "    if !binary.exists() {",
+        "    if !artifact_2.exists() {",
+        // Inline receivers: these defeated the first draft of the detector.
+        "    if !Path::new(\"/nonexistent\").exists() {",
+        "    if !std::path::Path::new(p).exists() {",
+        "        if which::which(\"mlir-opt\").is_err() {",
+        "    if std::env::var_os(\"MIND_TRACKING_CORPUS_DIR\").is_none() {",
+    ] {
+        assert!(is_capability_probe(probe), "missed probe: {probe}");
+    }
+    // Prose quoting the shape, and a probe that is not a run/skip decision.
+    assert!(!is_capability_probe("    // if !bin.exists() { return; }"));
+    assert!(!is_capability_probe("    if bin.exists() {"));
+
+    // Every bare-return spelling, and a return that hands back a real verdict.
+    assert!(is_bare_return("        return;"));
+    assert!(is_bare_return("            return None;"));
+    assert!(is_bare_return("    return Ok(());"));
+    assert!(!is_bare_return("        return Some(bin);"));
+
+    // A routed probe is not a finding.
+    let routed = [
+        "if !bin.exists() {",
+        "    gate::skipped(\"t\", \"no mindc\");",
+        "    return;",
+    ];
+    assert!(silent_probe_sites("specimen.rs", &routed).is_empty());
+
+    // The bare env-var NAME must no longer exempt anything: a comment that
+    // merely mentions it is prose, not routing.
+    let commented = [
+        "// NOTE: this gate does not honour MIND_BENCH_REQUIRE",
+        "if !bin.exists() {",
+        "    return;",
+        "}",
+    ];
+    assert_eq!(
+        silent_probe_sites("specimen.rs", &commented),
+        vec!["specimen.rs:2 (silent probe)".to_string()]
+    );
+}
+
+#[test]
+fn the_scanner_can_see_the_capability_test_under_any_receiver_name() {
+    // Positive control for the THIRD detector. The old needle was one literal
+    // spelled `stderr.`; these four receivers are the ones measured live.
+    for name in ["stderr", "e", "err", "es_err"] {
+        let line = format!(
+            "    if {name}.contains(\"{}\") && {name}.contains(\"{}\") {{",
+            "mlir-build", "requires"
+        );
+        assert!(is_superstring_capability_test(&line), "missed: {line}");
+    }
+    // Mixed receivers, and the negated form, are the same banned predicate.
+    assert!(is_superstring_capability_test(&format!(
+        "    !(e.contains(\"{}\") && stderr.contains(\"{}\"))",
+        "mlir-build", "requires"
+    )));
+    // An `||` of unrelated tokens is a different, legitimate assertion.
+    assert!(!is_superstring_capability_test(&format!(
+        "        stderr.contains(\"tool not found\") || stderr.contains(\"{}\"),",
+        "mlir-build"
+    )));
+    // The routed replacement must not read as the banned shape.
+    assert!(!is_superstring_capability_test(
+        "        if crate::common::gate::is_capability_gap(&e) {"
+    ));
+}
+
+#[test]
+fn the_optional_input_check_rejects_a_merely_opt_shaped_comment() {
+    // Positive control for the FOURTH check. `// needs mlir-opt` contains "opt"
+    // and used to buy a pass for the one outcome MIND_BENCH_REQUIRE cannot
+    // close — while naming a TOOLCHAIN gap, the class that must fail closed.
+    let weak = [
+        "        // needs mlir-opt",
+        "        gate::skipped_optional(",
+    ];
+    assert!(!names_optional_input(&weak, 1));
+    let strong = [
+        "        // OPTIONAL INPUT: supplied by the operator via an env var.",
+        "        gate::skipped_optional(",
+    ];
+    assert!(names_optional_input(&strong, 1));
 }

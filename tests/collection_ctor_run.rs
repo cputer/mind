@@ -47,7 +47,7 @@ fn collection_ctor_runs() {
         .expect("run");
     if !out.status.success() {
         let e = String::from_utf8_lossy(&out.stderr);
-        if e.contains("mlir-build") && e.contains("requires") {
+        if crate::common::gate::is_capability_gap(&e) {
             crate::common::gate::skipped("collection_ctor_run", "skip: needs mlir-build");
             return;
         }

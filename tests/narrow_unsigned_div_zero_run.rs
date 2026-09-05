@@ -87,7 +87,7 @@ fn mlir_build_available() -> bool {
         .output()
         .unwrap();
     let e = String::from_utf8_lossy(&o.stderr);
-    !(e.contains("mlir-build") && e.contains("requires"))
+    !crate::common::gate::is_capability_gap(&e)
 }
 
 #[test]

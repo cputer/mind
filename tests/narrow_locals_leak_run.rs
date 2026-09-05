@@ -128,7 +128,7 @@ mod block_run {
                 .output()
                 .unwrap();
             let e = String::from_utf8_lossy(&o.stderr);
-            if e.contains("mlir-build") && e.contains("requires") {
+            if crate::common::gate::is_capability_gap(&e) {
                 crate::common::gate::skipped(
                     "narrow_locals_leak_run",
                     "narrow-leak block: needs mlir-build; skipping",

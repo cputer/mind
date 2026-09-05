@@ -85,7 +85,7 @@ fn narrow_reassign_re_masks_to_declared_width() {
             .output()
             .unwrap();
         let e = String::from_utf8_lossy(&o.stderr);
-        if e.contains("mlir-build") && e.contains("requires") {
+        if crate::common::gate::is_capability_gap(&e) {
             crate::common::gate::skipped(
                 "narrow_reassign_mask_run",
                 "narrow-reassign: needs mlir-build; skipping",

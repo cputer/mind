@@ -429,13 +429,18 @@ fn build_dot_so() -> Option<&'static PathBuf> {
                 // whole point of the gate is that it cannot pass without running.
                 // Local/sandbox runs without the var keep self-skipping, like the
                 // blas smoke tests.
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // One owner for the skip decision. This used to be a hand-copied
+                // `assert!(var_os(..).is_none())` + `println!` pair at eight sites:
+                // `.is_none()` made `MIND_BENCH_REQUIRE=0` ENFORCE (the mirror of the
+                // defect `gate::bless_mode` documents), and the announcement was
+                // swallowed by cargo's capture, so the skip was uncountable.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -470,13 +475,14 @@ fn build_array_store_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -508,13 +514,14 @@ fn build_array_store_branch_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -552,13 +559,14 @@ fn build_lorenz_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -1554,12 +1562,14 @@ fn gemm_i8_mt_reproducibility_gate() {
 fn build_dot_so_vnni() -> Option<PathBuf> {
     for tool in ["mlir-opt", "mlir-translate", "clang"] {
         if which::which(tool).is_err() {
-            assert!(
-                std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                 cross-substrate gate cannot run."
+            // Same one-owner skip decision as `build_dot_so` above.
+            crate::common::gate::skipped(
+                "cross_substrate_identity",
+                &format!(
+                    "{tool} not on PATH; install the MLIR toolchain \
+                     (mlir-opt / mlir-translate / clang) on this runner"
+                ),
             );
-            println!("cross_substrate_identity: {tool} not on PATH; skipping");
             return None;
         }
     }
@@ -2791,13 +2801,14 @@ fn build_grammar_mask_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -3063,13 +3074,14 @@ fn build_collatz_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }
@@ -3102,13 +3114,14 @@ fn build_galperin_so() -> Option<&'static PathBuf> {
     SO.get_or_init(|| {
         for tool in ["mlir-opt", "mlir-translate", "clang"] {
             if which::which(tool).is_err() {
-                assert!(
-                    std::env::var_os("MIND_BENCH_REQUIRE").is_none(),
-                    "MIND_BENCH_REQUIRE is set but '{tool}' is not on PATH: the \
-                     cross-substrate gate cannot run. Install the MLIR toolchain \
-                     (mlir-opt / mlir-translate / clang) on this runner."
+                // Same one-owner skip decision as `build_dot_so` above.
+                crate::common::gate::skipped(
+                    "cross_substrate_identity",
+                    &format!(
+                        "{tool} not on PATH; install the MLIR toolchain \
+                         (mlir-opt / mlir-translate / clang) on this runner"
+                    ),
                 );
-                println!("cross_substrate_identity: {tool} not on PATH; skipping");
                 return None;
             }
         }

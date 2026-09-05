@@ -20,21 +20,26 @@ use std::process::Command;
 // Get the path to the mindc binary from the cargo target directory
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
-/// Check if the mindc binary exists, skip test if not
+/// The `mindc` binary under test.
+///
+/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
+/// which cargo builds for this test target before it runs, so the binary cannot
+/// legitimately be missing: the `if !binary.exists() { return; }` this replaced
+/// could only fire on a broken harness, and it graded that as a silent pass at
+/// nine call sites. Same contract as `mindc_runs_conformance_suite` below.
 fn require_mindc() -> PathBuf {
     let binary = mindc_bin();
-    if !binary.exists() {
-        eprintln!("Skipping: mindc binary not found at {:?}", binary);
-    }
+    assert!(
+        binary.exists(),
+        "mindc binary missing at {binary:?}; CARGO_BIN_EXE_mindc is built by \
+         cargo for this target, so its absence is a broken gate, not a skip"
+    );
     binary
 }
 
 #[test]
 fn mindc_emits_ir() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args(["tests/fixtures/simple.mind", "--emit-ir"])
@@ -53,9 +58,6 @@ fn mindc_emits_ir() {
 #[test]
 fn mindc_accepts_cpu_target_flag() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args(["tests/fixtures/simple.mind", "--emit-ir", "--target", "cpu"])
@@ -75,9 +77,6 @@ fn mindc_accepts_cpu_target_flag() {
 #[test]
 fn mindc_emits_grad_ir() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args([
@@ -102,9 +101,6 @@ fn mindc_emits_grad_ir() {
 #[test]
 fn mindc_verify_only_mode() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let status = Command::new(&binary)
         .args(["tests/fixtures/simple.mind", "--verify-only"])
@@ -117,9 +113,6 @@ fn mindc_verify_only_mode() {
 #[test]
 fn mindc_reports_prefixed_errors() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args(["tests/fixtures/invalid.mind"])
@@ -140,9 +133,6 @@ fn mindc_reports_prefixed_errors() {
 #[test]
 fn mindc_reports_unavailable_gpu_backend() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args(["tests/fixtures/simple.mind", "--target", "gpu"])
@@ -159,9 +149,6 @@ fn mindc_reports_unavailable_gpu_backend() {
 #[test]
 fn mindc_prints_json_diagnostics_with_flag() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args(["tests/fixtures/invalid.mind", "--diagnostic-format", "json"])
@@ -184,9 +171,6 @@ fn mindc_prints_json_diagnostics_with_flag() {
 #[test]
 fn mindc_reports_shape_errors_with_codes() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .args([
@@ -212,9 +196,6 @@ fn mindc_reports_shape_errors_with_codes() {
 #[test]
 fn mindc_color_env_overridden_by_flag() {
     let binary = require_mindc();
-    if !binary.exists() {
-        return;
-    }
 
     let output = Command::new(&binary)
         .env("MINDC_COLOR", "always")

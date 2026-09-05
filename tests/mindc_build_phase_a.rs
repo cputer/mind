@@ -575,10 +575,16 @@ fn cli_build_self_build_smoke() {
 
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let src = repo_root.join("examples/mindc_mind/main.mind");
-    if !src.exists() {
-        eprintln!("SKIP: examples/mindc_mind/main.mind not found");
-        return;
-    }
+    // TRACKED in this repo, so its absence is a broken checkout, never a
+    // capability gap. The silent `return` this replaced was invisible to the
+    // skip-site ratchet (no announcement) AND exempted from it (an unrelated
+    // `gate::` call eight lines above bled into the routed-detection window),
+    // so the RFC 0008 Phase A hard gate could report a pass without a source.
+    assert!(
+        src.exists(),
+        "{} is tracked in this repo but missing; the Phase A build gate cannot run",
+        src.display()
+    );
 
     let out = std::env::temp_dir().join("mindc_build_phase_a_self_build.so");
 
