@@ -108,6 +108,34 @@ const SCATTERED_PROSE: &str = "error[E0308]: `mm` requires operands of the same 
      note: this build has no 'mlir-build' backend compiled in; \
      rebuild with --features mlir-build\n";
 
+/// VERBATIM stderr of `mindc build` on a project whose SOURCE spells a cause
+/// code: `fn main() -> i64 { let arr: [i64; 2] = [1, 2]; arr[E5003] }`.
+///
+/// Every `E5003` here is USER text — an identifier quoted back in the message
+/// and the echoed source snippet — and the build failed for an entirely real
+/// reason. A classifier that harvests any bracketed token from anywhere on the
+/// wire reads a capability cause here and hands the program a free pass, so a
+/// program can FORGE its own skip just by naming a code.
+const FORGED_BY_SOURCE_TEXT: &str = "\
+error[type-check][E2002]: unknown identifier `E5003`\n\
+  --> /tmp/.tmpzY1E0G/src/main.mind:3:9\n\
+   |     arr[E5003]\n\
+   |         ^^^^^\n\
+error[build]: /tmp/.tmpzY1E0G/src/main.mind: unresolved identifier(s) — refusing \
+to embed a module that would crash at lowering\n";
+
+/// A genuine host-capability refusal sharing one stderr with a real failure
+/// that carries an ORDINARY diagnostic code (`E2002`), not a cause code.
+///
+/// No ordinary diagnostic is minted inside the cause namespace, so a classifier
+/// that only merges CAUSE tokens cannot see this failure at all and grades the
+/// run a tolerated skip. An `error[...]` header with no cause code is an
+/// undiagnosed refusal, and undiagnosed fails closed.
+const CAP_BESIDE_UNCODED_REAL: &str = "\
+error[build][E5003]: entry module was not natively compiled (embedded as a \
+runtime-JIT fallback)\n\
+error[type-check][E2002]: unknown identifier `helper`\n";
+
 // --- the pure decision core -------------------------------------------------
 
 #[test]
@@ -230,18 +258,62 @@ fn an_unavailable_target_backend_fails_under_enforcement() {
 #[test]
 fn an_ordinary_manifest_error_is_never_a_capability_skip() {
     // The other direction of the same reservation: a user error renumbered out
-    // of the cause namespace must fail closed, and must not veto a real gap
-    // that shares the stderr.
+    // of the cause namespace must fail closed, and must never be readable as a
+    // refusal CAUSE.
+    use libmind::diagnostics::capability as cap;
     match gate::classify(false, REAL_MANIFEST_EXPORT, false) {
         Outcome::Failed(s) => assert!(s.contains("E6001"), "{s}"),
         other => panic!("an invalid manifest entry must fail closed, got {other:?}"),
     }
-    let beside = format!("{REAL_MANIFEST_EXPORT}{CAP_FEATURE}");
-    assert_eq!(
-        gate::classify(false, &beside, false),
-        Outcome::CapabilitySkip,
-        "an out-of-namespace user error must not veto a genuine capability gap"
+    assert!(
+        cap::cause_codes(REAL_MANIFEST_EXPORT).is_empty(),
+        "an out-of-namespace user error must not forge a refusal cause"
     );
+    // It cannot forge a capability verdict — but it DOES veto one. A build that
+    // refused for a real reason is a real failure, whatever else shares the
+    // wire; grading it a tolerated skip was the fail-open this gate exists for.
+    let beside = format!("{REAL_MANIFEST_EXPORT}{CAP_FEATURE}");
+    match gate::classify(false, &beside, false) {
+        Outcome::Failed(s) => assert!(s.contains("E6001"), "{s}"),
+        other => panic!(
+            "a real manifest error sharing the wire with a capability gap must \
+             fail closed, got {other:?}"
+        ),
+    }
+}
+
+#[test]
+fn source_text_that_spells_a_cause_code_can_never_forge_a_skip() {
+    // A cause code is POSITIONAL: it counts only in a diagnostic header, never
+    // in a message body, a `-->` path or an echoed snippet. Otherwise any
+    // program that names `E5003` buys itself a pass from every gate.
+    use libmind::diagnostics::capability as cap;
+    assert!(
+        cap::cause_codes(FORGED_BY_SOURCE_TEXT).is_empty(),
+        "source text was read as a refusal cause: {:?}",
+        cap::cause_codes(FORGED_BY_SOURCE_TEXT)
+    );
+    match gate::classify(false, FORGED_BY_SOURCE_TEXT, false) {
+        Outcome::Failed(s) => assert!(s.contains("E2002"), "{s}"),
+        other => panic!(
+            "a program that spells a cause code in its own source forged a \
+             capability skip, got {other:?}"
+        ),
+    }
+}
+
+#[test]
+fn an_uncoded_error_header_beside_a_capability_cause_fails_closed() {
+    // The merge must see refusals it has no code for. An ordinary type error
+    // sharing the wire with a genuine capability refusal is still a real
+    // failure of this build, so the verdict is `Failed`, never a skip.
+    match gate::classify(false, CAP_BESIDE_UNCODED_REAL, false) {
+        Outcome::Failed(s) => assert!(s.contains("E2002"), "{s}"),
+        other => panic!(
+            "an uncoded real failure sharing the wire with a capability cause \
+             graded as a skip, got {other:?}"
+        ),
+    }
 }
 
 #[test]
@@ -467,6 +539,38 @@ fn a_program_that_does_not_compile_is_never_a_capability_skip() {
         Outcome::Failed(_) => {}
         other => panic!(
             "a program that does not compile must fail closed, got {other:?}\nstderr:\n{stderr}"
+        ),
+    }
+}
+
+#[test]
+fn a_program_that_names_a_cause_code_is_never_a_capability_skip_end_to_end() {
+    // The fixture above is only as good as the wire shape it copies. This
+    // drives the REAL binary on a program whose source text spells `E5003`,
+    // so the forgery is attempted against whatever the emitter actually
+    // prints. Feature-INDEPENDENT: the program does not compile on any host.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    write_project(
+        tmp.path(),
+        "cap_forge",
+        "fn main() -> i64 {\n    let arr: [i64; 2] = [1, 2];\n    arr[E5003]\n}\n",
+    );
+    let out = run_mindc_build(tmp.path());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a program with an unresolved identifier must not build clean: {stderr}"
+    );
+    assert!(
+        stderr.contains("E5003"),
+        "the fixture stopped exercising the forgery: the compiler no longer \
+         echoes the identifier. stderr:\n{stderr}"
+    );
+    match gate::classify(out.status.success(), &stderr, false) {
+        Outcome::Failed(_) => {}
+        other => panic!(
+            "a program that names a cause code in its own source forged a \
+             capability skip, got {other:?}\nstderr:\n{stderr}"
         ),
     }
 }

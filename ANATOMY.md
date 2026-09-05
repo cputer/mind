@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1479 | **Est. tokens:** ~2,875,317
-**Generated:** 2026-09-05 00:44 UTC
+**Files:** 1479 | **Est. tokens:** ~2,878,456
+**Generated:** 2026-09-05 02:35 UTC
 
 ## Token Budget Guide
 
@@ -96,7 +96,7 @@
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
-| `src/diagnostics/` | 2 | ~10,293 |
+| `src/diagnostics/` | 2 | ~12,242 |
 | `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
 | `src/eval/` | 16 | ~87,806 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 345 | ~626,407 |
+| `tests/` | 345 | ~627,597 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -1030,7 +1030,7 @@
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/diagnostics/`
 
-- `capability.rs` (~6569 tok, huge) — Copyright 2025 STARGA Inc.
+- `capability.rs` (~8518 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~3724 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/distributed/`
 
@@ -1496,7 +1496,7 @@
 - `f64_call_arg_run.rs` (~1028 tok, large) — Copyright 2025 STARGA Inc.
 - `f64_literal_envelope.rs` (~1139 tok, large) — Each source literal is compiled via `mindc --emit-shared`; the exported
 - `f64_loop_run.rs` (~1122 tok, large) — Copyright 2025 STARGA Inc.
-- `fail_closed_capability_skip.rs` (~5586 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_closed_capability_skip.rs` (~6776 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~1782 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~4500 tok, huge) — Copyright 2025 STARGA Inc.

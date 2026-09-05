@@ -29,13 +29,23 @@
 //! compiler, and matched here. A re-worded diagnostic keeps its code; a new
 //! refusal without a code fails CLOSED (it is not a capability gap).
 //!
-//! # Wire shape
+//! # Wire shape — the code is POSITIONAL, not free text
 //!
-//! A coded refusal carries its code as the bracketed token `[E5003]`, either in
-//! the diagnostic prefix (`error[build][E5003]: …`, the `DiagnosticEmitter`
-//! shape) or inline at the head of the message (`error[build]: [E5003] …`, for
-//! the `anyhow`-carried refusals of `run_project`). [`is_capability_gap`]
-//! matches the token, so both renderings classify identically.
+//! A coded refusal carries its code as the bracketed token `[E5003]`, in one of
+//! exactly two header slots: the diagnostic prefix (`error[build][E5003]: …`,
+//! the `DiagnosticEmitter` / `BuildError::render` shape) or the head of the
+//! message (`error[build]: [E5003] …`, the [`FallbackReason::tag`] shape used
+//! by the `anyhow`-carried refusals of `run_project`). `header_tokens` reads
+//! those slots and NOTHING else, so both renderings classify identically.
+//!
+//! Reading the token from anywhere on the buffer was itself a fail-open: the
+//! compiler echoes user text, so a program whose own source indexes with
+//! `arr[E5003]` came back as an unknown-identifier diagnostic quoting that
+//! name, plus a source-snippet line repeating it — and a whole-buffer scan
+//! graded that failing compile a capability skip. A program could BUY a pass
+//! from every gate by naming a code. Message bodies, `-->` locations, `|`
+//! snippets, `= note:` labels and continuation lines are DATA and contribute
+//! nothing.
 //!
 //! # One stderr, several causes
 //!
@@ -47,13 +57,21 @@
 //! decision, and a second, disagreeing implementation of the rule
 //! [`FallbackReason::merge`] already applies one layer down.
 //!
-//! So the classifier reads EVERY cause token on the wire and merges them
-//! fail-closed: a gap requires at least one capability cause and NO other
-//! cause. The scan is over the reserved [`CAUSE_CODE_PREFIX`] namespace, which
-//! makes both kinds of omission safe — a cause added without being registered
-//! as a capability reads as unknown and vetoes the skip, while a diagnostic
-//! outside the namespace (a type error's `E0308`) can neither forge a verdict
-//! nor veto one.
+//! So the classifier reads EVERY error header on the wire and merges them
+//! fail-closed. A gap requires that every error header carry a cause code and
+//! that every one of those codes be a capability cause. Two omissions are
+//! therefore safe by construction:
+//!
+//! * a cause added without being registered as a capability is still inside the
+//!   reserved [`CAUSE_CODE_PREFIX`] namespace, reads as unknown, and vetoes the
+//!   skip;
+//! * a refusal with NO cause code — every ordinary diagnostic, since none is
+//!   minted inside the namespace — vetoes it too. Merging only the tokens it
+//!   recognised made a real failure INVISIBLE when it shared the wire with a
+//!   capability refusal; an undiagnosed refusal is not a capability gap.
+//!
+//! An ordinary diagnostic still cannot FORGE a verdict (`E0308` is not a cause
+//! token), but it does veto one — because it is a failure of this build.
 //!
 //! # The reservation is MECHANICAL, in both directions
 //!
@@ -250,22 +268,67 @@ fn is_cause_code(token: &str) -> bool {
     }
 }
 
+/// The severity word that opens a REFUSAL header. A `warning[...]` line
+/// reports something the build tolerated, so it neither carries a refusal
+/// cause nor vetoes one.
+const ERROR_SEVERITY: &str = "error";
+
+/// The bracketed tokens `line` carries in CODE POSITION, or `None` when `line`
+/// is not an error-diagnostic header.
+///
+/// A cause code is POSITIONAL, never free text. This crate prints exactly two
+/// header renderings and the token is read from those slots only:
+///
+/// * `error[<phase>][<CODE>]: <msg>` — the `DiagnosticEmitter` and
+///   `BuildError::render` shape. The leading run of `[..]` groups may be longer
+///   than two (`error[workspace][<member>][<CODE>]:`), so the whole run is read.
+/// * `error[<phase>]: [<CODE>] <msg>` — the [`FallbackReason::tag`] shape, for
+///   refusals carried as plain `anyhow` strings. Exactly ONE group, at the head
+///   of the message and followed by a space, is in code position.
+///
+/// Everything else on the wire is DATA and can never contribute a token: a
+/// message body that quotes a user identifier, a `-->` location, a `|` source
+/// snippet, a `= note:` label, or any continuation line — all of which either
+/// begin with whitespace or fail the header grammar below. Reading them was a
+/// fail-OPEN hole: a program could forge its own capability skip by naming a
+/// cause code in its own source text, which the compiler then echoed back.
+fn header_tokens(line: &str) -> Option<Vec<&str>> {
+    // A header starts at column 0; every snippet, label and note line is
+    // indented, so leading whitespace alone disqualifies a line.
+    let mut rest = line.strip_prefix(ERROR_SEVERITY)?;
+    let mut tokens = Vec::new();
+    while let Some(after) = rest.strip_prefix('[') {
+        let close = after.find(']')?;
+        tokens.push(&after[..close]);
+        rest = &after[close + 1..];
+    }
+    // The severity/phase run must be terminated by the message separator, or
+    // this is an ordinary line that merely begins with the word "error".
+    let message = rest.strip_prefix(':')?.strip_prefix(' ').unwrap_or("");
+    if let Some(after) = message.strip_prefix('[') {
+        if let Some(close) = after.find(']') {
+            // `tag()` renders `[CODE] message`; requiring the space keeps a
+            // bracketed word that merely OPENS a message out of code position.
+            if after[close + 1..].starts_with(' ') {
+                tokens.push(&after[..close]);
+            }
+        }
+    }
+    Some(tokens)
+}
+
 /// Every reserved cause-code token carried by `stderr`, in wire order.
 ///
 /// `error[build][E5003]: …` yields `["E5003"]`: the `build` token is not in the
-/// namespace, and neither is an ordinary diagnostic code.
+/// namespace, and neither is an ordinary diagnostic code. A cause code that is
+/// not in a header's code slot — echoed source text, a path, a message body —
+/// yields nothing: see `header_tokens`.
 pub fn cause_codes(stderr: &str) -> Vec<&str> {
-    let mut found = Vec::new();
-    let mut rest = stderr;
-    while let Some(open) = rest.find('[') {
-        rest = &rest[open + 1..];
-        let Some(close) = rest.find(']') else { break };
-        let token = &rest[..close];
-        if is_cause_code(token) {
-            found.push(token);
-        }
-    }
-    found
+    stderr
+        .lines()
+        .filter_map(header_tokens)
+        .flat_map(|tokens| tokens.into_iter().filter(|t| is_cause_code(t)))
+        .collect()
 }
 
 /// Does `stderr` report a genuine host-capability gap, and NOTHING else?
@@ -279,8 +342,33 @@ pub fn cause_codes(stderr: &str) -> Vec<&str> {
 /// every capability cause, so a workspace whose first member skipped for a
 /// missing backend and whose second member did not compile is a real failure.
 pub fn is_capability_gap(stderr: &str) -> bool {
-    let codes = cause_codes(stderr);
-    !codes.is_empty() && codes.iter().all(|code| CAPABILITY_CODES.contains(code))
+    let mut saw_capability = false;
+    for line in stderr.lines() {
+        let Some(tokens) = header_tokens(line) else {
+            continue;
+        };
+        let mut coded = false;
+        for token in tokens {
+            if !is_cause_code(token) {
+                continue;
+            }
+            coded = true;
+            if !CAPABILITY_CODES.contains(&token) {
+                // A real cause, or a cause nobody registered: fail closed.
+                return false;
+            }
+            saw_capability = true;
+        }
+        if !coded {
+            // An UNCODED refusal. No ordinary diagnostic is minted inside the
+            // cause namespace, so a real failure sharing the wire with a
+            // capability refusal carries no cause token at all — reading only
+            // cause tokens made it invisible and graded the run a skip. An
+            // undiagnosed refusal is not a capability gap.
+            return false;
+        }
+    }
+    saw_capability
 }
 
 #[cfg(test)]
@@ -342,13 +430,20 @@ mod tests {
             .filter(|r| r.is_capability())
         {
             assert!(reason.is_capability());
-            assert!(is_capability_gap(
-                &reason.tag("entry module was not natively compiled")
-            ));
+            // The `anyhow` rendering: `run_project`'s error is printed as
+            // `error: <tag>`, so the code sits at the head of the message.
+            assert!(is_capability_gap(&format!(
+                "error: {}",
+                reason.tag("entry module was not natively compiled")
+            )));
+            // ... and the `DiagnosticEmitter` rendering, code in the prefix.
             assert!(is_capability_gap(&format!(
                 "error[build][{}]: x",
                 reason.code()
             )));
+            // A BARE tag is not a wire shape: nothing prints a refusal without
+            // its `error[...]` header, and a loose token must not decide.
+            assert!(!is_capability_gap(&reason.tag("x")));
         }
     }
 
@@ -386,6 +481,22 @@ mod tests {
         assert!(cause_codes("[E50] [E5003x] [build] [WARN]").is_empty());
         assert!(cause_codes("no brackets at all").is_empty());
         assert!(cause_codes("unterminated [E5003").is_empty());
+        // The anyhow rendering: one code slot at the head of the message.
+        assert_eq!(
+            cause_codes("error[build]: [E5004] tool not found: mlir-opt"),
+            vec![NATIVE_TOOLCHAIN_ABSENT]
+        );
+        // POSITION decides. A code in a message body, in an echoed source
+        // snippet, in a `-->` path or on an indented label is user data.
+        assert!(cause_codes("error[type-check][E2002]: unknown identifier `E5003`").is_empty());
+        assert!(cause_codes("   |     arr[E5003]").is_empty());
+        assert!(cause_codes("  --> /tmp/[E5003]/src/main.mind:3:9").is_empty());
+        assert!(cause_codes("   = note: see [E5003]").is_empty());
+        assert!(cause_codes(" error[build][E5003]: indented, so not a header").is_empty());
+        // A warning is not a refusal, so it carries no cause.
+        assert!(cause_codes("warning[build][E5003]: x").is_empty());
+        // A word that merely starts with "error" is not a header.
+        assert!(cause_codes("errors[build][E5003]: x").is_empty());
     }
 
     #[test]
@@ -435,17 +546,51 @@ mod tests {
     }
 
     #[test]
-    fn an_ordinary_diagnostic_outside_the_namespace_neither_forges_nor_vetoes() {
+    fn an_ordinary_diagnostic_cannot_forge_a_verdict_but_does_veto_one() {
         // The manifest-export error's twin, renumbered out of the cause
         // namespace (`E6001`): an invalid `Mind.toml` entry is a user error.
         let manifest = "error[manifest][E6001]: invalid Mind.toml [exports] c_abi entry \
                         `bad name`: not a C identifier\n";
+        // It is not a refusal CAUSE, so it can never forge a capability verdict.
         assert!(cause_codes(manifest).is_empty(), "{manifest}");
-        // It cannot forge a verdict on its own ...
         assert!(!is_capability_gap(manifest), "{manifest}");
-        // ... nor veto a genuine capability gap that shares the stderr.
+        // But it IS a failure of this build, so it vetoes a capability skip
+        // that shares the stderr. Ignoring it was the fail-open: no ordinary
+        // diagnostic is minted inside the cause namespace, so a classifier that
+        // merged only cause tokens could not see a real failure at all.
         let with_gap = format!("{manifest}error[build][{NO_NATIVE_BACKEND}]: no backend\n");
-        assert!(is_capability_gap(&with_gap), "{with_gap}");
+        assert!(!is_capability_gap(&with_gap), "{with_gap}");
+    }
+
+    #[test]
+    fn a_program_cannot_forge_a_skip_by_naming_a_cause_code() {
+        // VERBATIM `mindc build` stderr for
+        // `fn main() -> i64 { let arr: [i64; 2] = [1, 2]; arr[E5003] }`.
+        // Every `E5003` on this wire is the program's OWN text, echoed back by
+        // the compiler. A whole-buffer token scan graded it a capability skip.
+        let forged = "error[type-check][E2002]: unknown identifier `E5003`\n  \
+                      --> /tmp/.tmp0/src/main.mind:3:9\n   |     arr[E5003]\n   \
+                      |         ^^^^^\nerror[build]: /tmp/.tmp0/src/main.mind: \
+                      unresolved identifier(s) — refusing to embed a module that \
+                      would crash at lowering\n";
+        assert!(
+            forged.contains(NO_NATIVE_BACKEND),
+            "fixture lost its forgery"
+        );
+        assert!(cause_codes(forged).is_empty(), "{:?}", cause_codes(forged));
+        assert!(!is_capability_gap(forged), "{forged}");
+    }
+
+    #[test]
+    fn an_uncoded_error_header_vetoes_a_capability_skip() {
+        // The other half of the merge: a real failure that carries an ORDINARY
+        // code shares the wire with a genuine capability refusal.
+        let mixed = format!(
+            "error[build][{NO_NATIVE_BACKEND}]: entry module was not natively compiled\n\
+             error[type-check][E2002]: unknown identifier `helper`\n"
+        );
+        assert_eq!(cause_codes(&mixed), vec![NO_NATIVE_BACKEND]);
+        assert!(!is_capability_gap(&mixed), "{mixed}");
     }
 
     #[test]
