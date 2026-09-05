@@ -73,11 +73,21 @@ cd "$(dirname "$0")/.."
 # tree and still print `ok[exec]`. Re-measure at landing, every landing.
 #
 #   tier      features                                   harnesses  executed  floor
-#   exec      mlir-build std-surface cross-module-imports      332      2102   2085
-#   lowering  std-surface,mlir-lowering                        327      1830   1815
-#   pkg       pkg                                              326      1415   1400
+#   exec      mlir-build std-surface cross-module-imports      336      2133   2115
+#   lowering  std-surface,mlir-lowering                        331      1861   1846
+#   pkg       pkg                                              330      1444   1432
 #
-# (Superseded: measured@f2a2d87d was 317/1913, 318/1663, 317/1265.)
+# Re-measured AT THE TIP of the landing, not mid-wave: floors pinned at 332/2102
+# mid-wave and then left alone while four further commits added test files sat 4
+# harnesses and 31 tests below the tree, and that slack was exactly the coverage the
+# wave itself had just added — the ratchet was carrying its own new gates as
+# deletable. Demonstrated on the tier's own log: erasing five whole harnesses
+# (bare_variant_ambiguity_run, bitwise_no_panic_any_feature, bytes_fixed_into_vec_run,
+# conv2d_grad, cross_module) left 331/2109, and the floors 328/2085 printed no
+# complaint. The doctrine below applies to THIS landing too, or it is a slogan.
+#
+# (Superseded: measured@f2a2d87d was 317/1913, 318/1663, 317/1265; mid-wave was
+#  332/2102, 327/1830, 326/1415.)
 # ---------------------------------------------------------------------------
 TIERS=(exec lowering pkg)
 
@@ -85,8 +95,8 @@ TIERS=(exec lowering pkg)
 # alias-miscompile gate, the array-OOB bounds-trap gate and the array bounds/dtype
 # gate. Dropping ANY of the three features silently erases most of it.
 FEATURES_exec="mlir-build std-surface cross-module-imports"
-FLOOR_TESTS_exec=2085
-FLOOR_HARNESSES_exec=328
+FLOOR_TESTS_exec=2115
+FLOOR_HARNESSES_exec=332
 # MIND_BENCH_REQUIRE=1 turns "MLIR toolchain missing -> skip" into a hard failure, so
 # this tier cannot pass vacuously on a runner where mlir-opt/clang never installed.
 # Correct ONLY here: this is the tier that actually enables mlir-build.
@@ -97,8 +107,8 @@ REQUIRE_TOOLCHAIN_exec=1
 # of those features ALONE (the 'Test (gated ...)' and 'Run gated tests ...' steps of
 # the build_test job) and never together, so the whole group was erased in both runs.
 FEATURES_lowering="std-surface,mlir-lowering"
-FLOOR_TESTS_lowering=1815
-FLOOR_HARNESSES_lowering=323
+FLOOR_TESTS_lowering=1846
+FLOOR_HARNESSES_lowering=327
 # NOT set here. These tiers deliberately build WITHOUT mlir-build, so a target that
 # needs a cdylib emit (phase_g_keystone_bootstrap) correctly reports
 #   error[build]: cdylib emit requires the 'mlir-build' feature
@@ -111,8 +121,8 @@ REQUIRE_TOOLCHAIN_lowering=0
 # "pkg")]`. ci.yml's feature-compile matrix runs `cargo check --features pkg` but never
 # `cargo test`, so neither had ever executed.
 FEATURES_pkg="pkg"
-FLOOR_TESTS_pkg=1400
-FLOOR_HARNESSES_pkg=322
+FLOOR_TESTS_pkg=1432
+FLOOR_HARNESSES_pkg=326
 REQUIRE_TOOLCHAIN_pkg=0
 
 # ---------------------------------------------------------------------------
@@ -147,7 +157,7 @@ REQUIRE_TOOLCHAIN_pkg=0
 # mlir-build gates in the `lowering`/`pkg` tiers would red those tiers for a target
 # they correctly do not build — and it would leave `lowering` and `pkg` with NO
 # per-harness minimum at all, which is precisely the hole this check exists to close
-# (pkg's 2 files / 2 tests are invisible inside an aggregate floor of 1255).
+# (pkg's 2 files / 2 tests are invisible inside a four-figure aggregate floor).
 #
 # The count compared is tests EXECUTED (passed + failed + ignored), not passed: this
 # check answers "did the substance run", and a target that ran and FAILED is caught
