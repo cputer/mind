@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,17 +47,64 @@ GATE_TEXT = GATE.read_text(encoding="utf-8") if GATE.is_file() else ""
 TIERS = ("exec", "lowering", "pkg")
 
 
-def _array(name: str) -> tuple[str, ...]:
-    """Entries of the bash array literal `name=( ... )` in the gate script."""
-    m = re.search(rf"^{name}=\((.*?)\)\s*$", GATE_TEXT, re.S | re.M)
+def _code(line: str) -> str:
+    """`line` with its bash comment removed, honouring double quotes.
+
+    A `#` only opens a comment at the start of a word and never inside `"..."`, so
+    this is bash's own rule rather than `split("#", 1)`.
+    """
+    quoted = False
+    for i, ch in enumerate(line):
+        if ch == '"':
+            quoted = not quoted
+        elif ch == "#" and not quoted and (i == 0 or line[i - 1].isspace()):
+            return line[:i]
+    return line
+
+
+def _array_body(name: str, text: str) -> str:
+    """The code inside the bash array literal `name=( ... )`, comments removed.
+
+    STRUCTURAL, never a non-greedy regex.  `^name=\\((.*?)\\)\\s*$` under re.S|re.M
+    terminates at the first `)` that happens to end a line — including one inside a
+    trailing COMMENT.  Measured on this repo: the comment `# its end-to-end leg,
+    spawned for real (unix)` on the `fail_closed_capability_skip_stub_exec` row cut
+    `CRITICAL_exec` to 5 of its 8 rows, so the three newest exec CRITICAL rows silently
+    got no mutation case at all while the file still printed a `ran=` count.  A
+    parser that can SHRINK a mutation matrix without saying so is the same fail-open
+    shape this gate exists to remove, so the scan walks lines and closes on the first
+    `)` that is real code — exactly where bash closes the literal.
+    """
+    m = re.search(rf"^{re.escape(name)}=\(", text, re.M)
     if m is None:
         raise SystemExit(f"FAIL: {GATE.name} has no {name}=( ... ) array")
-    entries = []
-    for line in m.group(1).splitlines():
-        entry = line.split("#", 1)[0].strip().strip('"')
-        if entry:
-            entries.append(entry)
-    return tuple(entries)
+    body: list[str] = []
+    for line in text[m.end() :].split("\n"):
+        stripped = _code(line).strip()
+        if stripped.endswith(")"):
+            body.append(stripped[:-1])
+            return "\n".join(body)
+        body.append(stripped)
+    raise SystemExit(f"FAIL: {GATE.name}: {name}=( is never closed by a `)`")
+
+
+def _array(name: str, text: str | None = None) -> tuple[str, ...]:
+    """Entries of the bash array literal `name=( ... )` in the gate script."""
+    body = _array_body(name, GATE_TEXT if text is None else text)
+    if body.count('"') % 2:
+        raise SystemExit(f"FAIL: {GATE.name}: {name}=( ... ) has an unbalanced quote")
+    entries = tuple(tok.strip('"') for tok in re.findall(r'"[^"]*"|\S+', body))
+    # SELF-CHECK: the tokeniser must recover every quoted row of the block it was
+    # handed.  A parse that silently returns FEWER entries than the literal contains
+    # shrinks the generated mutation matrix, and a shrunken matrix still prints a
+    # plausible `ran=` — so a mismatch is loud and fatal, never a smaller number.
+    quoted = len(re.findall(r'"[^"]*"', body))
+    if quoted and quoted != len(entries):
+        raise SystemExit(
+            f"FAIL: {GATE.name}: {name}=( ... ) parsed {len(entries)} entries from "
+            f"{quoted} quoted rows -- the array parse is truncating"
+        )
+    return entries
 
 
 def _int(name: str) -> int:
@@ -293,11 +341,77 @@ for _tier in TIERS:
         )
 
 
+# --- P1..P5. the ARRAY PARSER itself, which sizes every case above ----------
+# The generated cases are only as complete as the parse of `CRITICAL_<tier>`, so a
+# truncating parse is invisible: fewer cases still print a `ran=` and every one of
+# them passes.  These checks pin the parse against the exact shapes the gate script
+# uses, including the trailing-comment-ends-in-`)` row that truncated it for real.
+_PARSER_FIXTURE = """\
+DECOY=(should_not_be_read)
+SAMPLE=(
+  "alpha 2"       # its end-to-end leg, spawned for real (unix)
+  "beta 1"        # another ) in a comment
+  "gamma 3"
+)
+ONE_LINE=(solo)
+INLINE=(one two three)
+EMPTY=(
+)
+"""
+
+
+def _quoted_rows_between(start: str, end: str) -> int:
+    """Quoted rows in the gate script between two markers, comments removed.
+
+    Independent of the CLOSING rule in `_array_body` — which is the rule that
+    truncated — so it is a real cross-check on how far the parse reached, and a
+    double quote inside a comment cannot false-red it.
+    """
+    region = GATE_TEXT[GATE_TEXT.index(start) : GATE_TEXT.index(end)]
+    code = "\n".join(_code(line) for line in region.split("\n"))
+    return len(re.findall(r'"[^"]*"', code))
+
+
+PARSER_CHECKS: list[tuple[str, Callable[[], object], object]] = [
+    (
+        "a CRITICAL row whose comment ends in ')' is still parsed",
+        lambda: _array("SAMPLE", _PARSER_FIXTURE),
+        ("alpha 2", "beta 1", "gamma 3"),
+    ),
+    (
+        "a single-line array literal parses",
+        lambda: _array("ONE_LINE", _PARSER_FIXTURE),
+        ("solo",),
+    ),
+    (
+        "a single-line array with several entries parses",
+        lambda: _array("INLINE", _PARSER_FIXTURE),
+        ("one", "two", "three"),
+    ),
+    (
+        "an empty array literal parses as empty",
+        lambda: _array("EMPTY", _PARSER_FIXTURE),
+        (),
+    ),
+    (
+        "every quoted CRITICAL_exec row in the gate script is generated",
+        lambda: len(CRITICAL["exec"]),
+        _quoted_rows_between("CRITICAL_exec=(", "CRITICAL_lowering="),
+    ),
+]
+
+
 def main() -> int:
     if not GATE.is_file():
         print(f"FAIL: {GATE} not found", file=sys.stderr)
         return 2
     bad = 0
+    for name, produce, want in PARSER_CHECKS:
+        got = produce()
+        ok = got == want
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}: want {want!r}, got {got!r}")
+        if not ok:
+            bad += 1
     for name, tier, log_text, want_nonzero in CASES:
         proc = run_gate(log_text, tier)
         got_nonzero = 1 if proc.returncode != 0 else 0
@@ -315,7 +429,8 @@ def main() -> int:
             sys.stderr.write(proc.stderr[-2000:])
     # The sanctioned marker shape (see scripts/gate_assert.py MARKER_RES); a
     # bare `ran=/fail=` is refused by examples/mindc_mind/smoke_wiring_lint.py.
-    print(f"\nSDLC-GATE exec_semantics_gate_selftest ran={len(CASES)} fail={bad}")
+    ran = len(CASES) + len(PARSER_CHECKS)
+    print(f"\nSDLC-GATE exec_semantics_gate_selftest ran={ran} fail={bad}")
     if bad:
         print("FAIL: exec_semantics_gate.sh did not grade as required above")
         return 1
