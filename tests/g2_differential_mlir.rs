@@ -107,18 +107,22 @@ fn emit_gate_marker(line: &str) {
     let _ = out.flush();
 }
 
-fn require_mindc() -> Option<PathBuf> {
+/// The `mindc` binary for THIS test target.
+///
+/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
+/// which cargo builds for this test target before it runs, so the binary cannot
+/// legitimately be missing: the `Some(bin)/None` probe this replaced ANNOUNCED
+/// its skip and then handed the caller `None`, which every call site turned
+/// into a bare `return` — a broken harness graded as a silent pass. Same
+/// contract as `tests/mindc.rs::require_mindc`.
+fn require_mindc() -> PathBuf {
     let bin = mindc_bin();
-    if bin.exists() {
-        Some(bin)
-    } else {
-        println!(
-            "g2_differential_mlir: SKIP — mindc binary not found at {}; \
-             run `cargo build --release` first",
-            bin.display()
-        );
-        None
-    }
+    assert!(
+        bin.exists(),
+        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
+         for this target, so its absence is a broken gate, not a skip"
+    );
+    bin
 }
 
 // ---------------------------------------------------------------------------
@@ -836,16 +840,7 @@ fn g2_1_differential_coverage() {
     // When re-exec'd as a single-fixture worker this never returns.
     run_as_worker_if_requested();
 
-    let Some(bin) = require_mindc() else {
-        // Previously entirely silent: no marker, no println. A run that never found
-        // the compiler was indistinguishable from a run that compared every fixture.
-        emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
-        emit_gate_marker(
-            "g2_differential_mlir: SKIP -- mindc binary unavailable. This asserted \
-             NOTHING; do not read it as a pass.",
-        );
-        return;
-    };
+    let bin = require_mindc();
 
     let Some(so_path) = oracle_so_path(&bin) else {
         // A missing oracle is environmental and may legitimately skip — but it must

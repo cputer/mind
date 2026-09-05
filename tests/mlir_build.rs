@@ -23,6 +23,8 @@ use libmind::parser;
 
 use tempfile::tempdir;
 
+mod common;
+
 fn parse_and_lower(src: &str) -> (String, eval::MlirLowerPreset) {
     let module = parser::parse_with_diagnostics(src).expect("parse module");
     let ir = eval::lower_to_ir(&module);
@@ -30,11 +32,18 @@ fn parse_and_lower(src: &str) -> (String, eval::MlirLowerPreset) {
     (plain_mlir, eval::MlirLowerPreset::None)
 }
 
+/// The MLIR/clang tools, or a COUNTED skip when the host genuinely lacks them.
+///
+/// The `eprintln!("Skipping MLIR build test: ...")` this replaced never read
+/// `MIND_BENCH_REQUIRE`, so a tier that demanded a real backend could not turn
+/// the absence into a failure — and cargo swallows a passing test's output, so
+/// the announcement was not even observable. `gate::skipped` panics under
+/// enforcement and otherwise emits the `ran=0` marker the tier script counts.
 fn resolve_or_skip() -> Option<eval::MlirBuildTools> {
     match eval::resolve_mlir_build_tools() {
         Ok(tools) => Some(tools),
         Err(err) => {
-            eprintln!("Skipping MLIR build test: {err}");
+            crate::common::gate::skipped("mlir_build", &format!("{err}"));
             None
         }
     }

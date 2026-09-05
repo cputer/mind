@@ -14,11 +14,31 @@ name: CI
 #     path: emit `iters=<n>` into MINDFUZZ_DIGEST_OUT and have that job assert
 #     n >= the default alongside the digest compare.
 #
-# CLOSED: the capability-skip hole (`println!("... skipping"); return;` turning a
-# FAILING compile into a PASSING test) is gone. Every skip-and-return site in
-# tests/**/*.rs routes through `tests/common/gate.rs`, which panics under
-# MIND_BENCH_REQUIRE=1 and otherwise emits `SDLC-GATE <target> ran=0 fail=0`;
-# `tests/fail_open_skip_site_ratchet.rs` fails on any site that does not.
+# CLOSED, to the width of its detector: the capability-skip hole
+# (`println!("... skipping"); return;` turning a FAILING compile into a PASSING
+# test). `tests/fail_open_skip_site_ratchet.rs` walks `tests/**/*.rs` from disk
+# and fails on any site matching a skip SHAPE IT RECOGNISES that does not route
+# through `tests/common/gate.rs`, which panics under MIND_BENCH_REQUIRE=1 and
+# otherwise emits `SDLC-GATE <target> ran=0 fail=0`. The floor is zero — there is
+# no backlog table — and the gate carries a per-harness minimum in every
+# CRITICAL_<tier> array of scripts/exec_semantics_gate.sh, so it cannot quietly
+# stop running. `tests/closed_declaration_wiring.rs` holds THIS note to that:
+# it fails if the note stops naming its enforcement, if a named file is gone,
+# or if any tier drops the row — a declaration whose subject can vanish under
+# it is prose.
+#
+# The recognised shapes are enumerated in that file's header and each is held up
+# by its own positive control. This note deliberately does NOT restate them as
+# "every skip-and-return site". That wider sentence stood here while three
+# fail-open compile skips (`if !s.success() { return; }`) and four announced
+# probes that hand the caller `None` sat unseen in mindc_cache_phase_f,
+# g2_differential_mlir, mindc_build_phase_a and mlir_build. Measured on this
+# tree under that sentence: mindc_cache_phase_f ran EIGHT `mindc build`
+# invocations, all eight failed with `error[build][E5003]`, and only TWO were
+# counted — the other six graded as passing tests. It now reports 8 markers and
+# 0 uncounted failures. A claim wider than its detector reads as coverage of
+# exactly the gap the detector is blind to. One shape is still undetected and is
+# named as deferred in the same header.
 #
 # scripts/gate_runner_wiring_lint.py holds this declaration to the deferral, and
 # removes it the moment these steps stop being invoked directly.

@@ -41,17 +41,22 @@ use libmind::project::{BuildTarget, EmitKind, OptimizeLevel};
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
-fn require_mindc() -> Option<PathBuf> {
+/// The `mindc` binary for THIS test target.
+///
+/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
+/// which cargo builds for this test target before it runs, so the binary cannot
+/// legitimately be missing: the `Some(bin)/None` probe this replaced ANNOUNCED
+/// its skip and then handed the caller `None`, which every call site turned
+/// into a bare `return` — a broken harness graded as a silent pass. Same
+/// contract as `tests/mindc.rs::require_mindc`.
+fn require_mindc() -> PathBuf {
     let bin = mindc_bin();
-    if bin.exists() {
-        Some(bin)
-    } else {
-        eprintln!(
-            "SKIP: mindc binary not found at {}; run cargo build first",
-            bin.display()
-        );
-        None
-    }
+    assert!(
+        bin.exists(),
+        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
+         for this target, so its absence is a broken gate, not a skip"
+    );
+    bin
 }
 
 /// Create a minimal single-source MIND project in `dir`.
@@ -150,27 +155,28 @@ fn phase_f_01_cold_build_all_miss() {
     );
 
     // After build: cache entry must exist (regardless of whether mlir-build ran).
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
-    let status = run_build(&mindc, dir, &[]);
+    let mindc = require_mindc();
+    let out = run_build_captured(&mindc, dir, &[]);
 
-    // Build may succeed or gracefully fail on machines without LLVM toolchain.
-    // What matters for Phase F is that a build attempt writes to cache on success.
-    if status.success() {
-        let post = probe_for_source(
-            dir,
-            SIMPLE_MIND.as_bytes(),
-            BuildTarget::Cpu,
-            OptimizeLevel::Debug,
-        );
-        assert!(
-            matches!(post, CacheProbe::Hit { .. }),
-            "expected cache hit after successful build"
-        );
+    // A build that FAILS is classified, not assumed environmental. The bare
+    // `if status.success() { ..asserts.. }` this replaced ran no assertion at
+    // all on failure and still graded `ok`, so a real build regression was
+    // indistinguishable from a host without the backend. gate::compiled either
+    // panics (regression, or a toolchain gap under MIND_BENCH_REQUIRE=1) or
+    // emits the countable `ran=0` marker.
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &out) {
+        return;
     }
-    // If build failed (missing LLVM), we can at minimum verify no panic / no corrupt state.
+    let post = probe_for_source(
+        dir,
+        SIMPLE_MIND.as_bytes(),
+        BuildTarget::Cpu,
+        OptimizeLevel::Debug,
+    );
+    assert!(
+        matches!(post, CacheProbe::Hit { .. }),
+        "expected cache hit after successful build"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -183,15 +189,14 @@ fn phase_f_02_rebuild_unchanged_all_hit() {
     let dir = tmp.path();
     make_project(dir, "rebuild_project", SIMPLE_MIND);
 
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
+    let mindc = require_mindc();
 
     // First build.
-    let s1 = run_build(&mindc, dir, &[]);
-    if !s1.success() {
-        // LLVM not available; skip remainder of test.
+    // A failure is classified, never silently returned: `run_build` inherits
+    // stdio, so the bare `if !s1.success() { return; }` this replaced could not
+    // even see the diagnostic it was grading as a capability gap.
+    let s1 = run_build_captured(&mindc, dir, &[]);
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &s1) {
         return;
     }
 
@@ -234,14 +239,14 @@ fn phase_f_03_touch_source_causes_miss() {
     let dir = tmp.path();
     make_project(dir, "touch_project", SIMPLE_MIND);
 
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
+    let mindc = require_mindc();
 
     // First build.
-    let s1 = run_build(&mindc, dir, &[]);
-    if !s1.success() {
+    // A failure is classified, never silently returned: `run_build` inherits
+    // stdio, so the bare `if !s1.success() { return; }` this replaced could not
+    // even see the diagnostic it was grading as a capability gap.
+    let s1 = run_build_captured(&mindc, dir, &[]);
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &s1) {
         return;
     }
 
@@ -296,14 +301,14 @@ fn phase_f_04_no_cache_bypasses_hit_but_still_writes() {
     let dir = tmp.path();
     make_project(dir, "nocache_project", SIMPLE_MIND);
 
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
+    let mindc = require_mindc();
 
     // First build (warm-up).
-    let s1 = run_build(&mindc, dir, &[]);
-    if !s1.success() {
+    // A failure is classified, never silently returned: `run_build` inherits
+    // stdio, so the bare `if !s1.success() { return; }` this replaced could not
+    // even see the diagnostic it was grading as a capability gap.
+    let s1 = run_build_captured(&mindc, dir, &[]);
+    if !crate::common::gate::compiled("mindc_cache_phase_f", &s1) {
         return;
     }
 
@@ -523,10 +528,7 @@ fn phase_f_09_deterministic_cache_key() {
     let dir = tmp.path();
     make_project(dir, "determinism_project", SIMPLE_MIND);
 
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
+    let mindc = require_mindc();
 
     // Build 1. A failure is classified, never silently returned: the bare
     // `if !s1.success() { return; }` this replaced graded a real build
@@ -579,10 +581,7 @@ fn phase_f_10_concurrent_builds_no_corruption() {
     let dir = tmp.path();
     make_project(dir, "concurrent_project", SIMPLE_MIND);
 
-    let mindc = match require_mindc() {
-        Some(b) => b,
-        None => return,
-    };
+    let mindc = require_mindc();
 
     // Spawn two threads both running `mindc build` in the same project dir.
     // Both may write to the same cache key; atomic rename guarantees the reader
@@ -592,11 +591,15 @@ fn phase_f_10_concurrent_builds_no_corruption() {
     let bin1 = mindc.clone();
     let bin2 = mindc.clone();
 
+    // `.output()`, not `.status()`: a status-only spawn discards the stderr, so
+    // the failure could only ever be graded by the fail-OPEN rule "neither
+    // thread built -> assume the backend is absent -> pass". Both diagnostics
+    // are captured and classified by the one decision function instead.
     let t1 = thread::spawn(move || {
         Command::new(&bin1)
             .arg("build")
             .current_dir(&dir1)
-            .status()
+            .output()
             .expect("spawn t1")
     });
 
@@ -604,19 +607,25 @@ fn phase_f_10_concurrent_builds_no_corruption() {
         Command::new(&bin2)
             .arg("build")
             .current_dir(&dir2)
-            .status()
+            .output()
             .expect("spawn t2")
     });
 
-    let s1 = t1.join().expect("t1 panicked");
-    let s2 = t2.join().expect("t2 panicked");
+    let o1 = t1.join().expect("t1 panicked");
+    let o2 = t2.join().expect("t2 panicked");
 
     // At least one (ideally both) should succeed.
-    let both_built = s1.success() && s2.success();
-    let one_built = s1.success() || s2.success();
+    let both_built = o1.status.success() && o2.status.success();
 
-    if !one_built {
-        // LLVM not available; skip corruption check.
+    // Concurrent writers RACE for the same cache key, so a single failure is
+    // not by itself a defect — but "neither built" must be classified, never
+    // assumed environmental. gate::compiled panics unless BOTH diagnostics
+    // carry a real capability cause.
+    if !o1.status.success()
+        && !o2.status.success()
+        && !crate::common::gate::compiled("mindc_cache_phase_f", &o1)
+        && !crate::common::gate::compiled("mindc_cache_phase_f", &o2)
+    {
         return;
     }
 
@@ -734,7 +743,7 @@ fn manifest_entries_are_sorted() {
 
 #[test]
 fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     make_project(dir, "fp_project", SIMPLE_MIND);

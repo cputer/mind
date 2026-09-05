@@ -23,48 +23,64 @@
 //!
 //! # Why there is no backlog table any more
 //!
-//! The first version of this gate pinned the CARDINALITY (`n == 256`). That
-//! does not forbid what it says it forbids: routing one site while adding an
-//! unrouted one elsewhere leaves the total unchanged and the gate stays green.
-//! The second version froze a per-FILE table, which closed that hole but
-//! introduced another: a hand-copied list of 136 file names sitting beside a
-//! scanner that derives its scope from disk. Two scopes that must agree, with
-//! nothing asserting they do, is the drift this repo has paid for before.
+//! The first version pinned the CARDINALITY (`n == 256`), which forbids
+//! nothing: routing one site while adding an unrouted one leaves the total
+//! unchanged and the gate green. The second froze a per-FILE table — 136
+//! hand-copied names beside a scanner deriving its scope from disk, two scopes
+//! that must agree with nothing asserting they do. Both are gone: the backlog
+//! is drained to zero and the gate is a flat prohibition, so any skip-and-return
+//! in `tests/**/*.rs` matching a shape below is red, in any file, new or old,
+//! unless it consults the shared helper.
 //!
-//! Both are gone. The backlog was drained — every site routes through
-//! `common::gate` — so the gate is now a flat prohibition with no list to keep
-//! in step: ANY skip-and-return in `tests/**/*.rs` that does not consult the
-//! shared helper is red, in any file, new or old.
+//! # The shapes this gate RECOGNISES — and the one it does not
+//!
+//! This enumeration is the claim; `.github/workflows/ci.yml` and
+//! `tests/common/gate.rs` point here instead of restating it. The earlier
+//! wording — "every skip-and-return site routes through `common::gate`" — was
+//! wider than any detector backing it and so read as coverage of exactly the
+//! gap it was blind to. Every entry names the escape it closed, each found by
+//! mutating the tree under the built scanner, each with LIVE sites riding it
+//! while this gate reported clean:
+//!
+//! 1. An ANNOUNCED skip — `println!`/`eprintln!` naming a skip or a deferral,
+//!    possibly wrapped over lines — followed by a `return` OR by a bare `None`
+//!    ([`is_bare_none`]). The tail used to require the token `return`, so a
+//!    probe that printed its skip and handed the caller `None` was unseen: 4
+//!    live sites (`mindc_cache_phase_f`, `g2_differential_mlir`,
+//!    `mindc_build_phase_a`, `mlir_build`).
+//! 2. A SILENT capability probe ([`is_capability_probe`]: `.exists()`,
+//!    `which(..).is_err()`, `var_os(..).is_none()`, `if !<status>.success()`)
+//!    followed by a bare early-out. The scan was once keyed on a print macro,
+//!    so `if !bin.exists() { return; }` was invisible: 17 live sites. And the
+//!    vocabulary had no `.success()`, so the FAILED-COMPILE skip this helper
+//!    exists for was invisible too: 3 live sites in `mindc_cache_phase_f`, each
+//!    grading `ok` on a build that printed `error[build][E5003]`.
+//! 3. The superstring capability test, matched variable-agnostically. It used
+//!    to be one literal spelled `stderr.`, so the same predicate under any
+//!    other receiver was invisible: 8 live sites.
+//! 4. A second reader of `MIND_BENCH_REQUIRE`. `ROUTED_MARKERS` used to accept
+//!    the bare strings `MIND_BENCH_REQUIRE` / `enforce_real_backend`, so a
+//!    comment merely naming the variable bought a pass; only `gate::`-qualified
+//!    call syntax counts now. 17 sites rode it (8 `cross_substrate_identity`,
+//!    9 `phase_g_keystone_bootstrap`), each hand-rolling
+//!    `var_os("MIND_BENCH_REQUIRE").is_some()` — which made
+//!    `MIND_BENCH_REQUIRE=0` ENFORCE. They call `gate::skipped`.
+//! 5. A `skipped_optional` call site that does not name what is optional.
+//!
+//! deferred: a skip announced ONLY in a comment above a bare early-out
+//! (`// LLVM not available; skip corruption check`) is not yet a detector.
+//! Measured here: 3 such sites, all legitimate (2 documented
+//! `STABILITY_SKIP_LIST` gaps in `fmt_stdlib_stability.rs`, 1 already guarded in
+//! `mindfuzz_cross_substrate.rs`), so adding it now would land red on
+//! non-defects. Upgrade path: route those three, then add it with a control.
 //!
 //! # Scope is read out of the thing being checked
 //!
 //! The scanned set is `tests/**/*.rs` walked from disk (minus this scanner's
 //! own source, whose positive controls must quote the shape it forbids), and
-//! the routed-detection is the same `ROUTED_MARKERS` list applied to every one
-//! of them. Scope and detection cannot drift apart because neither is written
-//! down twice.
+//! the routed-detection is the same `ROUTED_MARKERS` list applied to each of
+//! them. Neither is written down twice, so they cannot drift apart.
 //!
-//! # Three ways this prohibition was text-satisfiable, and what closed them
-//!
-//! Measured against the tip by mutating the tree under the built scanner:
-//!
-//! 1. `ROUTED_MARKERS` accepted the bare strings `MIND_BENCH_REQUIRE` and
-//!    `enforce_real_backend`, so a *comment* reading
-//!    `// NOTE: this gate does not honour MIND_BENCH_REQUIRE` two lines above a
-//!    bare `println!("skipping"); return;` bought the site a pass. Only
-//!    `gate::`-qualified call syntax counts now. The 17 sites that had been
-//!    riding the bare-name form (8 in `cross_substrate_identity`, 9 in
-//!    `phase_g_keystone_bootstrap`) hand-rolled the predicate as
-//!    `var_os("MIND_BENCH_REQUIRE").is_some()`, which made
-//!    `MIND_BENCH_REQUIRE=0` ENFORCE; they now call `gate::skipped`.
-//! 2. The scan was keyed on a print macro, so a *silent* probe-and-return
-//!    (`if !bin.exists() { return; }`) was structurally invisible — a separate
-//!    set of 17 sites was live and unseen. [`silent_probe_sites`] is the second
-//!    detector.
-//! 3. The banned two-substring capability test was spelled with one variable
-//!    name (`stderr.`), so the same predicate under any other name was
-//!    invisible — eight live sites kept it. The matcher is variable-agnostic.
-
 use std::path::{Path, PathBuf};
 
 /// Text that proves a skip decision consulted the shared fail-closed helper.
@@ -81,6 +97,24 @@ const ROUTED_MARKERS: &[&str] = &[
     "gate::classify",
     "gate::is_capability_gap",
 ];
+
+/// Does any CODE line in `window` call the shared helper?
+///
+/// Comment lines are excluded, and that exclusion is load-bearing: the marker
+/// test used to run over the raw window text, so a doc comment mentioning
+/// `gate::skipped` within eight lines above an UNROUTED skip bought it a pass.
+/// Measured while proving this gate bites — the doc comment written for
+/// `mlir_build::resolve_or_skip` exempted the very site it described, and the
+/// mutation that should have gone red came back green. A marker a comment can
+/// supply grades text, not routing; ROUTED_MARKERS was already narrowed to
+/// `gate::`-qualified call syntax for that reason, and this closes the other
+/// half of the same hole.
+fn routed(window: &[&str]) -> bool {
+    window
+        .iter()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .any(|l| ROUTED_MARKERS.iter().any(|m| l.contains(m)))
+}
 
 /// The last line index of the print macro starting at `lines[i]`, or `None` if
 /// `lines[i]` does not open one outside a comment.
@@ -180,12 +214,14 @@ fn announced_skip_sites(rel: &str, lines: &[&str]) -> Vec<String> {
             continue;
         }
         let tail_end = (end + 4).min(lines.len());
-        if !lines[i..tail_end].iter().any(|l| l.contains("return")) {
+        if !lines[i..tail_end]
+            .iter()
+            .any(|l| l.contains("return") || is_bare_none(l))
+        {
             continue;
         }
         let head = i.saturating_sub(8);
-        let window = lines[head..tail_end].join("\n");
-        if ROUTED_MARKERS.iter().any(|m| window.contains(m)) {
+        if routed(&lines[head..tail_end]) {
             continue;
         }
         open.push(format!("{}:{} (announced skip)", rel, i + 1));
@@ -226,6 +262,22 @@ fn is_capability_probe(t: &str) -> bool {
     ordered("if !", ".exists()")
         || ordered("which(", ".is_err()")
         || ordered("var_os(", ".is_none()")
+        // The FAILED-COMPILE shape `if !s.success() { return; }`, absent here
+        // while `tests/common/gate.rs` named it as failure mode 1: a vocabulary
+        // omitting the shape the helper was written for is the gate declaring
+        // itself closed over the hole it was cut to fill.
+        || ordered("if !", ".success()")
+}
+
+/// An early-out spelled as a bare `None` value rather than a `return`.
+///
+/// THE BLIND SPOT THIS CLOSES: the announced-skip detector required the token
+/// `return` under the announcement, so `fn require_mindc() -> Option<PathBuf>`
+/// — `eprintln!("SKIP: ...")` then `None`, every caller writing
+/// `None => return` — was invisible while ANNOUNCING its skip in plain text.
+/// Handing back `None` and returning are one decision, written two ways.
+fn is_bare_none(line: &str) -> bool {
+    matches!(line.trim(), "None" | "None," | "None;")
 }
 
 /// A `return` that hands the caller nothing it can tell apart from success.
@@ -253,7 +305,7 @@ fn silent_probe_sites(rel: &str, lines: &[&str]) -> Vec<String> {
         if !window.iter().any(|l| is_bare_return(l)) {
             continue;
         }
-        if window.iter().any(|l| l.contains("gate::")) {
+        if routed(window) {
             continue;
         }
         open.push(format!("{}:{} (silent probe)", rel, i + 1));
@@ -584,9 +636,16 @@ fn the_scanner_can_see_the_silent_probe_shape() {
         "    if !std::path::Path::new(p).exists() {",
         "        if which::which(\"mlir-opt\").is_err() {",
         "    if std::env::var_os(\"MIND_TRACKING_CORPUS_DIR\").is_none() {",
+        // The FAILED-COMPILE shape. Absent from the vocabulary until three
+        // sites in mindc_cache_phase_f.rs were measured grading `ok` on a build
+        // that had just printed `error[build][E5003]`.
+        "    if !s1.success() {",
+        "        if !out.status.success() {",
     ] {
         assert!(is_capability_probe(probe), "missed probe: {probe}");
     }
+    // The POSITIVE branch is an assertion path, not a skip.
+    assert!(!is_capability_probe("    if s1.success() {"));
     // Prose quoting the shape, and a probe that is not a run/skip decision.
     assert!(!is_capability_probe("    // if !bin.exists() { return; }"));
     assert!(!is_capability_probe("    if bin.exists() {"));
@@ -617,6 +676,60 @@ fn the_scanner_can_see_the_silent_probe_shape() {
         silent_probe_sites("specimen.rs", &commented),
         vec!["specimen.rs:2 (silent probe)".to_string()]
     );
+}
+
+#[test]
+fn the_scanner_can_see_an_announced_skip_that_hands_back_none() {
+    // Positive control. A `-> Option<T>` capability probe that PRINTS its skip
+    // and yields `None` was invisible while every call site wrote
+    // `None => return`: four live, against one sibling already routing it.
+    let probe = [
+        "    if bin.exists() {",
+        "        Some(bin)",
+        "    } else {",
+        "        eprintln!(\"SKIP: mindc binary not found\");",
+        "        None",
+        "    }",
+    ];
+    assert_eq!(
+        announced_skip_sites("specimen.rs", &probe),
+        vec!["specimen.rs:4 (announced skip)".to_string()]
+    );
+
+    // Routing the same decision through the owner clears it.
+    let routed = [
+        "    if bin.exists() {",
+        "        Some(bin)",
+        "    } else {",
+        "        gate::skipped(\"t\", \"no mindc\");",
+        "        None",
+        "    }",
+    ];
+    assert!(announced_skip_sites("specimen.rs", &routed).is_empty());
+
+    // A doc comment MENTIONING the helper is prose, not routing. This exact
+    // shape returned GREEN from the mutation written to prove the detector
+    // bites: the comment describing the fix exempted the unrouted site.
+    let commented = [
+        "    /// `gate::skipped` panics under enforcement; otherwise it counts.",
+        "    if bin.exists() {",
+        "        Some(bin)",
+        "    } else {",
+        "        eprintln!(\"SKIP: mindc binary not found\");",
+        "        None",
+        "    }",
+    ];
+    assert_eq!(
+        announced_skip_sites("specimen.rs", &commented),
+        vec!["specimen.rs:5 (announced skip)".to_string()]
+    );
+
+    // Every early-out spelling, and a `None` that is a real value, not an exit.
+    assert!(is_bare_none("        None"));
+    assert!(is_bare_none("        None,"));
+    assert!(is_bare_none("    None;"));
+    assert!(!is_bare_none("        Some(bin)"));
+    assert!(!is_bare_none("        None => return,"));
 }
 
 #[test]

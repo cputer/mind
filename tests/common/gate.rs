@@ -32,12 +32,14 @@
 //! still skips. That behaviour is load-bearing for the non-exec tiers and is
 //! asserted by `tests/fail_closed_capability_skip.rs`.
 //!
-//! # The backlog is drained
+//! # Who says the backlog stays drained
 //!
-//! Every skip-and-return site in `tests/**/*.rs` now routes through this
-//! module. `tests/fail_open_skip_site_ratchet.rs` scans the tree and fails on any
-//! site that does not, so the count this module governs can never silently
-//! grow back.
+//! Not this comment. `tests/fail_open_skip_site_ratchet.rs` walks
+//! `tests/**/*.rs` from disk and fails on any site matching a skip shape it
+//! recognises that does not route through this module; its header enumerates
+//! those shapes and names the one still undetected. The fact has ONE owner
+//! there — restating it here as "every site" is how a claim came to be wider
+//! than the detector backing it, over four files that were still fail-open.
 //!
 //! # Two honest classes of absence, ONE decision function
 //!

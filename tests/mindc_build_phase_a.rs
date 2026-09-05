@@ -27,17 +27,22 @@ use std::process::Command;
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
-fn require_mindc() -> Option<PathBuf> {
+/// The `mindc` binary for THIS test target.
+///
+/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
+/// which cargo builds for this test target before it runs, so the binary cannot
+/// legitimately be missing: the `Some(bin)/None` probe this replaced ANNOUNCED
+/// its skip and then handed the caller `None`, which every call site turned
+/// into a bare `return` — a broken harness graded as a silent pass. Same
+/// contract as `tests/mindc.rs::require_mindc`.
+fn require_mindc() -> PathBuf {
     let bin = mindc_bin();
-    if bin.exists() {
-        Some(bin)
-    } else {
-        eprintln!(
-            "SKIP: mindc binary not found at {}; run cargo build first",
-            bin.display()
-        );
-        None
-    }
+    assert!(
+        bin.exists(),
+        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
+         for this target, so its absence is a broken gate, not a skip"
+    );
+    bin
 }
 
 /// Minimal valid Mind.toml for a test project.
@@ -210,7 +215,7 @@ fn mlir_available() -> bool {
 
 #[test]
 fn cli_build_unknown_target_exits_2() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     let src = td.path().join("main.mind");
@@ -238,7 +243,7 @@ fn cli_build_unknown_target_exits_2() {
 
 #[test]
 fn cli_build_unknown_emit_exits_2() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     let src = td.path().join("main.mind");
@@ -265,7 +270,7 @@ fn cli_build_unknown_emit_exits_2() {
 
 #[test]
 fn cli_build_missing_source_exits_1() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     // Write manifest pointing to a non-existent file.
@@ -291,7 +296,7 @@ fn cli_build_missing_source_exits_1() {
 
 #[test]
 fn cli_build_invalid_manifest_exits_2() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     fs::write(td.path().join("Mind.toml"), "this is not valid toml %%%").unwrap();
@@ -313,7 +318,7 @@ fn cli_build_invalid_manifest_exits_2() {
 
 #[test]
 fn cli_build_release_flag_accepted() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
@@ -357,7 +362,7 @@ fn cli_build_release_flag_accepted() {
 
 #[test]
 fn cli_build_debug_puts_artifact_in_debug_subdir() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
@@ -391,7 +396,7 @@ fn cli_build_debug_puts_artifact_in_debug_subdir() {
 
 #[test]
 fn cli_build_custom_out_path() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
@@ -425,7 +430,7 @@ fn cli_build_custom_out_path() {
 
 #[test]
 fn cli_build_emit_cdylib_produces_so() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
@@ -462,7 +467,7 @@ fn cli_build_emit_cdylib_produces_so() {
 
 #[test]
 fn cli_build_target_cpu_is_default() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(td.path().join("src")).unwrap();
@@ -490,7 +495,7 @@ fn cli_build_target_cpu_is_default() {
 
 #[test]
 fn cli_build_target_gpu_returns_clear_error() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(td.path().join("src")).unwrap();
@@ -525,7 +530,7 @@ fn cli_build_target_gpu_returns_clear_error() {
 
 #[test]
 fn cli_build_manifest_target_field_overrides_default() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
 
     let td = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(td.path().join("src")).unwrap();
@@ -567,7 +572,7 @@ optimize = "release"
 /// is produced and non-empty. This is the RFC 0008 §7 Phase A hard gate.
 #[test]
 fn cli_build_self_build_smoke() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
@@ -631,7 +636,7 @@ fn cli_build_self_build_smoke() {
 /// external MLIR/llc/clang toolchain, absent on the metadata-only CI runner.
 #[test]
 fn cli_build_single_file_binary_ignores_broken_sibling() {
-    let Some(bin) = require_mindc() else { return };
+    let bin = require_mindc();
     if !mlir_available() {
         crate::common::gate::skipped("mindc_build_phase_a", "MLIR tools not available");
         return;
