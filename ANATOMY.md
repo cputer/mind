@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1512 | **Est. tokens:** ~2,934,192
-**Generated:** 2026-09-05 21:04 UTC
+**Files:** 1513 | **Est. tokens:** ~2,939,093
+**Generated:** 2026-09-05 21:27 UTC
 
 ## Token Budget Guide
 
@@ -74,10 +74,10 @@
 | `.githooks/` | 4 | ~1,755 |
 | `.github/` | 4 | ~863 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~34,757 |
+| `.github/workflows/` | 9 | ~34,985 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 30 | ~101,979 |
+| `scripts/` | 30 | ~101,980 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 353 | ~661,457 |
+| `tests/` | 353 | ~661,926 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~5,886 |
@@ -179,6 +179,7 @@
 | `tests/selfhost_gaps/` | 158 | ~10,231 |
 | `tests/selfhost_gaps/never_wrong/` | 17 | ~326 |
 | `tests/shapes/` | 3 | ~260 |
+| `tests/skip_shape_scan/` | 1 | ~4,203 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~7,506 |
 | `tools/mindfuzz/` | 7 | ~16,763 |
@@ -858,7 +859,7 @@
 
 - `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~22874 tok, huge) — name: CI
+- `ci.yml` (~23102 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -888,7 +889,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~9599 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~9600 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `exec_semantics_markers.sh` (~3357 tok, huge) — shellcheck shell=bash
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
@@ -1323,7 +1324,7 @@
 - `cli_eval.rs` (~434 tok, medium) — Copyright 2025 STARGA Inc.
 - `cli_exec.rs` (~519 tok, large) — Copyright 2025 STARGA Inc.
 - `cli_tensor.rs` (~401 tok, medium) — Copyright 2025 STARGA Inc.
-- `closed_declaration_wiring.rs` (~1552 tok, huge) — Copyright 2025 STARGA Inc.
+- `closed_declaration_wiring.rs` (~1636 tok, huge) — Copyright 2025 STARGA Inc.
 - `closure_capture_reject.rs` (~982 tok, large) — Copyright 2025 STARGA Inc.
 - `closure_i64_capture.rs` (~1679 tok, huge) — Copyright 2025 STARGA Inc.
 - `collection_ctor_run.rs` (~580 tok, large) — Copyright 2025 STARGA Inc.
@@ -1509,7 +1510,7 @@
 - `fail_closed_capability_skip.rs` (~6323 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
-- `fail_open_skip_site_ratchet.rs` (~8497 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_open_skip_site_ratchet.rs` (~8882 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 ### `tests/fixtures/`
 
@@ -2022,6 +2023,11 @@
 ### `tests/`
 
 - `shapes.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.
+### `tests/skip_shape_scan/`
+
+- `mod.rs` (~4203 tok, huge) — Copyright 2025 STARGA Inc.
+### `tests/`
+
 - `smoke.rs` (~261 tok, medium) — Copyright 2025 STARGA Inc.
 - `sparse_tensor_types.rs` (~1997 tok, huge) — Copyright 2025 STARGA Inc.
 - `statement_mutation_run.rs` (~911 tok, large) — Copyright 2025 STARGA Inc.

@@ -7,16 +7,12 @@
 //! # What this gate forbids
 //!
 //! A wide class of integration-test sites carried the shape
-//!
-//! ```text
-//! if !something_available() { println!("... skipping"); return; }
-//! ```
-//!
-//! without ever consulting `MIND_BENCH_REQUIRE`, so `MIND_BENCH_REQUIRE=1`
-//! could not turn them into a hard failure and a tier could pass vacuously.
-//! Worse, cargo captures the stdout of a PASSING test, so the announcement was
-//! not merely tolerated, it was *unobservable*: the tier gate could not tell
-//! "asserted" from "executed".
+//! `if !something_available() { println!("... skipping"); return; }` without
+//! ever consulting `MIND_BENCH_REQUIRE`, so `MIND_BENCH_REQUIRE=1` could not
+//! turn them into a hard failure and a tier could pass vacuously. Worse, cargo
+//! captures the stdout of a PASSING test, so the announcement was not merely
+//! tolerated, it was *unobservable*: the tier gate could not tell "asserted"
+//! from "executed".
 //!
 //! The fail-CLOSED helper every such site must route through is `common::gate`,
 //! whose contract is proven in `tests/fail_closed_capability_skip.rs`.
@@ -24,15 +20,12 @@
 //! # Why there is no backlog table any more
 //!
 //! The first version pinned the CARDINALITY (`n == 256`), which forbids
-//! nothing: routing one site while adding an unrouted one leaves the total
-//! unchanged and the gate green. The second froze a per-FILE table — 136
-//! hand-copied names beside a scanner deriving its scope from disk, two scopes
-//! that must agree with nothing asserting they do. Both are gone: the backlog
-//! is drained to zero and the gate is a flat prohibition, so any skip-and-return
-//! in `tests/**/*.rs` matching a shape below is red, in any file, new or old,
-//! unless it consults the shared helper.
+//! nothing. The second froze a per-FILE table — 136 hand-copied names beside a
+//! scanner deriving its scope from disk, two scopes that must agree with
+//! nothing asserting they do. Both are gone: the backlog is drained to zero and
+//! the gate is a flat prohibition over `tests/**/*.rs`.
 //!
-//! # The shapes this gate RECOGNISES — and the one it does not
+//! # The shapes this gate RECOGNISES — and the three it does not
 //!
 //! This enumeration is the claim; `.github/workflows/ci.yml` and
 //! `tests/common/gate.rs` point here instead of restating it. The earlier
@@ -48,31 +41,46 @@
 //!    probe that printed its skip and handed the caller `None` was unseen: 4
 //!    live sites (`mindc_cache_phase_f`, `g2_differential_mlir`,
 //!    `mindc_build_phase_a`, `mlir_build`).
-//! 2. A SILENT capability probe ([`is_capability_probe`]: `.exists()`,
-//!    `which(..).is_err()`, `var_os(..).is_none()`, `if !<status>.success()`)
-//!    followed by a bare early-out. The scan was once keyed on a print macro,
-//!    so `if !bin.exists() { return; }` was invisible: 17 live sites. And the
-//!    vocabulary had no `.success()`, so the FAILED-COMPILE skip this helper
-//!    exists for was invisible too: 3 live sites in `mindc_cache_phase_f`, each
-//!    grading `ok` on a build that printed `error[build][E5003]`.
+//! 2. A SILENT capability probe: an `if` / `match` / `let ... else` whose
+//!    scrutinee is derived from `.exists(`, `which(`, `var_os(` or `.success(`,
+//!    and whose block (or its `else` branch) exits early without a verdict.
+//!    Decided over the BRACE-BALANCED BLOCK by [`skip_shape_scan`], not a line
+//!    window. The scan was once keyed on a print macro, so
+//!    `if !bin.exists() { return; }` was invisible: 17 live sites. The
+//!    vocabulary then had no `.success()`, so the FAILED-COMPILE skip this
+//!    helper exists for was invisible too: 3 live sites in
+//!    `mindc_cache_phase_f`, each grading `ok` on a build that printed
+//!    `error[build][E5003]`. And the shape was pinned as TEXT — one probe line
+//!    plus a two-line tail — so five ordinary Rust spellings of it passed green
+//!    while the gate printed `12 passed`. [`skip_shape_scan`] names all five;
+//!    [`the_five_measured_escapes_are_closed`] pins them.
 //! 3. The superstring capability test, matched variable-agnostically. It used
 //!    to be one literal spelled `stderr.`, so the same predicate under any
 //!    other receiver was invisible: 8 live sites.
 //! 4. A second reader of `MIND_BENCH_REQUIRE`. `ROUTED_MARKERS` used to accept
 //!    the bare strings `MIND_BENCH_REQUIRE` / `enforce_real_backend`, so a
 //!    comment merely naming the variable bought a pass; only `gate::`-qualified
-//!    call syntax counts now. 17 sites rode it (8 `cross_substrate_identity`,
-//!    9 `phase_g_keystone_bootstrap`), each hand-rolling
+//!    call syntax counts now. 17 sites rode it, each hand-rolling
 //!    `var_os("MIND_BENCH_REQUIRE").is_some()` — which made
 //!    `MIND_BENCH_REQUIRE=0` ENFORCE. They call `gate::skipped`.
 //! 5. A `skipped_optional` call site that does not name what is optional.
 //!
-//! deferred: a skip announced ONLY in a comment above a bare early-out
-//! (`// LLVM not available; skip corruption check`) is not yet a detector.
-//! Measured here: 3 such sites, all legitimate (2 documented
-//! `STABILITY_SKIP_LIST` gaps in `fmt_stdlib_stability.rs`, 1 already guarded in
-//! `mindfuzz_cross_substrate.rs`), so adding it now would land red on
-//! non-defects. Upgrade path: route those three, then add it with a control.
+//! deferred, each MEASURED against the live tree (appended to `tests/if_expr.rs`,
+//! this scanner re-run) rather than guessed — a residual nobody names is the
+//! hole the last five escapes came through. None exists in the tree today:
+//!
+//! * A skip announced ONLY in a comment above a bare early-out
+//!   (`// LLVM not available; skip corruption check`). 3 such sites, all
+//!   legitimate (2 documented `STABILITY_SKIP_LIST` gaps in
+//!   `fmt_stdlib_stability.rs`, 1 guarded in `mindfuzz_cross_substrate.rs`), so
+//!   adding it now lands red on non-defects. Upgrade path: route those three.
+//! * A COLLAPSED `Option` probe — `if b.exists() { Some(b) } else { None }` on
+//!   ONE line. The bare-`None` early-out is decided per LINE because a
+//!   token-level `None` matches every `None =>` match PATTERN in the tree.
+//!   Upgrade path: require `-> Option<_>` probes to return `gate::compiled`.
+//! * A probe behind an INDIRECTION — `if !have_toolchain() { return; }`. Taint
+//!   follows a `let` inside one function, never across a call. Upgrade path:
+//!   seed the taint set from the return expression of same-file helpers.
 //!
 //! # Scope is read out of the thing being checked
 //!
@@ -81,39 +89,29 @@
 //! the routed-detection is the same `ROUTED_MARKERS` list applied to each of
 //! them. Neither is written down twice, so they cannot drift apart.
 //!
-use std::path::{Path, PathBuf};
+//! `tests/skip_shape_scan/mod.rs`, which OWNS the vocabulary, is deliberately
+//! NOT exempted: it is walked like every other source and comes back clean,
+//! because it reads masked CODE and its own vocabulary is spelled as string
+//! literals. A two-entry exemption list would be the second hand-copied scope
+//! this file's doctrine is against.
+//!
+mod skip_shape_scan;
 
-/// Text that proves a skip decision consulted the shared fail-closed helper.
-///
-/// ONLY `gate::`-qualified call syntax. The bare names `MIND_BENCH_REQUIRE` and
-/// `enforce_real_backend` used to appear here, which made the prohibition
-/// satisfiable by PROSE: a comment that merely mentions the variable is not
-/// evidence that any decision consulted it, and a site can name the variable in
-/// the very sentence that says it ignores it. A marker a comment can supply
-/// grades text, not routing.
-const ROUTED_MARKERS: &[&str] = &[
-    "gate::compiled",
-    "gate::skipped",
-    "gate::classify",
-    "gate::is_capability_gap",
-];
+use std::path::{Path, PathBuf};
 
 /// Does any CODE line in `window` call the shared helper?
 ///
 /// Comment lines are excluded, and that exclusion is load-bearing: the marker
 /// test used to run over the raw window text, so a doc comment mentioning
-/// `gate::skipped` within eight lines above an UNROUTED skip bought it a pass.
-/// Measured while proving this gate bites — the doc comment written for
-/// `mlir_build::resolve_or_skip` exempted the very site it described, and the
-/// mutation that should have gone red came back green. A marker a comment can
-/// supply grades text, not routing; ROUTED_MARKERS was already narrowed to
-/// `gate::`-qualified call syntax for that reason, and this closes the other
-/// half of the same hole.
+/// `gate::skipped` within eight lines above an UNROUTED skip bought it a pass —
+/// the doc comment written for `mlir_build::resolve_or_skip` exempted the very
+/// site it described. The marker LIST, and why only `gate::`-qualified call
+/// syntax counts, are owned by [`skip_shape_scan::ROUTED_MARKERS`].
 fn routed(window: &[&str]) -> bool {
     window
         .iter()
         .filter(|l| !l.trim_start().starts_with("//"))
-        .any(|l| ROUTED_MARKERS.iter().any(|m| l.contains(m)))
+        .any(|l| skip_shape_scan::routed_text(l))
 }
 
 /// The last line index of the print macro starting at `lines[i]`, or `None` if
@@ -239,36 +237,6 @@ fn ident_len(s: &str) -> usize {
         .count()
 }
 
-/// Does `t` open a capability PROBE that decides whether the gate can run?
-///
-/// The three measured shapes: a filesystem existence check, a PATH lookup, an
-/// environment read. Each is matched by its METHOD call, never by the name of
-/// the receiver — a needle spelled with one variable name is evaded by picking
-/// another, which is exactly how the superstring capability test stayed hidden
-/// at eight sites.
-fn is_capability_probe(t: &str) -> bool {
-    let t = t.trim_start();
-    if t.starts_with("//") {
-        return false; // prose quoting the bad shape is not the bad shape
-    }
-    let ordered = |open: &str, close: &str| t.find(open).is_some_and(|p| t[p..].contains(close));
-    // The RECEIVER is deliberately not pinned to a bare identifier.
-    // `if !bin.exists()`, `if !Path::new(p).exists()` and
-    // `if !std::path::Path::new(p).exists()` are one decision written three
-    // ways, and a detector keyed on `if !<ident>.exists()` sees only the first —
-    // measured while building this scanner: the inline-path specimen walked
-    // straight past that draft, which is the same variable-name blindness that
-    // hid eight superstring capability tests.
-    ordered("if !", ".exists()")
-        || ordered("which(", ".is_err()")
-        || ordered("var_os(", ".is_none()")
-        // The FAILED-COMPILE shape `if !s.success() { return; }`, absent here
-        // while `tests/common/gate.rs` named it as failure mode 1: a vocabulary
-        // omitting the shape the helper was written for is the gate declaring
-        // itself closed over the hole it was cut to fill.
-        || ordered("if !", ".success()")
-}
-
 /// An early-out spelled as a bare `None` value rather than a `return`.
 ///
 /// THE BLIND SPOT THIS CLOSES: the announced-skip detector required the token
@@ -280,47 +248,12 @@ fn is_bare_none(line: &str) -> bool {
     matches!(line.trim(), "None" | "None," | "None;")
 }
 
-/// A `return` that hands the caller nothing it can tell apart from success.
-fn is_bare_return(line: &str) -> bool {
-    matches!(line.trim(), "return;" | "return None;" | "return Ok(());")
-}
-
-/// How many lines after the probe a bare `return` still counts as its body.
-const PROBE_RETURN_SPAN: usize = 2;
-
-/// Sites where a probe skips WITHOUT announcing anything.
-///
-/// THE BLIND SPOT THIS CLOSES: [`announced_skip_sites`] is keyed on a print
-/// macro, so `if !bin.exists() { return; }` — no print, no panic, exit 0 — was
-/// structurally invisible to it. Measured at the tip: 17 live sites, every one
-/// of them reported clean.
-fn silent_probe_sites(rel: &str, lines: &[&str]) -> Vec<String> {
-    let mut open = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if !is_capability_probe(line) {
-            continue;
-        }
-        let end = (i + PROBE_RETURN_SPAN + 1).min(lines.len());
-        let window = &lines[i..end];
-        if !window.iter().any(|l| is_bare_return(l)) {
-            continue;
-        }
-        if routed(window) {
-            continue;
-        }
-        open.push(format!("{}:{} (silent probe)", rel, i + 1));
-    }
-    open
-}
-
-/// Every skip-and-return site that does not consult the fail-closed helper,
-/// announced or silent, as `<path relative to tests/>:<line> (<shape>)`.
 fn open_skip_sites() -> Vec<String> {
     let mut open = Vec::new();
     for (rel, text) in test_sources() {
         let lines: Vec<&str> = text.lines().collect();
         open.extend(announced_skip_sites(&rel, &lines));
-        open.extend(silent_probe_sites(&rel, &lines));
+        open.extend(skip_shape_scan::skip_block_sites(&rel, &text));
     }
     open
 }
@@ -617,14 +550,21 @@ fn the_scanner_itself_can_see_the_bad_shape() {
 }
 
 #[test]
-fn the_scanner_can_see_the_silent_probe_shape() {
+fn the_scanner_can_see_the_probe_block_shape() {
     // Positive control for the SECOND detector. A detector that matches nothing
     // is the `ran=0` defect this file exists to forbid, in its active form: the
     // announced-skip scan reported a clean tree while 17 silent sites were live.
-    let silent = ["if !bin.exists() {", "        return;", "    }"];
+    //
+    // Every specimen below is a WHOLE PROGRAM FRAGMENT handed to the scanner,
+    // not a line fed to a predicate. That is the point of this arm: the shapes
+    // EV1-EV5 further down are all legal Rust that a line-pair predicate cannot
+    // even be asked about.
+    fn hits(src: &str) -> Vec<String> {
+        skip_shape_scan::skip_block_sites("specimen.rs", src)
+    }
     assert_eq!(
-        silent_probe_sites("specimen.rs", &silent),
-        vec!["specimen.rs:1 (silent probe)".to_string()]
+        hits("if !bin.exists() {\n    return;\n}"),
+        vec!["specimen.rs:1 (probe block)".to_string()]
     );
 
     // Variable-agnostic: renaming the receiver must not escape the prohibition.
@@ -641,41 +581,120 @@ fn the_scanner_can_see_the_silent_probe_shape() {
         // that had just printed `error[build][E5003]`.
         "    if !s1.success() {",
         "        if !out.status.success() {",
+        // POLARITY-FREE. Every draft that demanded a literal `if !` was evaded
+        // by writing the same decision the other way up.
+        "    if s1.success() {",
+        "    if bin.exists() {",
     ] {
-        assert!(is_capability_probe(probe), "missed probe: {probe}");
+        let src = format!("{probe}\n        return;\n    }}");
+        assert!(!hits(&src).is_empty(), "missed probe: {probe}");
     }
-    // The POSITIVE branch is an assertion path, not a skip.
-    assert!(!is_capability_probe("    if s1.success() {"));
-    // Prose quoting the shape, and a probe that is not a run/skip decision.
-    assert!(!is_capability_probe("    // if !bin.exists() { return; }"));
-    assert!(!is_capability_probe("    if bin.exists() {"));
 
-    // Every bare-return spelling, and a return that hands back a real verdict.
-    assert!(is_bare_return("        return;"));
-    assert!(is_bare_return("            return None;"));
-    assert!(is_bare_return("    return Ok(());"));
-    assert!(!is_bare_return("        return Some(bin);"));
-
-    // A routed probe is not a finding.
-    let routed = [
-        "if !bin.exists() {",
-        "    gate::skipped(\"t\", \"no mindc\");",
-        "    return;",
-    ];
-    assert!(silent_probe_sites("specimen.rs", &routed).is_empty());
-
-    // The bare env-var NAME must no longer exempt anything: a comment that
-    // merely mentions it is prose, not routing.
-    let commented = [
-        "// NOTE: this gate does not honour MIND_BENCH_REQUIRE",
-        "if !bin.exists() {",
-        "    return;",
-        "}",
-    ];
+    // The OTHER branch is the same skip written the other way up. Every draft
+    // that scrutinised only the first block was evaded by moving the early-out.
     assert_eq!(
-        silent_probe_sites("specimen.rs", &commented),
-        vec!["specimen.rs:2 (silent probe)".to_string()]
+        hits("if bin.exists() {\n    run();\n} else {\n    return;\n}"),
+        vec!["specimen.rs:1 (probe block)".to_string()]
     );
+
+    // A `return` that hands back a real verdict is not an early-out, and a
+    // block with no early-out at all is not a skip.
+    assert!(hits("if !bin.exists() {\n    return Some(bin);\n}").is_empty());
+    assert!(hits("if !bin.exists() {\n    panic!(\"no mindc\");\n}").is_empty());
+    // A probe with no control-flow block is a plain assertion path.
+    assert!(hits("assert!(bin.exists(), \"build mindc first\");").is_empty());
+
+    // A routed probe is not a finding — inside the block, or in the head.
+    assert!(
+        hits("if !bin.exists() {\n    gate::skipped(\"t\", \"no mindc\");\n    return;\n}")
+            .is_empty()
+    );
+    assert!(hits("let Some(b) = gate::compiled(\"t\", &o) else {\n    return;\n};").is_empty());
+
+    // The bare env-var NAME must no longer exempt anything, and neither may a
+    // comment that merely NAMES the helper: prose is not routing.
+    assert_eq!(
+        hits("// NOTE: does not honour MIND_BENCH_REQUIRE\nif !bin.exists() {\n    return;\n}"),
+        vec!["specimen.rs:2 (probe block)".to_string()]
+    );
+    assert_eq!(
+        hits("// gate::skipped panics under enforcement\nif !bin.exists() {\n    return;\n}"),
+        vec!["specimen.rs:2 (probe block)".to_string()]
+    );
+}
+
+/// The five ordinary Rust spellings that walked past the LINE-WINDOW detector.
+///
+/// Each was measured live: appended to `tests/if_expr.rs` on the tip and the
+/// built scanner re-run, every one reported `test result: ok. 12 passed` — a
+/// fail-open skip added to the tree while the prohibition said the tree was
+/// clean. They are the reason the decision moved from a two-line text window to
+/// the brace-balanced block in `skip_shape_scan`, and they are pinned here so
+/// the window can never come back.
+#[test]
+fn the_five_measured_escapes_are_closed() {
+    let escapes = [
+        // EV1 — the early-out sits FOUR lines under the probe; the window was 2.
+        "if !Path::new(p).exists() {\n    println!(\"a\");\n    println!(\"b\");\n\
+         println!(\"c\");\n    return;\n}",
+        // EV2 — a let-else: no `if` at all.
+        "let Ok(_t) = which::which(\"mlir-opt\") else { return; };",
+        // EV3 — a match arm: no `if`, and the exit is `return,` not `return;`.
+        "match std::env::var_os(V) { None => return, Some(_) => {} }",
+        // EV4 — the probe is BOUND first, so the scrutinee names no method.
+        "let ok = Path::new(p).exists();\nif !ok {\n    return;\n}",
+        // EV5 — the same, over a child process's exit status.
+        "let ok = out.status.success();\nif !ok {\n    return;\n}",
+    ];
+    for (n, src) in escapes.iter().enumerate() {
+        assert!(
+            !skip_shape_scan::skip_block_sites("specimen.rs", src).is_empty(),
+            "EV{} still escapes the prohibition:\n{src}",
+            n + 1
+        );
+    }
+    // Routing any of them clears it — the gate forbids the fail-OPEN skip, not
+    // the skip. Proven on the shape furthest from the original window (EV4's
+    // bound probe), so this control cannot pass by matching nothing.
+    assert!(
+        skip_shape_scan::skip_block_sites(
+            "specimen.rs",
+            "let ok = Path::new(p).exists();\nif !ok {\n    gate::skipped(\"t\", \"gone\");\n\
+             return;\n}",
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn the_scanner_reads_code_and_not_the_text_around_it() {
+    // The masker is what makes a brace-balanced block possible in THIS tree:
+    // test sources embed MIND programs, MLIR and JSON in string literals, all
+    // full of braces. Without it the block after a probe runs to the wrong `}`.
+    let masked = skip_shape_scan::mask_code("let s = \"fn f() { let x = 1; }\"; // {{{");
+    assert_eq!(masked.len(), 1);
+    assert!(
+        !masked[0].contains('{'),
+        "literal braces leaked: {}",
+        masked[0]
+    );
+    assert!(masked[0].starts_with("let s = "));
+
+    // A file that QUOTES the bad shape inside a string is not the bad shape —
+    // which is what lets `skip_shape_scan` itself be scanned rather than
+    // exempted. A raw string, a char literal and a block comment must all be
+    // as inert as a plain one.
+    for quoted in [
+        "let bad = \"if !p.exists() { return; }\";",
+        "let bad = r#\"if !p.exists() { return; }\"#;",
+        "let brace = '{'; let done = p.exists();",
+        "/* if !p.exists() { return; } */",
+    ] {
+        assert!(
+            skip_shape_scan::skip_block_sites("specimen.rs", quoted).is_empty(),
+            "quoted prose read as code: {quoted}"
+        );
+    }
 }
 
 #[test]

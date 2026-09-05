@@ -34,6 +34,11 @@ use std::path::PathBuf;
 /// The files the `# CLOSED` declaration names as its enforcement.
 const DECLARED_ENFORCEMENT: &[&str] = &[
     "tests/fail_open_skip_site_ratchet.rs",
+    // The shape vocabulary and the block scanner that decide what the ratchet
+    // can SEE. The declaration's "to the width of its detector" clause is a
+    // claim about this file; a note that stopped naming it could keep reading
+    // as enforced while the detector it describes was deleted.
+    "tests/skip_shape_scan/mod.rs",
     "tests/common/gate.rs",
     // This gate itself: a note that stopped naming what holds it could be
     // deleted with nothing left pointing at the check.

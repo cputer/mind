@@ -220,7 +220,7 @@ CRITICAL_exec=(
   "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"  # its end-to-end leg, spawned for real (unix)
   "capability_refusal_cause_scan 4"  # measured 5; every capability refusal in src/ mints its cause
-  "fail_open_skip_site_ratchet 8"   # measured 12; the fail-open skip prohibition
+  "fail_open_skip_site_ratchet 12"  # measured 14; the fail-open skip prohibition
   "closed_declaration_wiring 4"     # the ci.yml CLOSED note rests on a live gate
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
 )
@@ -234,7 +234,7 @@ CRITICAL_lowering=(
   "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
-  "fail_open_skip_site_ratchet 8"
+  "fail_open_skip_site_ratchet 12"
   "closed_declaration_wiring 4"
   "harness_portability 2"
 )
@@ -246,7 +246,7 @@ CRITICAL_pkg=(
   "fail_closed_capability_skip_env 4"  # measured 6; the MIND_BENCH_REQUIRE READER itself
   "fail_closed_capability_skip_stub_exec 4"
   "capability_refusal_cause_scan 4"
-  "fail_open_skip_site_ratchet 8"
+  "fail_open_skip_site_ratchet 12"
   "closed_declaration_wiring 4"
   "harness_portability 2"
 )
