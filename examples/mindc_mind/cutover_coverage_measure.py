@@ -25,12 +25,51 @@ MINDC = HERE.parents[1] / "target" / "release" / "mindc"
 MAIN = HERE / "main.mind"
 Int64Ptr = ctypes.POINTER(ctypes.c_int64)
 
-# NOTE: prepending struct defs makes the oracle emit a populated struct registry
-# (84B vs 34B for tk_eof) while the nfn driver always emits EMPTY registries ->
-# guaranteed mismatch. So we feed each fn BARE. Fns referencing custom types in
-# their signature/body cannot byte-match (oracle errors / nfn fails) and are
-# bucketed by construct instead. This is the honest in-isolation coverage.
+# WHY THE PREAMBLE IS EMPTY, and why that is now in question.
+#
+# The original reasoning: prepending struct defs makes the oracle emit a
+# populated struct registry (84B vs 34B for tk_eof) while "the nfn driver always
+# emits EMPTY registries", so a preamble would guarantee a mismatch.
+#
+# That justification is CONTESTED as of 2026-09-05: the driver calls
+# srt_emit_registry_sorted_interned (main.mind) and does appear to emit a
+# populated registry, which would make the original reason stale.
+#
+# It matters a great deal, because feeding each fn BARE means the ORACLE refuses
+# any fn naming a sibling fn or a non-primitive type, and those refusals are
+# counted against the self-host emitter. Measured at 03368cc7: 1555 of 1975 fns
+# (78.7%) are oracle-refused, so the metric's ceiling is 21.27% and the emitter
+# already reaches 410/420 = 97.6% of it.
+#
+# --preamble=structs prepends the struct declarations DERIVED from the source
+# under test (never hardcoded, so it cannot go stale). The default is unchanged:
+# a metric's definition is not something to flip on an unverified claim. Run both
+# and report both.
+#
+# NOTE a preamble cannot rescue the call-dependent fns: MIND has no forward
+# declaration. Measured directly — `fn f(x: i64) -> i64;` is E1001 "expected '{'"
+# and bare `extern fn` is rejected for want of `extern "C"`. So fns that call a
+# sibling are unmeasurable in isolation BY LANGUAGE DESIGN, not by emitter gap.
 PREAMBLE = ""
+
+
+def struct_preamble(text):
+    """Struct declarations lifted from the source under test, in source order."""
+    out, lines = [], text.split("\n")
+    i = 0
+    while i < len(lines):
+        if re.match(r"^\s*(pub )?struct\s+\w+", lines[i]):
+            depth, buf = 0, []
+            while i < len(lines):
+                buf.append(lines[i])
+                depth += lines[i].count("{") - lines[i].count("}")
+                i += 1
+                if depth <= 0 and any("{" in b for b in buf):
+                    break
+            out.append("\n".join(buf))
+        else:
+            i += 1
+    return ("\n".join(out) + "\n") if out else ""
 
 def read_i64(addr, off=0):
     return int(ctypes.cast(addr + off, Int64Ptr)[0])
@@ -147,6 +186,20 @@ def main():
 
     text = MAIN.read_text()
     fns = split_fns(text)
+
+    # --preamble=structs feeds every fn the struct declarations from the source
+    # under test, so the ORACLE can resolve non-primitive signatures instead of
+    # refusing them. Default stays bare: see the note at the top of this file.
+    preamble = PREAMBLE
+    if "--preamble=structs" in sys.argv:
+        preamble = struct_preamble(text)
+        print(
+            f"  preamble: struct declarations from the source under test "
+            f"({len(preamble)} bytes, {preamble.count('struct ')} decls)",
+            file=sys.stderr,
+        )
+    elif "--preamble=bare" in sys.argv or True:
+        print("  preamble: BARE (empty) — oracle-refused fns are expected", file=sys.stderr)
     n = len(fns)
 
     byte_exact = 0
@@ -164,7 +217,7 @@ def main():
     for fi, (name, ln, src) in enumerate(fns):
         if fi % 50 == 0:
             print(f"  ...{fi}/{n}", file=sys.stderr, flush=True)
-        mod = PREAMBLE + src + "\n"
+        mod = preamble + src + "\n"
         got = nfn_emit(fn, mod)
         crashed = got is None
         if crashed:
