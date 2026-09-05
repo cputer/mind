@@ -38,7 +38,7 @@ fn parse_sparse_csr_fn_param() {
                     }
                 ),
                 "expected SparseTensor(Csr), got {:?}",
-                &params[0].ty
+                params[0].ty
             );
         }
         other => panic!("expected FnDef, got {other:?}"),
@@ -226,7 +226,7 @@ fn dense_tensor_parse_unaffected() {
             assert!(
                 matches!(&params[0].ty, TypeAnn::Tensor { .. }),
                 "expected dense Tensor, got {:?}",
-                &params[0].ty
+                params[0].ty
             );
         }
         other => panic!("expected FnDef, got {other:?}"),

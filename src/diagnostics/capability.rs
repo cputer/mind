@@ -241,8 +241,13 @@ impl FallbackReason {
 
     /// Prefix `message` with this cause's code token, for refusals carried as
     /// plain strings (`anyhow`) rather than structured diagnostics.
+    ///
+    /// The token's shape is [`code_token`]'s, not this function's.
     pub fn tag(self, message: impl AsRef<str>) -> String {
-        format!("[{}] {}", self.code(), message.as_ref())
+        let mut out = code_token(self.code());
+        out.push(' ');
+        out.push_str(message.as_ref());
+        out
     }
 }
 
@@ -257,6 +262,19 @@ pub enum NativeOutcome {
     Native,
     /// Embedded as a runtime-JIT fallback, for this reason.
     Fallback(FallbackReason),
+}
+
+/// Render `code` as the bracketed token a refusal carries on the wire
+/// (`"E5003"` -> `"[E5003]"`).
+///
+/// The ONE writer of the shape `header_tokens` reads, so the encoder and the
+/// decoder live in the same module and cannot drift: changing the token's
+/// punctuation is a change to this function plus its reader, and every producer
+/// follows. Both header slots named in the module docs go through it — the
+/// message-head shape ([`FallbackReason::tag`]) and the diagnostic-prefix shape
+/// (`build::error::BuildError::code_tag`).
+pub fn code_token(code: &str) -> String {
+    format!("[{code}]")
 }
 
 /// Every code that means "this host lacks the capability".

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1482 | **Est. tokens:** ~2,884,875
-**Generated:** 2026-09-05 04:18 UTC
+**Files:** 1485 | **Est. tokens:** ~2,889,680
+**Generated:** 2026-09-05 04:35 UTC
 
 ## Token Budget Guide
 
@@ -88,15 +88,15 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7,843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6,002 |
-| `src/` | 9 | ~40,250 |
+| `src/` | 9 | ~41,320 |
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
-| `src/build/` | 3 | ~19,689 |
+| `src/build/` | 4 | ~20,465 |
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
-| `src/diagnostics/` | 3 | ~13,949 |
+| `src/diagnostics/` | 3 | ~14,137 |
 | `src/distributed/` | 6 | ~7,725 |
 | `src/doc/` | 3 | ~10,987 |
 | `src/eval/` | 16 | ~87,806 |
@@ -116,7 +116,7 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 5 | ~18,066 |
+| `src/project/` | 6 | ~18,527 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 346 | ~630,182 |
+| `tests/` | 347 | ~632,492 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~2,610 |
@@ -1011,7 +1011,8 @@
 
 - `cache.rs` (~6766 tok, huge) — Copyright 2025 STARGA Inc.
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~12224 tok, huge) — Copyright 2025 STARGA Inc.
+- `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~10978 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/cache/`
 
 - `entry.rs` (~977 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1025,13 +1026,13 @@
 - `reporter.rs` (~374 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `conformance.rs` (~7304 tok, huge) — Per-profile execution counts for one conformance run.
+- `conformance.rs` (~8374 tok, huge) — Per-profile execution counts for one conformance run.
 ### `src/deps/`
 
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/diagnostics/`
 
-- `capability.rs` (~8866 tok, huge) — Copyright 2025 STARGA Inc.
+- `capability.rs` (~9054 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~3729 tok, huge) — Copyright 2025 STARGA Inc.
 - `refusal.rs` (~1354 tok, large) — Copyright 2025 STARGA Inc.
 ### `src/distributed/`
@@ -1178,6 +1179,7 @@
 - `pipeline.rs` (~5978 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
+- `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1580,7 +1582,7 @@
 - `issue_246_bitnot_operator.rs` (~571 tok, large) — Copyright 2025 STARGA Inc.
 - `issue_246_tensor_named_dtype.rs` (~525 tok, large) — Copyright 2025 STARGA Inc.
 - `issue_263_method_chain_newline.rs` (~869 tok, large) — Copyright 2025 STARGA Inc.
-- `issue_263_use_path_import.rs` (~749 tok, large) — Copyright 2025 STARGA Inc.
+- `issue_263_use_path_import.rs` (~808 tok, large) — Copyright 2025 STARGA Inc.
 - `issue_263_usize_suffix_literal.rs` (~770 tok, large) — Copyright 2025 STARGA Inc.
 - `keccak_driver.py` (~1507 tok, huge) — # Official-vector driver for std/keccak.mind (pure-MIND FIPS 202).
 ### `tests/lexical/`
@@ -1755,6 +1757,7 @@
 - `module_decl_run.rs` (~643 tok, large) — Copyright 2025 STARGA Inc.
 - `module_enum_match_run.rs` (~1034 tok, large) — Copyright 2025 STARGA Inc.
 - `module_non_fn_call_reject.rs` (~1215 tok, large) — Copyright 2025 STARGA Inc.
+- `module_size_ratchet.rs` (~2251 tok, huge) — Copyright 2025 STARGA Inc.
 - `narrow_call_abi.rs` (~1374 tok, large) — Copyright 2025 STARGA Inc.
 - `narrowing_check.rs` (~438 tok, medium) — Regression test for the silent i64->i32 narrowing miscompile found by MIND-Fuzz
 - `narrow_local_mask_run.rs` (~838 tok, large) — Copyright 2025 STARGA Inc.

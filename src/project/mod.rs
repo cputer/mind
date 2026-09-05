@@ -15,6 +15,7 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::diagnostics::capability::{FallbackReason, NativeOutcome};
 use crate::diagnostics::refusal::CodedRefusal;
+use compiled_sources::CompiledSources;
 use serde::Deserialize;
 
 /// Cross-module import resolution (Phase 10.6 item 9 / Phase 15
@@ -26,6 +27,7 @@ pub mod module_table;
 
 /// Per-target executable link driver (ELF / PE-COFF / Mach-O dispatch). Only the
 /// host ELF arm is wired today; the others fail loud until their slice lands.
+mod compiled_sources;
 mod link;
 
 /// RFC 0005 Phase C — std/*.mind sources baked into the binary at
@@ -1147,7 +1149,12 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     }
 
     // Build each source file and link
-    let (compiled, entry_native_compiled, fallback_sources, fallback_reason) = compile_sources(
+    let CompiledSources {
+        objects: compiled,
+        entry_native_compiled,
+        fallback_sources,
+        fallback_reason,
+    } = compile_sources(
         &project_root,
         &sources,
         &backend,
@@ -1704,11 +1711,8 @@ fn build_cdylib_from_entry(
 /// PROJECT-ROOT-relative path — stable and collision-free across subdirs.
 /// The walk/default case keeps the historical entry-parent keying and
 /// stem-named objects byte-unchanged (self-host + std depend on it).
-/// Compile every project source to an object and return the object paths,
-/// whether the ENTRY module was natively compiled (`false` = embedded as a
-/// runtime-JIT fallback; the caller fails loud on `mindc run` in that case),
-/// the names of every fallen-back source, and WHY they fell back — the cause
-/// the refusal sites stamp their diagnostic code from.
+///
+/// Every member of the result is documented once, on [`CompiledSources`].
 fn compile_sources(
     project_root: &Path,
     sources: &[PathBuf],
@@ -1716,7 +1720,7 @@ fn compile_sources(
     opts: &BuildOptions,
     explicit_sources: bool,
     cc_target_triple: Option<&str>,
-) -> Result<(Vec<PathBuf>, bool, Vec<String>, Option<FallbackReason>)> {
+) -> Result<CompiledSources> {
     let obj_dir = project_root.join("target").join("obj");
     fs::create_dir_all(&obj_dir)?;
 
@@ -1956,12 +1960,12 @@ fn compile_sources(
     // `_project_guard` (Drop) so it runs on every return path — including the
     // early `Err` from the E2002 fail-closed in `compile_single_source`.
 
-    Ok((
+    Ok(CompiledSources {
         objects,
         entry_native_compiled,
         fallback_sources,
         fallback_reason,
-    ))
+    })
 }
 
 /// Compile every `std` substrate module transitively imported by ANY project

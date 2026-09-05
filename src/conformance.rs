@@ -81,6 +81,51 @@ pub struct ConformanceReport {
 }
 
 impl ConformanceReport {
+    /// The lines a passing run prints, in order.
+    ///
+    /// The suite owns what its own pass ATTESTS, so the wording lives beside the
+    /// facts it quotes ([`AUTODIFF_COMPILED_IN`], [`VALUE_ORACLE_ENGINE`],
+    /// [`ValueOracleEngine::attests`]) rather than in the CLI. A print site that
+    /// only has the report cannot then paraphrase it, and flipping the value
+    /// oracle or building without `autodiff` changes the attestation in exactly
+    /// one place.
+    ///
+    /// Reporting the COUNT the suite executed, not just the exit code, is the
+    /// point: a profile that ran zero cases verified nothing, and
+    /// [`run_conformance`] fails closed on exactly that — printing the count is
+    /// what keeps the attestation checkable by whoever reads the CI log.
+    ///
+    /// The autodiff and value legs are reported SEPARATELY, each naming what
+    /// produced it. A build without the `autodiff` feature says so instead of
+    /// printing a `0` a reader could take for "checked, nothing wrong"
+    /// (`docs/versioning.md` sells a passing profile as evidence of autodiff
+    /// stability, so the line must state whether that leg ran at all), and the
+    /// value leg names its engine because a green value cell attests THAT
+    /// engine's result — a log that omits it invites the reader to take it for
+    /// the compiled artifact's execution.
+    pub fn attestation_lines(&self) -> Vec<String> {
+        let autodiff = if AUTODIFF_COMPILED_IN {
+            format!("autodiff={}", self.autodiff_ran)
+        } else {
+            "autodiff=n/a: built without the `autodiff` feature, so this \
+             run attests nothing about autodiff"
+                .to_string()
+        };
+        let engine = VALUE_ORACLE_ENGINE;
+        vec![
+            format!(
+                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={}, value={} via {}, {autodiff})",
+                self.profile,
+                self.total_ran(),
+                self.cpu_ran,
+                self.gpu_ran,
+                self.value_ran,
+                engine.tag()
+            ),
+            format!("value oracle: {}", engine.attests()),
+        ]
+    }
+
     /// Total number of cases executed across the profile's case lists.
     pub fn total_ran(&self) -> usize {
         self.cpu_ran + self.gpu_ran
@@ -550,6 +595,57 @@ fn gpu_cases() -> Vec<ConformanceCase> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_report() -> ConformanceReport {
+        ConformanceReport {
+            profile: ConformanceProfile::CpuBaseline,
+            cpu_ran: 7,
+            gpu_ran: 0,
+            autodiff_ran: 2,
+            value_ran: 5,
+        }
+    }
+
+    /// The attestation is the ONLY thing a CI reader takes away from a green
+    /// run, so its shape is pinned here rather than left to whatever the CLI
+    /// happened to format. Every count the suite fails closed on must appear.
+    #[test]
+    fn the_attestation_reports_every_leg_and_its_counts() {
+        let lines = sample_report().attestation_lines();
+        assert_eq!(lines.len(), 2, "one summary line, one value-oracle line");
+        let summary = &lines[0];
+        assert!(summary.starts_with("Core v1 conformance passed for profile: CpuBaseline"));
+        for cell in ["ran=7", "cpu=7", "gpu=0", "value=5"] {
+            assert!(summary.contains(cell), "{summary} omits {cell}");
+        }
+        assert!(
+            summary.contains(VALUE_ORACLE_ENGINE.tag()),
+            "the value leg must name the engine that produced it: {summary}"
+        );
+        assert_eq!(
+            lines[1],
+            format!("value oracle: {}", VALUE_ORACLE_ENGINE.attests())
+        );
+    }
+
+    /// A build without the `autodiff` feature must SAY so. Printing `autodiff=0`
+    /// there reads as "checked, nothing wrong" for a leg that never ran, and
+    /// `docs/versioning.md` sells a passing profile as evidence of autodiff
+    /// stability.
+    #[test]
+    fn the_autodiff_leg_states_whether_it_ran_at_all() {
+        let summary = sample_report().attestation_lines()[0].clone();
+        if AUTODIFF_COMPILED_IN {
+            assert!(summary.contains("autodiff=2"), "{summary}");
+        } else {
+            assert!(summary.contains("autodiff=n/a"), "{summary}");
+            assert!(
+                summary.contains("attests nothing about autodiff"),
+                "a build without the feature must not leave the reader to infer \
+                 what the absence means: {summary}"
+            );
+        }
+    }
 
     /// A case that pins the WRONG runtime value must be reported as a failure.
     /// Positive control for the value oracle: without it, a green cell proves

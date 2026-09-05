@@ -1740,37 +1740,12 @@ fn run_conformance(profile: &str) {
 
     match conformance::run_conformance(ConformanceOptions { profile }) {
         Ok(report) => {
-            // Report the COUNT the suite executed, not just the exit code: a
-            // profile that ran zero cases verified nothing, and `run_conformance`
-            // now fails closed on exactly that — printing the count keeps the
-            // attestation checkable by whoever reads the CI log.
-            // The autodiff leg is reported separately, and a build without the
-            // feature says so instead of printing a 0 a reader could take for
-            // "checked, nothing wrong": docs/versioning.md sells a passing
-            // profile as evidence of autodiff stability, so the line must state
-            // whether that leg ran at all.
-            let autodiff = if conformance::AUTODIFF_COMPILED_IN {
-                format!("autodiff={}", report.autodiff_ran)
-            } else {
-                "autodiff=n/a: built without the `autodiff` feature, so this \
-                 run attests nothing about autodiff"
-                    .to_string()
-            };
-            // The VALUE leg is reported the same way, with the engine that
-            // produced it: a green value cell attests that engine's result, and
-            // a CI log that omits which engine ran invites the reader to take it
-            // for the compiled artifact's execution.
-            let engine = libmind::conformance::VALUE_ORACLE_ENGINE;
-            println!(
-                "Core v1 conformance passed for profile: {:?} — ran={} (cpu={}, gpu={}, value={} via {}, {autodiff})",
-                profile,
-                report.total_ran(),
-                report.cpu_ran,
-                report.gpu_ran,
-                report.value_ran,
-                engine.tag()
-            );
-            println!("value oracle: {}", engine.attests());
+            // The suite owns what its own pass attests (`attestation_lines`);
+            // the CLI only puts it on the wire. Formatting it here once meant a
+            // second, drifting statement of what a green run proves.
+            for line in report.attestation_lines() {
+                println!("{line}");
+            }
         }
         Err(err) => {
             eprintln!("conformance failures detected:");

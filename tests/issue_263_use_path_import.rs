@@ -22,7 +22,6 @@
 //! with no runtime effect.
 
 use libmind::parser;
-use libmind::type_checker;
 
 /// The `::` path form parses and type-checks with no error-severity diagnostics
 /// (a benign `unused_import` warning is allowed — `mindc check` treats warnings
@@ -36,6 +35,11 @@ use libmind::type_checker;
 #[cfg(any(feature = "std-surface", feature = "cross-module-imports"))]
 #[test]
 fn use_path_form_parses_and_checks() {
+    // Imported here, not at file scope: `type_checker` is used only by this
+    // feature-gated test, and a file-scope import would be an `unused_imports`
+    // error under `--no-default-features -D warnings`. One gate, not two.
+    use libmind::type_checker;
+
     let src = "use std::fixed_point::Q16_16;\n\npub fn main() -> i64 {\n    return 0\n}\n";
     let m = parser::parse(src).expect("`use a::b::C;` must parse");
     let env = type_checker::TypeEnv::default();
