@@ -190,16 +190,27 @@ def main():
     # --preamble=structs feeds every fn the struct declarations from the source
     # under test, so the ORACLE can resolve non-primitive signatures instead of
     # refusing them. Default stays bare: see the note at the top of this file.
-    preamble = PREAMBLE
-    if "--preamble=structs" in sys.argv:
-        preamble = struct_preamble(text)
+    # DEFAULT IS NOW structs, changed 2026-09-05 on an A/B measurement at 03368cc7:
+    #                       bare     structs
+    #   byte-exact          410      419
+    #   of measurable       97.6%    99.8%
+    #   self-host fail-closed  55        1     <- the decisive number
+    #   oracle-refused      1555     1555      <- unchanged, so nothing is hidden
+    # The emitter was fail-closing on 54 fns for one reason: no struct declaration
+    # was in scope, so its struct registry was empty and it correctly refused. That
+    # is the HARNESS's missing context being charged to the emitter. Oracle refusals
+    # do not move, so the preamble cannot be hiding an emitter gap behind them.
+    preamble = struct_preamble(text)
+    if "--preamble=bare" in sys.argv:
+        preamble = PREAMBLE
+        print("  preamble: BARE (empty) — legacy mode; oracle-refused fns are expected",
+              file=sys.stderr)
+    else:
         print(
             f"  preamble: struct declarations from the source under test "
             f"({len(preamble)} bytes, {preamble.count('struct ')} decls)",
             file=sys.stderr,
         )
-    elif "--preamble=bare" in sys.argv or True:
-        print("  preamble: BARE (empty) — oracle-refused fns are expected", file=sys.stderr)
     n = len(fns)
 
     byte_exact = 0
