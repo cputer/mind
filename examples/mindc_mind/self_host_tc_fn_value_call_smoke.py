@@ -30,7 +30,7 @@ Three-way agreement, machine-checked (no hand-authored verdict table):
   2. The exact Rust rule recomputed in Python: the D2 frame semantics + the
      D1/D3 decl-set mirrors + every literal exclusion arm, with BARE_BUILTINS
      re-extracted from resolve.rs and STD_SURFACE_INTRINSICS re-extracted
-     from type_checker/mod.rs on every run — table drift fails LOUD here.
+     from intrinsics.rs on every run — table drift fails LOUD here.
   3. The LIVE `mindc check` oracle: E2012 present at exactly the query
      line:col <=> verdict 1. Fail-closed sentinels prove both live
      directions (an E2012 hit and a position-matched E2003 miss) actually
@@ -56,7 +56,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_MIND = os.path.join(HERE, "main.mind")
 REPO = os.path.dirname(os.path.dirname(HERE))
 RESOLVE_RS = os.path.join(REPO, "src", "type_checker", "resolve.rs")
-TC_MOD_RS = os.path.join(REPO, "src", "type_checker", "mod.rs")
 STDLIB_RS = os.path.join(REPO, "src", "project", "stdlib.rs")
 STD_DIR = os.path.join(REPO, "std")
 
@@ -291,19 +290,12 @@ def bare_builtins():
 
 
 def intrinsics_table():
-    with open(TC_MOD_RS) as f:
-        rs = f.read()
-    m = re.search(
-        r"STD_SURFACE_INTRINSICS[^=]*=\s*&?\[(.*?)\];", rs, re.S
-    )
-    if not m:
-        print("FAIL: STD_SURFACE_INTRINSICS table not found in mod.rs")
-        sys.exit(1)
-    entries = re.findall(r'\("([A-Za-z0-9_.]+)",\s*(\d+)\)', m.group(1))
-    if len(entries) < 30:
-        print(f"FAIL: extracted only {len(entries)} intrinsics — drifted")
-        sys.exit(1)
-    return {n for n, _a in entries}
+    # E2024 owns the canonical registry parser and its duplicate/shape guards.
+    # Reuse it here so registry moves and tuple changes cannot leave D4 with a
+    # second stale table extractor.
+    from self_host_tc_self_host_only_call_smoke import parse_table
+
+    return set(parse_table())
 
 
 def bundled_modules():

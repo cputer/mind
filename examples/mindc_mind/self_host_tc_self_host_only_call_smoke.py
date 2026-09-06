@@ -3,19 +3,18 @@
 
 Ports the resolve.rs advisory (SELF_HOST_ONLY_CALL_CODE, "E2024"): a callee
 that `starts_with("__mind_")` but is NOT one of the registered, arity-checked
-`STD_SURFACE_INTRINSICS` entries in src/type_checker/mod.rs gets flagged as a
+`STD_SURFACE_INTRINSICS` entries in src/intrinsics.rs gets flagged as a
 Warning — the Rust/MLIR backends cannot emit that call.
 
-The pure-MIND twin `selftest_tc_self_host_only_call(w0, w1, w2, w3, len)`
-takes the callee name's first 32 bytes packed little-endian into four i64
-words plus the TRUE byte length (for len <= 32 the tuple is a bijection with
-the name; for len > 32 length inequality alone rejects every table entry —
-the longest registered name is 31 bytes — so the encoding is exact over the
-whole identifier space).
+The legacy pure-MIND twin `selftest_tc_self_host_only_call(w0, w1, w2, w3,
+len)` remains exported for its five-word ABI. The authoritative twin,
+`selftest_tc_self_host_only_call_span(buf, len)`, compares the complete source
+byte span so a registered name longer than 32 bytes cannot alias a same-prefix,
+same-length mutation.
 
 Oracle construction (machine-checked, no hand table):
   1. The STD_SURFACE_INTRINSICS table (name, arity) is PARSED from the Rust
-     source src/type_checker/mod.rs at run time — table drift fails loud.
+     source src/intrinsics.rs at run time — table drift fails loud.
   2. Every case's expected verdict is recomputed from the exact Rust rule
      (`name.startswith("__mind_") and name not in table`).
   3. Every case is ALSO driven through the LIVE `mindc check` oracle: a
@@ -23,9 +22,10 @@ Oracle construction (machine-checked, no hand table):
      checked and the presence of "E2024" in the output is asserted to equal
      the rule verdict — guarding both the parsed table and the rule itself.
 
-Corpus: all 33 registered entries (negative), per-entry mutations (suffix /
-truncation -> positive), unregistered `__mind_*` names incl. the bare prefix
-and a >32-byte name, and non-prefixed controls.
+Corpus: every registered entry (negative), per-entry mutations (suffix /
+truncation -> positive), a same-prefix/same-length different-tail negative,
+unregistered `__mind_*` names incl. the bare prefix and a >32-byte name, and
+non-prefixed controls.
 
 Env: MINDC_SO (prebuilt .so, skips the build) or MINDC_BIN (default mindc).
 Template: self_host_tc_classify_error_code_smoke.py.
@@ -46,27 +46,43 @@ from _selfhost_so import resolve_mindc  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 MAIN_MIND = os.path.join(HERE, "main.mind")
-TYPE_CHECKER = os.path.join(ROOT, "src", "type_checker", "mod.rs")
+TYPE_CHECKER = os.path.join(ROOT, "src", "intrinsics.rs")
+
+# Count each three-way case through the shared gate contract.  The local `fails`
+# tally remains the control-flow guard, while these verdicts prevent an empty
+# or unobserved corpus from publishing one green recap.
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+from gate_assert import check  # noqa: E402
 
 PREFIX = "__mind_"
+LONG_REGISTRY_NAME = "__mind_nerve_blas_matmul_score_q16_i64"
 
 
 def parse_table():
     """Parse STD_SURFACE_INTRINSICS from the Rust source (name -> arity)."""
     src = open(TYPE_CHECKER).read()
     m = re.search(
-        r"const STD_SURFACE_INTRINSICS: &\[\(&str, usize\)\] = &\[(.*?)\n\];",
+        r"const STD_SURFACE_INTRINSICS: &\[\(&str, usize, Det\)\] = &\[(.*?)\n\];",
         src,
         re.S,
     )
     if not m:
         print("FAIL: STD_SURFACE_INTRINSICS table not found in", TYPE_CHECKER)
         sys.exit(1)
-    entries = re.findall(r'\("([^"]+)",\s*(\d+)\)', m.group(1))
+    entries = re.findall(r'\(\s*"([^"]+)"\s*,\s*(\d+)\s*,', m.group(1))
     if len(entries) < 30:
         print(f"FAIL: implausibly small parsed table ({len(entries)} entries)")
         sys.exit(1)
-    return {name: int(arity) for name, arity in entries}
+    table = {name: int(arity) for name, arity in entries}
+    if len(table) != len(entries):
+        raise SystemExit("FAIL: duplicate names in STD_SURFACE_INTRINSICS")
+    long_names = sorted(name for name in table if len(name.encode()) > 32)
+    if long_names != [LONG_REGISTRY_NAME]:
+        raise SystemExit(
+            "FAIL: unsupported >32-byte registry rows; regenerate the full-span "
+            f"twin for {long_names!r}"
+        )
+    return table
 
 
 def rust_rule(name, table):
@@ -118,7 +134,13 @@ def build_cases(table):
     cases.append(
         (
             "__mind_blas_matmul_rmajor_f32_v_extended_long",
-            "prefixed, len > 32 (word truncation path)",
+            "unregistered prefixed name, len > 32",
+        )
+    )
+    cases.append(
+        (
+            "__mind_nerve_blas_matmul_score_q17_i64",
+            "same first 32 bytes and length as registered long name, tail differs",
         )
     )
     # Non-prefixed controls (never E2024 regardless of resolvability).
@@ -150,7 +172,7 @@ def build_so():
 
 def main():
     table = parse_table()
-    print(f"table: {len(table)} STD_SURFACE_INTRINSICS entries parsed from mod.rs")
+    print(f"table: {len(table)} STD_SURFACE_INTRINSICS entries parsed from intrinsics.rs")
     so, built = build_so()
     st = os.stat(so)
     print(f"SO: {so} ({st.st_size} bytes)")
@@ -161,6 +183,14 @@ def main():
     fn = lib.selftest_tc_self_host_only_call
     fn.argtypes = [ctypes.c_int64] * 5
     fn.restype = ctypes.c_int64
+    span_fn = lib.selftest_tc_self_host_only_call_span
+    span_fn.argtypes = [ctypes.c_int64, ctypes.c_int64]
+    span_fn.restype = ctypes.c_int64
+    # Keep the historical five-word ABI live while the span ABI handles the
+    # complete identifier.  This is a symbol/behavior probe, not the oracle.
+    if fn(*enc("__mind_alloc")) != 0:
+        print("FAIL: legacy selftest_tc_self_host_only_call ABI drifted")
+        sys.exit(1)
 
     mindc = resolve_mindc()
     cases = build_cases(table)
@@ -168,22 +198,27 @@ def main():
     with tempfile.TemporaryDirectory() as workdir:
         for name, note in cases:
             w = enc(name)
-            got = fn(*w)
+            name_bytes = name.encode()
+            name_buf = ctypes.create_string_buffer(name_bytes, len(name_bytes))
+            got = span_fn(ctypes.addressof(name_buf), len(name_bytes))
             exp = rust_rule(name, table)
             live = live_oracle(mindc, name, table, workdir)
             total += 1
-            ok = got == exp == live
+            ok = check(
+                got == exp == live,
+                f"{name!r}: got={got} rule={exp} live={live} ({note})",
+            )
             if exp == 1:
                 positives += 1
             else:
                 negatives += 1
-            mark = "ok " if ok else "DIFF"
             if not ok:
                 fails += 1
-            print(
-                f"  {mark} got={got} rule={exp} live={live} len={w[4]:>2} "
-                f"{name!r} | {note}"
-            )
+            if not ok:
+                print(
+                    f"  DIFF got={got} rule={exp} live={live} len={w[4]:>2} "
+                    f"{name!r} | {note}"
+                )
 
     print(
         f"self_host_only_call: cases={total} positives={positives} "

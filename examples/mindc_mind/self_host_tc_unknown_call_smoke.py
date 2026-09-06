@@ -48,11 +48,10 @@ Live-grounded boundaries (probe battery 2026-07-23):
     value USE (`undefmod.undefn(1)` fires E2002 on the head, never E2003) or
     a folded `tensor.*` callee (blanket-accepted, `tensor.zork(1)` is clean);
   * a module-level call is OUTSIDE resolve_fn_body — live fires E2001 there;
-  * the resolve.rs module doc-comment's "unresolved imports SUPPRESS
-    undefined-call diagnostics" (resolve.rs:45-50, 333-335) is STALE — no
-    suppression exists in the implementation: E2003 fires under BOTH
-    `import std.vec` and an unresolvable non-std import (pinned below as
-    positive classify cases + a live sentinel).
+  * after import resolution, E2003 still fires under both bundled-std and
+    declared local imports. A local import without a project is rejected by
+    the CLI before body resolution; that separate refusal is checked explicitly
+    and must not be mistaken for absence of an unknown-call diagnostic.
 
 The pure-MIND twin `selftest_tc_unknown_call(src, src_len, pos, std_src,
 std_len)` takes the fixture source, the byte offset of the queried CALLEE
@@ -68,7 +67,7 @@ position classifier (Rule 3a):
   2. The E2003 RESOLUTION UNION recomputed independently in Python — the D2
      frame semantics + the D1/D3 decl-set mirrors + prelude + the literal
      bare-name accepts, with BARE_BUILTINS re-extracted from resolve.rs and
-     STD_SURFACE_INTRINSICS re-extracted from type_checker/mod.rs on every
+     STD_SURFACE_INTRINSICS re-extracted from intrinsics.rs on every
      run, and ZERO position/shape guards (it never replicates tc_uc_shape's
      token heuristics; it presumes the fixture's declared callee position
      and computes only resolvability).
@@ -312,8 +311,8 @@ fn main() -> i64 {
 }
 """
 
-S_IMPORT_NONSTD = """\
-import mylib.stuff
+S_IMPORT_LOCAL = """\
+import helper
 fn main() -> i64 {
     zork(1)
     return 0
@@ -725,8 +724,8 @@ CASES = [
     ("classify", S_KW_MUT, "mut(1", 0, "`mut(1)` expr pos -> E2003"),
     ("classify", S_IMPORT_STD, "zork", 0,
      "std import does NOT suppress -> E2003 (stale-doc pin)"),
-    ("classify", S_IMPORT_NONSTD, "zork", 0,
-     "unresolved non-std import does NOT suppress -> E2003 (stale-doc pin)"),
+    ("classify", S_IMPORT_LOCAL, "zork", 0,
+     "declared local import leaves unknown callee -> E2003"),
     # classify negatives — the callee resolves; got == leg2 == live == 0:
     ("classify", S_LOCALFN, "foo()", 1, "module fn callee -> no (D1)"),
     ("classify", S_LATEFN, "late_fn()", 0, "call BEFORE fn decl -> no (D1)"),
@@ -807,7 +806,7 @@ CASES = [
 # call_resolvable's bare-name union: D2 scope frames + D1 decls/prelude + D3
 # std exports + "bytes"/"gen_deref" + the "__mind_" prefix + BARE_BUILTINS
 # (re-extracted from resolve.rs) + STD_SURFACE_INTRINSICS (re-extracted from
-# type_checker/mod.rs). "::"/"tensor." are dotted/qualified SHAPES — out of
+# intrinsics.rs). "::"/"tensor." are dotted/qualified SHAPES — out of
 # the bare-name domain, handled by the never-mode cases.
 def call_resolution_verdict(src, pos, std_set, bare, intrin):
     name_m = re.match(r"[A-Za-z_]\w*", src[pos:])
@@ -845,6 +844,18 @@ NAME_RE = re.compile(r"`([^`]+)`")
 
 def live_diags(mindc, src, workdir, idx):
     path = os.path.join(workdir, f"case_{idx}.mind")
+    if src == S_IMPORT_LOCAL:
+        # The call-resolution phase needs a resolved import graph. Own a
+        # project per invocation so prior fixtures cannot join its source set.
+        project = os.path.join(workdir, f"project_{idx}")
+        os.makedirs(project)
+        path = os.path.join(project, "main.mind")
+        with open(os.path.join(project, "helper.mind"), "w") as f:
+            f.write("pub fn fixture_export() -> i64 { return 1; }\n")
+        with open(os.path.join(project, "Mind.toml"), "w") as f:
+            f.write('[package]\nname="e2003_fixture"\nversion="0.1.0"\n'
+                    '[build]\nentry="main.mind"\n[targets.cpu]\n'
+                    'backend="cpu"\nsources=["main.mind", "helper.mind"]\n')
     with open(path, "w") as f:
         f.write(src)
     r = subprocess.run([mindc, "check", path], capture_output=True, text=True)
@@ -949,8 +960,17 @@ def main():
         #       boundary this port must never cross);
         #   (3) a local-enum variant-typo callee fires E2008 and NOT E2003
         #       (the precedence arm);
-        #   (4) an unresolvable non-std import does NOT suppress E2003 (the
-        #       stale doc-comment pin, live-grounded).
+        #   (4) a declared local import leaves E2003 at an unknown callee.
+        # Separately require the CLI to refuse a local import outside a project.
+        standalone = os.path.join(workdir, "unscoped_import.mind")
+        with open(standalone, "w") as f:
+            f.write(S_IMPORT_LOCAL)
+        refused = subprocess.run([mindc, "check", standalone],
+                                 capture_output=True, text=True)
+        refusal = refused.stdout + refused.stderr
+        assert refused.returncode != 0 and "enclosing Mind.toml" in refusal, (
+            "unscoped local import was not explicitly refused: " + refusal
+        )
         if live_verdict(mindc, S_UNDEF, pos_of(S_UNDEF, "zork", 0),
                         workdir, "s_undef") != 1:
             print("FAIL: live sentinel — E2003 not reported at the "
@@ -969,15 +989,14 @@ def main():
             print(f"FAIL: live sentinel — variant-typo callee reported "
                   f"{sorted(v_codes)}, expected exactly E2008")
             sys.exit(1)
-        if live_verdict(mindc, S_IMPORT_NONSTD,
-                        pos_of(S_IMPORT_NONSTD, "zork", 0),
+        if live_verdict(mindc, S_IMPORT_LOCAL,
+                        pos_of(S_IMPORT_LOCAL, "zork", 0),
                         workdir, "s_imp") != 1:
-            print("FAIL: live sentinel — E2003 suppressed under an "
-                  "unresolved import (the stale doc-comment came TRUE; "
-                  "re-ground the port)")
+            print("FAIL: live sentinel — E2003 missing at the unknown callee "
+                  "after resolving the declared local import")
             sys.exit(1)
         print("live sentinels: E2003 callee + E2012-not-E2003 boundary + "
-              "E2008-not-E2003 precedence + no-import-suppression (4/4)")
+              "E2008-not-E2003 precedence + resolved-import call diagnosis (4/4)")
         # Folded-keyword E2012 boundary sentinel: live mindc CONTEXTUALLY
         # binds keyword names (`let use = 5` is legal — the folded words are
         # reserved only in the SELF-HOST lexer), and a bound-keyword callee

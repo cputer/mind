@@ -46427,8 +46427,104 @@ pub fn tc_shoc_eq(w0: i64, w1: i64, w2: i64, w3: i64, len: i64, e0: i64, e1: i64
     1
 }
 
-// Membership in the STD_SURFACE_INTRINSICS table (all 55 entries, packed-word
-// constants generated from the Rust table in src/type_checker/mod.rs — the
+// Full byte-span comparison for the packed registry representation.  The
+// four legacy words remain the public ABI, but they cannot carry bytes after
+// offset 31.  Decode each expected word a byte at a time and compare the
+// caller's actual span, including an optional fifth (tail) word.
+pub fn tc_shoc_word_byte(word: i64, i: i64) -> i64 {
+    if i <= 0 {
+        return word % 256;
+    }
+    tc_shoc_word_byte(word / 256, i - 1)
+}
+
+pub fn tc_shoc_span_word_len(len: i64, base: i64) -> i64 {
+    if len <= base {
+        return 0;
+    }
+    if len - base >= 8 {
+        return 8;
+    }
+    len - base
+}
+
+pub fn tc_shoc_span_word_eq(buf: i64, base: i64, width: i64, word: i64, i: i64) -> i64 {
+    if i >= width {
+        return 1;
+    }
+    if load_byte(buf, base + i) != tc_shoc_word_byte(word, i) {
+        return 0;
+    }
+    tc_shoc_span_word_eq(buf, base, width, word, i + 1)
+}
+
+pub fn tc_shoc_span_eq(buf: i64, len: i64, e0: i64, e1: i64, e2: i64, e3: i64, elen: i64, tail: i64, tail_len: i64) -> i64 {
+    if len != elen {
+        return 0;
+    }
+    let n0: i64 = tc_shoc_span_word_len(len, 0);
+    let n1: i64 = tc_shoc_span_word_len(len, 8);
+    let n2: i64 = tc_shoc_span_word_len(len, 16);
+    let n3: i64 = tc_shoc_span_word_len(len, 24);
+    if tc_shoc_span_word_eq(buf, 0, n0, e0, 0) == 0 {
+        return 0;
+    }
+    if tc_shoc_span_word_eq(buf, 8, n1, e1, 0) == 0 {
+        return 0;
+    }
+    if tc_shoc_span_word_eq(buf, 16, n2, e2, 0) == 0 {
+        return 0;
+    }
+    if tc_shoc_span_word_eq(buf, 24, n3, e3, 0) == 0 {
+        return 0;
+    }
+    if tc_shoc_span_word_eq(buf, 32, tail_len, tail, 0) == 0 {
+        return 0;
+    }
+    1
+}
+
+// Pack a caller span only for the legacy <=32-byte ABI path.  The full-span
+// entry below uses tc_shoc_span_eq for the sole >32-byte registry row, so a
+// same-prefix, same-length name with a changed tail cannot alias it.
+pub fn tc_shoc_pack_word(buf: i64, base: i64, width: i64, i: i64, acc: i64, factor: i64) -> i64 {
+    if i >= width {
+        return acc;
+    }
+    tc_shoc_pack_word(buf, base, width, i + 1,
+                      acc + load_byte(buf, base + i) * factor, factor * 256)
+}
+
+pub fn tc_shoc_prefix7_span(buf: i64, len: i64) -> i64 {
+    if len < 7 {
+        return 0;
+    }
+    if load_byte(buf, 0) != 95 {
+        return 0;
+    }
+    if load_byte(buf, 1) != 95 {
+        return 0;
+    }
+    if load_byte(buf, 2) != 109 {
+        return 0;
+    }
+    if load_byte(buf, 3) != 105 {
+        return 0;
+    }
+    if load_byte(buf, 4) != 110 {
+        return 0;
+    }
+    if load_byte(buf, 5) != 100 {
+        return 0;
+    }
+    if load_byte(buf, 6) != 95 {
+        return 0;
+    }
+    1
+}
+
+// Membership in the STD_SURFACE_INTRINSICS table (all 57 entries, packed-word
+// constants generated from the Rust table in src/intrinsics.rs — the
 // smoke regenerates them from that same source and cross-checks every case
 // against the live `mindc check` E2024 verdict).
 pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64) -> i64 {
@@ -46544,6 +46640,10 @@ pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64)
     if tc_shoc_eq(w0, w1, w2, w3, len, 7809070704261685087, 15253977384116591, 0, 0, 15) == 1 {
         return 1;
     }
+    // "__mind_open"
+    if tc_shoc_eq(w0, w1, w2, w3, len, 8025243486375468895, 7234928, 0, 0, 11) == 1 {
+        return 1;
+    }
     // "__mind_read"
     if tc_shoc_eq(w0, w1, w2, w3, len, 8241416268489252703, 6578533, 0, 0, 11) == 1 {
         return 1;
@@ -46566,6 +46666,10 @@ pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64)
     }
     // "__mind_store_i16"
     if tc_shoc_eq(w0, w1, w2, w3, len, 8313473862527180639, 3905018210351738740, 0, 0, 16) == 1 {
+        return 1;
+    }
+    // "__mind_vec_zeroed"
+    if tc_shoc_eq(w0, w1, w2, w3, len, 8529646644640964447, 7309186500415939429, 100, 0, 17) == 1 {
         return 1;
     }
     // "__mind_write"
@@ -46655,6 +46759,37 @@ pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64)
     0
 }
 
+// Full-span registry membership.  Keep tc_is_std_surface_intrinsic's five
+// argument export for existing callers; new callers that hold the source span
+// use this entry so every byte, including a name tail beyond byte 31, is
+// compared.
+pub fn tc_is_std_surface_intrinsic_span(buf: i64, len: i64) -> i64 {
+    if len < 0 {
+        return 0;
+    }
+    let n0: i64 = tc_shoc_span_word_len(len, 0);
+    let n1: i64 = tc_shoc_span_word_len(len, 8);
+    let n2: i64 = tc_shoc_span_word_len(len, 16);
+    let n3: i64 = tc_shoc_span_word_len(len, 24);
+    let w0: i64 = tc_shoc_pack_word(buf, 0, n0, 0, 0, 1);
+    let w1: i64 = tc_shoc_pack_word(buf, 8, n1, 0, 0, 1);
+    let w2: i64 = tc_shoc_pack_word(buf, 16, n2, 0, 0, 1);
+    let w3: i64 = tc_shoc_pack_word(buf, 24, n3, 0, 0, 1);
+    if len <= 32 {
+        return tc_is_std_surface_intrinsic(w0, w1, w2, w3, len);
+    }
+    // The canonical Rust registry currently has one >32-byte row.  Its tail
+    // is compared explicitly; a future additional long row must update this
+    // generated twin and the smoke's drift guard before it can pass.
+    if tc_shoc_span_eq(buf, len,
+                       7953185892337540959, 7020094081027437157,
+                       7815273074989555571, 8169359791242834783,
+                       38, 57408300725809, 6) == 1 {
+        return 1;
+    }
+    0
+}
+
 // E2024: 1 iff the packed callee name starts with "__mind_" AND is not a
 // registered std-surface intrinsic (advisory Warning in the Rust oracle).
 pub fn tc_is_self_host_only_call(w0: i64, w1: i64, w2: i64, w3: i64, len: i64) -> i64 {
@@ -46673,6 +46808,22 @@ pub fn tc_is_self_host_only_call(w0: i64, w1: i64, w2: i64, w3: i64, len: i64) -
 
 pub fn selftest_tc_self_host_only_call(w0: i64, w1: i64, w2: i64, w3: i64, len: i64) -> i64 {
     tc_is_self_host_only_call(w0, w1, w2, w3, len)
+}
+
+// Span ABI twin. The historical packed export remains available to callers
+// that cannot provide the source bytes.
+pub fn tc_is_self_host_only_call_span(buf: i64, len: i64) -> i64 {
+    if tc_shoc_prefix7_span(buf, len) == 0 {
+        return 0;
+    }
+    if tc_is_std_surface_intrinsic_span(buf, len) == 1 {
+        return 0;
+    }
+    1
+}
+
+pub fn selftest_tc_self_host_only_call_span(buf: i64, len: i64) -> i64 {
+    tc_is_self_host_only_call_span(buf, len)
 }
 
 // ---- E2008 unknown enum variant ----
