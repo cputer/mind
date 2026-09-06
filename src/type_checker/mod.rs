@@ -4178,7 +4178,7 @@ fn check_method_arg_classes(
 /// signatures visible inside bodies while letting any (currently nonexistent)
 /// nested fn shadow. The previous table is restored on drop, so there is no
 /// leakage across files / threads / sibling fns. Mirrors the moat-preserving
-/// thread-local discipline of `CM_TABLE`.
+/// thread-local discipline of the active project module table.
 struct IntraSigGuard {
     prev: Option<IntraFnSigs>,
 }
@@ -4387,22 +4387,15 @@ impl Drop for FixedBytesLocalsGuard {
 // signature byte-identical, so the µs frontend / headline criterion
 // benches are provably untouched (the moat). When the feature is off,
 // none of this compiles and the `Node::Import` arm is an inert binding.
-#[cfg(feature = "cross-module-imports")]
-thread_local! {
-    static CM_TABLE: std::cell::RefCell<Option<crate::project::module_table::ModuleTable>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// Inject the exported names of the module referenced by `path` into
 /// `tenv` as opaque scalars (`ValueType::ScalarI32` — the same type a
 /// bare `Node::Import` already yields in `infer_expr`). Exact path
 /// match only; globs / re-export chains are deliverable 3+.
 #[cfg(feature = "cross-module-imports")]
 fn cm_inject_imported_symbols(tenv: &mut TypeEnv, path: &[String]) {
-    CM_TABLE.with(|cell| {
-        if let Some(table) = cell.borrow().as_ref() {
-            let key = path.join(".");
-            if let Some(exports) = table.get(&key) {
+    crate::project::active_module_table::with(|active| {
+        if let Some(table) = active {
+            if let Some(exports) = table.get_import(path) {
                 for sym in &exports.exported {
                     tenv.entry(sym.clone()).or_insert(ValueType::ScalarI32);
                 }
@@ -4419,7 +4412,18 @@ fn cm_inject_imported_symbols(tenv: &mut TypeEnv, path: &[String]) {
 /// default pipeline signature byte-identical is what holds the moat.
 #[cfg(feature = "cross-module-imports")]
 pub fn cm_set_project_table(table: Option<crate::project::module_table::ModuleTable>) {
-    CM_TABLE.with(|cell| *cell.borrow_mut() = table);
+    crate::project::active_module_table::set(table);
+}
+
+/// Export names provided by one active import, for import-aware linting.
+#[cfg(feature = "cross-module-imports")]
+pub fn cm_imported_export_names(path: &[String]) -> Vec<String> {
+    crate::project::active_module_table::with(|active| {
+        active
+            .and_then(|table| table.get_import(path))
+            .map(|exports| exports.exported.clone())
+            .unwrap_or_default()
+    })
 }
 
 /// RFC 0005 Phase B — find an imported fn's signature by name across
@@ -4429,10 +4433,8 @@ pub fn cm_set_project_table(table: Option<crate::project::module_table::ModuleTa
 /// `ExportedFn` is a name + a `Vec<TypeAnn>` + an `Option<TypeAnn>`.
 #[cfg(feature = "cross-module-imports")]
 fn cm_lookup_fn(name: &str) -> Option<crate::project::module_table::ExportedFn> {
-    CM_TABLE.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|table| table.lookup_imported_fn(name).cloned())
+    crate::project::active_module_table::with(|active| {
+        active.and_then(|table| table.lookup_imported_fn(name).cloned())
     })
 }
 
@@ -4463,9 +4465,8 @@ pub fn cm_all_imported_fn_signatures() -> Vec<(
     Vec<crate::ast::TypeAnn>,
     Option<crate::ast::TypeAnn>,
 )> {
-    CM_TABLE.with(|cell| {
-        cell.borrow()
-            .as_ref()
+    crate::project::active_module_table::with(|active| {
+        active
             .map(|table| {
                 table
                     .all_exported_fns()
@@ -4487,10 +4488,8 @@ pub fn cm_all_imported_fn_signatures() -> Vec<(
 /// that path is byte-identical.
 #[cfg(feature = "cross-module-imports")]
 pub(crate) fn cm_symbol_exported(name: &str) -> bool {
-    CM_TABLE.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .is_some_and(|table| table.exports_symbol(name))
+    crate::project::active_module_table::with(|active| {
+        active.is_some_and(|table| table.exports_symbol(name))
     })
 }
 
@@ -4613,7 +4612,7 @@ fn cm_arg_compatible(expected: &ValueType, actual: &ValueType) -> bool {
 
 /// Gated entrypoint: type-check `module` with cross-module symbol
 /// resolution against `table`. Installs the thread-local for the duration
-/// of the check via `CmTableGuard`, which restores whatever was there
+/// of the check via the project table guard, which restores whatever was there
 /// before (not unconditionally `None`) on drop — including on an unwind,
 /// so a panic inside the check can't leak the table into later calls on
 /// the same thread, and a table set with `cm_set_project_table` before
@@ -4626,32 +4625,8 @@ pub fn check_module_types_with_modules(
     env: &TypeEnv,
     table: &crate::project::module_table::ModuleTable,
 ) -> Vec<Pretty> {
-    let _guard = CmTableGuard::install(table.clone());
+    let _guard = crate::project::active_module_table::Guard::install(table.clone());
     check_module_types_in_file(module, src, file, env)
-}
-
-/// RAII guard for `CM_TABLE`: installs `table` for the guard's lifetime and
-/// restores the previous value on drop (including on panic-unwind), matching
-/// the save-prev/restore-on-drop discipline `IntraSigGuard`/`EnumVariantsGuard`
-/// already use for their thread-locals in this file.
-#[cfg(feature = "cross-module-imports")]
-struct CmTableGuard {
-    prev: Option<crate::project::module_table::ModuleTable>,
-}
-
-#[cfg(feature = "cross-module-imports")]
-impl CmTableGuard {
-    fn install(table: crate::project::module_table::ModuleTable) -> Self {
-        let prev = CM_TABLE.with(|cell| cell.borrow_mut().replace(table));
-        CmTableGuard { prev }
-    }
-}
-
-#[cfg(feature = "cross-module-imports")]
-impl Drop for CmTableGuard {
-    fn drop(&mut self) {
-        CM_TABLE.with(|cell| *cell.borrow_mut() = self.prev.take());
-    }
 }
 
 /// The sole public entry point for module type-checking with a source string.

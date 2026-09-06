@@ -18,6 +18,9 @@ use crate::diagnostics::refusal::CodedRefusal;
 use compiled_sources::CompiledSources;
 use serde::Deserialize;
 
+#[cfg(feature = "cross-module-imports")]
+pub(crate) mod active_module_table;
+
 /// Cross-module import resolution (Phase 10.6 item 9 / Phase 15
 /// self-hosting prerequisite). Deliverable 1: the module table.
 /// Gated; not yet wired into the type-checker (mirrors RFC 0002's
@@ -32,6 +35,8 @@ mod compiled_sources;
 mod embedded_entry;
 mod link;
 mod runtime_link;
+#[cfg(feature = "cross-module-imports")]
+pub mod single_file_scope;
 
 /// Artifact naming and placement — the single owner of the name stem
 /// (`[targets.*] output` > `[build] output` > `[package] name`), the fallback
@@ -989,37 +994,19 @@ pub(crate) fn build_project_locked(
         if let Some(parent) = cdylib_out.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Cross-module ENUM propagation for the cdylib path. The cdylib build
-        // compiles only the entry (sibling `.mind` files are not translation
-        // units of one shared object — see above), so it never reaches
-        // `compile_sources`' whole-project enum-registry setup. But an entry
-        // that uses a SIBLING module's enum via the dot form (`TokKind.Eof`)
-        // still needs that enum's name (parser normalisation) + tags (lowering)
-        // — and an enum needs no link-time symbol, only the registry plus the
-        // resolver's `::`-path rule. So collect every declared enum across all
-        // project sources and install the registry around the entry compile,
-        // mirroring the set-before / clear-after discipline in `compile_sources`.
-        #[cfg(feature = "cross-module-imports")]
-        {
-            let mut parsed: Vec<(String, crate::ast::Module)> = Vec::new();
-            for src in &sources {
-                if let Ok(text) = fs::read_to_string(src) {
-                    if let Ok(m) = crate::parser::parse(&text) {
-                        let key = src
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        parsed.push((key, m));
-                    }
-                }
-            }
-            crate::ir::set_global_enums(build_global_enums(&parsed));
-        }
-        let cdylib_result =
-            build_cdylib_from_entry(&entry_path, &sources, &cdylib_out, &backend, opts);
-        #[cfg(feature = "cross-module-imports")]
-        crate::ir::clear_global_enums();
-        cdylib_result?;
+        let cdylib_source_root = if explicit_sources {
+            project_root.as_path()
+        } else {
+            entry_path.parent().unwrap_or(project_root.as_path())
+        };
+        build_cdylib_from_entry(
+            &entry_path,
+            &sources,
+            cdylib_source_root,
+            &cdylib_out,
+            &backend,
+            opts,
+        )?;
 
         if opts.verbose {
             println!("  Output: {}", cdylib_out.display());
@@ -1154,6 +1141,7 @@ pub(crate) fn build_project_locked(
 fn build_cdylib_from_entry(
     entry_path: &Path,
     sources: &[PathBuf],
+    source_root: &Path,
     output: &Path,
     backend: &str,
     opts: &BuildOptions,
@@ -1167,10 +1155,32 @@ fn build_cdylib_from_entry(
     // single-entry emit and the parameter is legitimately unused (keeps the
     // signature stable across feature combinations).
     #[cfg(not(feature = "cross-module-imports"))]
-    let _ = sources;
+    let _ = (sources, source_root);
 
     let source_code = fs::read_to_string(entry_path)
         .with_context(|| format!("Failed to read entry source: {}", entry_path.display()))?;
+
+    #[cfg(feature = "cross-module-imports")]
+    let project_scope =
+        single_file_scope::capture_project_scope(entry_path, &source_code, sources, source_root)?;
+
+    // Use the same immutable source snapshot for the module table, enum
+    // metadata, entry type-check, sibling compilation, and final link. This
+    // keeps a source mutation between discovery and emission from producing a
+    // mixed artifact. The scoped guard clears the global enum registry on every
+    // return path while restoring the caller's module table.
+    #[cfg(feature = "cross-module-imports")]
+    let _resolution_guard = {
+        let parsed = project_scope
+            .sources()
+            .iter()
+            .map(|source| (source.module_path().to_string(), source.module().clone()))
+            .collect::<Vec<_>>();
+        crate::ir::set_global_enums(build_global_enums(&parsed));
+        CdylibResolutionGuard {
+            _table_guard: project_scope.install(),
+        }
+    };
 
     // cdylib emit only targets the CPU backend in Phase A (the GPU/accelerator
     // backends require the proprietary runtime for final emission). The
@@ -1213,69 +1223,16 @@ fn build_cdylib_from_entry(
     // setup, so an entry that imports stdlib modules type-failed on every
     // imported call (`vec_push`, `vec_get`, ...). Seeding the bundled stdlib
     // plus the entry's own module makes those `pub fn` names available to the
-    // name-resolution check. The table is cleared again immediately after the
-    // compile so it never leaks into a sibling build (matching the
-    // set/None bracket in `compile_sources`). Without `cross-module-imports`
+    // name-resolution check. A scoped guard restores the caller's prior table
+    // on every return path, including errors and nested compilation. Without
+    // `cross-module-imports`
     // there is nothing to seed and the call is a no-op, so the link stays
     // byte-identical to the historical single-entry path.
-    #[cfg(feature = "cross-module-imports")]
-    {
-        let mut parsed: Vec<(String, crate::ast::Module)> =
-            crate::project::stdlib::parsed_stdlib_modules();
-        if let Ok(m) = crate::parser::parse(&source_code) {
-            let entry_key = entry_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "main".to_string());
-            parsed.push((entry_key, m));
-        }
-        // #302 layer 1 (name resolution): seed every NON-entry project source
-        // into the cdylib module table too — mirroring the executable path's
-        // whole-project setup in `compile_sources` — so an entry doing
-        // `use sibling::fn` resolves the sibling `pub fn` at type-check AND
-        // registers its declared scalar ABI (RFC 0012 `fn_signatures`) during
-        // AST→IR lowering inside `compile_source_with_name`. Keyed by
-        // `file_stem` (flat project layout), matching the entry key above; the
-        // entry is skipped by canonical path. Siblings the entry never calls
-        // are inert: a forward decl is emitted ONLY for an actually-called
-        // callee (`extern_calls`), and `fn_signatures` uses `or_insert` (a
-        // local def and the already-seeded stdlib win), so seeding cannot drift
-        // a build whose entry references no sibling (e.g. the self-host `.so`,
-        // whose `main.mind` imports only `std.*`).
-        let entry_canon = entry_path
-            .canonicalize()
-            .unwrap_or_else(|_| entry_path.to_path_buf());
-        for src in sources {
-            let src_canon = src.canonicalize().unwrap_or_else(|_| src.clone());
-            if src_canon == entry_canon {
-                continue;
-            }
-            if let Ok(text) = fs::read_to_string(src) {
-                if let Ok(m) = crate::parser::parse(&text) {
-                    let key = src
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    if !key.is_empty() {
-                        parsed.push((key, m));
-                    }
-                }
-            }
-        }
-        let refs: Vec<(String, &crate::ast::Module)> =
-            parsed.iter().map(|(p, m)| (p.clone(), m)).collect();
-        let table = crate::project::module_table::build_module_table(&refs);
-        crate::type_checker::cm_set_project_table(Some(table));
-    }
-
     let compile_result = compile_source_with_name(
         &source_code,
         Some(&entry_path.to_string_lossy()),
         &compile_opts,
     );
-
-    #[cfg(feature = "cross-module-imports")]
-    crate::type_checker::cm_set_project_table(None);
 
     let products = compile_result.map_err(|e| {
         // Render the real parser/type diagnostics (file:line:col + message + source
@@ -1359,11 +1316,12 @@ fn build_cdylib_from_entry(
             // module importing a substrate module needs that module's `.o`
             // linked even when the entry never imports it. Empty closure ⇒
             // byte-identical single-entry link (keystone-safe).
-            let texts: Vec<String> = sources
+            let texts: Vec<&str> = project_scope
+                .sources()
                 .iter()
-                .filter_map(|p| fs::read_to_string(p).ok())
+                .map(single_file_scope::CapturedSource::source)
                 .collect();
-            let closure = substrate_link::substrate_closure(texts.iter().map(|s| s.as_str()));
+            let closure = substrate_link::substrate_closure(texts.iter().copied());
             let obj_dir = output
                 .parent()
                 .map(|p| p.to_path_buf())
@@ -1378,7 +1336,7 @@ fn build_cdylib_from_entry(
             // imports no project sibling (the self-host `.so`) yields an empty
             // set → byte-identical link.
             let mut sib =
-                compile_project_sibling_objects(entry_path, sources, &obj_dir, target, &tools)?;
+                compile_project_sibling_objects(&project_scope, &obj_dir, target, &tools)?;
             objs.append(&mut sib);
             objs
         }
@@ -1417,104 +1375,18 @@ fn build_cdylib_from_entry(
 /// lowers with `suppress_module_entry = true`, so no `@main` is emitted and
 /// there is no duplicate-`main` collision with the entry.
 #[cfg(all(feature = "cross-module-imports", feature = "mlir-build"))]
-fn compile_project_sibling_objects(
-    entry_path: &Path,
-    sources: &[PathBuf],
+pub fn compile_project_sibling_objects(
+    scope: &single_file_scope::ProjectScope,
     obj_dir: &Path,
     target: crate::runtime::types::BackendTarget,
     tools: &crate::eval::mlir_build::BuildTools,
 ) -> Result<Vec<PathBuf>> {
     use crate::eval::mlir_build;
     use crate::pipeline::{CompileOptions, compile_source_with_name, lower_to_mlir_with_entry};
-    use std::collections::{BTreeMap, BTreeSet};
-
-    // Map `file_stem` -> source path for every NON-entry project source.
-    let entry_canon = entry_path
-        .canonicalize()
-        .unwrap_or_else(|_| entry_path.to_path_buf());
-    let mut by_stem: BTreeMap<String, PathBuf> = BTreeMap::new();
-    for src in sources {
-        let src_canon = src.canonicalize().unwrap_or_else(|_| src.clone());
-        if src_canon == entry_canon {
-            continue;
-        }
-        if let Some(stem) = src.file_stem().and_then(|s| s.to_str()) {
-            by_stem
-                .entry(stem.to_string())
-                .or_insert_with(|| src.clone());
-        }
-    }
-    if by_stem.is_empty() {
+    if !scope.has_linked_siblings() {
         return Ok(Vec::new());
     }
-
-    // Which sibling stems does a source import? `use sibling::fn` and
-    // `import sibling` both parse to `Node::Import { path }`; the leading
-    // segment names the module. Only segments that resolve to a project sibling
-    // are followed (a `std.*` leading segment is not a project stem → skipped).
-    fn scan_sibling_imports(text: &str, by_stem: &BTreeMap<String, PathBuf>) -> Vec<String> {
-        let mut found = Vec::new();
-        if let Ok(ast) = crate::parser::parse(text) {
-            for item in &ast.items {
-                if let crate::ast::Node::Import { path, .. } = item {
-                    if let Some(first) = path.first() {
-                        if by_stem.contains_key(first) {
-                            found.push(first.clone());
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    // BFS the entry's sibling-import graph (transitive: a sibling importing
-    // another sibling pulls it too).
-    let entry_src = fs::read_to_string(entry_path)
-        .with_context(|| format!("Failed to read entry source: {}", entry_path.display()))?;
-    let mut imported: BTreeSet<String> = BTreeSet::new();
-    let mut worklist: Vec<String> = scan_sibling_imports(&entry_src, &by_stem);
-    while let Some(stem) = worklist.pop() {
-        if imported.insert(stem.clone()) {
-            if let Some(src_path) = by_stem.get(&stem) {
-                if let Ok(text) = fs::read_to_string(src_path) {
-                    for dep in scan_sibling_imports(&text, &by_stem) {
-                        if !imported.contains(&dep) {
-                            worklist.push(dep);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if imported.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Re-seed the whole-project module table (stdlib + every project source,
-    // `file_stem` keyed) so a sibling's own `std.*` / sibling calls resolve
-    // while it is compiled here — the entry compile above already cleared the
-    // table. Cleared again before returning so it never leaks into a later
-    // build (matching the set/None bracket around the entry compile).
-    let mut parsed: Vec<(String, crate::ast::Module)> =
-        crate::project::stdlib::parsed_stdlib_modules();
-    for src in sources {
-        if let Ok(text) = fs::read_to_string(src) {
-            if let Ok(m) = crate::parser::parse(&text) {
-                let key = src
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                if !key.is_empty() {
-                    parsed.push((key, m));
-                }
-            }
-        }
-    }
-    let refs: Vec<(String, &crate::ast::Module)> =
-        parsed.iter().map(|(p, m)| (p.clone(), m)).collect();
-    let table = crate::project::module_table::build_module_table(&refs);
-    crate::type_checker::cm_set_project_table(Some(table));
+    let _table_guard = scope.install();
 
     let sub_opts = CompileOptions {
         func: None,
@@ -1524,56 +1396,62 @@ fn compile_project_sibling_objects(
         ..Default::default()
     };
 
-    // Compile each imported sibling to a library object; localize the table
-    // teardown so an early error still clears it.
-    let result = (|| -> Result<Vec<PathBuf>> {
-        let mut objs = Vec::new();
-        for stem in &imported {
-            let src_path = &by_stem[stem];
-            let text = fs::read_to_string(src_path).with_context(|| {
-                format!("Failed to read sibling source: {}", src_path.display())
-            })?;
-            let name = src_path.to_string_lossy().into_owned();
-            let prod = compile_source_with_name(&text, Some(&name), &sub_opts).map_err(|e| {
-                // Render the real diagnostics (file:line:col + message) instead of
-                // the opaque CompileError Display, matching the cdylib entry path.
-                let diags = e.into_diagnostics(Some(&name));
-                let rendered = diags
-                    .iter()
-                    .map(|d| crate::diagnostics::render(&text, d))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if rendered.trim().is_empty() {
-                    anyhow!("sibling module compile failed for {name}")
-                } else {
-                    anyhow!("sibling module compile failed for {name}:\n{rendered}")
-                }
-            })?;
-            #[cfg(feature = "autodiff")]
-            let sub_mlir = lower_to_mlir_with_entry(&prod.ir, prod.grad.as_ref(), true)
-                .map_err(|e| anyhow!("sibling MLIR lowering for {stem}: {e}"))?;
-            #[cfg(not(feature = "autodiff"))]
-            let sub_mlir = lower_to_mlir_with_entry(&prod.ir, true)
-                .map_err(|e| anyhow!("sibling MLIR lowering for {stem}: {e}"))?;
-            let obj_path = obj_dir.join(format!("__mod_{stem}.o"));
-            let sub_bo = mlir_build::BuildOptions {
-                preset: mlir_build::preset_for_mlir(&sub_mlir.primal_mlir),
-                emit_mlir_file: None,
-                emit_llvm_file: None,
-                emit_obj_file: Some(&obj_path),
-                emit_shared: None,
-                opt_pipeline: None,
-                target_triple: None,
-            };
-            mlir_build::build_all(&sub_mlir.primal_mlir, tools, &sub_bo)
-                .map_err(|e| anyhow!("sibling object build for {stem}: {e}"))?;
-            objs.push(obj_path);
-        }
-        Ok(objs)
-    })();
-
-    crate::type_checker::cm_set_project_table(None);
-    result
+    // The scoped table guard restores resolution state on every exit.
+    let mut objs = Vec::new();
+    for source in scope.linked_sources().skip(1) {
+        let src_path = source.path();
+        let text = source.source();
+        let name = src_path.to_string_lossy().into_owned();
+        let prod = compile_source_with_name(text, Some(&name), &sub_opts).map_err(|e| {
+            // Render the real diagnostics (file:line:col + message) instead of
+            // the opaque CompileError Display, matching the cdylib entry path.
+            let diags = e.into_diagnostics(Some(&name));
+            let rendered = diags
+                .iter()
+                .map(|d| crate::diagnostics::render(text, d))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if rendered.trim().is_empty() {
+                anyhow!("sibling module compile failed for {name}")
+            } else {
+                anyhow!("sibling module compile failed for {name}:\n{rendered}")
+            }
+        })?;
+        #[cfg(feature = "autodiff")]
+        let sub_mlir = lower_to_mlir_with_entry(&prod.ir, prod.grad.as_ref(), true)
+            .map_err(|e| anyhow!("sibling MLIR lowering for {}: {e}", source.module_path()))?;
+        #[cfg(not(feature = "autodiff"))]
+        let sub_mlir = lower_to_mlir_with_entry(&prod.ir, true)
+            .map_err(|e| anyhow!("sibling MLIR lowering for {}: {e}", source.module_path()))?;
+        // Length-prefix every module-path component so distinct canonical
+        // paths remain distinct filenames (`crate.a_b` cannot collide with
+        // `crate.a.b`). Module identifiers contain no path separators, and
+        // this encoding is deterministic on every host filesystem.
+        let object_key = source.module_path().split('.').fold(
+            String::from("__mod"),
+            |mut encoded, component| {
+                encoded.push('_');
+                encoded.push_str(&component.len().to_string());
+                encoded.push('_');
+                encoded.push_str(component);
+                encoded
+            },
+        );
+        let obj_path = obj_dir.join(format!("{object_key}.o"));
+        let sub_bo = mlir_build::BuildOptions {
+            preset: mlir_build::preset_for_mlir(&sub_mlir.primal_mlir),
+            emit_mlir_file: None,
+            emit_llvm_file: None,
+            emit_obj_file: Some(&obj_path),
+            emit_shared: None,
+            opt_pipeline: None,
+            target_triple: None,
+        };
+        mlir_build::build_all(&sub_mlir.primal_mlir, tools, &sub_bo)
+            .map_err(|e| anyhow!("sibling object build for {}: {e}", source.module_path()))?;
+        objs.push(obj_path);
+    }
+    Ok(objs)
 }
 
 /// `mlir-build` feature disabled: a `cdylib` cannot be emitted because the
@@ -1585,6 +1463,7 @@ fn compile_project_sibling_objects(
 fn build_cdylib_from_entry(
     _entry_path: &Path,
     _sources: &[PathBuf],
+    _source_root: &Path,
     _output: &Path,
     _backend: &str,
     _opts: &BuildOptions,
@@ -1682,10 +1561,10 @@ fn compile_sources(
     // Cross-module imports D3: build the whole-project module table
     // once, before the per-file compile loop, and set it at project
     // scope so each file's existing single-file pipeline resolves
-    // symbols declared in sibling files. Gated; clears after the loop.
+    // symbols declared in sibling files. Gated; restores after the loop.
     // The per-file compile signature is unchanged (moat held).
     #[cfg(feature = "cross-module-imports")]
-    {
+    let project_table_guard = {
         // Module-key root: an explicit-sources set can span subtrees OUTSIDE
         // the entry's parent (entry-parent keying would fail `strip_prefix`
         // for those files and fall back to keying off the ABSOLUTE path —
@@ -1734,7 +1613,7 @@ fn compile_sources(
         // scope / MODULE_CONSTS, not this surface.
         let (project_consts, poisoned_consts) = build_project_consts(&parsed);
         table.prune_exported(&poisoned_consts);
-        crate::type_checker::cm_set_project_table(Some(table));
+        let table_guard = single_file_scope::ProjectTableGuard::install(table);
         // Cross-module ENUM propagation: collect every enum DECLARED in any
         // parsed source into one whole-project registry, set at project scope
         // before the per-file compile loop (mirroring the project table). This
@@ -1745,9 +1624,11 @@ fn compile_sources(
         // byte-identical.
         crate::ir::set_global_enums(build_global_enums(&parsed));
         crate::ir::set_project_consts(project_consts);
-    }
+        table_guard
+    };
 
-    // RAII teardown: clears the seeded whole-project resolution state on EVERY
+    // RAII teardown: restores the prior module table and clears the other
+    // seeded whole-project resolution state on EVERY
     // return path. The E2002 fail-closed in
     // `compile_single_source` makes an early `Err` common; without this guard
     // that early return would skip the explicit clears below and leak
@@ -1755,7 +1636,9 @@ fn compile_sources(
     // stale-state byte-identity hazard for same-thread reuse (the cargo test
     // harness, a future daemon/LSP).
     #[cfg(feature = "cross-module-imports")]
-    let _project_guard = ProjectResolutionGuard;
+    let _project_guard = ProjectResolutionGuard {
+        _table_guard: project_table_guard,
+    };
 
     let mut objects = Vec::new();
     // Tracks whether the manifest ENTRY module lowered to a real native object.
@@ -2037,6 +1920,21 @@ fn build_global_enums(parsed: &[(String, crate::ast::Module)]) -> crate::ir::Glo
     enums
 }
 
+/// Resolution state installed for one manifest cdylib build. The module-table
+/// guard restores any outer table; the enum registry has no nested restore API,
+/// so the cdylib path follows the whole-project compiler's clear-on-drop rule.
+#[cfg(all(feature = "cross-module-imports", feature = "mlir-build"))]
+struct CdylibResolutionGuard {
+    _table_guard: single_file_scope::ProjectTableGuard,
+}
+
+#[cfg(all(feature = "cross-module-imports", feature = "mlir-build"))]
+impl Drop for CdylibResolutionGuard {
+    fn drop(&mut self) {
+        crate::ir::clear_global_enums();
+    }
+}
+
 /// Collect every module-level `const NAME = value` across the whole project into
 /// one name→value map for cross-module const inlining at lowering — the VALUE
 /// side of the cross-module `pub const` surface (the NAME side is the module
@@ -2135,17 +2033,18 @@ fn build_project_consts(
 
 /// RAII teardown for the whole-project resolution state (the `cm` project table,
 /// global enums, and PROJECT_CONSTS) seeded before the per-file compile loop.
-/// Clearing on `Drop` makes teardown unconditional on every return path —
+/// Scoped restoration on `Drop` makes teardown unconditional on every return path —
 /// including the early `Err` the E2002 fail-closed in `compile_single_source`
 /// makes common — so a failed project build cannot leak seeded state onto the
 /// thread and perturb a subsequent same-thread compile.
 #[cfg(feature = "cross-module-imports")]
-struct ProjectResolutionGuard;
+struct ProjectResolutionGuard {
+    _table_guard: single_file_scope::ProjectTableGuard,
+}
 
 #[cfg(feature = "cross-module-imports")]
 impl Drop for ProjectResolutionGuard {
     fn drop(&mut self) {
-        crate::type_checker::cm_set_project_table(None);
         crate::ir::clear_global_enums();
         crate::ir::clear_project_consts();
     }

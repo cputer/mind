@@ -739,16 +739,29 @@ fn main() {
         ..Default::default()
     };
 
-    // Phase 17.7: `--emit-evidence` must attest a RESOLVED multi-module project,
-    // not just a lone translation unit. The flat compile path is single-TU by
-    // default (only `mindc build` seeds the cross-module table), so a program that
-    // `use`s a sibling module fails to resolve here. When emitting evidence, seed
-    // the whole-project module table from the input file's sibling `.mind` sources
-    // first, so `use crate.util` resolves and the attested `trace_hash` covers the
-    // resolved program. Best-effort + cleared after compile; a true single file
-    // (no siblings) seeds nothing and is byte-identical to the prior path.
-    let seeded_project_table =
-        cli.compile.emit_evidence.is_some() && seed_project_table_for_evidence(&input);
+    #[cfg(feature = "cross-module-imports")]
+    let single_file_scope = match libmind::project::single_file_scope::discover_with_source(
+        Path::new(&input),
+        &cli.compile.target,
+        &source,
+    ) {
+        Ok(libmind::project::single_file_scope::Discovery::Project(scope)) => Some(scope),
+        Ok(libmind::project::single_file_scope::Discovery::MissingProject(imports)) => {
+            eprintln!(
+                "error[type-check][E2003]: local import(s) {} require an enclosing Mind.toml \
+                 project that declares the source set",
+                imports.join(", ")
+            );
+            process::exit(1);
+        }
+        Ok(libmind::project::single_file_scope::Discovery::SingleTranslationUnit) => None,
+        Err(err) => {
+            eprintln!("error[project]: cannot establish single-file import scope: {err}");
+            process::exit(1);
+        }
+    };
+    #[cfg(feature = "cross-module-imports")]
+    let _single_file_guard = single_file_scope.as_ref().map(|scope| scope.install());
 
     let products = match compile_source_with_name(&source, Some(&input), &opts) {
         Ok(products) => products,
@@ -758,11 +771,6 @@ fn main() {
             process::exit(1);
         }
     };
-    if seeded_project_table {
-        // Restore the empty table so nothing downstream sees a stale project scope.
-        #[cfg(all(feature = "std-surface", feature = "cross-module-imports"))]
-        libmind::type_checker::cm_set_project_table(None);
-    }
 
     if cli.compile.verify_only {
         return;
@@ -847,6 +855,9 @@ fn main() {
     }
 
     emit_obj_if_requested(&cli.compile, &products);
+    #[cfg(feature = "cross-module-imports")]
+    emit_shared_if_requested(&cli.compile, &products, &source, single_file_scope.as_ref());
+    #[cfg(not(feature = "cross-module-imports"))]
     emit_shared_if_requested(&cli.compile, &products, &source);
 }
 
@@ -2129,64 +2140,6 @@ fn resolve_evidence_parent(value: &str) -> Result<[u8; 32], ()> {
     }
 }
 
-/// Seed the whole-project cross-module table (Phase 17.7) from the sibling
-/// `.mind` files next to `input`, so a `--emit-evidence` compile of a project
-/// entry resolves `use crate.<module>` references the same way `mindc build`
-/// does. Best-effort: unparseable siblings are skipped (they simply do not
-/// contribute exports). Returns `true` when a table WAS installed (there is at
-/// least one sibling module beyond the entry), so the caller clears it after the
-/// compile. A lone file with no siblings seeds nothing and returns `false`,
-/// leaving the single-TU path byte-identical.
-#[cfg(all(feature = "std-surface", feature = "cross-module-imports"))]
-fn seed_project_table_for_evidence(input: &str) -> bool {
-    use std::path::Path;
-    let input_path = Path::new(input);
-    let dir = match input_path.parent() {
-        Some(d) if !d.as_os_str().is_empty() => d,
-        _ => Path::new("."),
-    };
-    let mut parsed: Vec<(String, libmind::ast::Module)> =
-        libmind::project::stdlib::parsed_stdlib_modules();
-    let mut sibling_count = 0usize;
-    let entry_name = input_path.file_name();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        let mut paths: Vec<std::path::PathBuf> = rd.flatten().map(|e| e.path()).collect();
-        // Deterministic order so the seeded table is build-independent.
-        paths.sort();
-        for p in paths {
-            if p.extension().map(|x| x == "mind").unwrap_or(false) {
-                if let Ok(text) = std::fs::read_to_string(&p) {
-                    if let Ok(m) = libmind::parser::parse(&text) {
-                        if p.file_name() != entry_name {
-                            sibling_count += 1;
-                        }
-                        let key = libmind::project::module_table::module_path_of(&p, dir);
-                        parsed.push((key, m));
-                    }
-                }
-            }
-        }
-    }
-    if sibling_count == 0 {
-        return false;
-    }
-    let refs: Vec<(String, &libmind::ast::Module)> =
-        parsed.iter().map(|(k, m)| (k.clone(), m)).collect();
-    let table = libmind::project::module_table::build_module_table(&refs);
-    libmind::type_checker::cm_set_project_table(Some(table));
-    true
-}
-
-/// No-op stub for builds without the cross-module machinery (`module_table` /
-/// `cm_set_project_table` / bundled `stdlib`): there is no multi-module project
-/// scope to seed, so `--emit-evidence` stays single-TU — byte-identical to the
-/// pre-17.7 path. Keeps the `mindc` binary buildable under `--no-default-features`
-/// and the default (`std-surface`-only) feature set.
-#[cfg(not(all(feature = "std-surface", feature = "cross-module-imports")))]
-fn seed_project_table_for_evidence(_input: &str) -> bool {
-    false
-}
-
 /// Parse one `--evidence-attr KEY=VALUE` (Phase 17.8) into a key/value pair. The
 /// key namespace is validated separately by `validate_app_entries`; here we only
 /// require a single `=` separator and a non-empty key.
@@ -3215,6 +3168,9 @@ fn emit_shared_if_requested(
     cli: &CompileArgs,
     products: &libmind::pipeline::CompileProducts,
     source: &str,
+    #[cfg(feature = "cross-module-imports")] project_scope: Option<
+        &libmind::project::single_file_scope::ProjectScope,
+    >,
 ) {
     let shared_path = match &cli.emit_shared {
         Some(path) => path,
@@ -3257,7 +3213,7 @@ fn emit_shared_if_requested(
             .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        match libmind::project::substrate_link::substrate_objects_for_entry(
+        let mut objects = match libmind::project::substrate_link::substrate_objects_for_entry(
             source,
             &obj_dir,
             libmind::runtime::types::BackendTarget::Cpu,
@@ -3268,7 +3224,22 @@ fn emit_shared_if_requested(
                 eprintln!("error[build]: {err}");
                 process::exit(1);
             }
+        };
+        if let Some(scope) = project_scope {
+            match libmind::project::compile_project_sibling_objects(
+                scope,
+                &obj_dir,
+                libmind::runtime::types::BackendTarget::Cpu,
+                &tools,
+            ) {
+                Ok(mut siblings) => objects.append(&mut siblings),
+                Err(err) => {
+                    eprintln!("error[build]: {err}");
+                    process::exit(1);
+                }
+            }
         }
+        objects
     };
     #[cfg(not(feature = "cross-module-imports"))]
     let extra_objects: Vec<std::path::PathBuf> = {

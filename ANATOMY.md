@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1531 | **Est. tokens:** ~2996133
-**Generated:** 2026-09-06 12:06 UTC
+**Files:** 1534 | **Est. tokens:** ~3002454
+**Generated:** 2026-09-06 12:33 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29181 |
+| `./` | 33 | ~29208 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -95,7 +95,7 @@
 | `src/bin/` | 1 | ~9878 |
 | `src/build/` | 7 | ~23017 |
 | `src/cache/` | 4 | ~3682 |
-| `src/check/` | 3 | ~10829 |
+| `src/check/` | 3 | ~10417 |
 | `src/deps/` | 1 | ~9388 |
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
@@ -110,14 +110,14 @@
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
 | `src/lint/` | 2 | ~4001 |
-| `src/lint/rules/` | 6 | ~9940 |
+| `src/lint/rules/` | 6 | ~10017 |
 | `src/mlir/` | 3 | ~5905 |
 | `src/ops/` | 3 | ~4764 |
 | `src/opt/` | 9 | ~53284 |
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 11 | ~25818 |
+| `src/project/` | 13 | ~30058 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 360 | ~673431 |
+| `tests/` | 361 | ~675820 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -209,7 +209,7 @@
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
 - `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
-- `Cargo.toml` (~3430 tok, huge) — [package]
+- `Cargo.toml` (~3457 tok, huge) — [package]
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
@@ -1031,7 +1031,7 @@
 ### `src/check/`
 
 - `gitignore.rs` (~2345 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~8110 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~7698 tok, huge) — Copyright 2025 STARGA Inc.
 - `reporter.rs` (~374 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/`
 
@@ -1149,7 +1149,7 @@
 - `q16_overflow.rs` (~2950 tok, huge) — Copyright 2025 STARGA Inc.
 - `shadowing.rs` (~1944 tok, huge) — Copyright 2025 STARGA Inc.
 - `trailing_whitespace.rs` (~869 tok, large) — Copyright 2025 STARGA Inc.
-- `unused_import.rs` (~1692 tok, huge) — Copyright 2025 STARGA Inc.
+- `unused_import.rs` (~1769 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
 - `main.rs` (~6787 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1190,13 +1190,15 @@
 - `pipeline.rs` (~5978 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
+- `active_module_table.rs` (~422 tok, medium) — Copyright 2025-2026 STARGA Inc.
 - `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `build_lock.rs` (~1630 tok, huge) — Copyright 2026 STARGA Inc.
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `embedded_entry.rs` (~670 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
+- `module_table.rs` (~5905 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~3733 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1594,6 +1596,7 @@
 ### `tests/`
 
 - `issue_201_202_unary_not_const_ctx.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.
+- `issue_235_single_file_import.rs` (~2389 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `issue_246_bitnot_operator.rs` (~571 tok, large) — Copyright 2025 STARGA Inc.
 - `issue_246_tensor_named_dtype.rs` (~525 tok, large) — Copyright 2025 STARGA Inc.
 - `issue_263_method_chain_newline.rs` (~869 tok, large) — Copyright 2025 STARGA Inc.

@@ -101,6 +101,16 @@ impl ModuleTable {
         self.modules.get(module_path)
     }
 
+    /// Resolve an import path against canonical `crate.*` module keys.
+    pub fn get_import(&self, import_path: &[String]) -> Option<&ModuleExports> {
+        let key = import_path.join(".");
+        self.get(&key).or_else(|| {
+            (!key.starts_with("crate."))
+                .then(|| format!("crate.{key}"))
+                .and_then(|key| self.get(&key))
+        })
+    }
+
     /// Insert a module's exports. A re-inserted path overwrites
     /// (last-write-wins); callers feed sources in a deterministic order.
     pub fn insert(&mut self, exports: ModuleExports) {
@@ -130,9 +140,7 @@ impl ModuleTable {
     /// `Node::Import.path` segments). Resolution is exact — no globs,
     /// no re-export chains (deliverable 2+).
     pub fn resolves(&self, import_path: &[String], symbol: &str) -> bool {
-        let key = import_path.join(".");
-        self.modules
-            .get(&key)
+        self.get_import(import_path)
             .is_some_and(|m| m.exported.iter().any(|e| e == symbol))
     }
 

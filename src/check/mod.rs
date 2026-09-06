@@ -204,56 +204,30 @@ pub fn run_check(opts: &CheckOptions) -> i32 {
         return 0;
     }
 
-    // Cross-module imports: seed the whole-project module table once, before
-    // the per-file type-check loop, so a file that references a symbol declared
-    // in a sibling module (or the bundled stdlib) resolves it instead of
-    // reporting a spurious undefined reference (E2002 / E2003). This mirrors the
-    // executable/cdylib build paths (`project::compile_sources` /
-    // `build_cdylib_from_entry`), which already install this table before their
-    // own compile loop — `mindc check` previously skipped it, so a project-level
-    // check was stricter than a build. The table is cleared after the loop so it
-    // never leaks into a later single-file check. Gated: without
-    // `cross-module-imports` there is nothing to seed and the check path is
-    // byte-identical to before.
-    #[cfg(feature = "cross-module-imports")]
-    {
-        let src_root = common_ancestor_dir(&files);
-        let mut parsed: Vec<(String, crate::ast::Module)> =
-            crate::project::stdlib::parsed_stdlib_modules();
-        for path in &files {
-            if let Ok(text) = fs::read_to_string(path) {
-                if let Ok(m) = crate::parser::parse(&text) {
-                    parsed.push((
-                        crate::project::module_table::module_path_of(path, &src_root),
-                        m,
-                    ));
-                }
-            }
+    let captured = match capture_sources(&files) {
+        Ok(captured) => captured,
+        Err(err) => {
+            eprintln!("error[check]: {err}");
+            return 1;
         }
-        let refs: Vec<(String, &crate::ast::Module)> =
-            parsed.iter().map(|(p, m)| (p.clone(), m)).collect();
-        let table = crate::project::module_table::build_module_table(&refs);
-        crate::type_checker::cm_set_project_table(Some(table));
-    }
+    };
+
+    #[cfg(feature = "cross-module-imports")]
+    let _project_guard = match crate::project::single_file_scope::install_for_check(&captured) {
+        Ok(guard) => guard,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
 
     let mut all_diags: Vec<CheckDiagnostic> = Vec::new();
 
-    for path in &files {
-        let source = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("error[check]: {}: {e}", path.display());
-                continue;
-            }
-        };
-
-        let mut file_diags = check_file(path, &source, &config, &registry, opts);
+    for (path, source) in &captured {
+        let mut file_diags = check_file(path, source, &config, &registry, opts);
         file_diags.sort_by_key(|d| (d.line, d.col));
         all_diags.extend(file_diags);
     }
-
-    #[cfg(feature = "cross-module-imports")]
-    crate::type_checker::cm_set_project_table(None);
 
     // Sort globally by (file, line, col) for deterministic multi-file output.
     all_diags.sort_by(|a, b| {
@@ -321,6 +295,24 @@ fn run_check_fix(opts: &CheckOptions) -> i32 {
         return 0;
     }
 
+    #[cfg(feature = "cross-module-imports")]
+    let captured = match capture_sources(&files) {
+        Ok(captured) => captured,
+        Err(err) => {
+            eprintln!("error[check]: {err}");
+            return 1;
+        }
+    };
+
+    #[cfg(feature = "cross-module-imports")]
+    let _project_guard = match crate::project::single_file_scope::install_for_check(&captured) {
+        Ok(guard) => guard,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+
     let mut total_fixed_files = 0usize;
     let mut converged = true;
 
@@ -368,6 +360,17 @@ fn run_check_fix(opts: &CheckOptions) -> i32 {
     }
 
     if remaining > 0 { 1 } else { 0 }
+}
+
+fn capture_sources(files: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
+    files
+        .iter()
+        .map(|path| {
+            fs::read_to_string(path)
+                .map(|source| (path.clone(), source))
+                .map_err(|err| format!("{}: {err}", path.display()))
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -583,28 +586,6 @@ fn load_check_config() -> MindcraftConfig {
 // ---------------------------------------------------------------------------
 // Path resolution with VCS filtering
 // ---------------------------------------------------------------------------
-
-/// Longest common ancestor directory of a set of files, used as the module-path
-/// source root when seeding the cross-module table for `mindc check`. For the
-/// standard `<root>/src/*.mind` layout this yields `<root>/src`, so files key as
-/// `crate.lut`, `crate.fixed_point`, … — matching the build path. Falls back to
-/// the current directory when the set is empty or shares no common prefix.
-#[cfg(feature = "cross-module-imports")]
-fn common_ancestor_dir(files: &[PathBuf]) -> PathBuf {
-    let mut dirs = files.iter().filter_map(|f| f.parent());
-    let Some(first) = dirs.next() else {
-        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    };
-    let mut common: PathBuf = first.to_path_buf();
-    for dir in dirs {
-        while !dir.starts_with(&common) {
-            if !common.pop() {
-                return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            }
-        }
-    }
-    common
-}
 
 fn resolve_paths(paths: &[String], config: &MindcraftConfig) -> Result<Vec<PathBuf>, String> {
     let roots: Vec<PathBuf> = if paths.is_empty() {

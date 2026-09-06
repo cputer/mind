@@ -144,6 +144,10 @@ name = "public_cpu_native_link"
 required-features = ["mlir-build"]
 
 [[test]]
+name = "issue_235_single_file_import"
+required-features = ["mlir-build", "cross-module-imports"]
+
+[[test]]
 name = "merge_kind_order_symmetry"
 # BOTH features are load-bearing, and declaring only one broke the required `build_test`
 # job. `std-surface` is what makes ScalarU64/ScalarU32 exist at all -- without it the

@@ -75,6 +75,13 @@ impl LintRule for UnusedImport {
             let non_comment_count = count_word_occurrences_non_comment(source, local_name);
 
             if non_comment_count <= 1 {
+                #[cfg(feature = "cross-module-imports")]
+                if crate::type_checker::cm_imported_export_names(path)
+                    .iter()
+                    .any(|name| count_word_occurrences_non_comment(source, name) > 0)
+                {
+                    continue;
+                }
                 diagnostics.push(Diagnostic {
                     rule_id: self.id().to_string(),
                     severity: self.default_severity(),
