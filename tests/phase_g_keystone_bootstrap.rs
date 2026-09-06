@@ -113,19 +113,63 @@ fn scratch() -> PathBuf {
 /// silently. This converts that latent landmine into a loud, toolchain-free
 /// precondition (recommended by the architecture audit, 2026-05-23). Remove
 /// this guard only when the pure-MIND `parse_item` learns to parse attributes.
+fn has_attribute_token(src: &str) -> bool {
+    // Match MIND's double-quoted strings and line comments. A mention in
+    // either is data, while `#[` in code remains a bootstrap precondition.
+    let bytes = src.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'#' if bytes.get(i + 1) == Some(&b'[') => return true,
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 #[test]
 fn bootstrap_source_is_attribute_free() {
+    for src in [
+        "// expands #[bimap]\r\nfn main() {}",
+        r##"fn text() { "#[target]"; }"##,
+        r##"fn text() { "escaped \" #[target] // λ"; } // #[test]"##,
+    ] {
+        assert!(
+            !has_attribute_token(src),
+            "prose is not an attribute: {src}"
+        );
+    }
+    for src in [
+        "#[deterministic]\nfn main() {}",
+        "// #[comment]\n#[test]\nfn main() {}",
+        r#"fn text() { "escaped \\"; } #[target] fn main() {}"#,
+        "fn main() { #[collapse] for i in 0..2 {} }",
+    ] {
+        assert!(has_attribute_token(src), "missed an attribute: {src}");
+    }
     for name in ["main.mind", "fixture.mind"] {
         let path = repo_root().join("examples/mindc_mind").join(name);
-        if let Ok(src) = std::fs::read_to_string(&path) {
-            assert!(
-                !src.contains("#["),
-                "examples/mindc_mind/{name} contains an attribute `#[` but the \
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()));
+        assert!(
+            !has_attribute_token(&src),
+            "examples/mindc_mind/{name} contains an attribute `#[` but the \
                  pure-MIND self-host parser is attribute-blind — this would break \
                  the byte-identity bootstrap oracle. Teach `parse_item` to parse \
                  attributes before annotating the compiler's own source."
-            );
-        }
+        );
     }
 }
 

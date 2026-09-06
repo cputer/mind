@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1629 | **Est. tokens:** ~3053735
-**Generated:** 2026-09-06 18:52 UTC
+**Files:** 1629 | **Est. tokens:** ~3054106
+**Generated:** 2026-09-06 19:15 UTC
 
 ## Token Budget Guide
 
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 366 | ~689110 |
+| `tests/` | 366 | ~689481 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1889,7 +1889,7 @@
 - `parser_trivia.rs` (~2706 tok, huge) — Copyright 2025 STARGA Inc.
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~7296 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~7667 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `public_cpu_native_link.rs` (~1528 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
