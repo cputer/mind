@@ -12,6 +12,8 @@
 
 // Part of the MIND project (Machine Intelligence Native Design).
 
+#[cfg(feature = "std-surface")]
+mod array_lengths;
 pub mod nerve_lint;
 mod nerve_walk;
 mod resolve;
@@ -4649,7 +4651,15 @@ pub fn check_module_types_in_file(
     env: &TypeEnv,
 ) -> Vec<Pretty> {
     crate::diagnostics::reset_line_index_cache();
-    check_module_types_in_file_impl(module, src, file, env)
+    let errors = check_module_types_in_file_impl(module, src, file, env);
+    #[cfg(feature = "std-surface")]
+    {
+        let mut errors = errors;
+        array_lengths::check(module, src, file, &mut errors);
+        errors
+    }
+    #[cfg(not(feature = "std-surface"))]
+    errors
 }
 
 fn check_module_types_in_file_impl(
@@ -4834,33 +4844,10 @@ fn check_module_types_in_file_impl(
                 span,
                 ..
             } => match ann {
-                // RFC 0005 Phase 6.2b Gap 2 — fixed-size array annotation
-                // `[T; N]`.  Check that the RHS array literal has exactly N
-                // elements; element-type compatibility defers to the element
-                // type's own value-type inference.
+                // Literal cardinality is checked once by array_lengths across
+                // all lexical scopes, including function bodies and constants.
                 #[cfg(feature = "std-surface")]
-                Some(crate::ast::TypeAnn::Array { length, .. }) => {
-                    // Count elements in the RHS if it's an ArrayLit.
-                    let rhs_len: Option<usize> = match value.as_ref() {
-                        Node::ArrayLit { elements, .. } => Some(elements.len()),
-                        _ => None,
-                    };
-                    if let Some(actual) = rhs_len {
-                        if actual != *length as usize {
-                            errs.push(diag_from_span(
-                                src,
-                                file,
-                                format!(
-                                    "array length mismatch for `{}`: annotation [_; {}] but \
-                                     literal has {} elements",
-                                    name, length, actual
-                                ),
-                                *span,
-                                TYPE_ERR_CODE,
-                            ));
-                        }
-                    }
-                    // Register as ScalarI64 in the env (element type, v1 approximation).
+                Some(crate::ast::TypeAnn::Array { .. }) => {
                     tenv.insert(name.clone(), ValueType::ScalarI64);
                 }
                 Some(annotation) => match valuetype_from_ann(annotation) {

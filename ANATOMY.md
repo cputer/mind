@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1536 | **Est. tokens:** ~3006683
-**Generated:** 2026-09-06 12:44 UTC
+**Files:** 1538 | **Est. tokens:** ~3007768
+**Generated:** 2026-09-06 12:56 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4828 |
 | `config/` | 2 | ~3338 |
-| `docs/` | 36 | ~100934 |
+| `docs/` | 36 | ~101053 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9315 |
 | `docs/design/` | 4 | ~11498 |
@@ -122,11 +122,11 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 3 | ~25078 |
+| `src/type_checker/` | 4 | ~25570 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 362 | ~677366 |
+| `tests/` | 363 | ~677840 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -416,7 +416,7 @@
 - `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
-- `ARRAY_SEMANTICS.md` (~7536 tok, huge) — MIND array semantics — normative architecture record
+- `ARRAY_SEMANTICS.md` (~7655 tok, huge) — MIND array semantics — normative architecture record
 - `ENGINE_CONSUMER_LIST.md` (~9442 tok, huge) — Engine consumer list — the evidence pack for every hand-written semantics engine
 - `INDEPENDENCE_ROADMAP.md` (~18728 tok, huge) — MIND Rust-Independence Roadmap
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
@@ -1231,6 +1231,7 @@
 - `mod.rs` (~6839 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
+- `array_lengths.rs` (~492 tok, medium) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1524,6 +1525,7 @@
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
 - `fail_open_skip_site_ratchet.rs` (~8472 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
+- `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
@@ -2028,7 +2030,7 @@
 - `std_llvm_bindings_smoke.rs` (~2673 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_mlir_bindings_smoke.rs` (~4872 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_arena.rs` (~1346 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_array_literals.rs` (~2001 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_array_literals.rs` (~2013 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_async.rs` (~4323 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bitwise_binops.rs` (~2391 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.

@@ -21,7 +21,9 @@
 #![cfg(feature = "std-surface")]
 
 use libmind::eval::lower::lower_to_ir;
-use libmind::ir::{Instr, ValueId};
+use libmind::ir::Instr;
+#[cfg(feature = "mlir-lowering")]
+use libmind::ir::ValueId;
 use libmind::parser;
 #[cfg(feature = "mlir-lowering")]
 use libmind::{MlirLowerError, compile_ir_to_mlir_text};

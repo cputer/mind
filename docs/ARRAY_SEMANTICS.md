@@ -127,6 +127,9 @@ normative target; `GAP` = distance; `EVIDENCE` = citation/observation.
 - EVIDENCE = `src/ir/compact/v3/emit.rs` (dtype byte); §2.4 (ValueKind local).
 
 ### Q3 — Where length `N` is stored
+
+The checker rejects an explicit `[T; N]` binding whose array literal has a different number of elements (diagnostic `E2001`). This applies to `let` and `const` bindings at module level and inside functions, branches, and loops. Parentheses around a literal do not suppress the check; nested fixed-array literals are checked against each declared extent. Nonliteral initializers are outside this literal-cardinality check. Regression: `tests/fixed_array_binding_lengths.rs`.
+
 - CURRENT_RUST_MLIR = const: `ConstDenseTensor.shape` / `ConstArray.values.len()`. Dynamic: runtime `len` in `[addr|len|cap]`.
 - CURRENT_SELFHOST = const cells: static count; dynamic length **not preserved across calls** (`e0a1dcc1` limitation).
 - CURRENT_EVALUATOR = element-list length.
