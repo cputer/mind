@@ -376,13 +376,19 @@ fn analyze_loop_body(
     result
 }
 
+/// A loop introduces a binding or re-evaluates a condition at its header.
+#[derive(Clone, Copy)]
+pub(super) enum LoopControl<'a> {
+    Binding(&'a str, Span),
+    Condition(&'a Node),
+}
+
 /// Analyze a loop at the least fixed point of its entry and backedge borrow
 /// facts, then validate once against that stabilized header. This catches a
 /// value borrowed late in iteration N and consumed early in iteration N+1.
 pub(super) fn check_loop_flow(
     body: &[Node],
-    loop_binding: Option<(&str, Span)>,
-    repeated_condition: Option<&Node>,
+    control: LoopControl<'_>,
     env: &mut Env,
     expected_return: Option<&TypeAnn>,
     src: &str,
@@ -393,7 +399,7 @@ pub(super) fn check_loop_flow(
     let mut header = entry.clone();
     loop {
         let mut body_entry = header.clone();
-        if let Some((name, span)) = loop_binding {
+        if let LoopControl::Binding(name, span) = control {
             shadow_binding(&mut body_entry, name, span);
         }
         let mut ignored = Vec::new();
@@ -413,12 +419,12 @@ pub(super) fn check_loop_flow(
         }
         header = next;
     }
-    if let Some(condition) = repeated_condition {
+    if let LoopControl::Condition(condition) = control {
         reject_borrowed_control(condition, &header, "a while condition", src, file, errs);
         super::check_expr(condition, &header, expected_return, src, file, errs);
     }
     let mut body_entry = header;
-    if let Some((name, span)) = loop_binding {
+    if let LoopControl::Binding(name, span) = control {
         shadow_binding(&mut body_entry, name, span);
     }
     let paths = analyze_loop_body(body, body_entry, expected_return, src, file, errs);
@@ -440,8 +446,7 @@ pub(super) fn check_while(
 ) {
     check_loop_flow(
         body,
-        None,
-        Some(condition),
+        LoopControl::Condition(condition),
         env,
         expected_return,
         src,

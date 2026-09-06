@@ -61,6 +61,7 @@ pub struct ProjectScope {
     /// transitively. The entry itself is always present.
     linked: BTreeSet<String>,
     table: super::module_table::ModuleTable,
+    enums: Box<crate::ir::GlobalEnums>,
 }
 
 impl ProjectScope {
@@ -79,7 +80,7 @@ impl ProjectScope {
         self.linked.len() > 1
     }
     pub fn install(&self) -> ProjectTableGuard {
-        ProjectTableGuard::install(self.table.clone())
+        ProjectTableGuard::install_with_enums(self.table.clone(), (*self.enums).clone())
     }
 }
 
@@ -123,17 +124,32 @@ fn install_parsed(project_modules: Vec<(String, Module)>) -> ProjectTableGuard {
         .iter()
         .map(|(path, module)| (path.clone(), module))
         .collect();
-    ProjectTableGuard::install(super::module_table::build_module_table(&refs))
+    ProjectTableGuard::install_with_enums(
+        super::module_table::build_module_table(&refs),
+        super::build_global_enums(&parsed),
+    )
 }
 
 pub struct ProjectTableGuard {
     _guard: super::active_module_table::Guard,
+    _enums: Option<crate::qualified_enums::GlobalGuard>,
 }
 
 impl ProjectTableGuard {
     pub(crate) fn install(table: super::module_table::ModuleTable) -> Self {
         Self {
             _guard: super::active_module_table::Guard::install(table),
+            _enums: None,
+        }
+    }
+
+    fn install_with_enums(
+        table: super::module_table::ModuleTable,
+        enums: crate::ir::GlobalEnums,
+    ) -> Self {
+        Self {
+            _guard: super::active_module_table::Guard::install(table),
+            _enums: Some(crate::qualified_enums::GlobalGuard::install(enums)),
         }
     }
 }
@@ -374,11 +390,13 @@ fn capture_scope<'a>(
         .map(|(path, module)| (path.clone(), module))
         .collect::<Vec<_>>();
     let table = super::module_table::build_module_table(&refs);
+    let enums = super::build_global_enums(&parsed);
     Ok(ProjectScope {
         entry: entry.to_path_buf(),
         sources,
         linked,
         table,
+        enums: Box::new(enums),
     })
 }
 

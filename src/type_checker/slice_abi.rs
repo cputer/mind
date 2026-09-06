@@ -21,8 +21,9 @@ use super::{
 
 mod borrow_flow;
 use borrow_flow::{
-    borrowed_kind, check_call, check_loop_flow, check_while, merge_flow, reject_borrowed_control,
-    remove_pattern_bindings, stmt_guarantees_return, type_contains_slice, value_contains_borrow,
+    LoopControl, borrowed_kind, check_call, check_loop_flow, check_while, merge_flow,
+    reject_borrowed_control, remove_pattern_bindings, stmt_guarantees_return, type_contains_slice,
+    value_contains_borrow,
 };
 pub(super) use borrow_flow::{check_fn, check_struct_fields};
 
@@ -713,8 +714,7 @@ fn check_stmts(
                 check_expr(end, env, expected_return, src, file, errs);
                 check_loop_flow(
                     body,
-                    Some((var, *span)),
-                    None,
+                    LoopControl::Binding(var, *span),
                     env,
                     expected_return,
                     src,
@@ -733,8 +733,7 @@ fn check_stmts(
                 check_expr(collection, env, expected_return, src, file, errs);
                 check_loop_flow(
                     body,
-                    Some((var, *span)),
-                    None,
+                    LoopControl::Binding(var, *span),
                     env,
                     expected_return,
                     src,

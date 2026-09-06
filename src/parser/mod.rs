@@ -115,17 +115,9 @@ struct P<'a> {
     /// struct field access. Enum declarations precede the fn bodies that use
     /// them, so the set is complete in time.
     enum_names: Vec<String>,
-    /// Whole-project enum type names, captured ONCE at construction. This is an
-    /// EXPLICIT snapshot of the cross-module registry, NOT a live read: once a
-    /// `P` exists, enum-name resolution is a pure function of `(enum_names,
-    /// global_enums)` and is independent of any later mutation of the ambient
-    /// thread-local. `P::new` captures the current registry (the back-compat
-    /// default the project builder relies on via its set-before / clear-after
-    /// discipline); `P::new_with_enums` lets a caller supply the registry
-    /// explicitly, making parsing a pure function of `(source, registry)`.
-    /// Empty on the single-file / no-project path, so those parses pay zero
-    /// per-dotted-ident registry cost and stay byte-identical.
-    global_enums: Vec<String>,
+    /// Immutable enum metadata captured when this parser is created. Qualified
+    /// lookup is additionally constrained by `import_paths` below.
+    enum_scope: crate::qualified_enums::ParseScope,
     /// The DECLARED return type of the fn body currently being parsed (`None`
     /// at module level, and for a fn with no `-> T`). Set by
     /// `parse_fn_def_with_attrs` around the body and restored on exit (nested
@@ -315,14 +307,6 @@ impl<'a> P<'a> {
     /// the snapshot reflects exactly the project's enums during a build, and is
     /// empty for single-file parses.
     fn new(src: &'a str) -> Self {
-        let global_enums = crate::ir::with_global_enums(|g| g.names.clone());
-        Self::new_with_enums(src, global_enums)
-    }
-
-    /// Construct a parser with an EXPLICIT enum registry, making the parse a pure
-    /// function of `(source, global_enums)` with no ambient thread-local read.
-    /// Pass `Vec::new()` for a single-file / no-cross-module parse.
-    fn new_with_enums(src: &'a str, global_enums: Vec<String>) -> Self {
         Self {
             b: src.as_bytes(),
             pos: 0,
@@ -330,7 +314,7 @@ impl<'a> P<'a> {
             import_paths: Vec::new(),
             invariants: Vec::new(),
             enum_names: Vec::new(),
-            global_enums,
+            enum_scope: crate::qualified_enums::ParseScope::capture(),
             current_fn_ret: None,
         }
     }
@@ -346,11 +330,17 @@ impl<'a> P<'a> {
         if self.enum_names.iter().any(|n| n == name) {
             return true;
         }
-        // Pure check against the registry snapshot captured at construction — no
-        // live thread-local borrow, so resolution can't drift if the ambient
-        // registry is mutated after this parser was built. Empty on the
-        // single-file path, so that case short-circuits to `false` immediately.
-        self.global_enums.iter().any(|n| n == name)
+        self.enum_scope.is_enum_name(name, &self.import_paths)
+    }
+
+    #[inline]
+    fn module_variant_key(&self, name: &str) -> Option<String> {
+        self.enum_scope.resolve_variant(name, &self.import_paths)
+    }
+
+    #[inline]
+    fn module_type_key(&self, name: &str) -> Option<String> {
+        self.enum_scope.resolve_type(name, &self.import_paths)
     }
 
     #[inline(always)]
@@ -1233,7 +1223,10 @@ impl<'a> P<'a> {
                     }
                     self.pos = save; // not `[N]` — leave the `[` for the caller
                 }
-                return Ok(TypeAnn::Named(first.to_string()));
+                let name = self
+                    .module_type_key(first)
+                    .unwrap_or_else(|| first.to_string());
+                return Ok(TypeAnn::Named(name));
             }
             // Path accumulation: `a.b.c` becomes a single Named("a.b.c").
             let mut name = String::with_capacity(first.len() * 2);
@@ -1297,6 +1290,7 @@ impl<'a> P<'a> {
                 }
                 self.pos = save; // not `[N]` — leave the `[` for the caller
             }
+            let name = self.module_type_key(&name).unwrap_or(name);
             return Ok(TypeAnn::Named(name));
         }
         Err(self.err("expected type annotation".into()))
@@ -1627,11 +1621,9 @@ impl<'a> P<'a> {
         // A multi-segment import ALSO records its full dotted path so a call
         // spelled through the whole path (`bridge.mcp.call(x)`) desugars the
         // same way as the qualifier form (`mcp.call(x)`).
-        if path.len() > 1 {
-            let dotted = path.join(".");
-            if !self.import_paths.iter().any(|s| s == &dotted) {
-                self.import_paths.push(dotted);
-            }
+        let dotted = path.join(".");
+        if !self.import_paths.iter().any(|s| s == &dotted) {
+            self.import_paths.push(dotted);
         }
         let span = Span::new(start, self.pos);
         Ok(Node::Import { path, span })
@@ -1679,11 +1671,9 @@ impl<'a> P<'a> {
             }
         }
         // Full-dotted-path twin of the qualifier record — see parse_import.
-        if path.len() > 1 {
-            let dotted = path.join(".");
-            if !self.import_paths.iter().any(|s| s == &dotted) {
-                self.import_paths.push(dotted);
-            }
+        let dotted = path.join(".");
+        if !self.import_paths.iter().any(|s| s == &dotted) {
+            self.import_paths.push(dotted);
         }
         let span = Span::new(start, self.pos);
         Ok(Node::Import { path, span })
@@ -4544,6 +4534,7 @@ impl<'a> P<'a> {
         let ident = self
             .dotted_ident()
             .ok_or_else(|| self.unexpected_prefix_err())?;
+        let ident = self.module_variant_key(&ident).unwrap_or(ident);
         // A `!` welded to the identifier is a macro invocation (`format!(…)`,
         // `vec![…]`), whatever delimiter follows. MIND has no macros, and no MIND
         // expression spells `name!` — the only `!` that may legally touch an
@@ -5912,6 +5903,12 @@ impl<'a> P<'a> {
             "true" => return Ok(Pattern::Literal(Literal::Int(1))),
             "false" => return Ok(Pattern::Literal(Literal::Int(0))),
             _ => {}
+        }
+        // A module-qualified enum variant is resolved against the importing
+        // module's type metadata before looking at the terminal enum name. This
+        // preserves ownership when two modules both declare `Color`.
+        if let Some(canonical) = self.module_variant_key(&name) {
+            name = canonical;
         }
         // `Enum.Variant` (dot) → canonical `Enum::Variant` when the first segment
         // is a declared enum, so the variant-pattern handling below treats it as

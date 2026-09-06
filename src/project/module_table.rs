@@ -61,6 +61,22 @@ pub struct ExportedFn {
     pub ret_type: Option<TypeAnn>,
 }
 
+/// Type-only metadata for an enum exported by a module. Enum definitions do
+/// not occupy the runtime value namespace, but their variants and payloads are
+/// part of the module's type surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportedEnum {
+    pub name: String,
+    pub variants: Vec<ExportedEnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportedEnumVariant {
+    pub name: String,
+    pub payload: Vec<TypeAnn>,
+    pub field_names: Vec<String>,
+}
+
 /// The public symbols a single module exports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleExports {
@@ -74,6 +90,9 @@ pub struct ModuleExports {
     /// auto-export path (the `export { ... }` block path stays
     /// empty by construction).
     pub exported_fns: Vec<ExportedFn>,
+    /// Type-only enum metadata. Kept separate from `exported` so enum types
+    /// never become callable/runtime values merely because they are public.
+    pub exported_enums: Vec<ExportedEnum>,
 }
 
 /// Maps dotted module path -> its exported surface.
@@ -343,11 +362,43 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
     // unique within a single module (the parser rejects duplicates),
     // so this is also a stable order.
     exported_fns.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut exported_enums = collect_module_enums(ast);
+    if has_explicit_export {
+        exported_enums.retain(|decl| exported.iter().any(|name| name == &decl.name));
+    }
     ModuleExports {
         module_path: module_path.to_string(),
         exported,
         exported_fns,
+        exported_enums,
     }
+}
+
+/// Collect all module-level enum declarations as type-only export metadata.
+/// Transparent `module { ... }` blocks are flattened using the same traversal
+/// as value exports, keeping this the single AST→module-enum metadata source.
+pub fn collect_module_enums(ast: &Module) -> Vec<ExportedEnum> {
+    let mut enums = Vec::new();
+    let mut pending: Vec<&Node> = ast.items.iter().rev().collect();
+    while let Some(item) = pending.pop() {
+        match item {
+            Node::Block { stmts, .. } => pending.extend(stmts.iter().rev()),
+            Node::EnumDef { name, variants, .. } => enums.push(ExportedEnum {
+                name: name.clone(),
+                variants: variants
+                    .iter()
+                    .map(|v| ExportedEnumVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.clone(),
+                        field_names: v.field_names.clone(),
+                    })
+                    .collect(),
+            }),
+            _ => {}
+        }
+    }
+    enums.sort_by(|a, b| a.name.cmp(&b.name));
+    enums
 }
 
 /// Build a `ModuleTable` from `(module_path, parsed AST)` pairs. Pure;
@@ -484,6 +535,21 @@ mod tests {
     }
 
     #[test]
+    fn explicit_exports_do_not_publish_unlisted_enum_types() {
+        let ast = parse(
+            "export { make }\nenum Color { Red(i64), Blue }\nfn make() -> Color { Color.Red(1) }\n",
+        )
+        .expect("parse");
+        let ex = collect_module_exports("crate.defs", &ast);
+        assert!(ex.exported_enums.is_empty());
+
+        let public = parse("enum Color { Red(i64), Blue }\n").expect("parse");
+        let ex = collect_module_exports("crate.defs", &public);
+        assert_eq!(ex.exported_enums.len(), 1);
+        assert_eq!(ex.exported_enums[0].name, "Color");
+    }
+
+    #[test]
     fn module_block_form_exports_are_collected() {
         // A `module NAME { export fn f  fn f() {} }` block parses to a
         // transparent top-level `Node::Block`; its nested exports must be
@@ -520,11 +586,13 @@ mod tests {
             module_path: "crate.a".into(),
             exported: vec!["old".into()],
             exported_fns: vec![],
+            exported_enums: vec![],
         });
         t.insert(ModuleExports {
             module_path: "crate.a".into(),
             exported: vec!["new".into()],
             exported_fns: vec![],
+            exported_enums: vec![],
         });
         assert!(t.resolves(&["crate".into(), "a".into()], "new"));
         assert!(!t.resolves(&["crate".into(), "a".into()], "old"));

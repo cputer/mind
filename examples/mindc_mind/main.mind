@@ -25212,12 +25212,14 @@ pub fn mlir_f64_frac_end(buf: i64, dp: i64, fe: i64) -> i64 {
     fe
 }
 
-// Emit the canonical f64 constant text for a float-literal source span [lo, hi).
-// For a `<int>.<frac>` literal it strips trailing fractional zeros (keeping >=1
-// fractional digit). If there is no dot (exponent-only / integer mantissa), or a
-// trailing char is not a strippable zero, the raw span is emitted unchanged. The
-// f64 fixtures are constrained to in-precision decimals with no exponent, so the
-// string canonicalization reproduces the Rust value-Display byte-for-byte.
+// Emit the f64 constant text for a float-literal source span [lo, hi). Dotted
+// literals lose trailing fractional zeros but retain at least one digit; every
+// other accepted spelling, including exponent form, is copied unchanged. This
+// source-spelling normalization is byte-identical to Rust f64 Display only for
+// the verified in-precision, non-exponent fixtures already in the parity gate
+// (2.5, 5.0, 0.1, 100.0, 3.14159); it makes no broader decimal-parity claim.
+// deferred: parse the token to f64, then print its shortest round-trip decimal;
+// keep native-ELF decimal-to-bits admission as its separate fail-closed gate.
 pub fn emit_mlir_f64_canon(s: EmitState, buf: i64, lo: i64, hi: i64) -> EmitState {
     let dp: i64 = mlir_find_dot(buf, lo, hi);
     if dp < 0 {

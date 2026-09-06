@@ -1284,6 +1284,11 @@ fn build_cdylib_from_entry(
         ..Default::default()
     };
 
+    #[cfg(feature = "cross-module-imports")]
+    let _module_path_guard = crate::qualified_enums::ModuleGuard::install(
+        crate::project::module_table::module_path_of(entry_path, source_root),
+    );
+
     // RFC 0005 Phase C — seed the project module table for the cdylib emit
     // path so `import std.vec` / `std.map` / `std.string` / `std.io` resolve
     // during the type-check inside `compile_source_with_name`. The executable
@@ -1471,6 +1476,7 @@ pub fn compile_project_sibling_objects(
         let src_path = source.path();
         let text = source.source();
         let name = src_path.to_string_lossy().into_owned();
+        let _module_path_guard = crate::qualified_enums::ModuleGuard::install(source.module_path());
         let prod = compile_source_with_name(text, Some(&name), &sub_opts).map_err(|e| {
             // Render the real diagnostics (file:line:col + message) instead of
             // the opaque CompileError Display, matching the cdylib entry path.
@@ -1718,6 +1724,13 @@ fn compile_sources(
     // the refusal, which would be a second implementation of the same rule.
     let mut fallback_reason: Option<FallbackReason> = None;
 
+    #[cfg(feature = "cross-module-imports")]
+    let module_root: &Path = if explicit_sources {
+        project_root
+    } else {
+        entry_path.parent().unwrap_or(project_root)
+    };
+
     for (source, source_code) in snapshot.iter() {
         // Object filename. The walk/default case keeps the historical
         // stem-only name (byte-identical for self-host + std). An
@@ -1755,6 +1768,11 @@ fn compile_sources(
             .canonicalize()
             .unwrap_or_else(|_| source.to_path_buf());
         let is_entry = source_canonical == entry_canonical;
+
+        #[cfg(feature = "cross-module-imports")]
+        let _module_path_guard = crate::qualified_enums::ModuleGuard::install(
+            crate::project::module_table::module_path_of(source, module_root),
+        );
 
         // Compile with appropriate mode
         let outcome = compile_single_source(
@@ -1930,6 +1948,7 @@ fn compile_substrate_objects(
             .iter()
             .find(|(n, _)| *n == modname)
         {
+            let _module_path_guard = crate::qualified_enums::ModuleGuard::install(modname);
             let prod = compile_source_with_name(src, Some(modname), &sub_opts).map_err(|e| {
                 let diags = e.into_diagnostics(Some(modname));
                 let rendered = diags
@@ -1969,22 +1988,19 @@ fn compile_substrate_objects(
     Ok(objs)
 }
 
-/// Walk every parsed module's top-level `Node::EnumDef` items and build the
-/// whole-project [`crate::ir::GlobalEnums`] registry. Mirrors the per-module
-/// `EnumDef` lowering in `lower_to_ir`: variant `name` → `Enum::Variant` with an
-/// ordinal tag; an enum with a payload on ≥1 variant is "boxed" with
-/// `1 + max payload arity` heap slots and per-variant payload/field-name records.
-/// On a name collision, last-write-wins (a later source file overrides an
-/// earlier definition of the same enum name) — the same contract the per-module
-/// registration uses.
+/// Build whole-project metadata, then replace its legacy enum-name maps with
+/// owner-preserving metadata shared by parsing, checking, and lowering.
 #[cfg(feature = "cross-module-imports")]
-fn build_global_enums(parsed: &[(String, crate::ast::Module)]) -> crate::ir::GlobalEnums {
+pub(crate) fn build_global_enums(
+    parsed: &[(String, crate::ast::Module)],
+) -> crate::ir::GlobalEnums {
     let mut enums = crate::ir::GlobalEnums::default();
     for (_path, module) in parsed {
         for item in &module.items {
             collect_global_enum_item(item, &mut enums);
         }
     }
+    crate::qualified_enums::rebuild(parsed, &mut enums);
     enums
 }
 

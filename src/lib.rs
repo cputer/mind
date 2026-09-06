@@ -108,6 +108,7 @@ pub mod doc;
 pub mod fmt;
 pub mod lint;
 pub mod project;
+pub(crate) mod qualified_enums;
 pub mod test;
 pub mod workspace;
 

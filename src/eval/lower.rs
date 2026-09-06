@@ -957,25 +957,32 @@ fn lower_pure_scalar_item(n: &ast::Node, ir: &mut IRModule) -> ValueId {
 /// `module { enum … }` variant resolves its tag identically to a top-level one.
 #[cfg(feature = "std-surface")]
 fn register_enum_metadata(ir: &mut IRModule, name: &str, variants: &[ast::EnumVariant]) {
+    #[cfg(all(feature = "cross-module-imports", feature = "std-surface"))]
+    let enum_key = crate::qualified_enums::current_enum_key(name);
+    #[cfg(not(all(feature = "cross-module-imports", feature = "std-surface")))]
+    let enum_key = name.to_string();
     for (ordinal, variant) in variants.iter().enumerate() {
-        ir.enum_variant_tags
-            .insert(format!("{name}::{}", variant.name), ordinal as i64);
+        let key = format!("{enum_key}::{}", variant.name);
+        #[cfg(all(feature = "cross-module-imports", feature = "std-surface"))]
+        let tag = crate::ir::with_global_enums(|g| g.qualified.tag(&key).unwrap_or(ordinal as i64));
+        #[cfg(not(all(feature = "cross-module-imports", feature = "std-surface")))]
+        let tag = ordinal as i64;
+        ir.enum_variant_tags.insert(key, tag);
     }
     let max_arity = variants.iter().map(|v| v.payload.len()).max().unwrap_or(0);
     if max_arity > 0 {
-        ir.boxed_enums.insert(name.to_string());
+        ir.boxed_enums.insert(enum_key.clone());
         ir.enum_payload_slots
-            .insert(name.to_string(), 1 + max_arity);
+            .insert(enum_key.clone(), 1 + max_arity);
         for variant in variants {
+            let key = format!("{enum_key}::{}", variant.name);
             if !variant.payload.is_empty() {
                 ir.enum_payload_types
-                    .insert(format!("{name}::{}", variant.name), variant.payload.clone());
+                    .insert(key.clone(), variant.payload.clone());
             }
             if !variant.field_names.is_empty() {
-                ir.enum_struct_field_names.insert(
-                    format!("{name}::{}", variant.name),
-                    variant.field_names.clone(),
-                );
+                ir.enum_struct_field_names
+                    .insert(key, variant.field_names.clone());
             }
         }
     }
@@ -1166,14 +1173,11 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
             ir.enum_payload_types
                 .insert("Option::Some".to_string(), vec![ScalarI64]);
         }
-        // Cross-module enum propagation: merge the whole-project enum registry
-        // (collected by the project builder from EVERY parsed source) so a
-        // variant defined in a SIBLING module — e.g. `TokKind::Eof` from another
-        // file — resolves to its tag / boxed record here, even though this
-        // module never lowered its `EnumDef`. The per-module `EnumDef` arm below
-        // still overwrites any same-name entry via last-write-wins, so a locally
-        // defined enum wins. Outside a project the registry is empty, so this
-        // inserts nothing and the keystone emit stays byte-identical.
+        // Cross-module enum propagation: install metadata for this module's
+        // declarations and its explicitly imported, exported enum types. This
+        // lets sibling variants lower without exposing private or unimported
+        // declarations. The per-module `EnumDef` arm below still overwrites its
+        // own entries. Outside a project the registry is empty.
         crate::ir::with_global_enums(|g| {
             for (k, v) in &g.variant_tags {
                 ir.enum_variant_tags.insert(k.clone(), *v);
@@ -1190,6 +1194,8 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
             for (k, v) in &g.struct_field_names {
                 ir.enum_struct_field_names.insert(k.clone(), v.clone());
             }
+            #[cfg(feature = "cross-module-imports")]
+            g.qualified.install_ir_metadata(&mut ir, module);
             // Cross-module struct field names + types, so a module can resolve a
             // sibling-module struct's field (e.g. compile.mind reading
             // `analyzed.determinism` where `AnalyzedFlow` lives in sema.mind). The
@@ -10932,7 +10938,9 @@ fn resolve_bare_variant(tags: &std::collections::BTreeMap<String, i64>, name: &s
         return BareVariant::Exact(name.to_string());
     }
     if name.contains("::") {
-        return BareVariant::Unknown;
+        return crate::qualified_enums::local_variant_key(name, tags)
+            .map(BareVariant::Exact)
+            .unwrap_or(BareVariant::Unknown);
     }
     let owners: Vec<String> = tags
         .keys()
@@ -10943,24 +10951,6 @@ fn resolve_bare_variant(tags: &std::collections::BTreeMap<String, i64>, name: &s
         0 => BareVariant::Unknown,
         1 => BareVariant::Unique(owners.into_iter().next().unwrap()),
         _ => BareVariant::Ambiguous(owners),
-    }
-}
-
-/// Reduce a module-qualified variant path `mod.Enum::Variant` to the registry
-/// key `Enum::Variant` by stripping the leading `mod.` prefix off the enum
-/// segment (`config.Mode::On` → `Mode::On`). A path with no `::` (or no `.` in
-/// its enum segment) is returned unchanged. Task #271.
-#[cfg(feature = "std-surface")]
-fn module_qualified_variant_key(path: &str) -> String {
-    match path.rsplit_once("::") {
-        Some((enum_seg, variant)) => {
-            let enum_name = enum_seg
-                .rsplit_once('.')
-                .map(|(_, e)| e)
-                .unwrap_or(enum_seg);
-            format!("{enum_name}::{variant}")
-        }
-        None => path.to_string(),
     }
 }
 
@@ -10988,18 +10978,15 @@ fn constructor_enum_of(
         ast::Node::Lit(Literal::Ident(s), _) => s.as_str(),
         _ => return None,
     };
-    if key.contains("::") && tags.contains_key(key) {
-        key.rsplit_once("::").map(|(e, _)| e.to_string())
-    } else {
-        None
-    }
+    let resolved = crate::qualified_enums::local_variant_key(key, tags)?;
+    resolved.rsplit_once("::").map(|(e, _)| e.to_string())
 }
 
 /// The enum type a `let` binding provably holds, for recording into the
 /// var→enum side-table (`__enum__{name}` in `struct_env`) that bare-pattern
 /// match disambiguation consumes. Sources, in order: an explicit `Named(E)`
-/// annotation naming a known enum, else a qualified-constructor RHS. `None`
-/// when neither pins a single enum (so no stale/guessed fact is recorded).
+/// annotation naming a known enum, a qualified-constructor RHS, or a call with
+/// a declared enum return. `None` when none pins a single enum.
 #[cfg(feature = "std-surface")]
 fn let_binding_enum(
     ann: &Option<TypeAnn>,
@@ -11009,6 +10996,15 @@ fn let_binding_enum(
     if let Some(TypeAnn::Named(t)) = ann {
         if enum_type_is_known(t, tags) {
             return Some(t.clone());
+        }
+    }
+    if let ast::Node::Call { callee, .. } = value {
+        if let Some(TypeAnn::Named(t)) =
+            crate::ir::with_global_enums(|g| g.fn_returns.get(callee).cloned())
+        {
+            if enum_type_is_known(&t, tags) {
+                return Some(t);
+            }
         }
     }
     constructor_enum_of(value, tags)
@@ -11208,22 +11204,16 @@ fn desugar_match_to_if(
                     span: arm.span,
                 }
             }
-            // A MODULE-qualified variant path `mod.Enum::Variant`
-            // (`config.Mode::On`, from `match m { config.Mode::On => … }`): the
-            // tag registry is keyed by `Enum::Variant`, so strip the leading
-            // `mod.` prefix off the enum segment (task #271). Only rewrite when
-            // the stripped `Enum::Variant` is a KNOWN tag; a genuinely-unknown
-            // path is left verbatim so the fail-closed poison in `pattern_test`
-            // catches the typo instead of a silent last-arm fallback.
+            // A local enum in a colliding module parses in its historical
+            // `Color::Red` spelling. Resolve that spelling against the current
+            // module before leaving it as an unknown qualified path.
             ast::Pattern::EnumVariant { path, args }
-                if path.contains('.') && path.contains("::") =>
+                if path.contains("::") && !enum_tags.contains_key(path) =>
             {
-                let stripped = module_qualified_variant_key(path);
-                let key = if enum_tags.contains_key(&stripped) {
-                    stripped
-                } else {
-                    path.clone()
-                };
+                let key = crate::qualified_enums::current_module_path()
+                    .map(|module| format!("{module}::{path}"))
+                    .filter(|candidate| enum_tags.contains_key(candidate))
+                    .unwrap_or_else(|| path.clone());
                 ast::MatchArm {
                     pattern: ast::Pattern::EnumVariant {
                         path: key,

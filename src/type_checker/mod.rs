@@ -16,6 +16,7 @@
 mod array_lengths;
 pub mod nerve_lint;
 mod nerve_walk;
+mod qualified_enums;
 mod resolve;
 #[cfg(feature = "std-surface")]
 mod slice_abi;
@@ -2676,7 +2677,22 @@ fn valuetype_from_ann(ann: &crate::ast::TypeAnn) -> Option<ValueType> {
         // Phase 10.5 Tier-1: user-defined type names resolve via the env at
         // typecheck time; structural lookup returns None and lets the caller
         // perform alias resolution.
-        crate::ast::TypeAnn::Named(_) => None,
+        crate::ast::TypeAnn::Named(name) => {
+            // Enum values use the uniform i64/tag ABI. Local enum metadata is
+            // installed by `EnumVariantsGuard`; project-qualified names are
+            // validated against the shared module enum registry. This keeps
+            // `defs.Color` type-only while leaving structs/aliases opaque.
+            let local = enum_variants_of(name).is_some();
+            #[cfg(feature = "cross-module-imports")]
+            let imported = crate::ir::with_global_enums(|g| g.qualified.is_canonical_type(name));
+            #[cfg(not(feature = "cross-module-imports"))]
+            let imported = false;
+            if local || imported {
+                Some(ValueType::ScalarI64)
+            } else {
+                None
+            }
+        }
         // Phase 10.5 Tier-2: u32 maps to i32 in v1 (no separate unsigned
         // ValueType yet); sign correctness is enforced at use sites.
         crate::ast::TypeAnn::ScalarU32 => Some(ValueType::ScalarI32),
@@ -2763,7 +2779,12 @@ thread_local! {
 /// Look up a variant's declared payload `TypeAnn`s by bare `"Enum::Variant"`.
 fn variant_payload_of(enum_name: &str, variant: &str) -> Option<Vec<crate::ast::TypeAnn>> {
     let key = format!("{enum_name}::{variant}");
-    ENUM_PAYLOADS.with(|cell| cell.borrow().as_ref().and_then(|t| t.get(&key).cloned()))
+    let payload =
+        ENUM_PAYLOADS.with(|cell| cell.borrow().as_ref().and_then(|t| t.get(&key).cloned()));
+    #[cfg(feature = "cross-module-imports")]
+    let payload = payload
+        .or_else(|| crate::ir::with_global_enums(|g| g.qualified.payload_types.get(&key).cloned()));
+    payload
 }
 
 /// Build the payload registry from a module's `Node::EnumDef` items.
@@ -3862,8 +3883,15 @@ fn build_enum_variants(module: &Module) -> EnumVariantTable {
 /// Returns `None` for a path without a `::` separator (not an enum variant).
 fn split_enum_variant_path(path: &str) -> Option<(String, String)> {
     let (head, variant) = path.rsplit_once("::")?;
-    // `head` may be `Mode` or `config.Mode`; take the last dotted segment.
-    let enum_name = head.rsplit('.').next().unwrap_or(head);
+    // Internal collision-safe keys carry the module path with `::` as the
+    // enum separator (`crate.a::Color::Red`); retain that full owner. Legacy
+    // source paths such as `config.Mode::On` use a dot before the enum and
+    // retain only the terminal enum segment.
+    let enum_name = if head.contains("::") {
+        head
+    } else {
+        head.rsplit('.').next().unwrap_or(head)
+    };
     Some((enum_name.to_string(), variant.to_string()))
 }
 
@@ -4653,10 +4681,10 @@ pub fn check_module_types_in_file(
     env: &TypeEnv,
 ) -> Vec<Pretty> {
     crate::diagnostics::reset_line_index_cache();
-    let errors = check_module_types_in_file_impl(module, src, file, env);
+    let mut errors = qualified_enums::validate(module, src, file);
+    errors.extend(check_module_types_in_file_impl(module, src, file, env));
     #[cfg(feature = "std-surface")]
     {
-        let mut errors = errors;
         array_lengths::check(module, src, file, &mut errors);
         errors
     }
@@ -4755,6 +4783,7 @@ fn check_module_types_in_file_impl(
         match item {
             Node::StructDef {
                 name,
+                #[cfg(feature = "std-surface")]
                 fields,
                 attrs,
                 ..

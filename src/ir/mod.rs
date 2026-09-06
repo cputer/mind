@@ -79,6 +79,8 @@ pub struct GlobalEnums {
     /// for method-call resolution — `let raw = decorator_arg_string(d); raw.split(…)`.
     #[cfg(feature = "std-surface")]
     pub fn_returns: std::collections::BTreeMap<String, crate::ast::TypeAnn>,
+    #[cfg(feature = "cross-module-imports")]
+    pub(crate) qualified: crate::qualified_enums::Registry,
 }
 
 thread_local! {
@@ -91,14 +93,12 @@ thread_local! {
 pub fn set_global_enums(enums: GlobalEnums) {
     GLOBAL_ENUMS.with(|cell| *cell.borrow_mut() = enums);
 }
-
 /// Reset the registry to empty. Called AFTER the per-source compile loop so a
 /// subsequent single-file compile sees an empty registry and stays
 /// byte-identical.
 pub fn clear_global_enums() {
     GLOBAL_ENUMS.with(|cell| *cell.borrow_mut() = GlobalEnums::default());
 }
-
 /// Read-only access to the active registry. The closure runs with a borrow of
 /// the thread-local, avoiding a clone on the hot path.
 pub fn with_global_enums<R>(f: impl FnOnce(&GlobalEnums) -> R) -> R {

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1629 | **Est. tokens:** ~3054106
-**Generated:** 2026-09-06 19:15 UTC
+**Files:** 1632 | **Est. tokens:** ~3066290
+**Generated:** 2026-09-06 19:28 UTC
 
 ## Token Budget Guide
 
@@ -89,7 +89,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 9 | ~41320 |
+| `src/` | 10 | ~45743 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -106,7 +106,7 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 6 | ~78076 |
+| `src/ir/` | 6 | ~78101 |
 | `src/ir/compact/` | 3 | ~15292 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
@@ -118,17 +118,17 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 15 | ~35639 |
+| `src/project/` | 15 | ~36459 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 5 | ~33272 |
-| `src/type_checker/slice_abi/` | 1 | ~6836 |
+| `src/type_checker/` | 6 | ~36216 |
+| `src/type_checker/slice_abi/` | 1 | ~6878 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 366 | ~689481 |
+| `tests/` | 367 | ~693411 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1148,12 +1148,12 @@
 - `evidence.rs` (~13353 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17797 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17822 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4413 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21113 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `lib.rs` (~1071 tok, large) — Copyright 2025 STARGA Inc.
+- `lib.rs` (~1079 tok, large) — Copyright 2025 STARGA Inc.
 - `linalg.rs` (~2025 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/lint/`
 
@@ -1214,9 +1214,9 @@
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `embedded_entry.rs` (~670 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `module_table.rs` (~5905 tok, huge) — Copyright 2025 STARGA Inc.
+- `module_table.rs` (~6569 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~4082 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~4238 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `source_snapshot.rs` (~600 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1225,6 +1225,7 @@
 ### `src/`
 
 - `python.rs` (~1082 tok, large) — Copyright 2025 STARGA Inc.
+- `qualified_enums.rs` (~4415 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/runtime/`
 
 - `gpu.rs` (~288 tok, medium) — Experimental GPU backend contract for MIND.
@@ -1252,11 +1253,12 @@
 - `array_lengths.rs` (~492 tok, medium) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
+- `qualified_enums.rs` (~2946 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
-- `slice_abi.rs` (~7702 tok, huge) — Copyright 2025 STARGA Inc.
+- `slice_abi.rs` (~7700 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
 
-- `borrow_flow.rs` (~6836 tok, huge) — Copyright 2025 STARGA Inc.
+- `borrow_flow.rs` (~6878 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/types/`
 
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1892,6 +1894,7 @@
 - `phase_g_keystone_bootstrap.rs` (~7667 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `public_cpu_native_link.rs` (~1528 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `qualified_enum_run.rs` (~3930 tok, huge) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
 - `reductions_preview.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
