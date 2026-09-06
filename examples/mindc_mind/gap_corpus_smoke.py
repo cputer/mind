@@ -279,6 +279,11 @@ def ast_kind_coverage(fixture_texts):
                 f"tests/selfhost_gaps/ (or never_wrong/ if the driver refuses it) — "
                 "an unexercised kind is a construct whose bytes nothing compares."
             )
+    for k in kinds:
+        kind_failures = [failure for failure in failures if failure.startswith(f"{k}:")]
+        verdict = "FAIL" if kind_failures else "PASS"
+        detail = kind_failures[0] if kind_failures else "fixture coverage present or explicitly classified"
+        print(f"[{verdict}] AST node kind {k}: {detail}")
     return not failures, len(kinds), failures
 
 
@@ -312,14 +317,18 @@ def main():
         nfn, status = nfn_mic3(src)
         if status == "CRASH":
             wrong.append(f"{f.name} (driver CRASHED — must fail-closed, never crash)")
+            print(f"[FAIL] {f.name}: driver crashed")
         elif not nfn:
             fail_closed.append(f.name)
+            print(f"[PASS] {f.name}: self-host refused safely")
         elif nfn == oracle:
             byte_exact += 1
+            print(f"[PASS] {f.name}: byte-exact")
         else:
             n = min(len(nfn), len(oracle))
             di = next((i for i in range(n) if nfn[i] != oracle[i]), n)
             wrong.append(f"{f.name} (nfn={len(nfn)}B oracle={len(oracle)}B diff@{di})")
+            print(f"[FAIL] {f.name}: wrong bytes")
 
     total = len(fixtures) - len(oracle_invalid)
     print(
@@ -408,7 +417,7 @@ def main():
         [f.read_text() for f in fixtures] + [f.read_text() for f in nw]
     )
     print(
-        f"ast-kind coverage: ran={cov_ran} fail={len(cov_fail)} "
+        f"AST-kind coverage checked {cov_ran} kinds "
         f"({len(SOURCE_PROBES)} probed, {len(SYNTHETIC)} synthetic, "
         f"{len(NO_ORACLE_CONSTRUCT)} no-oracle-construct)"
     )

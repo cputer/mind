@@ -42,7 +42,6 @@ collect_field_strings_smoke
 div_shift_cmp_edge_smoke
 dtk_plan_parity_smoke
 full_strtab_smoke
-gap_corpus_smoke
 general_float_netverify
 lockstep_lint
 mic3_flip_smoke
