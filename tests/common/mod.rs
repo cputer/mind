@@ -27,7 +27,8 @@
 
 pub mod gate;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 /// Return the path to the `mindc` binary for the CURRENT test-profile and
 /// feature set.
@@ -91,15 +92,101 @@ pub fn mind_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mind"))
 }
 
-/// Return `Some(path)` if the mindc binary exists, or `None` (suitable for
-/// soft-skip inside a `#[test]`) if it does not.
+/// The `mindc` binary, or `None` once its absence has been ROUTED through the
+/// one fail-closed skip gate for `target`.
 ///
-/// A missing binary is only expected when the test is invoked without having
-/// built mindc first (e.g. `cargo test --no-run` followed by manual deletion).
-/// Under normal `cargo test` usage `CARGO_BIN_EXE_mindc` always points at a
-/// freshly built binary.
+/// This helper existed with no caller and no routing: it handed back a bare
+/// `None` and left every call site to invent its own announcement, which is the
+/// fail-open shape `tests/fail_open_skip_site_ratchet.rs` exists to forbid. It
+/// is wired now rather than deleted — the capability (tolerate a missing binary)
+/// is wanted; the silence was the defect. Under `MIND_BENCH_REQUIRE=1` the skip
+/// is a hard failure, and otherwise it prints the `ran=0` marker the tier log
+/// reads.
+///
+/// Use [`require_mindc`] instead wherever absence is not tolerable — which is
+/// most places, since `CARGO_BIN_EXE_mindc` is built by cargo for the very test
+/// target that reads it.
 #[allow(dead_code)]
-pub fn mindc_or_skip() -> Option<PathBuf> {
-    let p = mindc_bin();
-    if p.exists() { Some(p) } else { None }
+pub fn mindc_or_skip(target: &str) -> Option<PathBuf> {
+    let bin = mindc_bin();
+    if bin.exists() {
+        return Some(bin);
+    }
+    gate::skipped(target, &format!("mindc not found at {bin:?}"));
+    None
+}
+
+/// The `mindc` binary, asserting it is there.
+///
+/// NO early return on absence. [`mindc_bin`] resolves `CARGO_BIN_EXE_mindc`,
+/// which cargo builds for this test target before it runs, so the binary cannot
+/// legitimately be missing: an `Option` probe here ANNOUNCED its skip and handed
+/// the caller `None`, which every call site turned into a bare `return` — a
+/// broken harness graded as a silent pass.
+///
+/// Five test targets carried this assert verbatim. One owner now, so a change to
+/// what "the binary is missing" means cannot land in four files and miss the
+/// fifth.
+#[allow(dead_code)]
+pub fn require_mindc() -> PathBuf {
+    let bin = mindc_bin();
+    assert!(
+        bin.exists(),
+        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
+         for this target, so its absence is a broken gate, not a skip"
+    );
+    bin
+}
+
+/// Run `mindc build` in `dir` with stderr and stdout CAPTURED.
+///
+/// Capture is the point: a harness that inherits stdio discards the diagnostic
+/// and is then only able to treat every failure as "backend unavailable", which
+/// is how a real compiler regression came to grade as a skip.
+#[allow(dead_code)]
+pub fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> Output {
+    Command::new(mindc)
+        .arg("build")
+        .args(extra_args)
+        .current_dir(dir)
+        .output()
+        .expect("failed to spawn mindc")
+}
+
+/// The artifact path the builder ITSELF reported for this run.
+///
+/// `mindc build` prints `   Finished <target> [<emit>] <path>` naming the file
+/// it wrote (`src/bin/mindc.rs`). Reading that back is what keeps a harness from
+/// hand-typing a SECOND copy of the artifact-naming rule. There is one rule now
+/// — `project::artifact_stem`, pinned by `tests/mindc_artifact_name.rs` — but
+/// there were two that disagreed: the native builder named a `binary` after
+/// `package.name` while the launcher fallback named it after `[build] output`,
+/// whose serde default was `"app"`. Asserting the launcher's name against the
+/// native builder's file is exactly how a revived byte-identity check came to
+/// panic on every host that HAS the backend — the one tier it exists for.
+/// Reading the reported path stays right regardless of which name the rule
+/// yields, and it was itself hand-copied into two harnesses before this.
+///
+/// There is no fallback when the line is absent: a build that exits 0 without
+/// naming its artifact is a broken gate, not a skip.
+#[allow(dead_code)]
+pub fn reported_artifact(out: &Output) -> PathBuf {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let path = stdout
+        .lines()
+        .find_map(|line| {
+            let rest = line.trim_start().strip_prefix("Finished ")?;
+            // `Finished <target> [<emit>] <path>`: neither the target nor the
+            // emit token contains `]`, so the first `] ` closes the emit bracket
+            // and the remainder is the path verbatim.
+            rest.split_once("] ").map(|(_, p)| p.trim())
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "`mindc build` exited 0 but printed no `Finished <target> \
+                 [<emit>] <path>` line naming its artifact, so the caller has \
+                 nothing to read.\n--- stdout ---\n{stdout}"
+            )
+        });
+    PathBuf::from(path)
 }

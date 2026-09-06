@@ -245,11 +245,11 @@ mod cross_module {
 
 #[cfg(all(unix, feature = "mlir-build", feature = "cross-module-imports"))]
 mod mlir_functional {
-    use super::common::mindc_bin;
     use std::path::PathBuf;
     use std::process::Command;
 
-    // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
+    // The mindc binary and its absence-routing come from tests/common
+    // (CARGO_BIN_EXE_mindc — staleness-free, one fail-closed skip owner).
 
     fn out_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -257,17 +257,10 @@ mod mlir_functional {
             .join("std_surface_net_fs_process")
     }
 
-    /// Compile source text to a shared library at `so_path`.
-    /// Returns false if mindc is not available (test is skipped).
+    /// Compile source text to a shared library, or `None` once a missing `mindc`
+    /// has been routed through the one fail-closed skip gate.
     fn compile_to_so(src: &str, tag: &str) -> Option<PathBuf> {
-        let mindc = mindc_bin();
-        if !mindc.exists() {
-            crate::common::gate::skipped(
-                "std_surface_net_fs_process",
-                &format!("{tag}: mindc not found at {mindc:?}; skipping"),
-            );
-            return None;
-        }
+        let mindc = crate::common::mindc_or_skip("std_surface_net_fs_process")?;
         let dir = out_dir();
         std::fs::create_dir_all(&dir).expect("create output dir");
         let src_path = dir.join(format!("{tag}.mind"));

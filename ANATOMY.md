@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1513 | **Est. tokens:** ~2,939,093
-**Generated:** 2026-09-05 21:27 UTC
+**Files:** 1515 | **Est. tokens:** ~2,939,513
+**Generated:** 2026-09-06 00:08 UTC
 
 ## Token Budget Guide
 
@@ -92,7 +92,7 @@
 | `src/ast/` | 1 | ~10,930 |
 | `src/autodiff/` | 3 | ~6,624 |
 | `src/bin/` | 1 | ~9,878 |
-| `src/build/` | 5 | ~22,354 |
+| `src/build/` | 6 | ~22,657 |
 | `src/cache/` | 4 | ~3,682 |
 | `src/check/` | 3 | ~10,829 |
 | `src/deps/` | 1 | ~9,345 |
@@ -116,7 +116,7 @@
 | `src/package/` | 2 | ~1,877 |
 | `src/parser/` | 2 | ~20,355 |
 | `src/phf/` | 1 | ~4,955 |
-| `src/project/` | 7 | ~20,857 |
+| `src/project/` | 8 | ~21,902 |
 | `src/runtime/` | 3 | ~1,485 |
 | `src/shapes/` | 2 | ~6,052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 353 | ~661,926 |
+| `tests/` | 353 | ~660,013 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~5,886 |
+| `tests/common/` | 2 | ~6,871 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -1011,10 +1011,11 @@
 - `mind-ai.rs` (~9878 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/build/`
 
+- `artifact.rs` (~1149 tok, large) — Copyright 2025 STARGA Inc.
 - `cache.rs` (~6766 tok, huge) — Copyright 2025 STARGA Inc.
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~10747 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~9901 tok, huge) — Copyright 2025 STARGA Inc.
 - `source_key.rs` (~2120 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/cache/`
 
@@ -1182,6 +1183,7 @@
 - `pipeline.rs` (~5978 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
+- `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1332,7 +1334,7 @@
 ### `tests/common/`
 
 - `gate.rs` (~4581 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~1305 tok, large) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2290 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
 - `compound_assign.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
@@ -1554,7 +1556,7 @@
 - `for_continue_step_injection.rs` (~1302 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~10978 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~10791 tok, huge) — Copyright 2025 STARGA Inc.
 - `gate_assert_count_contract_test.py` (~5623 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
@@ -1615,13 +1617,13 @@
 - `method_call.rs` (~397 tok, medium) — Copyright 2025 STARGA Inc.
 - `mic3_array_store_roundtrip.rs` (~1054 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_break_continue_string_roundtrip.rs` (~1668 tok, huge) — Copyright 2026 STARGA Inc.
-- `mic3_cli_emit.rs` (~2449 tok, huge) — Copyright 2025 STARGA Inc.
+- `mic3_cli_emit.rs` (~2324 tok, huge) — Copyright 2025 STARGA Inc.
 - `mic3_const_dense_tensor_roundtrip.rs` (~866 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_parser_dos.rs` (~1891 tok, huge) — Copyright 2025 STARGA Inc.
 - `micb_dos_reject.rs` (~2341 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_artifact_name.rs` (~2904 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_build_phase_a.rs` (~5744 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_cache_phase_f.rs` (~7868 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_artifact_name.rs` (~2592 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_build_phase_a.rs` (~5557 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_cache_phase_f.rs` (~7095 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_doc_phase1.rs` (~3004 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
@@ -1711,7 +1713,7 @@
 - `STABILITY_SKIP_LIST.md` (~408 tok, medium) — Formatter Stability Skip List
 ### `tests/`
 
-- `mindc.rs` (~2284 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc.rs` (~2105 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindfuzz_corpus_floor/`
@@ -1765,7 +1767,7 @@
 - `module_decl_run.rs` (~597 tok, large) — Copyright 2025 STARGA Inc.
 - `module_enum_match_run.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
 - `module_non_fn_call_reject.rs` (~1215 tok, large) — Copyright 2025 STARGA Inc.
-- `module_size_ratchet.rs` (~3966 tok, huge) — Copyright 2025 STARGA Inc.
+- `module_size_ratchet.rs` (~3921 tok, huge) — Copyright 2025 STARGA Inc.
 - `multimodule_determinism_run.rs` (~4275 tok, huge) — Copyright 2025 STARGA Inc.
 - `narrow_call_abi.rs` (~1344 tok, large) — Copyright 2025 STARGA Inc.
 - `narrowing_check.rs` (~438 tok, medium) — Regression test for the silent i64->i32 narrowing miscompile found by MIND-Fuzz
@@ -2061,7 +2063,7 @@
 - `std_surface_logical_ops.rs` (~1207 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_map_module.rs` (~2015 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_method_call.rs` (~2939 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_net_fs_process.rs` (~8391 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_net_fs_process.rs` (~8353 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_c_stdlib_bundle.rs` (~1466 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_d_env_override.rs` (~1597 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_promotion_compose.rs` (~5627 tok, huge) — Copyright 2025 STARGA Inc.
@@ -2138,7 +2140,7 @@
 - `verify_holes.rs` (~2696 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify_pinned_signer.rs` (~993 tok, large) — Copyright 2025 STARGA Inc.
 - `verify_require_signed.rs` (~1966 tok, huge) — Copyright 2025 STARGA Inc.
-- `verify_ssa.rs` (~7548 tok, huge) — Copyright 2025 STARGA Inc.
+- `verify_ssa.rs` (~7481 tok, huge) — Copyright 2025 STARGA Inc.
 - `x25519mlkem768_driver.py` (~2378 tok, huge) — # Known-answer driver for std/x25519mlkem768.mind (pure-MIND X25519MLKEM768
 - `x25519_vectors_driver.py` (~1525 tok, huge) — # Official-vector driver for std/x25519.mind (pure-MIND Curve25519 ECDH).
 - `x509_vectors_driver.py` (~3593 tok, huge) — # Real-certificate driver for std/x509.mind (pure-MIND X.509 DER parsing + RSA

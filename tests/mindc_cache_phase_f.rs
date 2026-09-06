@@ -24,10 +24,10 @@
 //! 10. Concurrent builds — two parallel invocations don't produce corrupt cache entries.
 
 mod common;
-use common::mindc_bin;
+use common::{mindc_bin, reported_artifact, require_mindc, run_build_captured};
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use libmind::build::cache::{
@@ -40,24 +40,6 @@ use libmind::project::{BuildTarget, EmitKind, OptimizeLevel};
 // ---------------------------------------------------------------------------
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
-
-/// The `mindc` binary for THIS test target.
-///
-/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
-/// which cargo builds for this test target before it runs, so the binary cannot
-/// legitimately be missing: the `Some(bin)/None` probe this replaced ANNOUNCED
-/// its skip and then handed the caller `None`, which every call site turned
-/// into a bare `return` — a broken harness graded as a silent pass. Same
-/// contract as `tests/mindc.rs::require_mindc`.
-fn require_mindc() -> PathBuf {
-    let bin = mindc_bin();
-    assert!(
-        bin.exists(),
-        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
-         for this target, so its absence is a broken gate, not a skip"
-    );
-    bin
-}
 
 /// Create a minimal single-source MIND project in `dir`.
 fn make_project(dir: &Path, name: &str, source: &str) {
@@ -80,56 +62,6 @@ fn run_build(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::process::Exi
         .current_dir(dir)
         .status()
         .expect("failed to spawn mindc")
-}
-
-/// Same build, but with stderr CAPTURED so a failure can be classified.
-///
-/// `run_build` inherits stdio and therefore discards the diagnostic, which is
-/// how the caller below came to treat every failure as "backend unavailable".
-fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> std::process::Output {
-    Command::new(mindc)
-        .arg("build")
-        .args(extra_args)
-        .current_dir(dir)
-        .output()
-        .expect("failed to spawn mindc")
-}
-
-/// The artifact path the builder ITSELF reported for this run.
-///
-/// `mindc build` prints `   Finished <target> [<emit>] <path>` naming the file
-/// it wrote (`src/bin/mindc.rs`). Reading that back is what keeps this harness
-/// from hand-typing a SECOND copy of the artifact-naming rule. There is one
-/// rule now — `project::artifact_stem`, pinned by `tests/mindc_artifact_name.rs`
-/// — but there were two that disagreed: the native builder named a `binary`
-/// after `package.name` while the launcher fallback named it after
-/// `[build] output`, whose serde default was `"app"`. Asserting the launcher's
-/// name against the native builder's file is exactly how the revived
-/// byte-identity check came to panic on every host that HAS the backend — the
-/// one tier it exists for. Reading the reported path stays right regardless of
-/// which name the rule yields.
-///
-/// There is no fallback when the line is absent: a build that exits 0 without
-/// naming its artifact is a broken gate, not a skip.
-fn reported_artifact(out: &std::process::Output) -> PathBuf {
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let path = stdout
-        .lines()
-        .find_map(|line| {
-            let rest = line.trim_start().strip_prefix("Finished ")?;
-            // `Finished <target> [<emit>] <path>`: neither the target nor the
-            // emit token contains `]`, so the first `] ` closes the emit
-            // bracket and the remainder is the path verbatim.
-            rest.split_once("] ").map(|(_, p)| p.trim())
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "`mindc build` exited 0 but printed no `Finished <target> \
-                 [<emit>] <path>` line naming its artifact, so the cache \
-                 byte-identity check has nothing to read.\n--- stdout ---\n{stdout}"
-            )
-        });
-    PathBuf::from(path)
 }
 
 /// Probe the cache for the entry source.

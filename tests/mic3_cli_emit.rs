@@ -24,27 +24,12 @@
 //! 4. Default invocation (no emit flags) still prints IR text to stdout.
 
 mod common;
-use common::mindc_bin;
+use common::require_mindc;
 
 use std::path::PathBuf;
 use std::process::Command;
 
-// mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
-
-/// The `mindc` binary under test.
-///
-/// NO early return on absence: `mindc_bin()` is `CARGO_BIN_EXE_mindc`, which
-/// cargo builds for this test target, so an absent binary is a broken harness
-/// and never a reason to report a silent pass.
-fn require_mindc() -> PathBuf {
-    let bin = mindc_bin();
-    assert!(
-        bin.exists(),
-        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
-         for this target, so its absence is a broken gate, not a skip"
-    );
-    bin
-}
+// require_mindc() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

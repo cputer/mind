@@ -12,30 +12,12 @@
 // Part of the MIND project (Machine Intelligence Native Design).
 
 mod common;
-use common::mindc_bin;
+use common::{mindc_bin, require_mindc};
 
-use std::path::PathBuf;
 use std::process::Command;
 
 // Get the path to the mindc binary from the cargo target directory
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
-
-/// The `mindc` binary under test.
-///
-/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
-/// which cargo builds for this test target before it runs, so the binary cannot
-/// legitimately be missing: the `if !binary.exists() { return; }` this replaced
-/// could only fire on a broken harness, and it graded that as a silent pass at
-/// nine call sites. Same contract as `mindc_runs_conformance_suite` below.
-fn require_mindc() -> PathBuf {
-    let binary = mindc_bin();
-    assert!(
-        binary.exists(),
-        "mindc binary missing at {binary:?}; CARGO_BIN_EXE_mindc is built by \
-         cargo for this target, so its absence is a broken gate, not a skip"
-    );
-    binary
-}
 
 #[test]
 fn mindc_emits_ir() {

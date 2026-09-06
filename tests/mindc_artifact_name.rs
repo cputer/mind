@@ -48,10 +48,10 @@ mod common;
 
 #[cfg(feature = "mlir-build")]
 mod e2e {
-    use crate::common::{gate, mindc_bin};
+    use crate::common::{gate, reported_artifact, require_mindc, run_build_captured};
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::process::{Command, Output};
+    use std::process::Output;
 
     const HELLO_MIND: &str = "fn main() -> i64 { 42 }\n";
 
@@ -67,39 +67,7 @@ mod e2e {
     }
 
     fn run_build(dir: &Path) -> Output {
-        let bin = mindc_bin();
-        assert!(
-            bin.exists(),
-            "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
-             for this target, so its absence is a broken gate, not a skip"
-        );
-        Command::new(&bin)
-            .arg("build")
-            .current_dir(dir)
-            .output()
-            .expect("spawn mindc")
-    }
-
-    /// The artifact path the builder ITSELF reported — never a hand-typed
-    /// second copy of the naming rule (that is the defect under test).
-    ///
-    /// `mindc build` prints `   Finished <target> [<emit>] <path>`. A build that
-    /// exits 0 without naming its artifact is a broken gate, not a skip.
-    fn reported_artifact(out: &Output) -> PathBuf {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let path = stdout
-            .lines()
-            .find_map(|line| {
-                let rest = line.trim_start().strip_prefix("Finished ")?;
-                rest.split_once("] ").map(|(_, p)| p.trim())
-            })
-            .unwrap_or_else(|| {
-                panic!(
-                    "`mindc build` exited 0 but printed no `Finished <target> \
-                     [<emit>] <path>` line naming its artifact\n--- stdout ---\n{stdout}"
-                )
-            });
-        PathBuf::from(path)
+        run_build_captured(&require_mindc(), dir, &[])
     }
 
     /// Every artifact-shaped file the build left in `target/debug`, sorted.

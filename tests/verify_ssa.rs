@@ -22,7 +22,7 @@
 //!     a nonzero exit, mirroring the trace_hash gate in `verify_cli.rs`.
 
 mod common;
-use common::mindc_bin;
+use common::mindc_or_skip;
 
 use std::process::Command;
 
@@ -205,7 +205,7 @@ fn ssa_duplicate_result_id_in_fn_body_fails() {
 // CLI-level: mindc verify reports ssa_valid over a mic@3 artifact.
 // ---------------------------------------------------------------------------
 
-// mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
+// mindc_or_skip() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
 fn tempfile_path(name: &str) -> String {
     let mut p = std::env::temp_dir();
@@ -215,14 +215,9 @@ fn tempfile_path(name: &str) -> String {
 
 #[test]
 fn cli_verify_reports_ssa_valid_on_well_formed_artifact() {
-    let bin = mindc_bin();
-    if !bin.exists() {
-        crate::common::gate::skipped(
-            "verify_ssa",
-            &format!("Skipping: mindc binary not found at {bin:?}"),
-        );
+    let Some(bin) = mindc_or_skip("verify_ssa") else {
         return;
-    }
+    };
 
     // Emit a plain mic@3 from the well-formed module (no evidence chain needed
     // to observe the ssa_* fields — they are emitted unconditionally).
@@ -246,14 +241,9 @@ fn cli_verify_reports_ssa_valid_on_well_formed_artifact() {
 
 #[test]
 fn cli_verify_fails_on_ssa_corrupted_artifact() {
-    let bin = mindc_bin();
-    if !bin.exists() {
-        crate::common::gate::skipped(
-            "verify_ssa",
-            &format!("Skipping: mindc binary not found at {bin:?}"),
-        );
+    let Some(bin) = mindc_or_skip("verify_ssa") else {
         return;
-    }
+    };
 
     // Hand-corrupt the IR: two instructions define %1 (single-assignment
     // violation). Emit it to a real mic@3 artifact and verify through the CLI.

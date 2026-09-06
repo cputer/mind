@@ -86,10 +86,12 @@ const SCANNED_EXTENSIONS: &[&str] = &["py", "rs", "sh"];
 ///
 /// The `examples/` and `tests/` rows entered with the scope widening above.
 /// They are the state the widened scan FOUND, pinned so it cannot get worse;
-/// pinning them is not a licence to have grown them, and three of them
+/// pinning them is not a licence to have grown them. Three of them
 /// (`tests/mindc_cache_phase_f.rs`, `tests/verify_ssa.rs`,
 /// `tests/std_surface_net_fs_process.rs`) grew in the very wave that could not
-/// see them.
+/// see them, and were carried into shared helpers rather than re-pinned at the
+/// grown count — the first of the three left this table altogether, which is
+/// what a ratchet is FOR.
 const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ("examples/mindc_mind/mic3_primitives_smoke.py", 1665),
     ("examples/mindc_mind/mindfuzz_self_host.py", 1098),
@@ -114,11 +116,7 @@ const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ("src/ast/mod.rs", 1158),
     ("src/bin/mind-ai.rs", 1101),
     ("src/bin/mindc.rs", 3343),
-    // 1018 -> 1028 and 3587 -> 3630: grown past their pins by the wave that
-    // this scope widening was written for. The gate was RED on both and had
-    // simply not been run; re-pinning at the measured truth is what lets it
-    // bite the next line added, and splitting either file is its own task.
-    ("src/build/mod.rs", 1028),
+    ("src/build/mod.rs", 943),
     ("src/check/mod.rs", 945),
     ("src/deps/mod.rs", 1060),
     ("src/doc/mod.rs", 888),
@@ -149,18 +147,17 @@ const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ("src/opt/scev.rs", 869),
     ("src/parser/expand_bimap.rs", 1836),
     ("src/parser/mod.rs", 6073),
-    ("src/project/mod.rs", 3630),
+    ("src/project/mod.rs", 3587),
     ("src/test/mod.rs", 840),
     ("src/type_checker/mod.rs", 6623),
     ("src/type_checker/resolve.rs", 1316),
     ("tests/cross_substrate_identity.rs", 3288),
-    ("tests/g2_differential_mlir.rs", 1038),
-    ("tests/mindc_cache_phase_f.rs", 867),
+    ("tests/g2_differential_mlir.rs", 1020),
     ("tests/mindc_deps_phase_de.rs", 851),
     ("tests/mindfuzz_cross_substrate.rs", 1486),
     ("tests/return_cond_type_reject.rs", 1007),
-    ("tests/std_surface_net_fs_process.rs", 810),
-    ("tests/verify_ssa.rs", 812),
+    ("tests/std_surface_net_fs_process.rs", 803),
+    ("tests/verify_ssa.rs", 802),
 ];
 
 fn manifest_root() -> PathBuf {

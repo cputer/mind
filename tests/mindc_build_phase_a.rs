@@ -15,7 +15,7 @@
 #![cfg(feature = "mlir-build")]
 
 mod common;
-use common::mindc_bin;
+use common::require_mindc;
 
 use std::fs;
 use std::path::PathBuf;
@@ -25,25 +25,7 @@ use std::process::Command;
 // Helpers
 // ---------------------------------------------------------------------------
 
-// mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
-
-/// The `mindc` binary for THIS test target.
-///
-/// NO early return on absence. `mindc_bin()` resolves `CARGO_BIN_EXE_mindc`,
-/// which cargo builds for this test target before it runs, so the binary cannot
-/// legitimately be missing: the `Some(bin)/None` probe this replaced ANNOUNCED
-/// its skip and then handed the caller `None`, which every call site turned
-/// into a bare `return` — a broken harness graded as a silent pass. Same
-/// contract as `tests/mindc.rs::require_mindc`.
-fn require_mindc() -> PathBuf {
-    let bin = mindc_bin();
-    assert!(
-        bin.exists(),
-        "mindc binary missing at {bin:?}; CARGO_BIN_EXE_mindc is built by cargo \
-         for this target, so its absence is a broken gate, not a skip"
-    );
-    bin
-}
+// require_mindc() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
 /// Minimal valid Mind.toml for a test project.
 fn minimal_manifest(name: &str, entry: &str) -> String {

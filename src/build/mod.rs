@@ -16,6 +16,10 @@
 //! **Phase F** adds an incremental SHA-256-keyed object cache.  Cache
 //! logic lives in [`cache`]; this module integrates it into the build flow.
 
+/// Artifact PATH assembly and the legacy-option bridge — the emit-dependent
+/// decoration and the `[targets.*]` block name this build carries, kept out of
+/// the driver so the driver reads as one pass.
+mod artifact;
 pub mod cache;
 mod driver_error;
 mod error;
@@ -35,11 +39,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
 
 use crate::project::{
-    BuildOptions as LegacyBuildOptions, BuildTarget, EmitKind, OptimizeLevel, build_project,
-    find_project_root, find_project_root_for_file, load_manifest,
+    BuildTarget, EmitKind, OptimizeLevel, build_project, find_project_root,
+    find_project_root_for_file, load_manifest,
 };
 
 use cache::{
@@ -771,96 +776,6 @@ fn resolve_entry(
     Err(BuildError::failed(
         "no source files provided and no src/main.mind or src/lib.mind found".to_string(),
     ))
-}
-
-/// Default artifact path mirrors cargo's convention so both can coexist.
-///
-/// `stem` comes from [`crate::project::artifact_stem`] — the single owner of the
-/// artifact NAME. This function owns only the profile directory and the
-/// emit-dependent decoration (`lib…so` / `.o`); it must never re-derive the name
-/// from the manifest, which is precisely the split it used to be half of.
-fn default_artifact_path(
-    project_root: &Path,
-    stem: &str,
-    emit: EmitKind,
-    optimize: OptimizeLevel,
-) -> PathBuf {
-    let profile_dir = if optimize.is_release() {
-        "release"
-    } else {
-        "debug"
-    };
-    let base = project_root.join("target").join(profile_dir);
-    match emit {
-        EmitKind::Binary => base.join(stem),
-        EmitKind::Cdylib => {
-            #[cfg(target_os = "windows")]
-            let name = format!("{}.dll", stem);
-            #[cfg(not(target_os = "windows"))]
-            let name = format!("lib{}.so", stem);
-            base.join(name)
-        }
-        EmitKind::Object => base.join(format!("{}.o", stem)),
-    }
-}
-
-/// The `[targets.<name>]` block name `build_project` will select for this build.
-///
-/// Prefer the explicitly-selected block so `build_project` picks THAT block (its
-/// sources / native_sources / `.target` triple). With no block selected this
-/// falls back to the historical class mapping (`Cpu => None`, so the default
-/// host path is byte-identical).
-///
-/// ONE owner: both the legacy options handed to `build_project` and the source
-/// set the cache key fingerprints resolve the block through this function, so
-/// they cannot select different `[targets.*].sources` lists.
-fn legacy_target_name(target: BuildTarget, block_name: Option<String>) -> Option<String> {
-    block_name.or(match target {
-        BuildTarget::Cpu => None,
-        other => Some(other.as_str().to_string()),
-    })
-}
-
-/// Build the `LegacyBuildOptions` used to call the existing `build_project`.
-#[allow(clippy::too_many_arguments)]
-fn legacy_opts_from(
-    target_str: Option<String>,
-    emit: EmitKind,
-    optimize: OptimizeLevel,
-    manifest_exports: &[String],
-    _entry_path: &Path,
-    artifact_path: &Path,
-    verbose: bool,
-    project_root: &Path,
-    single_file: bool,
-) -> LegacyBuildOptions {
-    LegacyBuildOptions {
-        release: optimize.is_release(),
-        target: target_str,
-        verbose,
-        manifest_exports: if emit == EmitKind::Cdylib {
-            manifest_exports.to_vec()
-        } else {
-            Vec::new()
-        },
-        // Thread the emit kind so `build_project` routes `cdylib` through the
-        // single-entry shared-library link path (which links the runtime
-        // support shim) instead of the whole-directory executable link path.
-        emit,
-        // Thread the resolved `--out` so the cdylib link writes directly to
-        // the final path — no shared `target/<profile>/<name>` intermediary
-        // for concurrent builds to collide on.
-        out_path: Some(artifact_path.to_path_buf()),
-        // Thread the ALREADY-resolved (bounded) project root so `build_project`
-        // reuses it instead of re-running the unbounded `find_project_root()`
-        // from cwd — otherwise the legacy path could re-ascend to a stray
-        // ancestor `Mind.toml` and reintroduce the foreign-tree walk.
-        project_root: Some(project_root.to_path_buf()),
-        // Explicit single-file build (no governing `Mind.toml`): compile ONLY
-        // the entry, never the whole entry-directory walk (which would pull in
-        // unrelated sibling `.mind` files from a shared dir).
-        single_file,
-    }
 }
 
 /// Build a minimal `Mind.toml` text for a single-file build that has no
