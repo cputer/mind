@@ -19,6 +19,8 @@
 //!    with its project-relative path AND its position in the resolved source
 //!    order (see [`source_set_dep_entries`]) — order is artifact-visible, so a
 //!    reorder must invalidate;
+//!  - the selected manifest target block, entry/source paths, backend/triple,
+//!    ordered C-ABI exports, and ordered native-source paths and bytes;
 //!  - target / optimize / edition / emit kind;
 //!  - the `mindc` binary's own identity and the external toolchain's
 //!    (clang / mlir-opt / mlir-translate).
@@ -30,6 +32,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::project::build_input_snapshot::BuildInputSnapshot;
 use crate::project::source_snapshot::SourceSnapshot;
 use crate::project::{BuildTarget, EmitKind, OptimizeLevel};
 
@@ -133,6 +136,21 @@ pub fn compile_cache_material(
     let compiler_version = format!("{}+{}", env!("CARGO_PKG_VERSION"), identity);
     let mut deps = cache_dep_entries(flags.emit);
     deps.extend(source_set_dep_entries(project_root, sources)?);
+    if project_root.join("Mind.toml").exists() {
+        let manifest = crate::project::load_manifest(project_root).ok()?;
+        let inputs = BuildInputSnapshot::capture(
+            project_root,
+            &manifest,
+            flags.target.as_str(),
+            flags.emit,
+            &manifest.build.entry,
+        )
+        .ok()?;
+        if !inputs.cache_eligible(flags.emit) {
+            return None;
+        }
+        deps.push(build_input_dep_entry(&inputs));
+    }
     Some(module_cache_key_material(
         source_bytes,
         flags.target,
@@ -159,9 +177,43 @@ pub(crate) fn compile_cache_key_from_snapshot(
 /// Compute the key and the exact canonical input inventory from one immutable
 /// source capture. Keeping both in one return value prevents sidecar metadata
 /// from drifting away from the inputs the key actually committed.
+#[cfg(all(test, unix, feature = "mlir-build"))]
 pub(crate) fn compile_cache_material_from_snapshot(
     snapshot: &SourceSnapshot,
     entry: &Path,
+    flags: CacheKeyFlags,
+    mindc_exe: &Path,
+    project_root: &Path,
+) -> Option<CacheKeyMaterial> {
+    compile_snapshot_material(snapshot, entry, None, flags, mindc_exe, project_root)
+}
+
+/// Compute cache material from the immutable MIND and manifest input captures.
+pub(crate) fn compile_cache_material_from_snapshots(
+    source_snapshot: &SourceSnapshot,
+    build_inputs: &BuildInputSnapshot,
+    entry: &Path,
+    flags: CacheKeyFlags,
+    mindc_exe: &Path,
+    project_root: &Path,
+) -> Option<CacheKeyMaterial> {
+    if !build_inputs.cache_eligible(flags.emit) {
+        return None;
+    }
+    compile_snapshot_material(
+        source_snapshot,
+        entry,
+        Some(build_inputs),
+        flags,
+        mindc_exe,
+        project_root,
+    )
+}
+
+fn compile_snapshot_material(
+    snapshot: &SourceSnapshot,
+    entry: &Path,
+    build_inputs: Option<&BuildInputSnapshot>,
     flags: CacheKeyFlags,
     mindc_exe: &Path,
     project_root: &Path,
@@ -170,6 +222,9 @@ pub(crate) fn compile_cache_material_from_snapshot(
     let compiler_version = format!("{}+{}", env!("CARGO_PKG_VERSION"), identity);
     let mut deps = cache_dep_entries(flags.emit);
     deps.extend(source_snapshot_dep_entries(project_root, snapshot));
+    if let Some(inputs) = build_inputs {
+        deps.push(build_input_dep_entry(inputs));
+    }
     Some(module_cache_key_material(
         snapshot.source(entry).ok()?.as_bytes(),
         flags.target,
@@ -178,6 +233,13 @@ pub(crate) fn compile_cache_material_from_snapshot(
         &compiler_version,
         flags.edition,
     ))
+}
+
+fn build_input_dep_entry(inputs: &BuildInputSnapshot) -> String {
+    format!(
+        "build-inputs={}",
+        cache::sha256_hex(&inputs.identity_bytes())
+    )
 }
 
 fn source_snapshot_dep_entries(project_root: &Path, snapshot: &SourceSnapshot) -> Vec<String> {

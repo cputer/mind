@@ -43,10 +43,11 @@ use anyhow::{Context, Result};
 use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
 use project_transaction::{ManifestEdit, lock_project, single_file_manifest};
-use source_key::compile_cache_material_from_snapshot;
+use source_key::compile_cache_material_from_snapshots as cache_material_from;
 
 use crate::project::{
-    BuildTarget, EmitKind, OptimizeLevel, build_project_locked_with_snapshot, find_project_root,
+    BuildTarget, EmitKind, OptimizeLevel, build_input_snapshot::BuildInputSnapshot,
+    build_project_locked_with_snapshot as build_snapshot, find_project_root,
     find_project_root_for_file, load_manifest,
 };
 
@@ -314,12 +315,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // segfault). `cdylib` contributes NO emit entry; `binary` / `object` get a
     // distinct `emit=` entry.
     //
-    // Discriminator + compiler/toolchain identity are assembled by
-    // `compile_cache_key`, the single source of truth the Phase G warm-cache
-    // keystone probe (test 5) also calls against `CARGO_BIN_EXE_mindc` — so a
-    // subprocess-populated cache and an in-process probe derive byte-identical
-    // keys.
-    //
     // The key also fingerprints EVERY OTHER SOURCE the build compiles, resolved
     // here through the same single selector `build_project` uses. Keying on the
     // entry alone was a silent-staleness hole: editing a sibling module left the
@@ -341,9 +336,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         .unwrap_or(&entry_path)
         .to_string_lossy()
         .replace('\\', "/");
-    // Same resolved target string, same fallback block, as the artifact name and
-    // as `build_project` — the cache key must fingerprint the block the compile
-    // path will actually read.
     let selected_block = legacy_target
         .as_deref()
         .unwrap_or(crate::project::DEFAULT_TARGET_BLOCK);
@@ -359,14 +351,23 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     .map_err(classify_driver_error)?;
     let source_snapshot = crate::project::source_snapshot::SourceSnapshot::capture(&build_sources)
         .map_err(classify_driver_error)?;
+    let build_input_snapshot = BuildInputSnapshot::capture(
+        &project_root,
+        &manifest,
+        selected_block,
+        eff_emit,
+        &entry_rel,
+    )
+    .map_err(classify_driver_error)?;
 
     let current_exe = std::env::current_exe().ok();
     let compiler_identity = current_exe
         .as_deref()
         .and_then(cache::compiler_identity_string);
     let cache_material = current_exe.as_deref().and_then(|exe| {
-        compile_cache_material_from_snapshot(
+        cache_material_from(
             &source_snapshot,
+            &build_input_snapshot,
             &entry_path,
             CacheKeyFlags {
                 target: eff_target,
@@ -434,7 +435,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     #[cfg(test)]
     crate::project::source_snapshot::run_test_hook();
 
-    // -------------------------------------------------------------------------
     // Full compile path (cache miss or --no-cache)
     // -------------------------------------------------------------------------
 
@@ -442,7 +442,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         legacy_target,
         eff_emit,
         eff_optimize,
-        &manifest.exports.c_abi,
+        build_input_snapshot.exports(),
         &entry_path,
         &artifact_path,
         opts.verbose,
@@ -486,8 +486,12 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         None
     };
 
-    let build_result =
-        build_project_locked_with_snapshot(&legacy_opts, &build_lock, &source_snapshot);
+    let build_result = build_snapshot(
+        &legacy_opts,
+        &build_lock,
+        &source_snapshot,
+        &build_input_snapshot,
+    );
 
     if let Some(edit) = manifest_edit {
         edit.restore()

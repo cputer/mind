@@ -28,6 +28,8 @@ pub(crate) mod active_module_table;
 #[cfg(feature = "cross-module-imports")]
 pub mod module_table;
 
+pub(crate) mod build_input_snapshot;
+
 /// Per-target executable link driver (ELF / PE-COFF / Mach-O dispatch). Only the
 /// host ELF arm is wired today; the others fail loud until their slice lands.
 pub(crate) mod build_lock;
@@ -886,22 +888,24 @@ pub(crate) fn build_project_locked(
     opts: &BuildOptions,
     lock: &build_lock::ProjectBuildLock,
 ) -> Result<BuildResult> {
-    build_project_locked_inner(opts, lock, None)
+    build_project_locked_inner(opts, lock, None, None)
 }
 
-/// Compile from source text captured by the command driver before cache lookup.
+/// Compile from source and manifest inputs captured before cache lookup.
 pub(crate) fn build_project_locked_with_snapshot(
     opts: &BuildOptions,
     lock: &build_lock::ProjectBuildLock,
-    snapshot: &source_snapshot::SourceSnapshot,
+    source_snapshot: &source_snapshot::SourceSnapshot,
+    build_inputs: &build_input_snapshot::BuildInputSnapshot,
 ) -> Result<BuildResult> {
-    build_project_locked_inner(opts, lock, Some(snapshot))
+    build_project_locked_inner(opts, lock, Some(source_snapshot), Some(build_inputs))
 }
 
 fn build_project_locked_inner(
     opts: &BuildOptions,
     lock: &build_lock::ProjectBuildLock,
     supplied_snapshot: Option<&source_snapshot::SourceSnapshot>,
+    supplied_build_inputs: Option<&build_input_snapshot::BuildInputSnapshot>,
 ) -> Result<BuildResult> {
     let project_root = lock.root().to_path_buf();
     let manifest = load_manifest(&project_root)?;
@@ -911,7 +915,25 @@ fn build_project_locked_inner(
         .target
         .clone()
         .unwrap_or_else(|| DEFAULT_TARGET_BLOCK.to_string());
+    if let Some(inputs) = supplied_build_inputs {
+        if inputs.target_name() != target_name {
+            return Err(anyhow!(
+                "captured build target `{}` does not match requested target `{target_name}`",
+                inputs.target_name()
+            ));
+        }
+    }
     let target_config = manifest.targets.get(&target_name);
+
+    // Bind manifest exports to the same capture used by the cache key. Direct
+    // project API callers use the manifest loaded once above.
+    let mut effective_opts = opts.clone();
+    if let Some(inputs) = supplied_build_inputs {
+        effective_opts.manifest_exports = inputs.exports().to_vec();
+    } else if effective_opts.manifest_exports.is_empty() {
+        effective_opts.manifest_exports = manifest.exports.c_abi.clone();
+    }
+    let opts = &effective_opts;
 
     // Cross-compilation seam (RFC: multi-target native codegen). A target block
     // MAY declare a canonical LLVM triple via `[targets.<name>].target`. Validate
@@ -927,7 +949,11 @@ fn build_project_locked_inner(
     // -aarch64 ELF) lands with the LinkDriver + per-OS sysroot slices — upgrade
     // path: thread `Target` into codegen/link and drop this guard target-by-target
     // as each one's byte-identity gate goes green.
-    if let Some(triple) = target_config.and_then(|cfg| cfg.target.as_deref()) {
+    let requested_triple = match supplied_build_inputs {
+        Some(inputs) => inputs.target_triple(),
+        None => target_config.and_then(|cfg| cfg.target.as_deref()),
+    };
+    if let Some(triple) = requested_triple {
         let requested = crate::target::Target::from_triple(triple)?;
         let host = crate::target::Target::host();
         if requested != host {
@@ -966,12 +992,16 @@ fn build_project_locked_inner(
     // incremental cache key fingerprints, so the set this build COMPILES and the
     // set it is KEYED on are the same list in the same order by construction, not
     // by two call sites agreeing.
-    let (sources, explicit_sources) = resolve_sources(
-        &project_root,
-        &manifest.build.entry,
-        target_config.and_then(|cfg| cfg.sources.as_deref()),
-        opts.single_file,
-    )?;
+    let entry_rel = supplied_build_inputs
+        .map(build_input_snapshot::BuildInputSnapshot::entry)
+        .unwrap_or(&manifest.build.entry);
+    let declared_sources = match supplied_build_inputs {
+        Some(inputs) => inputs.sources(),
+        None => target_config.and_then(|cfg| cfg.sources.as_deref()),
+    };
+    let (sources, explicit_sources) =
+        resolve_sources(&project_root, entry_rel, declared_sources, opts.single_file)?;
+    let entry_path = project_root.join(entry_rel);
     let owned_snapshot;
     let snapshot = match supplied_snapshot {
         Some(snapshot) => {
@@ -995,11 +1025,13 @@ fn build_project_locked_inner(
     }
 
     // Resolve backend from target config
-    let backend = if let Some(cfg) = target_config {
-        cfg.backend.clone()
-    } else {
-        target_name.clone()
-    };
+    let backend = supplied_build_inputs
+        .map(|inputs| inputs.backend().to_string())
+        .unwrap_or_else(|| {
+            target_config
+                .map(|cfg| cfg.backend.clone())
+                .unwrap_or_else(|| target_name.clone())
+        });
 
     // A cdylib has a single defined export surface (the `[exports] c_abi`
     // symbols of the manifest entry); sibling `.mind` files are not
@@ -1015,7 +1047,6 @@ fn build_project_locked_inner(
     // expects. The executable link path below is unchanged for
     // binary/object emits.
     if opts.emit == EmitKind::Cdylib {
-        let entry_path = project_root.join(&manifest.build.entry);
         // Link straight to the caller's `--out` when given, so concurrent
         // cdylib builds don't race on the shared `target/<profile>/<name>`
         // intermediary (and `run_build` needs no follow-up rename).
@@ -1062,8 +1093,8 @@ fn build_project_locked_inner(
         fallback_reason,
     } = compile_sources(
         &project_root,
-        &sources,
         snapshot,
+        &entry_path,
         &backend,
         opts,
         explicit_sources,
@@ -1084,31 +1115,40 @@ fn build_project_locked_inner(
     #[cfg(feature = "mlir-build")]
     let compiled = {
         let mut compiled = compiled;
-        if let Some(native_srcs) = target_config.and_then(|cfg| cfg.native_sources.as_deref()) {
-            if !native_srcs.is_empty() {
-                use crate::eval::mlir_build;
-                let tools = mlir_build::resolve_tools()
-                    .map_err(|e| anyhow!("native_sources: MLIR build tools unavailable: {e}"))?;
-                let obj_dir = project_root.join("target").join("obj");
-                fs::create_dir_all(&obj_dir)?;
-                for rel in native_srcs {
-                    let src = project_root.join(rel);
-                    if !src.exists() {
-                        return Err(anyhow!(
-                            "native_sources: declared C source not found: {}",
-                            src.display()
-                        ));
-                    }
-                    let stem = src
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .ok_or_else(|| anyhow!("native_sources: invalid path {}", src.display()))?;
-                    let obj = obj_dir.join(format!("__native_{stem}.o"));
-                    mlir_build::compile_native_c_obj(&tools, &src, &obj, None).map_err(|e| {
-                        anyhow!("native_sources: compile failed for {}: {e}", src.display())
-                    })?;
-                    compiled.push(obj);
+        let native_srcs: Vec<PathBuf> = match supplied_build_inputs {
+            Some(inputs) => inputs
+                .native_source_paths()
+                .map(Path::to_path_buf)
+                .collect(),
+            None => target_config
+                .and_then(|cfg| cfg.native_sources.as_deref())
+                .unwrap_or_default()
+                .iter()
+                .map(|rel| project_root.join(rel))
+                .collect(),
+        };
+        if !native_srcs.is_empty() {
+            use crate::eval::mlir_build;
+            let tools = mlir_build::resolve_tools()
+                .map_err(|e| anyhow!("native_sources: MLIR build tools unavailable: {e}"))?;
+            let obj_dir = project_root.join("target").join("obj");
+            fs::create_dir_all(&obj_dir)?;
+            for src in native_srcs {
+                if !src.exists() {
+                    return Err(anyhow!(
+                        "native_sources: declared C source not found: {}",
+                        src.display()
+                    ));
                 }
+                let stem = src
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| anyhow!("native_sources: invalid path {}", src.display()))?;
+                let obj = obj_dir.join(format!("__native_{stem}.o"));
+                mlir_build::compile_native_c_obj(&tools, &src, &obj, None).map_err(|e| {
+                    anyhow!("native_sources: compile failed for {}: {e}", src.display())
+                })?;
+                compiled.push(obj);
             }
         }
         compiled
@@ -1520,8 +1560,8 @@ fn build_cdylib_from_entry(
 /// Every member of the result is documented once, on [`CompiledSources`].
 fn compile_sources(
     project_root: &Path,
-    sources: &[PathBuf],
     snapshot: &source_snapshot::SourceSnapshot,
+    entry_path: &Path,
     backend: &str,
     opts: &BuildOptions,
     explicit_sources: bool,
@@ -1530,19 +1570,12 @@ fn compile_sources(
     let obj_dir = project_root.join("target").join("obj");
     fs::create_dir_all(&obj_dir)?;
 
-    // Determine which file is the entry point
-    let manifest = load_manifest(project_root)?;
-    let entry_path = project_root.join(&manifest.build.entry);
-    let entry_canonical = entry_path.canonicalize().unwrap_or(entry_path.clone());
+    let entry_canonical = entry_path
+        .canonicalize()
+        .unwrap_or_else(|_| entry_path.to_path_buf());
 
-    // RFC 0002 D3: thread Mind.toml [exports] c_abi through to each
-    // per-file compile so the AST → IR lowering pass picks them up.
-    // Clones once; pulled in to inner BuildOptions via a single field.
-    let mut opts_with_exports = opts.clone();
-    if opts_with_exports.manifest_exports.is_empty() {
-        opts_with_exports.manifest_exports = manifest.exports.c_abi.clone();
-    }
-    let opts = &opts_with_exports;
+    // RFC 0002 D3: `build_project_locked_inner` captured Mind.toml [exports]
+    // once and placed it in `opts`, including the meaningful empty-list case.
 
     // Phase 17.8 — diagnose the reserved crate-root-name collision BY NAME.
     // A non-entry source whose stem is `lib`/`main`/`mod` and which sits at the
@@ -1565,8 +1598,10 @@ fn compile_sources(
         } else {
             entry_path.parent().unwrap_or(project_root)
         };
-        for source in sources.iter() {
-            let source_canonical = source.canonicalize().unwrap_or_else(|_| source.clone());
+        for (source, _) in snapshot.iter() {
+            let source_canonical = source
+                .canonicalize()
+                .unwrap_or_else(|_| source.to_path_buf());
             if source_canonical == entry_canonical {
                 continue;
             }
@@ -1601,11 +1636,10 @@ fn compile_sources(
         // unstable and machine-dependent). Key such builds off the project
         // root instead. The walk/default case keeps the entry-parent root
         // byte-unchanged.
-        let entry_parent = project_root.join(&manifest.build.entry);
         let src_root = if explicit_sources {
             project_root
         } else {
-            entry_parent.parent().unwrap_or(project_root)
+            entry_path.parent().unwrap_or(project_root)
         };
         // RFC 0005 Phase C — seed the parsed-modules list with the
         // bundled stdlib (`std.vec` / `std.string` / `std.map` /
@@ -1684,7 +1718,7 @@ fn compile_sources(
     // the refusal, which would be a second implementation of the same rule.
     let mut fallback_reason: Option<FallbackReason> = None;
 
-    for source in sources {
+    for (source, source_code) in snapshot.iter() {
         // Object filename. The walk/default case keeps the historical
         // stem-only name (byte-identical for self-host + std). An
         // explicit-sources set can hold same-stem files in different subdirs
@@ -1717,11 +1751,12 @@ fn compile_sources(
         }
 
         // Check if this is the entry point
-        let source_canonical = source.canonicalize().unwrap_or(source.clone());
+        let source_canonical = source
+            .canonicalize()
+            .unwrap_or_else(|_| source.to_path_buf());
         let is_entry = source_canonical == entry_canonical;
 
         // Compile with appropriate mode
-        let source_code = snapshot.source(source)?;
         let outcome = compile_single_source(
             source,
             source_code,
