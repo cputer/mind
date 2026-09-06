@@ -27,7 +27,7 @@ other bench at parity, the bench is flagged a RE-BLESS CANDIDATE — the gate ne
 re-blesses automatically; a human/CI confirmation run commits the new champion.
 
 Bench selection is generic: the gate watches whatever bench names appear in the
-champion (or floor) reference, so adding `simple_benchmarks` (scalar_math et al.)
+champion and floor references, so adding `simple_benchmarks` (scalar_math et al.)
 to the gate is just adding them to the champion file — no code change here.
 
 The gate also requires a minimum number of trustworthy frontier fixtures. A
@@ -48,12 +48,19 @@ from pathlib import Path
 # than substituting a baked-in number — a gate that invents its own baseline
 # reports PASS on no evidence.
 WATCHED = ("small_matmul", "medium_mlp", "large_network")
-# Legacy hard-coded fallback (compiler_pipeline only) — used when NEITHER a
-# champion nor a floor file is readable, so the gate stays usable bare.
-
+# The compiler pipeline's canonical frontier.  Generic benchmark groups remain
+# supported by default; pipeline callers opt into this inventory contract with
+# ``--require-pipeline``.
+PIPELINE_BENCH_IDS = frozenset(
+    {
+        "compiler_pipeline/parse_typecheck_ir/small_matmul",
+        "compiler_pipeline/parse_typecheck_ir/medium_mlp",
+        "compiler_pipeline/parse_typecheck_ir/large_network",
+    }
+)
 # Any criterion bench id: "<group>/<sub>/<name>" or "<group>/<name>". We key on
-# the LAST path component (the fixture name), which is unique across our benches
-# (small_matmul, scalar_math, tensor_ops, ...). Matches both the two-line
+# the full path so same-named fixtures in different groups stay distinct.
+# Matches both the two-line
 # "Benchmarking <id>:" and the one-line bencher "test <id> ... bench:" formats.
 _ID = r"(?P<id>[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*)"
 BENCHMARKING_LINE = re.compile(rf"Benchmarking\s+{_ID}\s*:")
@@ -145,7 +152,7 @@ def parse_reference(path: Path | None, prefix: str | None = None) -> dict[str, f
     # so distinct benches that share a leaf fixture name — e.g.
     # compiler_pipeline/.../small_matmul vs compile_small/.../small_matmul — do
     # NOT collide. Prose milestone lines ("small_matmul: 2.98 µs") key on the
-    # short leaf name; a full-id lookup falls back to the leaf (see main()).
+    # short leaf name and receive the explicit prefix above.
     for raw in text.splitlines():
         m = BENCHER_LINE.search(raw)
         if m:
@@ -166,8 +173,8 @@ def parse_current(path: Path) -> dict[str, tuple[float, float | None]]:
     """Read criterion bench output into ``{name: (microseconds, rel_variance)}``.
 
     ``rel_variance`` is the bencher ``(+/- N)`` spread over the median (``None``
-    when unavailable). Keyed on the leaf fixture name so it lines up with the
-    reference files regardless of the benchmark group prefix.
+    when unavailable). Keyed on the full benchmark id to prevent collisions
+    between fixtures in different benchmark groups.
     """
     text = path.read_text()
     out: dict[str, tuple[float, float | None]] = {}
@@ -268,6 +275,12 @@ def main() -> int:
         default=3,
         help="minimum trustworthy frontier fixtures required; default 3",
     )
+    ap.add_argument(
+        "--require-pipeline",
+        action="store_true",
+        help="require all three canonical compiler_pipeline/parse_typecheck_ir "
+        "fixtures in every supplied reference and current run",
+    )
     args = ap.parse_args()
 
     try:
@@ -281,6 +294,32 @@ def main() -> int:
         print("asserted=0")
         print(f"::error::bench gate input is malformed or unreadable: {exc}")
         return 4
+    if args.require_pipeline:
+        # A supplied but missing/empty reference is still a failed pipeline
+        # contract.  Do this check separately for champion and floor so a
+        # valid-looking companion reference cannot mask a partial one.
+        for label, supplied, values in (
+            ("champion", args.champion is not None, champion),
+            ("floor", args.floor is not None, floor),
+        ):
+            if supplied:
+                missing = sorted(PIPELINE_BENCH_IDS - values.keys())
+                if missing:
+                    raise_value = (
+                        f"--require-pipeline {label} reference is missing canonical "
+                        f"fixture(s): {', '.join(missing)}"
+                    )
+                    print("asserted=0")
+                    print(f"::error::{raise_value}")
+                    return 4
+        missing = sorted(PIPELINE_BENCH_IDS - current.keys())
+        if missing:
+            print("asserted=0")
+            print(
+                "::error::--require-pipeline current run is missing canonical "
+                f"fixture(s): {', '.join(missing)}"
+            )
+            return 4
     if not champion and not floor:
         # FAIL-CLOSED: neither reference readable. Previously this substituted a
         # hardcoded DEFAULT_BASELINE_US, which meant a missing/renamed/corrupt
@@ -291,13 +330,15 @@ def main() -> int:
         print("::error::bench gate has NO reference: neither --champion nor --floor "
               "was readable. Refusing to invent a baseline.")
         return 4
-    # Gate whatever names the references declare (champion preferred).
-    watched = sorted(champion.keys() or floor.keys())
+    # Gate every name declared by either reference.  A champion is the primary
+    # value when both exist, but it must not hide a floor-only backstop.
+    watched = sorted(set(champion) | set(floor))
 
     rows: list[tuple[str, float | None, float | None, float, float, float | None, str]] = []
     missing: list[str] = []
     failed = False
     trusted = 0
+    required_noisy: list[str] = []
     rebless_candidates: list[str] = []
     for name in watched:
         ch = champion.get(name)
@@ -323,6 +364,9 @@ def main() -> int:
             print(f"::error::missing bench for {name} (champion={ch}, floor={fl}, current={cv})")
             continue
         c, rel_var = cv
+        if args.require_pipeline and name in PIPELINE_BENCH_IDS:
+            if rel_var is not None and rel_var > args.max_rel_variance:
+                required_noisy.append(name)
         d_ch = (c - ch) / ch if ch is not None else None
         d_fl = (c - fl) / fl if fl is not None else None
         delta = (c - ref) / ref
@@ -357,6 +401,13 @@ def main() -> int:
     # Machine-readable count consumed by the shared gate runner. Only complete,
     # low-variance fixture comparisons contribute to the assertion count.
     print(f"asserted={trusted}")
+    if required_noisy:
+        print(
+            "::error::--require-pipeline canonical fixture(s) are noisy: "
+            f"{required_noisy} (spread exceeds {args.max_rel_variance:.0%}); "
+            "the pipeline frontier is not asserted even when other benches are trusted."
+        )
+        return 2
     if failed:
         print(
             "::error::pipeline regression exceeded "

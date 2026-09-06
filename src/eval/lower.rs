@@ -1438,17 +1438,19 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     #[cfg(feature = "std-surface")]
     super::type_aliases::collect_local_fn_signatures(&module.items, &mut ir);
 
-    // RFC 0012 §5.1 — register every IMPORTED `pub fn` signature (declared
-    // param + return ABI) from the active whole-project module table, so a
-    // cross-module `func.call @callee` is typed against the callee's DECLARED
-    // scalar signature instead of the legacy all-i64 default. Without this a
-    // caller of an f64-returning sibling emitted `(i64) -> i64` over an f64
-    // constant argument (`mlir-opt`: "expects different type ... i64 vs f64").
+    // RFC 0012 §5.1 — register every imported `pub fn` signature (declared
+    // param + return ABI) from the active whole-project module table, plus the
+    // bundled std-surface signatures on a single translation unit. This lets
+    // a `func.call @callee` use the callee's DECLARED scalar/record return
+    // metadata instead of the legacy all-i64 default. Without this a caller
+    // of an f64-returning sibling emitted `(i64) -> i64` over an f64 constant
+    // argument (`mlir-opt`: "expects different type ... i64 vs f64").
     // Locally-defined fns were inserted just above and take precedence (a local
     // definition shadows an import), so this only fills in genuinely-external
-    // callees. Empty on the single-file / default-feature path (no project
-    // table) → byte-identical there. The MLIR `func.call` typing, the callee
-    // return-kind and the narrow-int param-kind seeding are all derived from
+    // callees. The single-file std-surface path contributes bundled metadata;
+    // `--no-default-features` has neither source. No guessed names are involved.
+    // The MLIR `func.call` typing, the callee return-kind and the narrow-int
+    // param-kind seeding are all derived from
     // `fn_signatures` in `lower_ir_to_mlir_with_entry`, so no emitter change is
     // needed. An imported callee that the type-checker resolved is present here
     // (same thread-local project table). A callee with a captured signature is
@@ -1458,6 +1460,15 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     // hard type-checker error before lowering.
     #[cfg(all(feature = "std-surface", feature = "cross-module-imports"))]
     for (name, param_types, ret_type) in crate::type_checker::cm_all_imported_fn_signatures() {
+        ir.fn_signatures
+            .entry(name)
+            .or_insert((param_types, ret_type));
+    }
+    #[cfg(all(feature = "std-surface", not(feature = "cross-module-imports")))]
+    for (name, param_types, ret_type) in crate::type_checker::bundled_std_fn_signatures()
+        .iter()
+        .cloned()
+    {
         ir.fn_signatures
             .entry(name)
             .or_insert((param_types, ret_type));
@@ -3535,9 +3546,10 @@ fn receiver_struct_type(
 
 /// True when a method-call receiver is the std `String` type — an Ident bound to
 /// a string (`struct_env` sentinel `"String"`, set for string lets/params and
-/// for-each elements over `array<string>`) OR a struct-FIELD whose declared type
-/// is `string`. A string receiver's methods route to the `string_<method>` std
-/// free functions (`.split`→string_split, `.trim`→string_trim, etc.).
+/// for-each elements over `array<string>`), a struct-FIELD whose declared type
+/// is `string`, or a typed function call returning `string`. A string receiver's
+/// methods route to the `string_<method>` std free functions
+/// (`.split`→string_split, `.trim`→string_trim, etc.).
 #[cfg(feature = "std-surface")]
 fn receiver_is_string(
     receiver: &ast::Node,
@@ -3546,6 +3558,11 @@ fn receiver_is_string(
     receiver_types: &HashMap<crate::ast::Span, String>,
 ) -> bool {
     match receiver {
+        // String literals are materialized by the `Literal::Str` lowering arm
+        // into the same three-field String record as every other string value.
+        // Classify them here so a direct `"text".len()` / `.split(...)` call
+        // takes the same std UFCS path as an identifier-bound String.
+        ast::Node::Lit(Literal::Str(_), _) => true,
         ast::Node::Lit(Literal::Ident(v), _) => struct_env
             .get(v)
             .map(|s| s == "String" || s == "string")
@@ -3567,6 +3584,12 @@ fn receiver_is_string(
                 .map(|ty| matches!(ty, TypeAnn::Named(n) if n == "string" || n == "String"))
                 .unwrap_or(false)
         }
+        ast::Node::Call { callee, .. } => ir
+            .fn_signatures
+            .get(callee)
+            .and_then(|(_, ret)| ret.clone())
+            .or_else(|| crate::ir::with_global_enums(|g| g.fn_returns.get(callee).cloned()))
+            .is_some_and(|ty| matches!(ty, TypeAnn::Named(n) if n == "string" || n == "String")),
         _ => false,
     }
 }
@@ -3762,9 +3785,11 @@ fn let_rhs_collection_track(
         return None;
     }
     let ty: TypeAnn = match value {
-        ast::Node::Call { callee, .. } => {
-            crate::ir::with_global_enums(|g| g.fn_returns.get(callee).cloned())?
-        }
+        ast::Node::Call { callee, .. } => ir
+            .fn_signatures
+            .get(callee)
+            .and_then(|(_, ret)| ret.clone())
+            .or_else(|| crate::ir::with_global_enums(|g| g.fn_returns.get(callee).cloned()))?,
         ast::Node::FieldAccess {
             receiver: base,
             field,

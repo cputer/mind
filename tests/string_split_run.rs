@@ -23,7 +23,7 @@
 ))]
 
 mod common;
-use common::mindc_bin;
+use common::{mindc_bin, scratch_dir};
 
 use std::process::Command;
 
@@ -62,6 +62,133 @@ pub fn run() -> i64 {
 }
 "#;
 
+const CALL_RESULT_SRC: &str = r#"
+import std.string
+
+fn make_one() -> string {
+    let s = string_new()
+    let s = string_push_byte(s, 65)
+    return s
+}
+
+fn make_parts() -> string {
+    let s = string_new()
+    let s = string_push_byte(s, 65)
+    let s = string_push_byte(s, 43)
+    let s = string_push_byte(s, 66)
+    return s
+}
+
+pub fn inferred_len() -> i64 {
+    let s = make_one()
+    return s.len()
+}
+
+pub fn direct_len() -> i64 {
+    return make_one().len()
+}
+
+pub fn literal_len() -> i64 {
+    return "abcd".len()
+}
+
+pub fn inferred_split() -> i64 {
+    let s = make_parts()
+    let mut total = 0
+    for p in s.split("+") {
+        total = total + string_len(p)
+    }
+    return total
+}
+
+pub fn direct_split() -> i64 {
+    let mut total = 0
+    for p in make_parts().split("+") {
+        total = total + string_len(p)
+    }
+    return total
+}
+
+pub fn std_return_chain() -> i64 {
+    let s = string_push_byte(string_new(), 65)
+    return s.len()
+}
+
+pub fn lexical_shadow() -> i64 {
+    let s = make_parts()
+    if 1 == 1 {
+        let s: i64 = 40
+        if s == 40 { }
+    }
+    let mut total = 0
+    for p in s.split("+") {
+        total = total + string_len(p)
+    }
+    return total
+}
+
+pub fn run() -> i64 {
+    return literal_len() * 1000000 + direct_len() * 100000
+        + inferred_len() * 10000 + inferred_split() * 1000
+        + direct_split() * 100 + std_return_chain() * 10 + lexical_shadow()
+}
+"#;
+
+const SAME_NAME_USER_SRC: &str = r#"
+import std.string
+
+// A local declaration intentionally shadows the bundled std function name.
+fn string_push_byte(s: string, b: i64) -> i64 {
+    if string_len(s) == b {
+        return 79
+    }
+    return 77
+}
+
+pub fn run() -> i64 {
+    let s = string_new()
+    return string_push_byte(s, 65)
+}
+"#;
+
+fn compile_and_run(mindc: &std::path::Path, stem: &str, source: &str, expected: &[(&str, i64)]) {
+    let dir = scratch_dir("string_split_run");
+    let src = dir.join(format!("mind_{stem}.mind"));
+    let so = dir.join(format!("mind_{stem}.so"));
+    std::fs::write(&src, source).expect("write source");
+    let out = Command::new(mindc)
+        .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
+        .output()
+        .expect("run mindc");
+    assert!(
+        out.status.success(),
+        "{stem} compile failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(so.exists(), "{stem} must emit a shared library");
+    let py = r#"import ctypes, json, sys
+lib = ctypes.CDLL(sys.argv[1])
+for name, expected in json.loads(sys.argv[2]):
+    fn = getattr(lib, name)
+    fn.restype = ctypes.c_int64
+    actual = fn()
+    assert actual == expected, f'{name}: {actual} != {expected}'
+print('ok')
+"#;
+    let checks = serde_json::to_string(expected).expect("serialize expected results");
+    let out = Command::new("python3")
+        .args(["-c", py, so.to_str().unwrap(), &checks])
+        .output()
+        .expect("python3");
+    assert!(
+        out.status.success(),
+        "{stem} runtime check failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
 
 #[test]
@@ -74,7 +201,7 @@ fn string_split_runs() {
         );
         return;
     }
-    let dir = std::env::temp_dir();
+    let dir = scratch_dir("string_split_run");
     let src = dir.join("mind_string_split_run.mind");
     let so = dir.join("mind_string_split_run.so");
     std::fs::write(&src, SRC).expect("write src");
@@ -105,5 +232,35 @@ fn string_split_runs() {
         "string-split-run check failed:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+#[test]
+fn inferred_string_returns_and_shadowing_run() {
+    let mindc = mindc_bin();
+    if !mindc.exists() {
+        panic!("string-call-result-metadata: mindc not found");
+    }
+    // literal_len=4, direct_len=1, inferred_len=1, inferred_split=2,
+    // direct_split=2, std_return_chain=1, lexical_shadow=2.
+    compile_and_run(
+        &mindc,
+        "string_call_result_metadata",
+        CALL_RESULT_SRC,
+        &[
+            ("literal_len", 4),
+            ("direct_len", 1),
+            ("inferred_len", 1),
+            ("inferred_split", 2),
+            ("direct_split", 2),
+            ("std_return_chain", 1),
+            ("lexical_shadow", 2),
+        ],
+    );
+    compile_and_run(
+        &mindc,
+        "string_same_name_user",
+        SAME_NAME_USER_SRC,
+        &[("run", 77)],
     );
 }

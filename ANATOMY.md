@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1640 | **Est. tokens:** ~3103105
-**Generated:** 2026-09-06 21:18 UTC
+**Files:** 1641 | **Est. tokens:** ~3106897
+**Generated:** 2026-09-06 21:43 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35727 |
+| `.github/workflows/` | 9 | ~35735 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 29 | ~113598 |
+| `scripts/` | 29 | ~113603 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 9 | ~47334 |
+| `src/type_checker/` | 10 | ~47954 |
 | `src/type_checker/slice_abi/` | 2 | ~7857 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 369 | ~704834 |
+| `tests/` | 369 | ~705836 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12264 |
@@ -187,7 +187,7 @@
 | `tests/skip_shape_scan/` | 2 | ~10401 |
 | `tests/support/` | 1 | ~773 |
 | `tests/type_checker/` | 2 | ~140 |
-| `tools/` | 5 | ~11408 |
+| `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
 | `tools/mindfuzz/seeds/` | 6 | ~1330 |
 | `tools/mindfuzz/violations/` | 1 | ~0 |
@@ -262,7 +262,7 @@
 - `required-ci-jobs.tsv` (~724 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
-- `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
+- `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
 - `ci.yml` (~23844 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
@@ -915,7 +915,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~9284 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~9289 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~2136 tok, huge) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~3204 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -1265,6 +1265,7 @@
 - `provenance.rs` (~979 tok, large) — Copyright 2026 STARGA Inc.
 ### `src/type_checker/`
 
+- `stdlib_signatures.rs` (~620 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `type_display.rs` (~628 tok, large) — Copyright 2026 STARGA Inc.
 ### `src/types/`
 
@@ -1684,7 +1685,7 @@
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.
 - `grad_wrt_resolve.rs` (~730 tok, large) — Copyright 2025 STARGA Inc.
 - `harness_portability.rs` (~1260 tok, large) — Copyright 2025 STARGA Inc.
-- `harness_scratch_isolation.rs` (~3431 tok, huge) — Copyright 2025 STARGA Inc.
+- `harness_scratch_isolation.rs` (~3423 tok, huge) — Copyright 2025 STARGA Inc.
 - `hpack_driver.py` (~3027 tok, huge) — # Official-vector driver for std/hpack.mind (pure-MIND HPACK decoding,
 - `http2_frame_driver.py` (~4195 tok, huge) — # Reference-vector driver for std/http2_frame.mind (pure-MIND HTTP/2 framing,
 - `if_expr.rs` (~429 tok, medium) — Copyright 2025 STARGA Inc.
@@ -2204,7 +2205,7 @@
 - `string_from_bytes_run.rs` (~664 tok, large) — Copyright 2025 STARGA Inc.
 - `string_pattern_escape_decode.rs` (~1069 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `string_runtime_shim_run.rs` (~1027 tok, large) — Copyright 2025 STARGA Inc.
-- `string_split_run.rs` (~816 tok, large) — Copyright 2025 STARGA Inc.
+- `string_split_run.rs` (~1826 tok, huge) — Copyright 2025 STARGA Inc.
 - `struct_array_field_run.rs` (~802 tok, large) — Copyright 2025 STARGA Inc.
 - `struct_field_collection_run.rs` (~808 tok, large) — Copyright 2025 STARGA Inc.
 - `struct_field_in_loop_run.rs` (~1043 tok, large) — Copyright 2025 STARGA Inc.
@@ -2266,7 +2267,7 @@
 ### `tools/`
 
 - `add_copyright_headers.py` (~1132 tok, large) — # Copyright 2025 STARGA Inc.
-- `bench_gate.py` (~4656 tok, huge) — # Copyright 2025 STARGA Inc.
+- `bench_gate.py` (~5201 tok, huge) — # Copyright 2025 STARGA Inc.
 - `cargo-deny-sanitize.sh` (~572 tok, large) — Run cargo-deny but sanitize advisory entries that older cargo-deny versions
 ### `tools/mindfuzz/`
 
@@ -2302,8 +2303,8 @@
 - `test_bridge.py` (~1244 tok, large) — # Copyright 2025-2026 STARGA Inc.
 ### `tools/`
 
-- `run_bench_gate.sh` (~530 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `test_bench_gate.py` (~4518 tok, huge) — Regression test for the bench-gate fail-closed contract (tools/bench_gate.py).
+- `run_bench_gate.sh` (~535 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
+- `test_bench_gate.py` (~6125 tok, huge) — Regression test for the bench-gate fail-closed contract (tools/bench_gate.py).
 
 ---
 *Generated by `anatomy 1.0.0`. Edit descriptions manually — re-run preserves structure.*

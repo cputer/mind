@@ -577,7 +577,7 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
         bad "compiler bench command failed (exit $bench_rc); the regression gate was not evaluated"
         tail -15 "$bench_err"
         echo "bench logs retained in $bench_tmp"
-      elif python3 tools/bench_gate.py --baseline "$base" --current "$bench_out" --threshold 0.10; then
+      elif python3 tools/bench_gate.py --baseline "$base" --current "$bench_out" --require-pipeline --threshold 0.10; then
         echo "ok (regression <= +10% vs $base; speedups always pass)"
         rm -rf "$bench_tmp"
       else

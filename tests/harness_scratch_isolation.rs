@@ -166,7 +166,6 @@ const SHARED_TEMP_BACKLOG: &[(&str, usize)] = &[
     ("string_escape_decode_run.rs", 1),
     ("string_from_bytes_run.rs", 1),
     ("string_runtime_shim_run.rs", 1),
-    ("string_split_run.rs", 1),
     ("struct_array_field_run.rs", 1),
     ("struct_field_collection_run.rs", 1),
     ("struct_field_in_loop_run.rs", 1),

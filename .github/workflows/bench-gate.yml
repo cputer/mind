@@ -192,4 +192,5 @@ jobs:
           python3 tools/bench_gate.py \
             --baseline .bench-baseline-2026-06-01-correctness.txt \
             --current bench.out \
+            --require-pipeline \
             --threshold 0.10

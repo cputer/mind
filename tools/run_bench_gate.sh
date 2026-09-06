@@ -46,7 +46,7 @@ echo "[bench] load $(load1), pinned to cores ${PIN}, baseline ${BASELINE}"
 OUT="$(mktemp)"
 taskset -c "${PIN}" cargo bench --bench compiler --no-default-features -- \
   --warm-up-time 3 --measurement-time 8 --output-format bencher | tee "${OUT}"
-python3 tools/bench_gate.py --baseline "${BASELINE}" --current "${OUT}" --threshold 0.10
+python3 tools/bench_gate.py --baseline "${BASELINE}" --current "${OUT}" --require-pipeline --threshold 0.10
 rc=$?
 rm -f "${OUT}"
 exit "${rc}"

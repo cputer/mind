@@ -74,6 +74,12 @@ def main() -> int:
          'bad "bench gate prerequisites missing:' in preflight_text),
         ("preflight does not select a floor by mtime",
          "ls -t .bench-baseline-*correctness" not in preflight_text),
+        ("preflight requires the canonical pipeline inventory",
+         "--require-pipeline" in preflight_text),
+        ("workflow requires the canonical pipeline inventory",
+         "--require-pipeline" in (HERE.parent / ".github" / "workflows" / "bench-gate.yml").read_text()),
+        ("bench runner requires the canonical pipeline inventory",
+         "--require-pipeline" in (HERE / "run_bench_gate.sh").read_text()),
     ]
     for label, ok in wiring_cases:
         print(f"[{'PASS' if ok else 'FAIL'}] {label}")
@@ -221,6 +227,25 @@ def main() -> int:
         within.write_text(bencher(3120, 6380, 17480))      # ~+4%, under the 10% default
         faster = d / "faster.out"
         faster.write_text(bencher(2700, 5500, 15100))      # a win: one-sided, must pass
+
+        # Generic benchmark groups remain supported unless a caller explicitly
+        # requests the compiler-pipeline inventory contract.
+        generic_base = d / "generic-baseline.txt"
+        generic_base.write_text(
+            "test simple_benchmarks/scalar_math ... bench: 3000 ns/iter\n"
+            "test simple_benchmarks/tensor_ops ... bench: 6100 ns/iter\n"
+            "test simple_benchmarks/io_roundtrip ... bench: 16800 ns/iter\n"
+        )
+        generic_current = d / "generic-current.out"
+        generic_current.write_text(
+            "test simple_benchmarks/scalar_math ... bench: 3000 ns/iter (+/- 50)\n"
+            "test simple_benchmarks/tensor_ops ... bench: 6100 ns/iter (+/- 80)\n"
+            "test simple_benchmarks/io_roundtrip ... bench: 16800 ns/iter (+/- 120)\n"
+        )
+        cases += [
+            ("generic benchmark group passes without pipeline flag",
+             run_args("--baseline", str(generic_base), "--current", str(generic_current)), 0),
+        ]
         # ALL three above the variance threshold: a uniformly loaded box.
         all_noisy = d / "all_noisy.out"
         all_noisy.write_text(
@@ -285,6 +310,92 @@ def main() -> int:
              run_args(*ratchet, "--current", str(good)), 1),
             ("beats the champion -> exit 0 (the ratchet is one-sided too)",
              run_args(*ratchet, "--current", str(champbeat)), 0),
+        ]
+
+        # The opt-in pipeline contract rejects a wrong-group or partial
+        # reference, even when its rows would otherwise meet min-trusted.
+        wrong_group = d / "wrong-group.txt"
+        wrong_group.write_text(
+            "test simple_benchmarks/scalar_math ... bench: 3000 ns/iter\n"
+            "test simple_benchmarks/tensor_ops ... bench: 6100 ns/iter\n"
+            "test simple_benchmarks/io_roundtrip ... bench: 16800 ns/iter\n"
+        )
+        partial_champion = d / "partial-champion.txt"
+        partial_champion.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter\n"
+        )
+        cases += [
+            ("pipeline flag rejects wrong-group reference",
+             run_args("--baseline", str(wrong_group), "--current", str(good),
+                       "--require-pipeline"), 4),
+            ("pipeline flag rejects partial champion reference",
+             run_args("--champion", str(partial_champion), "--current", str(good),
+                       "--require-pipeline"), 4),
+        ]
+
+        # Three clean non-pipeline benches must not make a noisy canonical
+        # frontier pass when the pipeline contract is requested.
+        pipeline_extra_ref = d / "pipeline-extra-ref.txt"
+        pipeline_extra_ref.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 16800 ns/iter\n"
+            "test simple_benchmarks/scalar_math ... bench: 3000 ns/iter\n"
+            "test simple_benchmarks/tensor_ops ... bench: 6100 ns/iter\n"
+            "test simple_benchmarks/io_roundtrip ... bench: 16800 ns/iter\n"
+        )
+        canonical_noisy_extra_clean = d / "canonical-noisy-extra-clean.out"
+        canonical_noisy_extra_clean.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter (+/- 900)\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter (+/- 900)\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 16800 ns/iter (+/- 900)\n"
+            "test simple_benchmarks/scalar_math ... bench: 3000 ns/iter (+/- 50)\n"
+            "test simple_benchmarks/tensor_ops ... bench: 6100 ns/iter (+/- 50)\n"
+            "test simple_benchmarks/io_roundtrip ... bench: 16800 ns/iter (+/- 50)\n"
+        )
+        cases += [
+            ("pipeline flag rejects noisy canonical rows despite 3 clean extras",
+             run_args("--baseline", str(pipeline_extra_ref),
+                       "--current", str(canonical_noisy_extra_clean),
+                       "--require-pipeline"), 2),
+        ]
+
+        # Both references contribute watched rows.  A floor-only regression and
+        # a champion-only regression must each reach the comparator.
+        union_champion = d / "union-champion.txt"
+        union_champion.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 16800 ns/iter\n"
+            "test extra_group/champion_only ... bench: 3000 ns/iter\n"
+        )
+        union_floor = d / "union-floor.txt"
+        union_floor.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 16800 ns/iter\n"
+            "test extra_group/floor_only ... bench: 3000 ns/iter\n"
+        )
+        union_floor_regressed = d / "union-floor-regressed.out"
+        union_floor_regressed.write_text(
+            GOOD_CURRENT
+            + "test extra_group/champion_only ... bench: 3000 ns/iter (+/- 50)\n"
+            + "test extra_group/floor_only ... bench: 4000 ns/iter (+/- 50)\n"
+        )
+        union_champion_regressed = d / "union-champion-regressed.out"
+        union_champion_regressed.write_text(
+            GOOD_CURRENT
+            + "test extra_group/champion_only ... bench: 4000 ns/iter (+/- 50)\n"
+            + "test extra_group/floor_only ... bench: 3000 ns/iter (+/- 50)\n"
+        )
+        union_args = ("--champion", str(union_champion), "--floor", str(union_floor),
+                      "--require-pipeline")
+        cases += [
+            ("union watches floor-only backstop",
+             run_args(*union_args, "--current", str(union_floor_regressed)), 1),
+            ("union watches champion-only backstop",
+             run_args(*union_args, "--current", str(union_champion_regressed)), 1),
         ]
         # --- transition-line parsing (the superseded-number bug) ------------
         # A real baseline file narrates the re-baseline in prose BEFORE stating

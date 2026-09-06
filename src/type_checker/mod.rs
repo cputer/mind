@@ -28,6 +28,10 @@ use type_display::{
 };
 #[cfg(feature = "std-surface")]
 mod slice_abi;
+#[cfg(feature = "std-surface")]
+mod stdlib_signatures;
+#[cfg(feature = "std-surface")]
+pub(crate) use stdlib_signatures::bundled_std_fn_signatures;
 
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -4409,25 +4413,34 @@ pub fn cm_imported_fn_param_types(name: &str) -> Option<Vec<crate::ast::TypeAnn>
 /// registers these into `IRModule::fn_signatures` (for names it does not
 /// define locally) so a cross-module `func.call` emits the callee's DECLARED
 /// scalar ABI — the fix for an f64-returning imported fn defaulting to the
-/// legacy `(i64) -> i64` call shape. Returns an empty `Vec` on the single-file
-/// / default-feature path (table is `None`), keeping that path byte-identical.
+/// legacy `(i64) -> i64` call shape. A single translation unit has no active
+/// project table, so it receives the bundled std-surface signatures from the
+/// same parsed-declaration metadata route. The `--no-default-features` build
+/// has neither path.
 #[cfg(feature = "cross-module-imports")]
 pub fn cm_all_imported_fn_signatures() -> Vec<(
     String,
     Vec<crate::ast::TypeAnn>,
     Option<crate::ast::TypeAnn>,
 )> {
-    crate::project::active_module_table::with(|active| {
-        active
-            .map(|table| {
-                table
-                    .all_exported_fns()
-                    .into_iter()
-                    .map(|f| (f.name.clone(), f.param_types.clone(), f.ret_type.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
-    })
+    let (active_present, mut signatures) = crate::project::active_module_table::with(|active| {
+        (
+            active.is_some(),
+            active
+                .map(|table| {
+                    table
+                        .all_exported_fns()
+                        .into_iter()
+                        .map(|f| (f.name.clone(), f.param_types.clone(), f.ret_type.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        )
+    });
+    if !active_present {
+        signatures.extend(bundled_std_fn_signatures().iter().cloned());
+    }
+    signatures
 }
 
 /// True iff ANY module in the active project table exports `name`. Unlike
