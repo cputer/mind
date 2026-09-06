@@ -316,45 +316,46 @@ python3 scripts/run_gate.py scripts/test_smoke_wiring_lint.py \
   || bad "smoke-wiring lint self-test FAILED — the CI-coverage rule does not bite"
 
 if [ "${1:-}" = "--full" ]; then
-  step "no-features test parity  [ci.yml Build & Test 'Test' steps — the fail-close regression class]"
-  # A test that feeds lower_to_ir free operands / hits a gated path lowered to a
-  # silent const-0 pre-#9 now panics loud — and only shows under the non-std-surface
-  # test steps the keystone never runs. The `error: test failed` grep is abort-aware
-  # (a stack-overflow SIGABRT prints NO `test result: FAILED`, only the cargo line).
-  # Two accepted CI-ABSENT local-only failures are excluded: mindfuzz_cross_substrate
-  # (needs the MLIR toolchain; soft-skips in CI's build_test job) and g2_differential_mlir
-  # (dlopens the gitignored, stale in-tree libmindc_mind.so; CI's fresh checkout rebuilds).
-  # A COMPILE failure prints `error: could not compile \`mind\` (test "x")`, never
-  # `error: test failed`, so the old two-pattern grep came back EMPTY and this step
-  # printed ok for a tree whose harnesses do not build. `set -uo pipefail` without
-  # `-e`, plus the trailing `|| true`, meant cargo's own exit status was discarded
-  # too -- nothing here observed failure except the grep, and the grep was blind to
-  # the most basic way this command can fail.
-  #
-  # Now: the pattern set covers compile and link failures, AND cargo's exit status is
-  # captured. A non-zero cargo with no recognised marker fails CLOSED rather than
-  # being read as success -- the sibling keystone step already demands a positive
-  # `test result: ok. N passed` for exactly this reason.
-  nft_raw=$(cargo test --no-default-features --features std-surface,cross-module-imports \
-              --no-fail-fast 2>&1); nft_rc=$?
-  nft_all=$(printf '%s\n' "$nft_raw" | grep -E "error: test failed|error: could not compile|error: linking with|has overflowed its stack" || true)
-  nft_out=$(printf '%s\n' "$nft_all" | grep -viE "mindfuzz_cross_substrate|g2_differential_mlir" | grep -vE '^$' || true)
-  if [ -z "$nft_out" ] && [ "$nft_rc" -ne 0 ] && [ -z "$nft_all" ]; then
-    bad "cargo test --no-default-features exited $nft_rc but printed no recognised failure marker (fail-closed):"
-    printf '%s\n' "$nft_raw" | tail -15
-  elif [ -z "$nft_out" ]; then echo "ok (no test failures beyond the accepted CI-absent mindfuzz + g2)"; else
-    bad "cargo test --no-default-features --features std-surface,cross-module-imports FAILS beyond mindfuzz:"; printf '%s\n' "$nft_out" | head
+  step "CI build-test cargo feature matrix parity  [ci.yml build_test]"
+  # Derive the matrix from the build_test job so this local leg cannot silently
+  # drift when CI adds or removes a cargo-test feature set. The reader is
+  # dependency-free and returns one row for each cargo test invocation,
+  # preserving exact argv, selectors, timeout bounds, and the lockfile branch.
+  # It also executes the typed rows directly: there is no shell reparse, eval,
+  # process-substitution decoder, or status-masking pipeline in this path.
+  matrix=$(python3 scripts/workflow_scan.py run_cargo_test_matrix 2>&1)
+  matrix_rc=$?
+  printf '%s\n' "$matrix"
+  if [ "$matrix_rc" -ne 0 ]; then
+    bad "workflow cargo-test matrix execution FAILED (rc=$matrix_rc)"
+  else
+    echo "ok (CI build_test cargo matrix execution)"
   fi
+  # Neither historical exclusion matches a selected build_test target.
+  # The shrink-only set is now empty; a new exception needs a new contract,
+  # not a name added to a failure-filtering regular expression.
+  PREFLIGHT_TEST_EXCLUSIONS=()
+  for excluded in "${PREFLIGHT_TEST_EXCLUSIONS[@]}"; do
+    bad "stale exclusion '$excluded' — delete this line"
+  done
 
   step "keystone byte-identity 7/7  [ci.yml + cross-substrate — the wedge invariant]"
-  ks_out=$(MIND_BENCH_REQUIRE=1 cargo test --release \
+  ks_build_out=$(MIND_BENCH_REQUIRE=1 cargo test --release --no-default-features \
        --features "mlir-build std-surface cross-module-imports" \
-       --test phase_g_keystone_bootstrap -- --test-threads=1 2>&1 || true)
-  ks_n=$(printf '%s\n' "$ks_out" | sed -n 's/^test result: ok\. \([0-9]*\) passed.*/\1/p' | tail -1)
-  if [ "${ks_n:-0}" -ge 7 ] 2>/dev/null; then
-    echo "ok ($ks_n/7 byte-identical)"
+       --test phase_g_keystone_bootstrap --no-run 2>&1); ks_build_rc=$?
+  if [ "$ks_build_rc" -ne 0 ]; then
+    bad "BUILD_INCOMPLETE: keystone build exited $ks_build_rc; determinism was not evaluated"
+    printf '%s\n' "$ks_build_out" | tail -20
   else
-    bad "keystone NOT 7/7 (passed='${ks_n:-none}') — 0 passed means the target was cfg'd out or SKIPped, which is NOT a pass; a cross-substrate byte-identity regression; do NOT push"
+    ks_out=$(MIND_BENCH_REQUIRE=1 cargo test --release --no-default-features \
+         --features "mlir-build std-surface cross-module-imports" \
+         --test phase_g_keystone_bootstrap -- --test-threads=1 2>&1); ks_rc=$?
+    ks_n=$(printf '%s\n' "$ks_out" | sed -n 's/^test result: ok\. \([0-9]*\) passed.*/\1/p' | tail -1)
+    if [ "$ks_rc" -eq 0 ] && [ "${ks_n:-0}" -ge 7 ] 2>/dev/null; then
+      echo "ok ($ks_n/7 byte-identical)"
+    else
+      bad "keystone NOT 7/7 (passed='${ks_n:-none}' rc=$ks_rc); completed build, runtime proof failed"
+    fi
   fi
 
   step "cross-substrate determinism 24/24  [ci.yml cross_substrate_identity — THE wedge invariant]"
