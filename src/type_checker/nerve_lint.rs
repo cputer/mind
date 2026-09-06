@@ -261,11 +261,13 @@ fn ident_of(node: &Node) -> Option<&str> {
 }
 
 /// `true` iff `node` is (or contains) a scalar multiply.
+#[cfg(feature = "std-surface")]
 fn contains_mul(node: &Node) -> bool {
     any(node, &|n| matches!(n, Node::Binary { op: BinOp::Mul, .. }))
 }
 
 /// `true` iff `node` is the integer literal 16 — the Q16.16 fractional width.
+#[cfg(feature = "std-surface")]
 fn is_lit_16(node: &Node) -> bool {
     matches!(strip_wrappers(node), Node::Lit(Literal::Int(16), _))
 }

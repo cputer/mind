@@ -74,6 +74,7 @@ impl LintRule for Q16Overflow {
 }
 
 /// Returns `true` if `node` is an integer literal `16`.
+#[cfg(feature = "std-surface")]
 fn is_lit_16(node: &Node) -> bool {
     matches!(node, Node::Lit(crate::ast::Literal::Int(16), _))
 }

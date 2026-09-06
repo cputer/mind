@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1527 | **Est. tokens:** ~2990892
-**Generated:** 2026-09-06 10:47 UTC
+**Files:** 1527 | **Est. tokens:** ~2990911
+**Generated:** 2026-09-06 10:52 UTC
 
 ## Token Budget Guide
 
@@ -100,7 +100,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~10987 |
-| `src/eval/` | 18 | ~91208 |
+| `src/eval/` | 18 | ~91204 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
@@ -110,10 +110,10 @@
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
 | `src/lint/` | 2 | ~4001 |
-| `src/lint/rules/` | 6 | ~9932 |
+| `src/lint/rules/` | 6 | ~9940 |
 | `src/mlir/` | 3 | ~5905 |
 | `src/ops/` | 3 | ~4764 |
-| `src/opt/` | 9 | ~53285 |
+| `src/opt/` | 9 | ~53284 |
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
@@ -122,7 +122,7 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 3 | ~25062 |
+| `src/type_checker/` | 3 | ~25078 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
@@ -1059,7 +1059,7 @@
 ### `src/eval/`
 
 - `abi_gate.rs` (~12154 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
-- `assert_check.rs` (~993 tok, large) — Copyright 2025 STARGA Inc.
+- `assert_check.rs` (~989 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9335 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1145,7 +1145,7 @@
 
 - `mod.rs` (~454 tok, medium) — Copyright 2025 STARGA Inc.
 - `naming_convention.rs` (~2031 tok, huge) — Copyright 2025 STARGA Inc.
-- `q16_overflow.rs` (~2942 tok, huge) — Copyright 2025 STARGA Inc.
+- `q16_overflow.rs` (~2950 tok, huge) — Copyright 2025 STARGA Inc.
 - `shadowing.rs` (~1944 tok, huge) — Copyright 2025 STARGA Inc.
 - `trailing_whitespace.rs` (~869 tok, large) — Copyright 2025 STARGA Inc.
 - `unused_import.rs` (~1692 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1170,7 +1170,7 @@
 - `ir_canonical.rs` (~5268 tok, huge) — Copyright 2025 STARGA Inc.
 - `memory_layout.rs` (~4110 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mod.rs` (~544 tok, large) — Copyright 2025 STARGA Inc.
-- `native_opt.rs` (~11171 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_opt.rs` (~11170 tok, huge) — Copyright 2025 STARGA Inc.
 - `regalloc_dtk.rs` (~4282 tok, huge) — Copyright 2025 STARGA Inc.
 - `scev.rs` (~8604 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/package/`
@@ -1226,7 +1226,7 @@
 - `mod.rs` (~6839 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
-- `nerve_lint.rs` (~7653 tok, huge) — Copyright 2025 STARGA Inc.
+- `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/types/`

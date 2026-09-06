@@ -77,7 +77,7 @@ pub(super) fn eval(
     let failure = |default: &str| fail(message.clone().unwrap_or_else(|| default.to_string()));
     match super::eval_value_expr_mode(cond, env, tensor_env, mode)? {
         Value::Int(0) => Err(failure("assertion failed")),
-        Value::Float(value) if value == 0.0 => Err(failure("assertion failed (float)")),
+        Value::Float(0.0) => Err(failure("assertion failed (float)")),
         Value::Int(_) | Value::Float(_) => Ok(Value::Int(0)),
         Value::Tuple(items) => Err(EvalError::UnsupportedMsg(format!(
             "assert condition is a {}-tuple, not a boolean: \

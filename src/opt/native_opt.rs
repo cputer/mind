@@ -219,7 +219,7 @@ fn const_if_prune(instrs: &mut Vec<Instr>) {
 /// conservative across scopes (only same-vector const-0s fold — a safe miss, never a
 /// wrong fold). Deterministic: one forward pass, no hashmap iteration.
 #[cfg(feature = "std-surface")]
-fn fold_mul_by_zero(instrs: &mut Vec<Instr>) {
+fn fold_mul_by_zero(instrs: &mut [Instr]) {
     use std::collections::BTreeSet;
     let zeros: BTreeSet<ValueId> = instrs
         .iter()
