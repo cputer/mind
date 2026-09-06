@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1517 | **Est. tokens:** ~2958017
-**Generated:** 2026-09-06 05:42 UTC
+**Files:** 1517 | **Est. tokens:** ~2958013
+**Generated:** 2026-09-06 06:06 UTC
 
 ## Token Budget Guide
 
@@ -35,7 +35,7 @@
 | `audits/` | 6 | ~607 |
 | `bench/` | 5 | ~7574 |
 | `bench/fft/` | 8 | ~8060 |
-| `benches/` | 28 | ~84218 |
+| `benches/` | 28 | ~84214 |
 | `benches/common/` | 1 | ~668 |
 | `benchmarks/` | 13 | ~28495 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
@@ -321,7 +321,7 @@
 ### `benches/`
 
 - `compiler.rs` (~3782 tok, huge) — Small program: Simple matrix multiplication
-- `cross_module.rs` (~609 tok, large) — Copyright 2025 STARGA Inc.
+- `cross_module.rs` (~605 tok, large) — Copyright 2025 STARGA Inc.
 - `det_gemv_q16_mt.rs` (~3294 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_i16.rs` (~4621 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_i8.rs` (~5094 tok, huge) — Copyright 2025-2026 STARGA Inc.

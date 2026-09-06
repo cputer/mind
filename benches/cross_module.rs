@@ -14,8 +14,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use libmind::parser::parse;
 use libmind::project::module_table::build_module_table;
-use libmind::type_checker::check_module_types_with_modules;
-use std::collections::HashMap;
+use libmind::type_checker::{TypeEnv, check_module_types_with_modules};
 
 fn bench_cross_module_resolve(c: &mut Criterion) {
     let mut group = c.benchmark_group("cross_module_resolve");
@@ -47,7 +46,7 @@ fn bench_cross_module_resolve(c: &mut Criterion) {
                         black_box(&b),
                         src,
                         None,
-                        &HashMap::new(),
+                        &TypeEnv::default(),
                         black_box(&table),
                     ))
                 });
