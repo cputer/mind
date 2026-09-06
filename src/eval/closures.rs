@@ -556,7 +556,7 @@ fn wrap_last_in_return(body: &mut Vec<Node>, span: Span) {
 /// so the capture/call rewrite must not descend into them (a nested fn/closure
 /// cannot see this closure's captures). The survivor scan reaches their bodies
 /// separately in [`find_closure_span`].
-fn node_children_mut(node: &mut Node) -> Vec<&mut Node> {
+pub(crate) fn node_children_mut(node: &mut Node) -> Vec<&mut Node> {
     let mut out: Vec<&mut Node> = Vec::new();
     match node {
         // ── Binary-shaped ────────────────────────────────────────────────

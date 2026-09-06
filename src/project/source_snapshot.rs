@@ -15,7 +15,7 @@ thread_local! {
     };
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix, feature = "mlir-build"))]
 pub(crate) fn install_test_hook(hook: impl FnOnce() + 'static) {
     TEST_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
 }

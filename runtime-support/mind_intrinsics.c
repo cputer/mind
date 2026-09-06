@@ -845,8 +845,7 @@ MIND_EXPORT_WEAK int64_t string_push_byte(int64_t s, int64_t b) {
     return rec;
 }
 
-// string_eq — byte-for-byte equality, not handle identity.
-MIND_EXPORT_WEAK int64_t string_eq(int64_t a, int64_t b) {
+static int64_t mind_string_eq_impl(int64_t a, int64_t b) {
     int64_t alen = __mind_load_i64(a + 8);
     int64_t blen = __mind_load_i64(b + 8);
     if (alen != blen) return 0;
@@ -858,6 +857,17 @@ MIND_EXPORT_WEAK int64_t string_eq(int64_t a, int64_t b) {
                   (size_t)alen) == 0
                ? 1
                : 0;
+}
+
+// Compiler-owned string equality. Unlike the public weak compatibility name,
+// user code cannot replace this symbol and change `==` / `!=` semantics.
+MIND_EXPORT int64_t __mind_string_eq(int64_t a, int64_t b) {
+    return mind_string_eq_impl(a, b);
+}
+
+// Public std.string compatibility entry point remains weak by contract.
+MIND_EXPORT_WEAK int64_t string_eq(int64_t a, int64_t b) {
+    return mind_string_eq_impl(a, b);
 }
 
 // string_starts_with — byte prefix check. Empty needle is always a prefix.

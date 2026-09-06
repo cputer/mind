@@ -262,6 +262,7 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     ("__mind_load_i8", 1, Det::Pure),
     ("__mind_load_i32", 1, Det::Pure),
     ("__mind_load_i16", 1, Det::Pure),
+    ("__mind_string_eq", 2, Det::Pure),
     // RFC 0005 Phase 3 / RI-C #228 — `open(2)` with O_RDONLY by path. Arity 1
     // (path_addr), returns the fd or a negative value on error; the path must be a
     // NUL-terminated C string (std/fs.mind:274-285 states the same contract, and

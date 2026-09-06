@@ -16,7 +16,7 @@ fn canon_cos_fixture_is_refused_without_std_surface() {
             .expect("qmul shift operator");
     let errors = libmind::parser::parse(source).expect_err("bitwise must be refused");
     assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].cause_code.as_deref(), Some("E1042"));
+    assert_eq!(errors[0].cause_code, Some("E1042"));
     assert!(errors[0].message.contains("`>>`"));
     assert!(
         errors[0].offset >= shift && errors[0].offset < qmul_end,

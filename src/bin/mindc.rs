@@ -507,6 +507,25 @@ struct CompileArgs {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        // The PE main thread has a smaller stack than Rust's ordinary worker
+        // threads. Run the compiler driver on the standard thread default.
+        match std::thread::Builder::new()
+            .name("mindc-driver".to_string())
+            .spawn(mindc_main)
+            .expect("failed to start mindc driver thread")
+            .join()
+        {
+            Ok(()) => {}
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+    #[cfg(not(windows))]
+    mindc_main();
+}
+
+fn mindc_main() {
     let cli = Cli::parse();
 
     match &cli.command {

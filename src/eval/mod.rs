@@ -16,14 +16,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
-use crate::ast::BinOp;
-
-use crate::ast::Literal;
-use crate::ast::Module;
-use crate::ast::Node;
-
-use crate::ast::TensorElemOp;
-use crate::ast::TypeAnn;
+use crate::ast::{BinOp, Literal, Module, Node, TensorElemOp, TypeAnn};
 use crate::runtime_interface::{MindRuntime, NoOpRuntime};
 
 use crate::eval::autodiff::TensorEnvEntry;
@@ -51,6 +44,8 @@ pub mod lower;
 pub(crate) mod narrow_scan;
 #[cfg(feature = "std-surface")]
 pub(crate) mod slice_abi;
+#[cfg(feature = "std-surface")]
+pub(crate) mod string_equality;
 pub mod traits;
 #[cfg(feature = "std-surface")]
 mod type_aliases;

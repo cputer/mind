@@ -44,6 +44,16 @@ use crate::ir::ValueId;
 use crate::types::DType;
 use crate::types::ShapeDim;
 
+/// The shared refusal rules for the two constructs lowering must not emit —
+/// a collection mutator whose realloc'd handle cannot be rebound, and a
+/// non-final bare-identifier match arm that names an enum variant.
+///
+/// The predicates and the expression walk live in the type-checker gate so that
+/// `mindc check` and lowering read ONE rule set: the gate refuses at check time,
+/// and the report sites below panic only if the gate ever misses.
+#[cfg(feature = "std-surface")]
+use crate::type_checker::lowering_refusals as refusals;
+
 #[cfg(feature = "std-surface")]
 use crate::eval::slice_abi::{
     ARRAY_VEC_SENTINEL, MUT_SLICE_VEC_SENTINEL, SLICE_VEC_SENTINEL, is_mutable_vec_handle_sentinel,
@@ -948,6 +958,76 @@ fn lower_pure_scalar_item(n: &ast::Node, ir: &mut IRModule) -> ValueId {
     }
 }
 
+/// Install the built-in Result/Option prelude side-tables and merge the
+/// whole-project enum registry into `ir`.
+///
+/// Shared with the check-time refusal gate
+/// (`type_checker::lowering_refusals`) builds its variant registry from the SAME
+/// code rather than a second copy: the gate must refuse exactly the matches
+/// lowering refuses, and a registry that drifts from lowering's is precisely how
+/// that guarantee is lost.
+#[cfg(feature = "std-surface")]
+pub(crate) fn install_enum_prelude_and_globals(ir: &mut IRModule, module: &ast::Module) {
+    // Install the built-in Result/Option base entries ONLY when the module
+    // could actually reference them. A pure-scalar module (the `scalar_math`
+    // bench) provably never consults these side-tables, and an unused
+    // prelude is byte-identical by design — so skipping the ~14 string/vec
+    // allocations is output-invariant while removing them from the
+    // nanosecond-floor hot path. The cross-module merge below stays
+    // unconditional (it is a no-op when the global enum registry is empty).
+    if module.items.iter().any(may_reference_enum_prelude) {
+        use crate::ast::TypeAnn::ScalarI64;
+        ir.enum_variant_tags.insert("Result::Ok".to_string(), 0);
+        ir.enum_variant_tags.insert("Result::Err".to_string(), 1);
+        ir.enum_variant_tags.insert("Option::Some".to_string(), 0);
+        ir.enum_variant_tags.insert("Option::None".to_string(), 1);
+        ir.boxed_enums.insert("Result".to_string());
+        ir.boxed_enums.insert("Option".to_string());
+        ir.enum_payload_slots.insert("Result".to_string(), 2);
+        ir.enum_payload_slots.insert("Option".to_string(), 2);
+        ir.enum_payload_types
+            .insert("Result::Ok".to_string(), vec![ScalarI64]);
+        ir.enum_payload_types
+            .insert("Result::Err".to_string(), vec![ScalarI64]);
+        ir.enum_payload_types
+            .insert("Option::Some".to_string(), vec![ScalarI64]);
+    }
+    // Install project metadata for local declarations and explicitly imported,
+    // exported enum types. Qualified ownership must match in check and lowering;
+    // private or unimported declarations must not enter either registry.
+    crate::ir::with_global_enums(|g| {
+        for (k, v) in &g.variant_tags {
+            ir.enum_variant_tags.insert(k.clone(), *v);
+        }
+        for (k, v) in &g.payload_types {
+            ir.enum_payload_types.insert(k.clone(), v.clone());
+        }
+        for (k, v) in &g.slots {
+            ir.enum_payload_slots.insert(k.clone(), *v);
+        }
+        for name in &g.boxed {
+            ir.boxed_enums.insert(name.clone());
+        }
+        for (k, v) in &g.struct_field_names {
+            ir.enum_struct_field_names.insert(k.clone(), v.clone());
+        }
+        #[cfg(feature = "cross-module-imports")]
+        g.qualified.install_ir_metadata(ir, module);
+        // Cross-module struct field names + types, so a module can resolve a
+        // sibling-module struct's field (e.g. compile.mind reading
+        // `analyzed.determinism` where `AnalyzedFlow` lives in sema.mind). The
+        // module's OWN StructDef arm re-inserts via last-write-wins.
+        for (name, (field_names, field_types)) in &g.structs {
+            ir.struct_defs
+                .entry(name.clone())
+                .or_insert_with(|| field_names.clone());
+            ir.struct_field_types
+                .entry(name.clone())
+                .or_insert_with(|| field_types.clone());
+        }
+    });
+}
+
 /// Register one enum's variant-tag / boxed-record metadata into `ir`, exactly as
 /// the top-level `EnumDef` lowering arm does: ordinal `0,1,2,…` tags under the
 /// qualified `Enum::Variant` path, plus (for an enum with a payload on ≥1
@@ -956,7 +1036,7 @@ fn lower_pure_scalar_item(n: &ast::Node, ir: &mut IRModule) -> ValueId {
 /// (`register_module_wrapped_enum_tags`) share ONE registration, guaranteeing a
 /// `module { enum … }` variant resolves its tag identically to a top-level one.
 #[cfg(feature = "std-surface")]
-fn register_enum_metadata(ir: &mut IRModule, name: &str, variants: &[ast::EnumVariant]) {
+pub(crate) fn register_enum_metadata(ir: &mut IRModule, name: &str, variants: &[ast::EnumVariant]) {
     #[cfg(all(feature = "cross-module-imports", feature = "std-surface"))]
     let enum_key = crate::qualified_enums::current_enum_key(name);
     #[cfg(not(all(feature = "cross-module-imports", feature = "std-surface")))]
@@ -1003,7 +1083,7 @@ fn register_enum_metadata(ir: &mut IRModule, name: &str, variants: &[ast::EnumVa
 /// `EnumDef` keeps its existing inline registration in the main loop, so a module
 /// with no module-wrapped enum is byte-for-byte unchanged.
 #[cfg(feature = "std-surface")]
-fn register_module_wrapped_enum_tags(ir: &mut IRModule, items: &[ast::Node]) {
+pub(crate) fn register_module_wrapped_enum_tags(ir: &mut IRModule, items: &[ast::Node]) {
     for item in items {
         if let ast::Node::Block { stmts, .. } = item {
             register_enums_in_block(ir, stmts);
@@ -1085,10 +1165,10 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
             return ir;
         }
     }
-    // Pre-pass: rewrite statement-position collection mutations (`m.insert(k,v)`,
-    // `v.push(x)`) into assignments so the non-mutating std handle is rebound.
-    // A no-op (byte-identical) for any module with no collection-mutation
-    // statement — notably the keystone main.mind.
+    // Run the owning AST prepass before lower_expr's recursive stack.  The
+    // prepass also normalizes proven string equality, while this call retains
+    // the same signature and outgoing argument area as the collection-only
+    // path that established the Windows debug-stack baseline.
     #[cfg(feature = "std-surface")]
     let preprocessed = preprocess_collection_mutations(module);
     #[cfg(feature = "std-surface")]
@@ -1148,68 +1228,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     // its own `Result`/`Option` overwrites these via last-write-wins in the
     // `EnumDef` arm below.
     #[cfg(feature = "std-surface")]
-    {
-        // Install the built-in Result/Option base entries ONLY when the module
-        // could actually reference them. A pure-scalar module (the `scalar_math`
-        // bench) provably never consults these side-tables, and an unused
-        // prelude is byte-identical by design — so skipping the ~14 string/vec
-        // allocations is output-invariant while removing them from the
-        // nanosecond-floor hot path. The cross-module merge below stays
-        // unconditional (it is a no-op when the global enum registry is empty).
-        if module.items.iter().any(may_reference_enum_prelude) {
-            use crate::ast::TypeAnn::ScalarI64;
-            ir.enum_variant_tags.insert("Result::Ok".to_string(), 0);
-            ir.enum_variant_tags.insert("Result::Err".to_string(), 1);
-            ir.enum_variant_tags.insert("Option::Some".to_string(), 0);
-            ir.enum_variant_tags.insert("Option::None".to_string(), 1);
-            ir.boxed_enums.insert("Result".to_string());
-            ir.boxed_enums.insert("Option".to_string());
-            ir.enum_payload_slots.insert("Result".to_string(), 2);
-            ir.enum_payload_slots.insert("Option".to_string(), 2);
-            ir.enum_payload_types
-                .insert("Result::Ok".to_string(), vec![ScalarI64]);
-            ir.enum_payload_types
-                .insert("Result::Err".to_string(), vec![ScalarI64]);
-            ir.enum_payload_types
-                .insert("Option::Some".to_string(), vec![ScalarI64]);
-        }
-        // Cross-module enum propagation: install metadata for this module's
-        // declarations and its explicitly imported, exported enum types. This
-        // lets sibling variants lower without exposing private or unimported
-        // declarations. The per-module `EnumDef` arm below still overwrites its
-        // own entries. Outside a project the registry is empty.
-        crate::ir::with_global_enums(|g| {
-            for (k, v) in &g.variant_tags {
-                ir.enum_variant_tags.insert(k.clone(), *v);
-            }
-            for (k, v) in &g.payload_types {
-                ir.enum_payload_types.insert(k.clone(), v.clone());
-            }
-            for (k, v) in &g.slots {
-                ir.enum_payload_slots.insert(k.clone(), *v);
-            }
-            for name in &g.boxed {
-                ir.boxed_enums.insert(name.clone());
-            }
-            for (k, v) in &g.struct_field_names {
-                ir.enum_struct_field_names.insert(k.clone(), v.clone());
-            }
-            #[cfg(feature = "cross-module-imports")]
-            g.qualified.install_ir_metadata(&mut ir, module);
-            // Cross-module struct field names + types, so a module can resolve a
-            // sibling-module struct's field (e.g. compile.mind reading
-            // `analyzed.determinism` where `AnalyzedFlow` lives in sema.mind). The
-            // module's OWN StructDef arm below re-inserts via last-write-wins.
-            for (name, (field_names, field_types)) in &g.structs {
-                ir.struct_defs
-                    .entry(name.clone())
-                    .or_insert_with(|| field_names.clone());
-                ir.struct_field_types
-                    .entry(name.clone())
-                    .or_insert_with(|| field_types.clone());
-            }
-        });
-    }
+    install_enum_prelude_and_globals(&mut ir, module);
     // Task #271: register variant tags for enums declared inside `module { … }`
     // blocks BEFORE any body lowers, so a match on a module-wrapped variant
     // resolves its tag (real discriminant jump) instead of degrading to the
@@ -1505,86 +1524,8 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                 #[cfg(feature = "std-surface")]
                 record_narrow_let(name, ann);
                 env.insert(name.clone(), id);
-                // Dynamic `bytes = [..]` tracks as the vec surface (growable u8).
                 #[cfg(feature = "std-surface")]
-                if is_growable_bytes_init(ann, value) {
-                    struct_env.insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                }
-                // P0f Step 1: if the RHS is a StructLit, record the var→type
-                // binding so a later FieldAccess on this name resolves the
-                // correct offset out of `ir.struct_defs`.
-                #[cfg(feature = "std-surface")]
-                if let ast::Node::StructLit {
-                    name: struct_name, ..
-                } = value.as_ref()
-                {
-                    struct_env.insert(name.clone(), struct_name.clone());
-                }
-                // `let x = y` where `y` is a tracked struct/collection local or
-                // param: `x` aliases `y`'s type (and element tracking), so a
-                // field/method/index on `x` resolves — e.g. `let next = t;
-                // next.scopes.push(..)` with `t: SomeStruct`.
-                #[cfg(feature = "std-surface")]
-                if let ast::Node::Lit(Literal::Ident(src), _) = value.as_ref() {
-                    if let Some(t) = struct_env.get(src).cloned() {
-                        struct_env.entry(name.clone()).or_insert(t);
-                    }
-                    if let Some(e) = struct_env.get(&format!("__elem__{src}")).cloned() {
-                        struct_env.entry(format!("__elem__{name}")).or_insert(e);
-                    }
-                }
-                // `array<T>` binding: record the vec sentinel so a later
-                // `arr.push/get/set/len/length` or `arr[i]` resolves to the
-                // std.vec runtime. Pure metadata (never serialized into mic@3).
-                #[cfg(feature = "std-surface")]
-                if is_array_surface_type(ann) {
-                    struct_env.insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                    if let Some(__e) = ann.as_ref().and_then(array_element_track) {
-                        struct_env.insert(format!("__elem__{}", name), __e);
-                    }
-                }
-                // `set<T>` binding: record the set sentinel so `.contains/.add/.len`
-                // resolve to the std.map runtime.
-                #[cfg(feature = "std-surface")]
-                if let Some(s) = set_sentinel_for_opt(ann) {
-                    struct_env.insert(name.clone(), s.to_string());
-                }
-                #[cfg(feature = "std-surface")]
-                if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String") {
-                    struct_env.insert(name.clone(), "String".to_string());
-                }
-                // `let x = f(...)` / `let x = s.field` — infer x's type from the
-                // RHS so a method on x resolves without an annotation (e.g.
-                // `let raw = decorator_arg_string(d); raw.split(…)`). Annotations
-                // (handled above) win via or_insert.
-                #[cfg(feature = "std-surface")]
-                if let Some((__s, __e)) =
-                    let_rhs_collection_track(value, &ir, &struct_env, receiver_types)
-                {
-                    struct_env.entry(name.clone()).or_insert(__s);
-                    if let Some(__el) = __e {
-                        struct_env
-                            .entry(format!("__elem__{}", name))
-                            .or_insert(__el);
-                    }
-                }
-                // `map<K, V>` binding: record the map sentinel (str-key vs i64-key)
-                // so `m.insert/.get/.contains_key/.len` resolve to std.map.
-                #[cfg(feature = "std-surface")]
-                if let Some(s) = map_sentinel_for_opt(ann) {
-                    struct_env.insert(name.clone(), s.to_string());
-                }
-                // Bare-pattern match disambiguation: record the enum this
-                // binding provably holds (typed `let b: E`, or a qualified
-                // constructor RHS) under `__enum__{name}` so a later
-                // `match b { X(v) => … }` over a variant name shared by multiple
-                // enums resolves against THIS enum, not the first registry hit.
-                // Pure metadata (distinct `__enum__` key namespace) — never
-                // serialized into mic@3 and inert to every struct-field lookup.
-                #[cfg(feature = "std-surface")]
-                if let Some(en) = let_binding_enum(ann, value, &ir.enum_variant_tags) {
-                    struct_env.insert(format!("__enum__{name}"), en);
-                }
+                update_let_struct_binding(name, ann, value, &ir, &mut struct_env, receiver_types);
                 ir.instrs.push(Instr::Output(id));
             }
             ast::Node::Assign { name, value, .. } => {
@@ -3720,12 +3661,25 @@ fn foreach_element_sentinel(
 /// name. Returns `(sentinel, optional __elem__ element)` for an `array<T>` RHS so
 /// a later for-each over `x` recovers `T`. None for a scalar/unknown RHS.
 #[cfg(feature = "std-surface")]
+#[cfg_attr(debug_assertions, inline(never))]
 fn let_rhs_collection_track(
+    ann: &Option<TypeAnn>,
     value: &ast::Node,
     ir: &IRModule,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
 ) -> Option<(String, Option<String>)> {
+    if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String") {
+        return Some(("String".to_string(), None));
+    }
+    // A literal already proves the runtime String record layout. Classify it in
+    // this existing RHS helper instead of adding string-annotation branches to
+    // `lower_expr`: that function recurses once per expression node, and even a
+    // small additional branch in its merged debug frame overflows the default
+    // Windows test-thread stack on `std/json.mind`.
+    if matches!(value, ast::Node::Lit(Literal::Str(_), _)) {
+        return Some(("String".to_string(), None));
+    }
     // A string method whose result is itself a string (`text.slice(..)`,
     // `s.trim()`) or an `array<string>` (`s.split(..)`) — track the binding so a
     // chained method on the result (`text.slice(0, n).byte_at(i)` via a let)
@@ -3823,47 +3777,133 @@ fn let_rhs_collection_track(
     Some((sentinel, elem))
 }
 
-/// The collection mutating-method names whose std implementation returns a
-/// FRESH handle on realloc (`vec_push`, `map_insert`, …). A bare-statement call
-/// is rebound (see [`rewrite_collection_mutations`]); the same call in
-/// expression position cannot rebind its realloc'd handle and is rejected.
-/// Kept IN SYNC with the statement-rebind matcher's method list so a mutator is
-/// rejected in expr position iff it would be rebound as a statement.
+/// Replace the type owner of one lowered `let` after its initializer has been
+/// lowered against the preceding lexical environment.
+///
+/// Every statement-lowering path calls this helper. Computing the replacement
+/// first preserves `let a = a.push(..)` and aliases; removing the old entries
+/// before insertion prevents an outer collection sentinel from surviving a
+/// branch-local `let a: Struct = ...` shadow.
 #[cfg(feature = "std-surface")]
-const COLLECTION_MUTATORS: &[&str] = &["insert", "push", "set", "add"];
+fn resolve_let_struct_binding(
+    name: &str,
+    ann: &Option<TypeAnn>,
+    value: &ast::Node,
+    ir: &IRModule,
+    struct_env: &HashMap<String, String>,
+    receiver_types: &HashMap<crate::ast::Span, String>,
+) -> (Option<(String, Option<String>)>, Option<String>) {
+    let elem_key = format!("__elem__{name}");
+    let declared = if is_array_surface_type(ann) || is_growable_bytes_init(ann, value) {
+        Some((
+            ARRAY_VEC_SENTINEL.to_string(),
+            ann.as_ref().and_then(array_element_track),
+        ))
+    } else if let Some(s) = map_sentinel_for_opt(ann) {
+        Some((s.to_string(), None))
+    } else if let Some(s) = set_sentinel_for_opt(ann) {
+        Some((s.to_string(), None))
+    } else if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String") {
+        Some(("String".to_string(), None))
+    } else if let Some(TypeAnn::Named(n)) = ann {
+        ir.struct_defs
+            .contains_key(struct_key_for(ir, n))
+            .then(|| (n.clone(), None))
+    } else {
+        None
+    };
+    let literal = match value {
+        ast::Node::StructLit {
+            name: struct_name, ..
+        } => Some((struct_name.clone(), None)),
+        _ => None,
+    };
+    let alias = match value {
+        ast::Node::Lit(Literal::Ident(src), _) => struct_env
+            .get(src)
+            .cloned()
+            .map(|owner| (owner, struct_env.get(&format!("__elem__{src}")).cloned())),
+        _ if refusals::is_same_name_rebind(name, value) => struct_env
+            .get(name)
+            .cloned()
+            .map(|owner| (owner, struct_env.get(&elem_key).cloned())),
+        _ => None,
+    };
+    (
+        declared
+            .or(literal)
+            .or(alias)
+            .or_else(|| let_rhs_collection_track(ann, value, ir, struct_env, receiver_types)),
+        let_binding_enum(ann, value, &ir.enum_variant_tags),
+    )
+}
 
-/// Does `receiver` name a tracked collection (a local/param of `array<T>` /
-/// `map<K,V>` / `set<T>`, a struct collection FIELD, or a struct
-/// `array<collection>` ELEMENT)? Mirrors the rebind matcher in
-/// [`rewrite_collection_mutations`] so the expr-position reject below fires on
-/// exactly the same receiver shapes that statement-position rebinding handles.
 #[cfg(feature = "std-surface")]
-fn receiver_is_tracked_collection(
-    receiver: &ast::Node,
-    scope: &std::collections::HashSet<String>,
-    struct_collection_fields: &std::collections::HashSet<(String, String)>,
-    struct_collection_element_fields: &std::collections::HashSet<(String, String)>,
-    vtypes: &std::collections::HashMap<String, String>,
-) -> bool {
-    match receiver {
-        ast::Node::Lit(Literal::Ident(v), _) => scope.contains(v),
-        ast::Node::FieldAccess {
-            receiver: base,
-            field,
-            ..
-        } => matches!(base.as_ref(), ast::Node::Lit(Literal::Ident(obj), _)
-        if vtypes.get(obj).is_some_and(|s| {
-            struct_collection_fields.contains(&(s.clone(), field.clone()))
-        })),
-        ast::Node::IndexAccess { receiver: base, .. } => matches!(
-            base.as_ref(),
-            ast::Node::FieldAccess { receiver: obj, field, .. }
-                if matches!(obj.as_ref(), ast::Node::Lit(Literal::Ident(ov), _)
-                    if vtypes.get(ov).is_some_and(|s| {
-                        struct_collection_element_fields.contains(&(s.clone(), field.clone()))
-                    }))
-        ),
-        _ => false,
+fn install_let_struct_binding(
+    name: &str,
+    binding: Option<(String, Option<String>)>,
+    enum_owner: Option<String>,
+    struct_env: &mut HashMap<String, String>,
+) {
+    let elem_key = format!("__elem__{name}");
+    let enum_key = format!("__enum__{name}");
+    struct_env.remove(name);
+    struct_env.remove(&elem_key);
+    struct_env.remove(&enum_key);
+    if let Some((owner, elem)) = binding {
+        struct_env.insert(name.to_string(), owner);
+        if let Some(elem) = elem {
+            struct_env.insert(elem_key, elem);
+        }
+    }
+    if let Some(owner) = enum_owner {
+        struct_env.insert(enum_key, owner);
+    }
+}
+
+#[cfg(feature = "std-surface")]
+fn update_let_struct_binding(
+    name: &str,
+    ann: &Option<TypeAnn>,
+    value: &ast::Node,
+    ir: &IRModule,
+    struct_env: &mut HashMap<String, String>,
+    receiver_types: &HashMap<crate::ast::Span, String>,
+) {
+    let (binding, enum_owner) =
+        resolve_let_struct_binding(name, ann, value, ir, struct_env, receiver_types);
+    install_let_struct_binding(name, binding, enum_owner, struct_env);
+}
+
+#[cfg(feature = "std-surface")]
+fn update_lettuple_struct_bindings(
+    names: &[String],
+    value: &ast::Node,
+    ir: &IRModule,
+    struct_env: &mut HashMap<String, String>,
+    receiver_types: &HashMap<crate::ast::Span, String>,
+) {
+    let tuple = match value {
+        ast::Node::Paren(inner, _) => inner.as_ref(),
+        other => other,
+    };
+    let elements = match tuple {
+        ast::Node::Tuple { elements, .. } => Some(elements.as_slice()),
+        _ => None,
+    };
+    let resolved: Vec<_> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            elements
+                .and_then(|items| items.get(i))
+                .map_or((None, None), |item| {
+                    resolve_let_struct_binding(name, &None, item, ir, struct_env, receiver_types)
+                })
+        })
+        .collect();
+    for (name, (binding, enum_owner)) in names.iter().zip(resolved) {
+        install_let_struct_binding(name, binding, enum_owner, struct_env);
     }
 }
 
@@ -4153,92 +4193,20 @@ fn expr_contains_call(node: &ast::Node) -> bool {
     }
 }
 
-/// Walk an EXPRESSION (non-statement) sub-tree and FAIL LOUD (#306) on any
-/// collection mutating-method call on a tracked collection receiver. Such a call
-/// (`w.push(v.push(5))`, `f(a.push(x))`, `let n = a.push(x)`) cannot rebind its
-/// realloc'd handle in expression position — only the bare-statement form is
-/// rebound — so it would silently lose the mutation. Refuse it at compile time
-/// rather than emit a silent miscompile. A normal value-returning method
-/// (`a.length`, `a.get(i)`, a non-collection `.add`) is NOT a tracked-collection
-/// mutator, so it passes through untouched. Does NOT descend into nested
-/// statement bodies (`If`/`Block`/closures) — the main loop recurses into those
-/// with the correct lexical scope.
+/// Does `let <name>: <ann> = <value>` introduce a TRACKED collection local?
+///
+/// One definition, read by the statement-rebind pass below AND by the
+/// check-time gate's block walker (`type_checker::lowering_refusals`), which has
+/// to thread the same lexical scope through a match-arm block to know whether a
+/// receiver there is a collection at all. Two copies of this predicate would be
+/// two answers to "is `t` a collection", and the gate would then refuse or admit
+/// programs lowering does not.
 #[cfg(feature = "std-surface")]
-fn reject_collection_mutation_in_expr(
-    expr: &ast::Node,
-    scope: &std::collections::HashSet<String>,
-    struct_collection_fields: &std::collections::HashSet<(String, String)>,
-    struct_collection_element_fields: &std::collections::HashSet<(String, String)>,
-    vtypes: &std::collections::HashMap<String, String>,
-) {
-    use ast::Node as N;
-    if let N::MethodCall {
-        receiver, method, ..
-    } = expr
-    {
-        if COLLECTION_MUTATORS.contains(&method.as_str())
-            && receiver_is_tracked_collection(
-                receiver,
-                scope,
-                struct_collection_fields,
-                struct_collection_element_fields,
-                vtypes,
-            )
-        {
-            panic!(
-                "collection mutation `{}.{}(...)` in expression position is not \
-                 supported: the std `{}` returns a fresh handle on realloc that \
-                 cannot be rebound here, so the mutation would be silently lost. \
-                 Use it as its own statement (`{}.{}(...)`) instead. (#306: \
-                 refusing a known silent miscompile.)",
-                describe_receiver(receiver),
-                method,
-                method,
-                describe_receiver(receiver),
-                method,
-            );
-        }
-    }
-    // Recurse into expression children only. The walk mirrors `lower_expr`'s
-    // value-position descent; it deliberately stops at nodes that open a new
-    // statement scope (`If`/`Block`/`Match`/`FnDef`), which the caller's main
-    // loop handles with the correct collection scope.
-    let recur = |e: &ast::Node| {
-        reject_collection_mutation_in_expr(
-            e,
-            scope,
-            struct_collection_fields,
-            struct_collection_element_fields,
-            vtypes,
-        )
-    };
-    match expr {
-        N::Binary { left, right, .. } => {
-            recur(left);
-            recur(right);
-        }
-        N::Paren(inner, _) => recur(inner),
-        N::Tuple { elements, .. } | N::ArrayLit { elements, .. } => elements.iter().for_each(recur),
-        N::Call { args, .. } => args.iter().for_each(recur),
-        N::MethodCall { receiver, args, .. } => {
-            recur(receiver);
-            args.iter().for_each(recur);
-        }
-        N::FieldAccess { receiver, .. } => recur(receiver),
-        N::IndexAccess {
-            receiver, index, ..
-        } => {
-            recur(receiver);
-            recur(index);
-        }
-        N::MapLit { entries, .. } => {
-            for (k, v) in entries {
-                recur(k);
-                recur(v);
-            }
-        }
-        _ => {}
-    }
+pub(crate) fn let_declares_collection(ann: &Option<TypeAnn>, value: &ast::Node) -> bool {
+    is_array_surface_type(ann)
+        || map_sentinel_for_opt(ann).is_some()
+        || set_sentinel_for_opt(ann).is_some()
+        || is_growable_bytes_init(ann, value)
 }
 
 /// Rewrite STATEMENT-position collection mutations into assignments so the
@@ -4264,34 +4232,6 @@ fn rewrite_collection_mutations(
     let mut scope = collections.clone();
     let mut vtypes = var_types.clone();
     for stmt in stmts.iter_mut() {
-        // A `let x: array<T> | map<K,V>` introduces a new collection local; a
-        // `let x: StructName` (or `let x = y` aliasing a tracked struct) introduces
-        // a struct-typed local (so `x.field.push` / `x.field[i].insert` resolve).
-        if let ast::Node::Let {
-            name, ann, value, ..
-        } = stmt
-        {
-            let growable = is_growable_bytes_init(ann, value);
-            if is_array_surface_type(ann)
-                || map_sentinel_for_opt(ann).is_some()
-                || set_sentinel_for_opt(ann).is_some()
-                || growable
-            {
-                scope.insert(name.clone());
-            }
-            // A `bytes`-typed name is a struct alias only when NOT a growable
-            // `[..]` buffer (which is a vec, tracked above).
-            if !growable {
-                if let Some(ast::TypeAnn::Named(sname)) = ann {
-                    vtypes.insert(name.clone(), sname.clone());
-                }
-            }
-            if let ast::Node::Lit(Literal::Ident(src), _) = value.as_ref() {
-                if let Some(t) = vtypes.get(src).cloned() {
-                    vtypes.entry(name.clone()).or_insert(t);
-                }
-            }
-        }
         // FAIL LOUD (#306): a collection mutating call used in EXPRESSION
         // position (`let n = a.push(x)`, `f(a.push(x))`, `w.push(v.push(5))`)
         // cannot rebind its realloc'd handle and would silently lose the
@@ -4300,40 +4240,34 @@ fn rewrite_collection_mutations(
         // (allowed) — so for a bare `MethodCall` statement only its receiver's
         // sub-expressions and ARGUMENTS are scanned, never the top call.
         {
-            let reject = |e: &ast::Node| {
-                reject_collection_mutation_in_expr(
-                    e,
-                    &scope,
-                    struct_collection_fields,
-                    struct_collection_element_fields,
-                    &vtypes,
-                );
+            let ctx = refusals::CollectionScope {
+                scope: &scope,
+                struct_collection_fields,
+                struct_collection_element_fields,
+                vtypes: &vtypes,
             };
+            let reject = |e: &ast::Node| refusals::reject_collection_mutation_in_expr(e, &ctx);
             match stmt {
-                // A SAME-NAME functional-update rebind `let m = m.insert(..)`
-                // SHADOWS the receiver `m` with the realloc'd fresh handle: the
-                // old handle becomes unreachable, so nothing dangles and the
-                // mutation is NOT lost. This is the safe, idiomatic map<K,V> /
-                // vec update form (the new `let` binds the fresh handle), so it
-                // must be allowed — unlike a DIFFERENT-name `let n = m.insert(..)`
-                // which leaves `m` pointing at the freed handle and IS rejected.
-                ast::Node::Let { name, value, .. } => {
-                    let same_name_rebind = matches!(
-                        value.as_ref(),
-                        ast::Node::MethodCall { receiver, method, .. }
-                            if COLLECTION_MUTATORS.contains(&method.as_str())
-                                && matches!(
-                                    receiver.as_ref(),
-                                    ast::Node::Lit(Literal::Ident(r), _) if r == name
-                                )
-                    );
-                    if !same_name_rebind {
+                // A SAME-NAME functional update — `let m = m.insert(..)` or
+                // `out = out.push(x)` — writes the realloc'd fresh handle back
+                // onto its own receiver, so the old handle becomes unreachable
+                // and nothing is lost. The assignment form is byte-for-byte the
+                // node the statement rewrite below SYNTHESISES for a bare
+                // `out.push(x)`: refusing it while emitting it was the #237
+                // CASE 2 asymmetry (mind-codegraph gap G6). A DIFFERENT-name
+                // target (`w = v.push(x)`) leaves `v` on the freed handle and is
+                // still rejected. Only the TOP call is exempt — its receiver
+                // sub-expressions and its ARGUMENTS stay ordinary expression
+                // positions, so `out = out.push(v.push(5))` still loses `v` and
+                // is still refused.
+                ast::Node::Let { name, value, .. } | ast::Node::Assign { name, value, .. } => {
+                    if refusals::is_same_name_rebind(name, value) {
+                        refusals::reject_rebound_call_operands(value, &ctx);
+                    } else {
                         reject(value);
                     }
                 }
-                ast::Node::Assign { value, .. } | ast::Node::LetTuple { value, .. } => {
-                    reject(value)
-                }
+                ast::Node::LetTuple { value, .. } => reject(value),
                 ast::Node::Return { value: Some(v), .. } => reject(v),
                 ast::Node::FieldAssign {
                     receiver, value, ..
@@ -4355,23 +4289,45 @@ fn rewrite_collection_mutations(
                 // A bare `recv.method(args)` statement: the top call is either a
                 // rebound mutation (allowed) or a value-returning method (no
                 // mutation). Either way scan its receiver's sub-expressions and
-                // its arguments for nested expr-position mutations.
-                ast::Node::MethodCall { receiver, args, .. } => {
-                    match receiver.as_ref() {
-                        ast::Node::FieldAccess { receiver: b, .. } => reject(b),
-                        ast::Node::IndexAccess {
-                            receiver: b, index, ..
-                        } => {
-                            reject(b);
-                            reject(index);
-                        }
-                        other => reject(other),
-                    }
-                    args.iter().for_each(&reject);
-                }
+                // its arguments for nested expr-position mutations — the same
+                // treatment the same-name rebind above gets, one helper.
+                ast::Node::MethodCall { .. } => refusals::reject_rebound_call_operands(stmt, &ctx),
                 ast::Node::If { cond, .. } | ast::Node::While { cond, .. } => reject(cond),
+                // A statement-position `match`: its SCRUTINEE and every arm GUARD
+                // are ordinary expression positions, and an arm body that is a
+                // bare expression (`0 => a.push(1)`) is the match's VALUE — none
+                // of the three is reached by the rebind recursion below, which
+                // only descends `Block`-bodied arms. Leaving them unscanned is how
+                // a mutator in a match arm silently lost its handle (#237 CASE 2,
+                // match positions). `Block` bodies are deliberately NOT rejected
+                // here: those DO get the rebind treatment.
+                ast::Node::Match {
+                    scrutinee, arms, ..
+                } => {
+                    reject(scrutinee);
+                    for arm in arms {
+                        if let Some(g) = &arm.guard {
+                            reject(g);
+                        }
+                        if !matches!(arm.body, ast::Node::Block { .. }) {
+                            reject(&arm.body);
+                        }
+                    }
+                }
                 _ => {}
             }
+        }
+        // Inspect the initializer against the OLD scope, then install the new
+        // binding for following statements. The shared helper also removes a
+        // shadowed collection/struct fact.
+        match stmt {
+            ast::Node::Let {
+                name, ann, value, ..
+            } => refusals::update_let_binding(name, ann, value, &mut scope, &mut vtypes),
+            ast::Node::LetTuple { names, .. } => {
+                refusals::shadow_tuple_bindings(names, &mut scope, &mut vtypes)
+            }
+            _ => {}
         }
         // A bare collection-mutation statement whose fresh-on-realloc std handle
         // would otherwise be discarded is rebound to write the handle back:
@@ -4387,7 +4343,7 @@ fn rewrite_collection_mutations(
             receiver, method, ..
         } = stmt
         {
-            if matches!(method.as_str(), "insert" | "push" | "set" | "add") {
+            if refusals::COLLECTION_MUTATORS.contains(&method.as_str()) {
                 match receiver.as_ref() {
                     ast::Node::Lit(Literal::Ident(v), _) if scope.contains(v) => {
                         Some(Rebind::Var(v.clone()))
@@ -4885,13 +4841,18 @@ fn module_declares_collection(module: &ast::Module) -> bool {
     walk(&module.items)
 }
 
-/// Apply [`rewrite_collection_mutations`] to every top-level function body,
-/// seeding each with its `array<T>` / `map<K,V>` parameters. Returns `Some` of a
-/// rewritten clone only when the module declares a collection; `None` (no clone)
-/// otherwise — so a collection-free module (e.g. the keystone main.mind, the
-/// compile_small bench fixture) pays only the cheap pre-scan, not a full clone.
+/// Normalize proven string equality, then apply [`rewrite_collection_mutations`]
+/// to every top-level function body, seeding each with its `array<T>` /
+/// `map<K,V>` parameters. Returns `Some` only when either pass rewrites the AST;
+/// a module with neither source shape keeps the original allocation.
 #[cfg(feature = "std-surface")]
-fn preprocess_collection_mutations(module: &ast::Module) -> Option<ast::Module> {
+pub(crate) fn preprocess_collection_mutations(module: &ast::Module) -> Option<ast::Module> {
+    let normalized = super::string_equality::normalize(module);
+    preprocess_collection_mutations_only(normalized.as_ref().unwrap_or(module)).or(normalized)
+}
+
+#[cfg(feature = "std-surface")]
+fn preprocess_collection_mutations_only(module: &ast::Module) -> Option<ast::Module> {
     if !module_declares_collection(module) {
         return None;
     }
@@ -4959,6 +4920,80 @@ fn preprocess_collection_mutations(module: &ast::Module) -> Option<ast::Module> 
         }
     }
     Some(m)
+}
+
+/// Desugar one logical expression outside `lower_expr`'s recursive frame. The
+/// temporary AST contains several full `Node` values; keeping them in the
+/// recursive dispatcher made every nested expression reserve that storage on
+/// Windows, including modules with no logical operators.
+#[cfg_attr(debug_assertions, inline(never))]
+#[allow(clippy::too_many_arguments)]
+fn lower_logical_expr(
+    op: &ast::LogicalOp,
+    left: &ast::Node,
+    right: &ast::Node,
+    span: crate::ast::Span,
+    ir: &mut IRModule,
+    env: &HashMap<String, ValueId>,
+    struct_env: &HashMap<String, String>,
+    receiver_types: &HashMap<crate::ast::Span, String>,
+) -> ValueId {
+    let lit = |n: i64| ast::Node::Lit(ast::Literal::Int(n), span);
+    let is_cmp = |e: &ast::Node| {
+        matches!(
+            e,
+            ast::Node::Binary {
+                op: ast::BinOp::Lt
+                    | ast::BinOp::Le
+                    | ast::BinOp::Gt
+                    | ast::BinOp::Ge
+                    | ast::BinOp::Eq
+                    | ast::BinOp::Ne,
+                ..
+            }
+        )
+    };
+    let as_cond = |e: ast::Node| {
+        if is_cmp(&e) {
+            e
+        } else {
+            ast::Node::Binary {
+                op: ast::BinOp::Ne,
+                left: Box::new(e),
+                right: Box::new(ast::Node::Lit(ast::Literal::Int(0), span)),
+                span,
+            }
+        }
+    };
+    let norm_right = ast::Node::If {
+        cond: Box::new(as_cond(right.clone())),
+        then_branch: vec![lit(1)],
+        else_branch: Some(vec![lit(0)]),
+        span,
+    };
+    let desugared = match op {
+        ast::LogicalOp::And => ast::Node::If {
+            cond: Box::new(as_cond(left.clone())),
+            then_branch: vec![norm_right],
+            else_branch: Some(vec![lit(0)]),
+            span,
+        },
+        ast::LogicalOp::Or => ast::Node::If {
+            cond: Box::new(as_cond(left.clone())),
+            then_branch: vec![lit(1)],
+            else_branch: Some(vec![norm_right]),
+            span,
+        },
+    };
+    lower_expr(&desugared, ir, env, struct_env, receiver_types)
+}
+
+/// Keep a large match arm's temporaries in a non-recursive frame. This generic
+/// boundary is monomorphized per closure and stays outside `lower_expr` in
+/// debug builds, where the Windows frame regression occurs.
+#[cfg_attr(debug_assertions, inline(never))]
+fn lower_out_of_line<T>(f: impl FnOnce() -> T) -> T {
+    f()
 }
 
 fn lower_expr(
@@ -5393,64 +5428,7 @@ fn lower_expr(
             left,
             right,
             span,
-        } => {
-            let span = *span;
-            let lit = |n: i64| ast::Node::Lit(ast::Literal::Int(n), span);
-            // Turn an operand into a boolean If-condition. A comparison already
-            // produces the MLIR `i1` the If lowering wants on its fast path, so
-            // it is used DIRECTLY — wrapping it in `e != 0` would emit
-            // `cmpi ne <i1>, 0 : i64` (an i1 used as i64, which mlir-opt
-            // rejects). Any non-comparison operand is an i64, so `e != 0` gives
-            // correct truthiness (matching the interpreter) and lowers cleanly.
-            let is_cmp = |e: &ast::Node| {
-                matches!(
-                    e,
-                    ast::Node::Binary {
-                        op: ast::BinOp::Lt
-                            | ast::BinOp::Le
-                            | ast::BinOp::Gt
-                            | ast::BinOp::Ge
-                            | ast::BinOp::Eq
-                            | ast::BinOp::Ne,
-                        ..
-                    }
-                )
-            };
-            let as_cond = |e: ast::Node| {
-                if is_cmp(&e) {
-                    e
-                } else {
-                    ast::Node::Binary {
-                        op: ast::BinOp::Ne,
-                        left: Box::new(e),
-                        right: Box::new(ast::Node::Lit(ast::Literal::Int(0), span)),
-                        span,
-                    }
-                }
-            };
-            // `if b { 1 } else { 0 }` — normalise the RHS to a true i64 0/1.
-            let norm_right = ast::Node::If {
-                cond: Box::new(as_cond((**right).clone())),
-                then_branch: vec![lit(1)],
-                else_branch: Some(vec![lit(0)]),
-                span,
-            };
-            let desugared = match op {
-                ast::LogicalOp::And => ast::Node::If {
-                    cond: Box::new(as_cond((**left).clone())),
-                    then_branch: vec![norm_right],
-                    else_branch: Some(vec![lit(0)]),
-                    span,
-                },
-                ast::LogicalOp::Or => ast::Node::If {
-                    cond: Box::new(as_cond((**left).clone())),
-                    then_branch: vec![lit(1)],
-                    else_branch: Some(vec![norm_right]),
-                    span,
-                },
-            };
-            lower_expr(&desugared, ir, env, struct_env, receiver_types)
-        }
+        } => lower_logical_expr(op, left, right, *span, ir, env, struct_env, receiver_types),
         // Phase 6.5 Stage 1a — bitwise binary operators.
         // `ast::Node::Bitwise` is kept separate from `Node::Binary` by design
         // (see ast/mod.rs comments). Map each BitOp to its IR BinOp variant.
@@ -5458,7 +5436,7 @@ fn lower_expr(
         #[cfg(feature = "std-surface")]
         ast::Node::Bitwise {
             op, left, right, ..
-        } => {
+        } => lower_out_of_line(|| {
             let lhs = lower_expr(left, ir, env, struct_env, receiver_types);
             let mut rhs = lower_expr(right, ir, env, struct_env, receiver_types);
             let ir_op = match op {
@@ -5503,10 +5481,10 @@ fn lower_expr(
             // Finding 3: re-mask a narrow shift RESULT to its declared width
             // (`(x << 1)` with `x: u8` truncates 400→144 before the following op).
             mask_narrow_binop_result(ir, ir_op, left, right, dst, struct_env, receiver_types)
-        }
+        }),
         ast::Node::CallTensorSum {
             x, axes, keepdims, ..
-        } => {
+        } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
@@ -5517,10 +5495,10 @@ fn lower_expr(
                 keepdims: *keepdims,
             });
             dst
-        }
+        }),
         ast::Node::CallTensorMean {
             x, axes, keepdims, ..
-        } => {
+        } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
@@ -5531,14 +5509,14 @@ fn lower_expr(
                 keepdims: *keepdims,
             });
             dst
-        }
+        }),
         ast::Node::CallTensorRelu { x, .. } => {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             ir.instrs.push(Instr::Relu { dst, src });
             dst
         }
-        ast::Node::CallReshape { x, dims, .. } => {
+        ast::Node::CallReshape { x, dims, .. } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let new_shape = dims.iter().map(|dim| parse_dim(dim)).collect();
@@ -5548,7 +5526,7 @@ fn lower_expr(
                 new_shape,
             });
             dst
-        }
+        }),
         ast::Node::CallExpandDims { x, axis, .. } => {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
@@ -5559,14 +5537,14 @@ fn lower_expr(
             });
             dst
         }
-        ast::Node::CallSqueeze { x, axes, .. } => {
+        ast::Node::CallSqueeze { x, axes, .. } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
             ir.instrs.push(Instr::Squeeze { dst, src, axes });
             dst
-        }
-        ast::Node::CallTranspose { x, axes, .. } => {
+        }),
+        ast::Node::CallTranspose { x, axes, .. } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let perm = axes
@@ -5575,8 +5553,8 @@ fn lower_expr(
                 .unwrap_or_default();
             ir.instrs.push(Instr::Transpose { dst, src, perm });
             dst
-        }
-        ast::Node::CallIndex { x, axis, i, .. } => {
+        }),
+        ast::Node::CallIndex { x, axis, i, .. } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let indices = vec![IndexSpec {
@@ -5585,7 +5563,7 @@ fn lower_expr(
             }];
             ir.instrs.push(Instr::Index { dst, src, indices });
             dst
-        }
+        }),
         ast::Node::CallMatMul { a, b, .. } => {
             let lhs = lower_expr(a, ir, env, struct_env, receiver_types);
             let rhs = lower_expr(b, ir, env, struct_env, receiver_types);
@@ -5625,7 +5603,7 @@ fn lower_expr(
         // — the same IR node that `Node::Binary` (scalar `+`, `-`, `*`, `/`)
         // produces for tensor operands.  The IR-level representation is
         // identical: both forms emit `add %L, %R` (or sub/mul/div).
-        ast::Node::TensorElemwise { op, lhs, rhs, .. } => {
+        ast::Node::TensorElemwise { op, lhs, rhs, .. } => lower_out_of_line(|| {
             let l = lower_expr(lhs, ir, env, struct_env, receiver_types);
             let r = lower_expr(rhs, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
@@ -5642,8 +5620,8 @@ fn lower_expr(
                 rhs: r,
             });
             dst
-        }
-        ast::Node::CallTensorRand { shape, .. } => {
+        }),
+        ast::Node::CallTensorRand { shape, .. } => lower_out_of_line(|| {
             let dst = ir.fresh();
             let dims: Vec<String> = shape.iter().map(|d| d.to_string()).collect();
             ir.instrs.push(Instr::ConstTensor(
@@ -5655,7 +5633,7 @@ fn lower_expr(
                 None, // None = random fill, forces GPU materialization
             ));
             dst
-        }
+        }),
         ast::Node::CallDot { a, b, .. } => {
             let lhs = lower_expr(a, ir, env, struct_env, receiver_types);
             let rhs = lower_expr(b, ir, env, struct_env, receiver_types);
@@ -5673,7 +5651,7 @@ fn lower_expr(
             start,
             end,
             ..
-        } => {
+        } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let dims = vec![SliceSpec {
@@ -5684,7 +5662,7 @@ fn lower_expr(
             }];
             ir.instrs.push(Instr::Slice { dst, src, dims });
             dst
-        }
+        }),
         ast::Node::CallSliceStride {
             x,
             axis,
@@ -5692,7 +5670,7 @@ fn lower_expr(
             end,
             step,
             ..
-        } => {
+        } => lower_out_of_line(|| {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let dst = ir.fresh();
             let dims = vec![SliceSpec {
@@ -5703,7 +5681,7 @@ fn lower_expr(
             }];
             ir.instrs.push(Instr::Slice { dst, src, dims });
             dst
-        }
+        }),
         ast::Node::CallGather { x, axis, idx, .. } => {
             let src = lower_expr(x, ir, env, struct_env, receiver_types);
             let indices = lower_expr(idx, ir, env, struct_env, receiver_types);
@@ -5717,7 +5695,7 @@ fn lower_expr(
             dst
         }
         ast::Node::Paren(inner, _) => lower_expr(inner, ir, env, struct_env, receiver_types),
-        ast::Node::Tuple { elements, .. } => {
+        ast::Node::Tuple { elements, .. } => lower_out_of_line(|| {
             // A tuple is an anonymous all-i64 product type, lowered with the
             // exact machinery of an all-i64 `StructLit` / multi-payload enum
             // variant: `addr = __mind_alloc(8*n)`, then store each element at
@@ -5785,8 +5763,8 @@ fn lower_expr(
                 });
             }
             addr
-        }
-        ast::Node::FnDef(fd, _) => {
+        }),
+        ast::Node::FnDef(fd, _) => lower_out_of_line(|| {
             let ast::FnDefData {
                 name,
                 type_params,
@@ -6187,76 +6165,15 @@ fn lower_expr(
                                     .with(|fr| bind_let(&mut p.borrow_mut(), stmt, &fr.borrow()))
                             });
                         }
-                        // P0f Step 1: track fn-scoped var→struct binding for
-                        // FieldAccess inside this fn body.
                         #[cfg(feature = "std-surface")]
-                        if let ast::Node::StructLit {
-                            name: struct_name, ..
-                        } = value.as_ref()
-                        {
-                            fn_struct_env.insert(name.clone(), struct_name.clone());
-                        }
-                        // `let x = y` where `y` is a tracked struct/collection
-                        // local or param: `x` aliases `y`'s type + element
-                        // tracking (e.g. `let next = t; next.scopes.push(..)`).
-                        #[cfg(feature = "std-surface")]
-                        if let ast::Node::Lit(Literal::Ident(src), _) = value.as_ref() {
-                            if let Some(t) = fn_struct_env.get(src).cloned() {
-                                fn_struct_env.entry(name.clone()).or_insert(t);
-                            }
-                            if let Some(e) = fn_struct_env.get(&format!("__elem__{src}")).cloned() {
-                                fn_struct_env.entry(format!("__elem__{name}")).or_insert(e);
-                            }
-                        }
-                        // `array<T>` binding: record the vec sentinel so a later
-                        // method/index on this name resolves to the std.vec runtime.
-                        #[cfg(feature = "std-surface")]
-                        if is_array_surface_type(ann) {
-                            fn_struct_env.insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                            if let Some(__e) = ann.as_ref().and_then(array_element_track) {
-                                fn_struct_env.insert(format!("__elem__{}", name), __e);
-                            }
-                        }
-                        // Dynamic `bytes = [..]` tracks as the vec surface.
-                        #[cfg(feature = "std-surface")]
-                        if is_growable_bytes_init(ann, value) {
-                            fn_struct_env.insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                        }
-                        #[cfg(feature = "std-surface")]
-                        if let Some(s) = map_sentinel_for_opt(ann) {
-                            fn_struct_env.insert(name.clone(), s.to_string());
-                        }
-                        #[cfg(feature = "std-surface")]
-                        if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String")
-                        {
-                            fn_struct_env.insert(name.clone(), "String".to_string());
-                        }
-                        #[cfg(feature = "std-surface")]
-                        if let Some(s) = set_sentinel_for_opt(ann) {
-                            fn_struct_env.insert(name.clone(), s.to_string());
-                        }
-                        // Bare-pattern match disambiguation: record the enum this
-                        // fn-local binding provably holds (typed `let b: E`, or a
-                        // qualified constructor RHS) under `__enum__{name}` so a
-                        // later `match b { X(v) => … }` over a variant name shared
-                        // across enums resolves against THIS enum. Pure metadata
-                        // (distinct key namespace) — never serialized into mic@3.
-                        #[cfg(feature = "std-surface")]
-                        if let Some(en) = let_binding_enum(ann, value, &fn_ir.enum_variant_tags) {
-                            fn_struct_env.insert(format!("__enum__{name}"), en);
-                        }
-                        // RHS type inference (`let raw = f(...); raw.split(…)`).
-                        #[cfg(feature = "std-surface")]
-                        if let Some((__s, __e)) =
-                            let_rhs_collection_track(value, &fn_ir, &fn_struct_env, receiver_types)
-                        {
-                            fn_struct_env.entry(name.clone()).or_insert(__s);
-                            if let Some(__el) = __e {
-                                fn_struct_env
-                                    .entry(format!("__elem__{}", name))
-                                    .or_insert(__el);
-                            }
-                        }
+                        update_let_struct_binding(
+                            name,
+                            ann,
+                            value,
+                            &fn_ir,
+                            &mut fn_struct_env,
+                            receiver_types,
+                        );
                     }
                     ast::Node::LetTuple { names, value, .. } => {
                         // Tuple-destructuring `let (a, b) = expr` in a fn body:
@@ -6303,6 +6220,14 @@ fn lower_expr(
                             };
                             fn_env.insert(nm.clone(), loaded);
                         }
+                        #[cfg(feature = "std-surface")]
+                        update_lettuple_struct_bindings(
+                            names,
+                            value,
+                            &fn_ir,
+                            &mut fn_struct_env,
+                            receiver_types,
+                        );
                     }
                     ast::Node::Assign { name, value, .. } => {
                         // Bug #209: statement-start marker for value-position-if
@@ -6410,9 +6335,8 @@ fn lower_expr(
                             lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
                         ret_id = Some(id);
                         // Gap C: if the emitted statement was an `Instr::If`,
-                        // thread its branch_bindings back into `fn_env` so
-                        // subsequent statements in this fn body can reference
-                        // let bindings declared inside either branch.
+                        // thread its outer-binding assignment merges back into
+                        // `fn_env` so subsequent statements see those writes.
                         #[cfg(feature = "std-surface")]
                         if let Some(Instr::If {
                             branch_bindings, ..
@@ -6494,7 +6418,7 @@ fn lower_expr(
             let id = ir.fresh();
             ir.instrs.push(Instr::ConstI64(id, 0));
             id
-        }
+        }),
         ast::Node::Return { value, .. } => {
             // Generic return path (match-arm bodies, blocks, any return that
             // recurses through `lower_expr`). Task #88 facet 4: an `ArrayLit`
@@ -6619,57 +6543,15 @@ fn lower_expr(
                     if ann.is_none() {
                         record_synth_tuple_let(name, value, ir, &local_env);
                     }
-                    // P0f Step 1: track var→struct binding so a later FieldAccess
-                    // inside this block resolves the canonical field offset.
                     #[cfg(feature = "std-surface")]
-                    if let ast::Node::StructLit {
-                        name: struct_name, ..
-                    } = value.as_ref()
-                    {
-                        local_struct_env.insert(name.clone(), struct_name.clone());
-                    }
-                    // `array<T>` binding: record the vec sentinel for later
-                    // method/index resolution onto the std.vec runtime.
-                    #[cfg(feature = "std-surface")]
-                    if is_array_surface_type(ann) {
-                        local_struct_env.insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                        if let Some(__e) = ann.as_ref().and_then(array_element_track) {
-                            local_struct_env.insert(format!("__elem__{}", name), __e);
-                        }
-                    }
-                    #[cfg(feature = "std-surface")]
-                    if let Some(s) = set_sentinel_for_opt(ann) {
-                        local_struct_env.insert(name.clone(), s.to_string());
-                    }
-                    #[cfg(feature = "std-surface")]
-                    if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String") {
-                        local_struct_env.insert(name.clone(), "String".to_string());
-                    }
-                    #[cfg(feature = "std-surface")]
-                    if let Some(s) = map_sentinel_for_opt(ann) {
-                        local_struct_env.insert(name.clone(), s.to_string());
-                    }
-                    // Bare-pattern match disambiguation: record the enum this
-                    // block-local binding provably holds under `__enum__{name}`
-                    // so a later `match b { X(v) => … }` over a variant name
-                    // shared across enums resolves against THIS enum. Pure
-                    // metadata (distinct key namespace) — never in mic@3.
-                    #[cfg(feature = "std-surface")]
-                    if let Some(en) = let_binding_enum(ann, value, &ir.enum_variant_tags) {
-                        local_struct_env.insert(format!("__enum__{name}"), en);
-                    }
-                    // RHS type inference (`let raw = f(...); raw.split(…)`).
-                    #[cfg(feature = "std-surface")]
-                    if let Some((__s, __e)) =
-                        let_rhs_collection_track(value, ir, &local_struct_env, receiver_types)
-                    {
-                        local_struct_env.entry(name.clone()).or_insert(__s);
-                        if let Some(__el) = __e {
-                            local_struct_env
-                                .entry(format!("__elem__{}", name))
-                                .or_insert(__el);
-                        }
-                    }
+                    update_let_struct_binding(
+                        name,
+                        ann,
+                        value,
+                        ir,
+                        &mut local_struct_env,
+                        receiver_types,
+                    );
                     last_id = Some(id);
                 } else if let ast::Node::LetTuple { names, value, .. } = stmt {
                     // Tuple-destructuring `let (a, b) = expr` inside a block: lower
@@ -6714,6 +6596,14 @@ fn lower_expr(
                         local_env.insert(nm.clone(), loaded);
                         last_id = Some(loaded);
                     }
+                    #[cfg(feature = "std-surface")]
+                    update_lettuple_struct_bindings(
+                        names,
+                        value,
+                        ir,
+                        &mut local_struct_env,
+                        receiver_types,
+                    );
                 } else {
                     last_id = Some(lower_expr(
                         stmt,
@@ -6745,11 +6635,11 @@ fn lower_expr(
         // `scf.if` or a `cf.cond_br`+basic-block structure, placing each
         // branch's instructions in its own MLIR basic block.
         //
-        // Gap C: `let` bindings produced inside either branch are collected in
-        // `branch_bindings` and re-inserted into the outer `env` after the
-        // `Instr::If` is emitted so subsequent statements in the same scope can
-        // reference them. This replicates the pattern `Instr::While` uses for
-        // `live_vars`.
+        // Gap C: assignments to bindings visible outside either branch are
+        // collected in `branch_bindings` and re-inserted into the outer `env`
+        // after the `Instr::If` is emitted. Branch-local declarations remain
+        // scoped to their branch. This mirrors the outer-binding part of the
+        // `Instr::While` live-variable pattern.
         //
         // Gated to `std-surface`.
         #[cfg(feature = "std-surface")]
@@ -6758,7 +6648,7 @@ fn lower_expr(
             then_branch,
             else_branch,
             ..
-        } => {
+        } => lower_out_of_line(|| {
             // ── 1. Lower the condition into a scratch sub-module ──────────────
             //
             // Sub-modules must inherit `struct_defs` and `const_array_defs`
@@ -6777,8 +6667,9 @@ fn lower_expr(
             //      Starts from cond_ir's highest id.
             let mut then_ir = sub_ir_from_after(&cond_ir, ir);
             let mut then_env = env.clone();
-            // F2: names this branch writes — outer-var Assigns, branch-local
-            // Lets, and any outer var rebound by a NESTED region (loop/if).
+            // F2: names this branch writes — outer-var Assigns and any outer
+            // var rebound by a NESTED region (loop/if). Branch-local Let and
+            // LetTuple declarations are excluded from this merge set.
             // The union of then/else writes becomes the merge phi set, and each
             // merged var's per-branch value is taken from this env (dominating
             // at the branch's exit).
@@ -6970,37 +6861,14 @@ fn lower_expr(
                         #[cfg(feature = "std-surface")]
                         record_narrow_let(name, ann);
                         #[cfg(feature = "std-surface")]
-                        {
-                            let _ = ann;
-                            if is_array_surface_type(ann) {
-                                then_struct_env
-                                    .insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                            }
-                            if let Some(s) = map_sentinel_for_opt(ann) {
-                                then_struct_env.insert(name.clone(), s.to_string());
-                            }
-                            #[cfg(feature = "std-surface")]
-                            if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String")
-                            {
-                                then_struct_env.insert(name.clone(), "String".to_string());
-                            }
-                            if let Some(s) = set_sentinel_for_opt(ann) {
-                                then_struct_env.insert(name.clone(), s.to_string());
-                            }
-                            if let Some((__s, __e)) = let_rhs_collection_track(
-                                value,
-                                &then_ir,
-                                &then_struct_env,
-                                receiver_types,
-                            ) {
-                                then_struct_env.entry(name.clone()).or_insert(__s);
-                                if let Some(__el) = __e {
-                                    then_struct_env
-                                        .entry(format!("__elem__{}", name))
-                                        .or_insert(__el);
-                                }
-                            }
-                        }
+                        update_let_struct_binding(
+                            name,
+                            ann,
+                            value,
+                            &then_ir,
+                            &mut then_struct_env,
+                            receiver_types,
+                        );
                         // Scope fix: record this `let` as a branch-local
                         // DECLARATION (block-scoped) rather than a merge write.
                         // It stays in `then_env` (inserted above) for the rest of
@@ -7138,23 +7006,35 @@ fn lower_expr(
                         }
                     }
                     ast::Node::LetTuple { names, value, .. } => {
+                        // If this declaration follows a genuine write to an
+                        // outer binding of the same name, preserve that written
+                        // value for the merge before the tuple binding shadows
+                        // it. This mirrors the scalar Let arm above.
+                        for name in names {
+                            if then_writes.iter().any(|n| n == name)
+                                && !then_frozen.iter().any(|(n, _)| n == name)
+                            {
+                                if let Some(pre) = then_env.get(name).copied() {
+                                    then_frozen.push((name.clone(), pre));
+                                }
+                            }
+                        }
                         then_result = lower_lettuple_stmt(
                             names,
                             value,
                             &mut then_ir,
                             &mut then_env,
-                            struct_env,
+                            &mut then_struct_env,
                             receiver_types,
                         );
-                        // deferred: a branch-local `let (a, b) = ...` destructure is
-                        // also block-scoped and leaks past the `if` for the same
-                        // reason as a scalar `let` (recorded as a write here). Left
-                        // unscoped to keep this fix minimal / low-blast-radius on the
-                        // scalar-`let` case that was net-verified. Upgrade path: track
-                        // `names` in `then_local_decls` and skip the merge writes,
-                        // mirroring the scalar-`let` arm above.
-                        for nm in names {
-                            record_then_write(nm, &mut then_writes);
+                        // Tuple destructuring is a declaration, not an
+                        // assignment to same-spelled outer bindings. Keep its
+                        // names visible for later statements in this branch,
+                        // but never create post-if merge columns for them.
+                        for name in names {
+                            if !then_local_decls.iter().any(|n| n == name) {
+                                then_local_decls.push(name.clone());
+                            }
                         }
                     }
                     other => {
@@ -7353,37 +7233,14 @@ fn lower_expr(
                             #[cfg(feature = "std-surface")]
                             record_narrow_let(name, ann);
                             #[cfg(feature = "std-surface")]
-                            {
-                                let _ = ann;
-                                if is_array_surface_type(ann) {
-                                    else_struct_env
-                                        .insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                                }
-                                if let Some(s) = map_sentinel_for_opt(ann) {
-                                    else_struct_env.insert(name.clone(), s.to_string());
-                                }
-                                #[cfg(feature = "std-surface")]
-                                if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String")
-                                {
-                                    else_struct_env.insert(name.clone(), "String".to_string());
-                                }
-                                if let Some(s) = set_sentinel_for_opt(ann) {
-                                    else_struct_env.insert(name.clone(), s.to_string());
-                                }
-                                if let Some((__s, __e)) = let_rhs_collection_track(
-                                    value,
-                                    &else_ir,
-                                    &else_struct_env,
-                                    receiver_types,
-                                ) {
-                                    else_struct_env.entry(name.clone()).or_insert(__s);
-                                    if let Some(__el) = __e {
-                                        else_struct_env
-                                            .entry(format!("__elem__{}", name))
-                                            .or_insert(__el);
-                                    }
-                                }
-                            }
+                            update_let_struct_binding(
+                                name,
+                                ann,
+                                value,
+                                &else_ir,
+                                &mut else_struct_env,
+                                receiver_types,
+                            );
                             // Scope fix: record as a branch-local DECLARATION
                             // (block-scoped), excluded from the merge/branch_bindings
                             // so it does not leak past the `if`.
@@ -7430,16 +7287,27 @@ fn lower_expr(
                             else_result = id;
                         }
                         ast::Node::LetTuple { names, value, .. } => {
+                            for name in names {
+                                if else_writes.iter().any(|n| n == name)
+                                    && !else_frozen.iter().any(|(n, _)| n == name)
+                                {
+                                    if let Some(pre) = else_env.get(name).copied() {
+                                        else_frozen.push((name.clone(), pre));
+                                    }
+                                }
+                            }
                             else_result = lower_lettuple_stmt(
                                 names,
                                 value,
                                 &mut else_ir,
                                 &mut else_env,
-                                struct_env,
+                                &mut else_struct_env,
                                 receiver_types,
                             );
-                            for nm in names {
-                                record_else_write(nm, &mut else_writes);
+                            for name in names {
+                                if !else_local_decls.iter().any(|n| n == name) {
+                                    else_local_decls.push(name.clone());
+                                }
                             }
                         }
                         // F2 aggregate branch-carry (#320 Step D): `a[i] = v` inside
@@ -7557,10 +7425,9 @@ fn lower_expr(
             // (threaded above) — never a raw value defined in a deeper branch.
             //
             // A branch that does not write the variable passes its incoming
-            // value (`env[name]`). If the variable does not exist in the outer
-            // env either (a branch-local `let`), that branch synthesises a unit
-            // 0 inside its own block so both edges still pass a dominating
-            // value of matching type.
+            // value (`env[name]`). For a legacy one-sided binding with no outer
+            // value, that branch synthesises a unit 0 so both edges still pass
+            // a dominating value of matching type.
             //
             // `branch_bindings[i].1` is set to the merge id so post-if code and
             // upward threading (`region_exit_rebindings`) pick up the
@@ -7743,7 +7610,7 @@ fn lower_expr(
             // as a shared reference and cannot mutate the outer scope here.
 
             dst
-        }
+        }),
         // Non-gated fallback for `ast::Node::If` when `std-surface` is off.
         // Retains the old sequential-flatten behaviour so the default build
         // compiles and the existing `if_expr` tests continue to pass.
@@ -7915,10 +7782,10 @@ fn lower_expr(
         // is feature-config-independent.
         ast::Node::Try {
             inner, is_option, ..
-        } => {
+        } => lower_out_of_line(|| {
             let desugared = build_try_desugar(inner, *is_option);
             lower_expr(&desugared, ir, env, struct_env, receiver_types)
-        }
+        }),
         // Phase 10.7 / "finish MIND" Step 1: `match scrutinee { arms }` —
         // DESUGAR to a right-nested chain of `Instr::If`. Each integer/bool
         // (`Literal::Int`) arm becomes `if scrutinee == <lit> { body } else
@@ -7932,7 +7799,7 @@ fn lower_expr(
         #[cfg(feature = "std-surface")]
         ast::Node::Match {
             scrutinee, arms, ..
-        } => {
+        } => lower_out_of_line(|| {
             let scrut_enum = scrutinee_enum_hint(scrutinee, struct_env, &ir.enum_variant_tags);
             match desugar_match_to_if(
                 scrutinee,
@@ -7975,7 +7842,7 @@ fn lower_expr(
                     last_id
                 }
             }
-        }
+        }),
         // Non-gated fallback: default builds have no branching `If` lowering,
         // so retain the sequential-flatten behaviour.
         #[cfg(not(feature = "std-surface"))]
@@ -8172,7 +8039,7 @@ fn lower_expr(
         //
         // Gated to `std-surface` — default builds never reach this arm.
         #[cfg(feature = "std-surface")]
-        ast::Node::While { cond, body, .. } => {
+        ast::Node::While { cond, body, .. } => lower_out_of_line(|| {
             // Task #270 / PR #216 review finding 1 — snapshot/restore NARROW_LOCALS
             // across the loop body, mirroring the `Node::Block` arm's guard. A
             // wide re-let inside the body (`let x: i64 = …`) that SHADOWS an outer
@@ -8284,6 +8151,11 @@ fn lower_expr(
             let mut body_ir = IRModule::new();
             let mut body_env = seed_env.clone();
             let mut mutated: Vec<(String, ValueId)> = Vec::new();
+            // Declarations made in the loop body are re-created each
+            // iteration. A later assignment to one of these names updates the
+            // local shadow; it must not turn a same-spelled outer binding into
+            // a loop-carried value.
+            let mut body_local_decls: Vec<String> = Vec::new();
             // Pre-loop ValueId for each mutated variable (parallel to mutated).
             // Captures the ValueId from env BEFORE the while loop so the MLIR
             // emitter can produce `cf.br ^while_header(init_0, init_1, ...)`.
@@ -8352,7 +8224,7 @@ fn lower_expr(
                         {
                             let pre_init = body_env.get(nm.as_str()).copied();
                             body_env.insert(nm.clone(), eid);
-                            if env.contains_key(&nm) {
+                            if env.contains_key(&nm) && !body_local_decls.iter().any(|n| n == &nm) {
                                 record_loop_mut(&nm, eid, &mut mutated, &mut init_ids, pre_init);
                             }
                         }
@@ -8360,64 +8232,16 @@ fn lower_expr(
                         #[cfg(feature = "std-surface")]
                         record_narrow_let(name, ann);
                         #[cfg(feature = "std-surface")]
-                        {
-                            let _ = ann;
-                            if is_array_surface_type(ann) {
-                                body_struct_env
-                                    .insert(name.clone(), ARRAY_VEC_SENTINEL.to_string());
-                            }
-                            if let Some(s) = map_sentinel_for_opt(ann) {
-                                body_struct_env.insert(name.clone(), s.to_string());
-                            }
-                            #[cfg(feature = "std-surface")]
-                            if matches!(ann, Some(TypeAnn::Named(n)) if n == "string" || n == "String")
-                            {
-                                body_struct_env.insert(name.clone(), "String".to_string());
-                            }
-                            if let Some(s) = set_sentinel_for_opt(ann) {
-                                body_struct_env.insert(name.clone(), s.to_string());
-                            }
-                            // A `let p = T { .. }` declared INSIDE the loop body
-                            // must record `p`'s struct type so a later `p.field`
-                            // resolves its 8-byte offset (Step 1) — exactly as
-                            // the module/fn-scope `Let` handler already does. Without
-                            // this the in-loop field read fell through to the
-                            // `ConstI64(0)` placeholder and SILENTLY read 0 instead
-                            // of the stored value.
-                            if let ast::Node::StructLit {
-                                name: struct_name, ..
-                            } = value.as_ref()
-                            {
-                                body_struct_env.insert(name.clone(), struct_name.clone());
-                            }
-                            // `let q = p` inside the loop aliases `p`'s tracked
-                            // struct/collection type (and element tracking), matching
-                            // the outer-scope alias rule.
-                            if let ast::Node::Lit(Literal::Ident(src), _) = value.as_ref() {
-                                if let Some(t) = body_struct_env.get(src).cloned() {
-                                    body_struct_env.entry(name.clone()).or_insert(t);
-                                }
-                                if let Some(e) =
-                                    body_struct_env.get(&format!("__elem__{src}")).cloned()
-                                {
-                                    body_struct_env
-                                        .entry(format!("__elem__{name}"))
-                                        .or_insert(e);
-                                }
-                            }
-                            if let Some((__s, __e)) = let_rhs_collection_track(
-                                value,
-                                &body_ir,
-                                &body_struct_env,
-                                receiver_types,
-                            ) {
-                                body_struct_env.entry(name.clone()).or_insert(__s);
-                                if let Some(__el) = __e {
-                                    body_struct_env
-                                        .entry(format!("__elem__{}", name))
-                                        .or_insert(__el);
-                                }
-                            }
+                        update_let_struct_binding(
+                            name,
+                            ann,
+                            value,
+                            &body_ir,
+                            &mut body_struct_env,
+                            receiver_types,
+                        );
+                        if !body_local_decls.iter().any(|n| n == name) {
+                            body_local_decls.push(name.clone());
                         }
                     }
                     ast::Node::Assign { name, value, .. } => {
@@ -8446,7 +8270,9 @@ fn lower_expr(
                         // outer-loop init and drives substitute_ids to rewrite that
                         // inner after-block arg into the outer `%wbod_0_0`, tripping
                         // `redefinition of SSA value '%wbod_0_0'` at mlir-opt.
-                        if env.contains_key(name.as_str()) {
+                        if env.contains_key(name.as_str())
+                            && !body_local_decls.iter().any(|n| n == name)
+                        {
                             record_loop_mut(name, new_id, &mut mutated, &mut init_ids, pre_init);
                         }
                     }
@@ -8525,7 +8351,9 @@ fn lower_expr(
                             // guard as the scalar `Assign` arm): a fixed array declared
                             // inside the loop body is re-initialised each iteration and
                             // must NOT be loop-carried.
-                            if env.contains_key(root.as_str()) {
+                            if env.contains_key(root.as_str())
+                                && !body_local_decls.iter().any(|n| n == root)
+                            {
                                 record_loop_mut(root, dst, &mut mutated, &mut init_ids, pre_init);
                             }
                         } else {
@@ -8544,9 +8372,14 @@ fn lower_expr(
                             value,
                             &mut body_ir,
                             &mut body_env,
-                            struct_env,
+                            &mut body_struct_env,
                             receiver_types,
                         );
+                        for name in names {
+                            if !body_local_decls.iter().any(|n| n == name) {
+                                body_local_decls.push(name.clone());
+                            }
+                        }
                     }
                     other => {
                         lower_expr(
@@ -8582,7 +8415,9 @@ fn lower_expr(
                                 if body_env.contains_key(&nm) {
                                     let pre_init = body_env.get(nm.as_str()).copied();
                                     body_env.insert(nm.clone(), eid);
-                                    if env.contains_key(&nm) {
+                                    if env.contains_key(&nm)
+                                        && !body_local_decls.iter().any(|n| n == &nm)
+                                    {
                                         record_loop_mut(
                                             &nm,
                                             eid,
@@ -8635,7 +8470,7 @@ fn lower_expr(
             let unit = ir.fresh();
             ir.instrs.push(Instr::ConstI64(unit, 0));
             unit
-        }
+        }),
         // RFC 0005 P0e Step 1 — `Foo { f1: v1, f2: v2, ... }` lowers to a
         // heap record. Layout = one `i64` slot per field, packed at
         // 8-byte stride. The struct value is the `i64` base address from
@@ -8653,7 +8488,7 @@ fn lower_expr(
         // (no matching `StructDef` was lowered) fall through to literal
         // order so a forward-reference doesn't lose data.
         #[cfg(feature = "std-surface")]
-        ast::Node::StructLit { name, fields, .. } => {
+        ast::Node::StructLit { name, fields, .. } => lower_out_of_line(|| {
             // A StructLit whose name resolves to an enum VARIANT is a struct-variant
             // CONSTRUCTION `E.V { f: a, g: b }` (or `E::V { … }`), not a plain
             // struct. Build the boxed enum record `[tag, <fields in DECLARED
@@ -8854,7 +8689,7 @@ fn lower_expr(
                 });
             }
             addr
-        }
+        }),
         // RFC 0005 P0f — `receiver.field` reads from the heap record
         // produced by P0e StructLit lowering.
         //
@@ -9489,6 +9324,7 @@ fn lower_expr(
         ast::Node::Region { body, .. } => {
             let mut body_ir = sub_ir_from(ir);
             let mut body_env = env.clone();
+            let mut body_struct_env = struct_env.clone();
             let mut alloc_ids: Vec<crate::ir::ValueId> = Vec::new();
 
             // PR #216 review broader sweep — snapshot/restore NARROW_LOCALS across
@@ -9512,7 +9348,7 @@ fn lower_expr(
                 body,
                 &mut body_ir,
                 &mut body_env,
-                struct_env,
+                &mut body_struct_env,
                 receiver_types,
                 Some(&mut alloc_ids),
             );
@@ -9585,7 +9421,7 @@ fn lower_expr(
             method,
             args,
             span,
-        } => {
+        } => lower_out_of_line(|| {
             // `c.byte()` — the byte (low 8 bits) of a char/int receiver, lowered
             // as `recv & 0xFF`. A char literal is its codepoint, so this extracts
             // the byte (identity for ASCII). Intercepted here because the receiver
@@ -9981,7 +9817,7 @@ fn lower_expr(
                     id
                 }
             }
-        }
+        }),
         // A `use`/import statement carries no runtime value — it is resolved at
         // module-load time. When it reaches `lower_expr` (e.g. a top-level
         // `use` routed through the module loop) emit the unit placeholder
@@ -10113,7 +9949,7 @@ fn lower_expr(
         // substrates). The trap is unconditional once reached, so the exact
         // argument value does not affect control flow.
         #[cfg(feature = "std-surface")]
-        ast::Node::Assert { cond, msg, span } => {
+        ast::Node::Assert { cond, msg, span } => lower_out_of_line(|| {
             let msg_len = msg.as_ref().map_or(0, |m| m.len()) as i64;
             let trap_call = ast::Node::Call {
                 callee: "__mind_assert_fail".to_string(),
@@ -10127,7 +9963,7 @@ fn lower_expr(
                 span: *span,
             };
             lower_expr(&if_node, ir, env, struct_env, receiver_types)
-        }
+        }),
         // A `struct`/`enum` type definition carries no runtime value — it is a
         // compile-time declaration collected in an earlier pass (see the
         // struct/enum item-collection arms above). When a top-level type def is
@@ -10230,7 +10066,7 @@ fn lower_expr(
             // already-rewritten). Lowering ignores the attribute channel.
             attrs: _,
             span,
-        } => {
+        } => lower_out_of_line(|| {
             // ---- Hygiene gate (audit #4 / #5i) --------------------------------
             //
             // The naive desugar below (`let VAR = START; while VAR < END { BODY;
@@ -10390,7 +10226,7 @@ fn lower_expr(
             // `While` arm verbatim (cond/body sub-modules, loop-carried vars,
             // F2 region-scoped exit ids).
             lower_expr(&while_node, ir, &loop_env, struct_env, receiver_types)
-        }
+        }),
         // For-each `for x in coll { body }` over an `array<T>` (std.vec handle).
         // Flat-desugared to an indexed `while` so the loop-carried index gets the
         // same region-scoped SSA the `For`/`While` arms provide — no nested Block
@@ -10404,7 +10240,7 @@ fn lower_expr(
             collection,
             body,
             span,
-        } => {
+        } => lower_out_of_line(|| {
             let uniq = span.start();
             let coll_var = format!("__fe_coll_{uniq}");
             let idx_var = format!("__fe_i_{uniq}");
@@ -10486,7 +10322,7 @@ fn lower_expr(
                 span: *span,
             };
             lower_expr(&while_node, ir, &loop_env, &fe_struct_env, receiver_types)
-        }
+        }),
         // A `const NAME = value` DECLARATION is a no-op at the value level — the
         // value is inlined at each `Lit(Ident(NAME))` use site (see the
         // `module_const_value` read path above), exactly as `StructDef`/`EnumDef`
@@ -10538,7 +10374,7 @@ fn lower_expr(
 /// receiver's struct type (so it cannot UFCS-desugar to a `<type>_method` free
 /// function). Falls back to a generic placeholder for non-Ident receivers.
 #[cfg(feature = "std-surface")]
-fn describe_receiver(receiver: &ast::Node) -> String {
+pub(crate) fn describe_receiver(receiver: &ast::Node) -> String {
     match receiver {
         ast::Node::Lit(Literal::Ident(name), _) => name.clone(),
         _ => "<expr>".to_string(),
@@ -11032,7 +10868,7 @@ fn scrutinee_enum_hint(
 /// `Node::Binary(Eq)` nodes and is lowered through the unchanged
 /// `ast::Node::If` arm, so none of the dominance/merge machinery is touched.
 #[cfg(feature = "std-surface")]
-fn desugar_match_to_if(
+pub(crate) fn desugar_match_to_if(
     scrutinee: &ast::Node,
     // The scrutinee's OWNING enum, recovered from its typed `let` / qualified
     // constructor when available (`scrutinee_enum_hint`). Authoritative for
@@ -11289,12 +11125,7 @@ fn desugar_match_to_if(
     let is_catch_all = |p: &ast::Pattern| -> bool {
         match p {
             ast::Pattern::Wildcard => true,
-            ast::Pattern::Ident(name) => {
-                !enum_tags.contains_key(name)
-                    && !enum_tags
-                        .keys()
-                        .any(|k| k.rsplit_once("::").map(|(_, v)| v == name).unwrap_or(false))
-            }
+            ast::Pattern::Ident(name) => refusals::ident_is_catch_all(name, enum_tags),
             _ => false,
         }
     };
@@ -11456,6 +11287,16 @@ fn desugar_match_to_if(
                 // bare-collision poison below) instead of miscompiling a match
                 // on a non-existent variant.
                 let Some(tag) = enum_tags.get(path).copied() else {
+                    // The check-time refusal gate runs this same desugar. A
+                    // dangling tag is a DIFFERENT refusal, owned by the
+                    // module-qualified-enum work (#237 CASE 1), and `mindc check`
+                    // must not START aborting on a diagnostic this gate does not
+                    // own — so under collection bail the match (the pre-#271
+                    // behaviour) instead. Real lowering never collects, so its
+                    // panic below is reached exactly as before.
+                    if refusals::is_collecting() {
+                        return None;
+                    }
                     panic!(
                         "match arm variant `{path}` is not a registered enum variant \
                          (unknown/dangling tag) — lowering it would drop the whole \
@@ -11744,17 +11585,15 @@ fn desugar_match_to_if(
             // 3). Refuse (0-byte artifact) instead (#306 fail-closed). Qualify
             // the variant (`Enum::V`), rename the binding, or move the catch-all
             // to the final arm.
-            (None, None) => panic!(
-                "match arm pattern `{:?}` is an irrefutable bare-identifier \
-                 binding whose name collides with a registered enum variant, in \
-                 a non-final (test) position — it is neither a discriminant test \
-                 nor a catch-all, so the match cannot be lowered. Qualify the \
-                 variant (`Enum::V`), rename the binding, or move the catch-all \
-                 to the final arm. (Falling back to a sequential evaluation here \
-                 would ignore the scrutinee and return the last arm — a silent \
-                 miscompile.)",
-                arm.pattern
-            ),
+            (None, None) => {
+                refusals::non_final_variant_binding(&arm.pattern, arm.span);
+                // Reached ONLY with the refusal sink armed — the call above
+                // panics otherwise, so real lowering still fails closed here. The
+                // gate discards the desugared node, so an empty level lets the
+                // scan keep walking the remaining arms instead of stopping at the
+                // first refusal.
+                Vec::new()
+            }
         };
         else_stmts = Some(level);
     }
@@ -11814,7 +11653,7 @@ fn lower_stmt_seq(
     stmts: &[ast::Node],
     ir: &mut IRModule,
     env: &mut HashMap<String, ValueId>,
-    struct_env: &HashMap<String, String>,
+    struct_env: &mut HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
     mut alloc_ids: Option<&mut Vec<ValueId>>,
 ) -> Option<ValueId> {
@@ -11852,39 +11691,11 @@ fn lower_stmt_seq(
                 #[cfg(feature = "std-surface")]
                 record_narrow_let(name, ann);
                 env.insert(name.clone(), id);
+                update_let_struct_binding(name, ann, value, ir, struct_env, receiver_types);
                 id
             }
             ast::Node::LetTuple { names, value, .. } => {
-                // Lower the RHS to the tuple's base pointer, then bind each name
-                // to `__mind_load_i64(addr + 8*i)` — the read side of the
-                // `Node::Tuple` aggregate above (all-i64 layout, 8-byte slots).
-                let addr = lower_expr(value, ir, env, struct_env, receiver_types);
-                let mut last = addr;
-                for (i, nm) in names.iter().enumerate() {
-                    let elem_addr = if i == 0 {
-                        addr
-                    } else {
-                        let offset = ir.fresh();
-                        ir.instrs.push(Instr::ConstI64(offset, (i as i64) * 8));
-                        let sum = ir.fresh();
-                        ir.instrs.push(Instr::BinOp {
-                            dst: sum,
-                            op: BinOp::Add,
-                            lhs: addr,
-                            rhs: offset,
-                        });
-                        sum
-                    };
-                    let loaded = ir.fresh();
-                    ir.instrs.push(Instr::Call {
-                        dst: loaded,
-                        name: "__mind_load_i64".to_string(),
-                        args: vec![elem_addr],
-                    });
-                    env.insert(nm.clone(), loaded);
-                    last = loaded;
-                }
-                last
+                lower_lettuple_stmt(names, value, ir, env, struct_env, receiver_types)
             }
             ast::Node::Assign { name, value, .. } => {
                 let id = lower_expr(value, ir, env, struct_env, receiver_types);
@@ -11930,7 +11741,7 @@ fn lower_lettuple_stmt(
     value: &ast::Node,
     ir: &mut IRModule,
     env: &mut HashMap<String, ValueId>,
-    struct_env: &HashMap<String, String>,
+    struct_env: &mut HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
 ) -> ValueId {
     let addr = lower_expr(value, ir, env, struct_env, receiver_types);
@@ -11967,6 +11778,7 @@ fn lower_lettuple_stmt(
         env.insert(nm.clone(), loaded);
         last = loaded;
     }
+    update_lettuple_struct_bindings(names, value, ir, struct_env, receiver_types);
     last
 }
 
@@ -12221,10 +12033,12 @@ fn last_region_exit_rebindings(instrs: &[Instr]) -> Vec<(String, ValueId)> {
 /// only in the desugar's local `loop_env` clone), so they are correctly
 /// suppressed instead of leaking outward.
 ///
-/// `If` `branch_bindings` pass through UNFILTERED: Gap C deliberately threads
-/// branch-local `let`s outward to match fn-body flat-env semantics — filtering
-/// them would break that contract. Emits no instructions, so code without a
-/// nested-mutation-then-read shape lowers byte-identically.
+/// `If` `branch_bindings` already contain only genuine outer-binding writes:
+/// the `If` lowerer filters scalar and tuple declarations, including later
+/// assignments to those local shadows, before building its merge set. They can
+/// therefore pass through here without a second scope filter. Emits no
+/// instructions, so code without a nested-mutation-then-read shape lowers
+/// byte-identically.
 #[cfg(feature = "std-surface")]
 fn stmt_exit_rebindings(
     instrs: &[Instr],

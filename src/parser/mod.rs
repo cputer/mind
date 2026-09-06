@@ -1171,8 +1171,10 @@ impl<'a> P<'a> {
         // Recognized as a bare identifier — or a module-qualified path
         // `module.Name` (Phase 10.6, RFC 0003) — at type position. The
         // dotted form is collected into a single `Named` string with the
-        // separator preserved; the type checker resolves the path against
-        // the `use` scope.
+        // separator preserved. Manifest builds resolve the path against their
+        // module table and `use` scope. Inline `module NAME { ... }` blocks are
+        // transparent markers, so without a project table the checker retains
+        // no owner identity and refuses the qualified spelling.
         let pre_pos = self.pos;
         if let Some(first) = self.word() {
             // Reject keywords reused at type position to avoid odd matches.

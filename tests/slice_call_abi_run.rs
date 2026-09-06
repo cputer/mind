@@ -214,6 +214,16 @@ for name,want in expected.items():
 fn incompatible_or_overpowered_slice_uses_fail_with_structured_diagnostics() {
     let cases = [
         (
+            "set_status_cannot_replace_array",
+            "pub fn run() -> i64 { let xs: array<i64> = [1]; xs = xs.set(0, 2); return xs.length }\n",
+            "E2032",
+        ),
+        (
+            "push_cannot_create_owner_from_slice",
+            "fn bad(xs: &mut [i64]) -> i64 { xs = xs.push(2); return xs.length }\npub fn run() -> i64 { return bad([1]) }\n",
+            "E2033",
+        ),
+        (
             "scalar",
             "fn take(xs: &[i64]) -> i64 { return xs.length }\npub fn run() -> i64 { return take(7) }\n",
             "E2032",

@@ -12,7 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Literal, Node, Span, TypeAnn};
+use crate::ast::{Node, Span, TypeAnn};
 use crate::diagnostics::Diagnostic;
 
 use super::{
@@ -20,12 +20,14 @@ use super::{
 };
 
 mod borrow_flow;
+mod provenance;
 use borrow_flow::{
     LoopControl, borrowed_kind, check_call, check_loop_flow, check_while, merge_flow,
     reject_borrowed_control, remove_pattern_bindings, stmt_guarantees_return, type_contains_slice,
     value_contains_borrow,
 };
 pub(super) use borrow_flow::{check_fn, check_struct_fields};
+use provenance::{compatible_source, expr_kind, expr_type, same_type};
 
 pub(super) const SLICE_ARG_ABI_CODE: &str = "E2032";
 pub(super) const SLICE_CAPABILITY_CODE: &str = "E2033";
@@ -92,81 +94,6 @@ fn call_signature(callee: &str) -> Option<(Vec<TypeAnn>, Option<TypeAnn>)> {
         return Some((sig.param_types, sig.ret_type));
     }
     None
-}
-
-fn expr_kind(node: &Node, env: &Env) -> Option<HandleKind> {
-    match node {
-        Node::ArrayLit { .. } => None,
-        Node::Lit(Literal::Ident(name), _) => env.handles.get(name).cloned(),
-        Node::Paren(inner, _) => expr_kind(inner, env),
-        // `check_fn` validates a declared collection result before it authorizes callers.
-        Node::Call { callee, .. } => call_signature(callee)
-            .and_then(|(_, ret)| ret)
-            .as_ref()
-            .and_then(declared_kind),
-        _ => None,
-    }
-}
-
-fn compatible_array_literal(node: &Node, target_element: &TypeAnn, env: &Env) -> bool {
-    let Node::ArrayLit { elements, .. } = node else {
-        return false;
-    };
-    if elements.is_empty() {
-        return true;
-    }
-    if let Some(target_class) = scalar_class_of_ann(target_element) {
-        return elements
-            .iter()
-            .all(|element| confident_scalar_class(element, &env.classes) == Some(target_class));
-    }
-    elements.iter().all(|element| {
-        expr_type(element, env)
-            .as_ref()
-            .is_some_and(|actual| same_type(actual, target_element))
-    })
-}
-
-fn expr_type(node: &Node, env: &Env) -> Option<TypeAnn> {
-    match node {
-        Node::Lit(Literal::Ident(name), _) => env.types.get(name).cloned(),
-        Node::Lit(Literal::Str(_), _) => Some(TypeAnn::Named("string".to_string())),
-        Node::StructLit { name, .. } => Some(TypeAnn::Named(name.clone())),
-        Node::Paren(inner, _) => expr_type(inner, env),
-        Node::Call { callee, .. } => call_signature(callee).and_then(|(_, ret)| ret),
-        _ => None,
-    }
-}
-
-fn same_type(left: &TypeAnn, right: &TypeAnn) -> bool {
-    left == right
-        || matches!(
-            (left, right),
-            (TypeAnn::Named(a), TypeAnn::Named(b))
-                if matches!(a.as_str(), "string" | "String")
-                    && matches!(b.as_str(), "string" | "String")
-        )
-}
-
-fn compatible_source(target: &HandleKind, value: &Node, env: &Env) -> bool {
-    compatible_array_literal(value, target.element(), env)
-        || expr_kind(value, env).as_ref().is_some_and(|source| {
-            same_type(source.element(), target.element())
-                && match target {
-                    HandleKind::Array(_) => matches!(source, HandleKind::Array(_)),
-                    HandleKind::Slice { mutable: false, .. } => true,
-                    HandleKind::Slice { mutable: true, .. } => matches!(
-                        source,
-                        HandleKind::Array(_) | HandleKind::Slice { mutable: true, .. }
-                    ),
-                }
-        })
-        // Existing public raw-handle interop explicitly retypes an opaque i64
-        // identifier/call as an owned array. Borrow flow is checked first, so a
-        // slice can never reach this compatibility lane by erasing its type.
-        || (matches!(target, HandleKind::Array(_))
-            && !value_contains_borrow(value, env)
-            && matches!(value, Node::Lit(Literal::Ident(_), _) | Node::Call { .. }))
 }
 
 fn report(

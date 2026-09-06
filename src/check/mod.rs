@@ -841,46 +841,56 @@ fn check_types(path: &Path, source: &str, out: &mut Vec<CheckDiagnostic>) {
     // are consumed by the `--emit-evidence` build path, not the check path.
     let (collapse_diags, _collapse_receipts) =
         crate::opt::collapse::collapse_module(&mut module, source, file_name);
-    for d in &collapse_diags {
-        let (line, col) = match &d.span {
-            Some(span) => (span.line, span.column),
-            None => (1, 1),
-        };
-        out.push(CheckDiagnostic {
-            file: path.to_path_buf(),
-            line,
-            col,
-            severity: CheckSeverity::Error,
-            message: d.message.clone(),
-            rule_id: format!("type_check::{}", d.code),
-            phase: CheckPhase::TypeCheck,
-            help: d.help.clone(),
-            auto_fix: None,
-        });
-    }
+    push_compiler_diags(path, collapse_diags, out);
 
-    let type_diags = check_module_types_in_file(
-        &module,
-        source,
-        file_name,
-        &crate::type_checker::TypeEnv::default(),
+    // Run the SAME desugars the build path runs before type-checking
+    // (`pipeline::compile_source_with_name`). Without them `mindc check` sees
+    // `Node::ImplBlock` / `Node::Closure` where the build sees the top-level fns
+    // they lower to, so every check that walks function bodies — the #237
+    // collection-mutation gate included — silently skipped an impl method or a
+    // closure body that the build then refused: a check/build disagreement of
+    // exactly the kind #237 is about, fixed in the shared frontend rather than
+    // worked around per-rule. Their own diagnostics now reach `check` too.
+    let traits = crate::eval::desugar_traits(&mut module, source, file_name);
+    let closures = crate::eval::desugar_closures(&mut module, source, file_name);
+    push_compiler_diags(path, traits, out);
+    push_compiler_diags(path, closures, out);
+
+    push_compiler_diags(
+        path,
+        check_module_types_in_file(
+            &module,
+            source,
+            file_name,
+            &crate::type_checker::TypeEnv::default(),
+        ),
+        out,
     );
+}
 
-    for d in type_diags {
+/// Re-emit compiler `Diagnostic`s as `check`-schema diagnostics.
+///
+/// Preserve severity and source locations for collapse, trait/closure
+/// desugaring, and type-checking diagnostics through the same conversion.
+fn push_compiler_diags(
+    path: &Path,
+    diags: Vec<crate::diagnostics::Diagnostic>,
+    out: &mut Vec<CheckDiagnostic>,
+) {
+    for d in diags {
         let (line, col) = match &d.span {
             Some(span) => (span.line, span.column),
             None => (1, 1),
-        };
-        let severity = match d.severity {
-            crate::diagnostics::Severity::Error => CheckSeverity::Error,
-            crate::diagnostics::Severity::Warning => CheckSeverity::Warn,
         };
         out.push(CheckDiagnostic {
             file: path.to_path_buf(),
             line,
             col,
-            severity,
-            message: d.message.clone(),
+            severity: match d.severity {
+                crate::diagnostics::Severity::Error => CheckSeverity::Error,
+                crate::diagnostics::Severity::Warning => CheckSeverity::Warn,
+            },
+            message: d.message,
             rule_id: format!("type_check::{}", d.code),
             phase: CheckPhase::TypeCheck,
             help: d.help,

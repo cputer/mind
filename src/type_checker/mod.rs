@@ -14,11 +14,18 @@
 
 #[cfg(feature = "std-surface")]
 mod array_lengths;
+#[cfg(feature = "std-surface")]
+pub(crate) mod lowering_refusals;
 pub mod nerve_lint;
 mod nerve_walk;
 mod qualified_enums;
 use qualified_enums::variant_payload_of;
 mod resolve;
+mod type_display;
+use type_display::{
+    binop_display, describe_tensor, describe_value_type, dim_display, dtype_name, format_shape,
+    format_usize_shape,
+};
 #[cfg(feature = "std-surface")]
 mod slice_abi;
 
@@ -354,83 +361,6 @@ fn is_implicit_narrowing(to: &ValueType, from: &ValueType) -> bool {
     match (int_scalar_bits(to), int_scalar_bits(from)) {
         (Some(to_bits), Some(from_bits)) => to_bits < from_bits,
         _ => false,
-    }
-}
-
-fn dtype_name(dtype: &DType) -> &'static str {
-    match dtype {
-        DType::I32 => "i32",
-        DType::I64 => "i64",
-        DType::F32 => "f32",
-        DType::F64 => "f64",
-        DType::BF16 => "bf16",
-        DType::F16 => "f16",
-        DType::Q16 => "q16",
-    }
-}
-
-fn format_shape(shape: &[ShapeDim]) -> String {
-    let dims: Vec<String> = shape
-        .iter()
-        .map(|d| match d {
-            ShapeDim::Known(n) => n.to_string(),
-            ShapeDim::Sym(sym) => sym.to_string(),
-        })
-        .collect();
-    format!("({})", dims.join(","))
-}
-
-fn format_usize_shape(shape: &[usize]) -> String {
-    let dims: Vec<String> = shape.iter().map(|d| d.to_string()).collect();
-    format!("({})", dims.join(","))
-}
-
-fn describe_tensor(tensor: &TensorType) -> String {
-    format!(
-        "Tensor[{}, {}]",
-        dtype_name(&tensor.dtype),
-        format_shape(&tensor.shape)
-    )
-}
-
-fn describe_value_type(v: &ValueType) -> String {
-    match v {
-        ValueType::ScalarI32 => "Scalar[i32]".to_string(),
-        ValueType::ScalarI64 => "Scalar[i64]".to_string(),
-        ValueType::ScalarF32 => "Scalar[f32]".to_string(),
-        ValueType::ScalarF64 => "Scalar[f64]".to_string(),
-        ValueType::ScalarBool => "Scalar[bool]".to_string(),
-        ValueType::Tensor(tensor) => describe_tensor(tensor),
-        ValueType::GradMap(entries) => {
-            let mut parts = Vec::new();
-            for (name, tensor) in entries {
-                parts.push(format!("{}: {}", name, describe_tensor(tensor)));
-            }
-            format!("GradMap{{{}}}", parts.join(", "))
-        }
-    }
-}
-
-fn dim_display(dim: &ShapeDim) -> String {
-    match dim {
-        ShapeDim::Known(n) => n.to_string(),
-        ShapeDim::Sym(sym) => sym.to_string(),
-    }
-}
-
-fn binop_display(op: &BinOp) -> &'static str {
-    match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::Lt => "<",
-        BinOp::Le => "<=",
-        BinOp::Gt => ">",
-        BinOp::Ge => ">=",
-        BinOp::Eq => "==",
-        BinOp::Ne => "!=",
     }
 }
 
@@ -4676,6 +4606,13 @@ pub fn check_module_types_in_file(
     #[cfg(feature = "std-surface")]
     {
         array_lengths::check(module, src, file, &mut errors);
+        // #237: refuse the two constructs lowering cannot emit — a collection
+        // mutator whose realloc'd handle cannot be rebound, and a non-final
+        // bare-identifier match arm naming an enum variant. Both used to be a
+        // lowering `panic!` that `mindc check` never anticipated. Running the
+        // gate HERE is what makes check and build agree: the build path reaches
+        // this same function before `lower_to_ir`.
+        lowering_refusals::check(module, src, file, &mut errors);
         errors
     }
     #[cfg(not(feature = "std-surface"))]

@@ -15,11 +15,24 @@
 //! Parser and type-checker tests for Phase 10.7 surface constructs:
 //! `match` expressions and `&expr` / `&mut expr` reference-taking expressions.
 
-use libmind::{CompileOptions, compile_source};
+use libmind::ast::{Node, Pattern, TypeAnn};
+use libmind::{CompileError, CompileOptions, compile_source, parser};
 
 fn parses(src: &str) -> bool {
     compile_source(src, &CompileOptions::default()).is_ok()
 }
+
+const QUALIFIED_INLINE_SRC: &str = "module config { enum Mode { On, Off } }\n\
+                                    module m {\n\
+                                      use config\n\
+                                      fn f(mode: config.Mode) -> i32 {\n\
+                                        match mode {\n\
+                                          config.Mode::On  => 1,\n\
+                                          config.Mode::Off => 0,\n\
+                                          _                => -1,\n\
+                                        }\n\
+                                      }\n\
+                                    }\n";
 
 // ──────────────────────────────────────────────────────────────────────
 //  match expressions — parser
@@ -191,22 +204,69 @@ fn match_without_trailing_comma() {
 
 #[test]
 fn match_qualified_enum_variant() {
-    // `config.Mode::On` — module-qualified variant path.
-    let src = "module config { enum Mode { On, Off } }\n\
-               module m {\n\
-                 use config\n\
-                 fn f(mode: config.Mode) -> i32 {\n\
-                   match mode {\n\
-                     config.Mode::On  => 1,\n\
-                     config.Mode::Off => 0,\n\
-                     _                => -1,\n\
-                   }\n\
-                 }\n\
-               }\n";
-    assert!(
-        parses(src),
-        "match on module-qualified enum variant must parse"
+    // Inline `module NAME { ... }` blocks are transparent syntax markers: the
+    // parser must retain qualified spellings, while semantic ownership comes
+    // only from the manifest project's module table.
+    let module = parser::parse(QUALIFIED_INLINE_SRC)
+        .expect("module-qualified enum type and patterns must parse");
+    let f = module
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Node::Block { stmts, .. } => stmts.iter().find_map(|stmt| match stmt {
+                Node::FnDef(fd, _) if fd.name == "f" => Some(fd.as_ref()),
+                _ => None,
+            }),
+            _ => None,
+        })
+        .next()
+        .expect("inline module must contain f");
+    assert_eq!(f.params[0].ty, TypeAnn::Named("config.Mode".to_string()));
+    let arms = f
+        .body
+        .iter()
+        .find_map(|node| match node {
+            Node::Match { arms, .. } => Some(arms),
+            _ => None,
+        })
+        .expect("f must contain the match expression");
+    let paths: Vec<&str> = arms
+        .iter()
+        .filter_map(|arm| match &arm.pattern {
+            Pattern::EnumVariant { path, .. } => Some(path.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(paths, ["config.Mode::On", "config.Mode::Off"]);
+}
+
+#[test]
+fn inline_module_qualified_owner_requires_manifest_resolution() {
+    // Because inline module names are not semantic owners, accepting this at
+    // compile time would also accept a nonexistent/private owner or collapse
+    // two modules' same-named enums. Keep the syntax accepted above, but require
+    // the manifest project path to establish ownership before type checking.
+    let err = compile_source(QUALIFIED_INLINE_SRC, &CompileOptions::default())
+        .expect_err("an inline marker cannot establish module-qualified ownership");
+    let CompileError::TypeError(diagnostics) = err else {
+        panic!("expected structured type-check refusal, got {err:?}");
+    };
+    assert_eq!(
+        diagnostics.len(),
+        3,
+        "unexpected diagnostics: {diagnostics:?}"
     );
+    assert!(diagnostics.iter().all(|diag| diag.code == "E2002"));
+    for expected in [
+        "unknown module-qualified type `config.Mode`",
+        "unknown module-qualified enum variant `config.Mode::On`",
+        "unknown module-qualified enum variant `config.Mode::Off`",
+    ] {
+        assert!(
+            diagnostics.iter().any(|diag| diag.message == expected),
+            "missing `{expected}` in {diagnostics:?}"
+        );
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────
