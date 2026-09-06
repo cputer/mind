@@ -5,12 +5,15 @@ never the old silent 0-byte-stdout-exit-0. The pure-MIND self-host driver
 (selfhost_driver.mind) scans the user region and writes the diagnostic; the Rust
 bridge (run_native_backend_bridge, src/bin/mindc.rs) surfaces stage1.elf's stderr.
 
-Three invariants, all through the SHIPPING `mindc build --backend=native` path
+Four invariants, all through the SHIPPING `mindc build --backend=native` path
 (spawns the frozen pure-MIND stage1.elf — zero MLIR/LLVM/clang):
 
   (1) SUPPORTED (scalar)  -> exit 0, an ELF is written, it RUNS to the expected code.
   (2) UNSUPPORTED tensor  -> exit != 0, NO artifact, stderr names "tensor".
-  (3) UNSUPPORTED trait   -> exit != 0, NO artifact, stderr names "trait/impl".
+  (3) UNSUPPORTED trait   -> exit != 0, NO artifact, the parser diagnostic names
+      the construct and carries file/source/caret context.
+  (4) MALFORMED source    -> exit != 0, NO artifact, the same structured parser
+      diagnostic carries file/source/caret context.
 
 This is the regression coverage for the fail-close diagnostic: without it, a
 future driver/bridge change could silently revert to the 0-byte generic message
@@ -34,6 +37,7 @@ STAGE1 = _HERE / "testdata" / "selfhost_loop" / "stage1.elf"
 SCALAR = "fn main() -> i64 { return 7 + 35; }\n"
 TENSOR = "fn sink(x: Tensor<f32, [4]>) -> i64 { return 0; }\nfn main() -> i64 { return 0; }\n"
 TRAIT = "trait Greet { fn hi(self) -> i64; }\nfn main() -> i64 { return 0; }\n"
+MALFORMED = "fn main( -> i64 { return 0; }\n"
 
 
 def build_native(src: str):
@@ -84,11 +88,26 @@ def main() -> int:
           f"names_tensor={'tensor' in err.lower()}  stderr={err.strip()[:70]!r}")
     fails += 0 if ok else 1
 
-    # (3) UNSUPPORTED trait -> non-zero, no artifact, stderr names trait/impl
+    # (3) UNSUPPORTED trait -> non-zero, no artifact, exact parser context
     ec, err, art = build_native(TRAIT)
-    ok = (ec != 0 and art is None and ("trait" in err.lower() or "impl" in err.lower()))
+    trait_context = all(part in err for part in (
+        "error[parse][E1001]", "p.mind:1:", TRAIT.splitlines()[0], "^"
+    ))
+    ok = (ec != 0 and art is None and "trait" in err.lower() and trait_context)
     print(f"  {'PASS' if ok else 'FAIL'}  trait:  exit={ec} artifact={'YES' if art else 'NO'} "
-          f"names_trait={'trait' in err.lower() or 'impl' in err.lower()}  stderr={err.strip()[:70]!r}")
+          f"names_trait={'trait' in err.lower()} context={trait_context}  "
+          f"stderr={err.strip()[:100]!r}")
+    fails += 0 if ok else 1
+
+    # (4) MALFORMED source -> structured parse diagnostic with source context
+    ec, err, art = build_native(MALFORMED)
+    malformed_context = all(part in err for part in (
+        "error[parse][E1001]", "p.mind:1:", MALFORMED.strip(), "^"
+    ))
+    ok = (ec != 0 and art is None and malformed_context)
+    print(f"  {'PASS' if ok else 'FAIL'}  malformed: exit={ec} "
+          f"artifact={'YES' if art else 'NO'} context={malformed_context}  "
+          f"stderr={err.strip()[:100]!r}")
     fails += 0 if ok else 1
 
     if fails:

@@ -892,7 +892,13 @@ fn parse_and_lower_for_profile_check(
 ) -> Result<Option<libmind::ir::frozen_profile::FrozenProfileRejection>, String> {
     let text = std::str::from_utf8(src).map_err(|e| format!("source is not valid UTF-8: {e}"))?;
     let module =
-        libmind::parser::parse(text).map_err(|e| format!("{path}: {} parse error(s)", e.len()))?;
+        libmind::parser::parse_with_diagnostics_in_file(text, Some(path)).map_err(|diags| {
+            diags
+                .iter()
+                .map(|diag| libmind::diagnostics::render(text, diag))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?;
     let ir = libmind::eval::lower_to_ir(&module);
     match libmind::ir::frozen_profile::profile_frozen_admits(&ir) {
         Ok(()) => Ok(None),
