@@ -374,68 +374,69 @@ fn worker_fault(reason: &str) -> ! {
     std::process::exit(WORKER_EXIT_HARNESS_FAULT)
 }
 
-/// Runs in the CHILD when WORKER_ENV is set. Never returns.
+/// Runs in the CHILD when `WORKER_ENV` is set. Never returns there; in the
+/// PARENT it does nothing. Not `let Ok(..) else { return; }`: a bare early-out
+/// on an env read is the shape `fail_open_skip_site_ratchet.rs` forbids.
 fn run_as_worker_if_requested() {
-    let Ok(src_path) = std::env::var(WORKER_ENV) else {
-        return;
-    };
-    // `unwrap_or_default()` here handed the compiler an EMPTY source whenever the
-    // staged fixture could not be read, and an empty program is exactly the kind of
-    // input the front end declines — so an I/O fault arrived at the parent wearing a
-    // null handle and was filed as MIND_UNSUPPORTED. Same collapse as the one this
-    // file was fixed for, one layer down.
-    let src = match std::fs::read(&src_path) {
-        Ok(b) => b,
-        Err(e) => worker_fault(&format!("cannot read staged fixture {src_path}: {e}")),
-    };
-    let Ok(so_path) = std::env::var(WORKER_SO_ENV) else {
-        worker_fault("worker was not given the resolved .so path")
-    };
-    let lib = match unsafe { Library::new(&so_path) } {
-        Ok(l) => l,
-        // A `.so` that will not dlopen means EVERY fixture is uncompiled. Reported as a
-        // null handle that read as "the whole corpus is unsupported yet" — only the
-        // MATCH floor stood between that and a green gate, and it named the wrong cause.
-        Err(e) => worker_fault(&format!("cannot dlopen {so_path}: {e}")),
-    };
-    // 64 MiB, the same stack the in-process path used. The pure-MIND compiler
-    // parses recursively, so a large fixture can outgrow the default ~8 MiB main
-    // stack. Moving the call into a subprocess made the signal OBSERVABLE; it must
-    // not also make it more LIKELY. A harness-induced stack overflow arrives as a
-    // SIGSEGV and is indistinguishable, at the parent, from a real compiler crash —
-    // so dropping this would manufacture the exact fault the gate now reports.
-    const WORKER_STACK_SIZE: usize = 64 * 1024 * 1024;
+    if let Ok(src_path) = std::env::var(WORKER_ENV) {
+        // `unwrap_or_default()` here handed the compiler an EMPTY source whenever the
+        // staged fixture could not be read, and an empty program is exactly the kind of
+        // input the front end declines — so an I/O fault arrived at the parent wearing a
+        // null handle and was filed as MIND_UNSUPPORTED. Same collapse as the one this
+        // file was fixed for, one layer down.
+        let src = match std::fs::read(&src_path) {
+            Ok(b) => b,
+            Err(e) => worker_fault(&format!("cannot read staged fixture {src_path}: {e}")),
+        };
+        let Ok(so_path) = std::env::var(WORKER_SO_ENV) else {
+            worker_fault("worker was not given the resolved .so path")
+        };
+        let lib = match unsafe { Library::new(&so_path) } {
+            Ok(l) => l,
+            // A `.so` that will not dlopen means EVERY fixture is uncompiled. Reported as a
+            // null handle that read as "the whole corpus is unsupported yet" — only the
+            // MATCH floor stood between that and a green gate, and it named the wrong cause.
+            Err(e) => worker_fault(&format!("cannot dlopen {so_path}: {e}")),
+        };
+        // 64 MiB, the same stack the in-process path used. The pure-MIND compiler
+        // parses recursively, so a large fixture can outgrow the default ~8 MiB main
+        // stack. Moving the call into a subprocess made the signal OBSERVABLE; it must
+        // not also make it more LIKELY. A harness-induced stack overflow arrives as a
+        // SIGSEGV and is indistinguishable, at the parent, from a real compiler crash —
+        // so dropping this would manufacture the exact fault the gate now reports.
+        const WORKER_STACK_SIZE: usize = 64 * 1024 * 1024;
 
-    // A panic inside the compile is NOT caught here: it unwinds, the child exits
-    // non-zero, and the parent files it as Crashed with the message quoted.
-    let compiled = std::thread::scope(|scope| {
-        let handle = std::thread::Builder::new()
-            .stack_size(WORKER_STACK_SIZE)
-            // SAFETY: same contract as before — `lib` and `src` outlive the scope,
-            // which joins the thread before returning.
-            .spawn_scoped(scope, || unsafe { call_mindc_compile(&lib, &src) })
-            .unwrap_or_else(|e| worker_fault(&format!("cannot spawn compile thread: {e}")));
-        match handle.join() {
-            Ok(v) => v,
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
-    });
-
-    match compiled {
-        Some(bytes) => {
-            let Ok(out_path) = std::env::var(WORKER_OUT_ENV) else {
-                worker_fault("worker was not given an output path")
-            };
-            // A dropped or short write silently truncates the compiled bytes, and the
-            // parent then byte-compares a truncated stream against the Rust oracle and
-            // reports DIVERGE — a harness fault indicted as a compiler defect. The
-            // mirror image of the collapse above, and just as wrong.
-            if let Err(e) = std::fs::write(&out_path, &bytes) {
-                worker_fault(&format!("cannot write compiled bytes to {out_path}: {e}"));
+        // A panic inside the compile is NOT caught here: it unwinds, the child exits
+        // non-zero, and the parent files it as Crashed with the message quoted.
+        let compiled = std::thread::scope(|scope| {
+            let handle = std::thread::Builder::new()
+                .stack_size(WORKER_STACK_SIZE)
+                // SAFETY: same contract as before — `lib` and `src` outlive the scope,
+                // which joins the thread before returning.
+                .spawn_scoped(scope, || unsafe { call_mindc_compile(&lib, &src) })
+                .unwrap_or_else(|e| worker_fault(&format!("cannot spawn compile thread: {e}")));
+            match handle.join() {
+                Ok(v) => v,
+                Err(payload) => std::panic::resume_unwind(payload),
             }
-            std::process::exit(0);
+        });
+
+        match compiled {
+            Some(bytes) => {
+                let Ok(out_path) = std::env::var(WORKER_OUT_ENV) else {
+                    worker_fault("worker was not given an output path")
+                };
+                // A dropped or short write silently truncates the compiled bytes, and the
+                // parent then byte-compares a truncated stream against the Rust oracle and
+                // reports DIVERGE — a harness fault indicted as a compiler defect. The
+                // mirror image of the collapse above, and just as wrong.
+                if let Err(e) = std::fs::write(&out_path, &bytes) {
+                    worker_fault(&format!("cannot write compiled bytes to {out_path}: {e}"));
+                }
+                std::process::exit(0);
+            }
+            None => std::process::exit(WORKER_EXIT_NULL_HANDLE),
         }
-        None => std::process::exit(WORKER_EXIT_NULL_HANDLE),
     }
 }
 
@@ -853,19 +854,18 @@ fn g2_1_differential_coverage() {
     match fs::read(&so_path) {
         Ok(bytes) if bytes.starts_with(b"\x7fELF") => {}
         _ => {
-            // This is the LIKELIER of the two skips: it covers the stale/truncated
-            // in-tree .so that ENV_TOLERATED_exec documents, and it previously left
-            // no trace at all in a passing run.
-            // The LIKELIER of the two skips: it covers the stale/truncated in-tree
-            // .so that ENV_TOLERATED_exec documents, and it was explained only by a
-            // println! — which libtest DISCARDS for a passing test, so it left no
-            // trace at all in the tier log.
+            // The LIKELIER of the two skips: the stale/truncated in-tree .so that
+            // ENV_TOLERATED_exec documents. It emitted BOTH markers by hand and never
+            // touched common::gate, so MIND_BENCH_REQUIRE=1 could not turn it into a
+            // failure — the exec tier could demand a real backend and be handed a pass.
             emit_gate_marker("SDLC-GATE g2_differential ran=0 fail=0 SKIPPED");
-            emit_gate_marker(&format!(
-                "g2_differential_mlir: SKIP -- {} is not a native ELF. This asserted \
-                 NOTHING; do not read it as a pass.",
-                so_path.display()
-            ));
+            crate::common::gate::skipped(
+                "g2_differential_mlir",
+                &format!(
+                    "{} is not a native ELF. This asserted NOTHING.",
+                    so_path.display()
+                ),
+            );
             return;
         }
     }

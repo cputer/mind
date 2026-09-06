@@ -205,10 +205,11 @@ fn body() -> i64 {
 #[test]
 fn selfhost_source_parses_identically_across_repeats() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/mindc_mind/main.mind");
-    let src = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(_) => return, // source not present in this checkout — nothing to gate
-    };
+    // TRACKED source, so "not present" is a broken checkout, never a capability
+    // gap. This was `Err(_) => return`, which graded a missing self-host source
+    // as a passing test — the recogniser's only real workload silently skipped.
+    let src = std::fs::read_to_string(path)
+        .expect("tracked self-host source examples/mindc_mind/main.mind must be present");
     let a = parser::parse(&src).expect("self-host source must parse");
     let b = parser::parse(&src).expect("self-host source must parse");
     assert_eq!(a.items.len(), b.items.len());

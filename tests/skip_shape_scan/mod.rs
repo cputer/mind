@@ -65,14 +65,54 @@ pub const ROUTED_MARKERS: &[&str] = &[
     "gate::is_capability_gap",
 ];
 
-/// The expressions that ASK whether a prerequisite is present.
+/// The calls whose answer is ABOUT AVAILABILITY: does the prerequisite exist,
+/// is it readable, did the child process run.
 ///
 /// Matched by the CALL, never by the name of a receiver or a variable — a
 /// needle spelled with one identifier is evaded by picking another, which is
 /// how eight superstring capability tests once stayed hidden. `.is_err()` /
 /// `.is_none()` are absent on purpose: they are how a probe is TESTED, not what
 /// makes it a probe, and alone they match ordinary `Result` handling.
-const CAPABILITY_SOURCES: &[&str] = &[".exists(", "which(", "var_os(", ".success("];
+///
+/// This was an ALLOW-LIST OF FOUR (`.exists(`, `which(`, `var_os(`, `.success(`)
+/// while the header claimed a residual of three named shapes. Measured one probe
+/// per fresh test file against the built scanner, every ordinary Rust spelling
+/// of the identical question walked past it: `.is_file()`, `.is_dir()`,
+/// `metadata()`, `try_exists()`, the non-`_os` `var()`, `.output()` and
+/// `.status()`. A vocabulary narrower than the claim reads as coverage of
+/// exactly the spellings it cannot see — the defect this gate exists to forbid,
+/// committed by the gate itself. Every entry here is held up by a positive
+/// control in [`controls`], and [`controls::the_vocabulary_and_its_controls_agree`]
+/// makes that a BIJECTION rather than a habit.
+const AVAILABILITY_PROBES: &[&str] = &[
+    ".exists(",
+    ".try_exists(",
+    ".is_file(",
+    ".is_dir(",
+    "metadata(",
+    "which(",
+    "var_os(",
+    "var(",
+    ".success(",
+    ".output(",
+    ".status(",
+];
+
+/// The calls that READ A TRACKED INPUT, whose `Ok` carries the PAYLOAD rather
+/// than an answer about availability.
+///
+/// Separate from [`AVAILABILITY_PROBES`] for one measured reason: a probe's
+/// answer may TAINT the local it is bound to (that is how `let ok = p.exists();
+/// if !ok { return; }` is caught), but a payload must not. Tainting
+/// `let src = fs::read_to_string(p).unwrap_or_else(|e| panic!(..));` propagated
+/// through `format_source(&src, &cfg)` to `formatted`, and flagged the SUCCESS
+/// path of `fmt_stdlib_stability::check_or_skip` — `if formatted == src {
+/// return; }`, a test returning because the file it just checked is STABLE. A
+/// gate that lands red on a non-defect is not a stronger gate.
+///
+/// In a HEAD SCRUTINEE both kinds count the same: swallowing a tracked input's
+/// read failure and returning is a fail-open skip whatever the `Ok` carried.
+const INPUT_READS: &[&str] = &["read_to_string(", "fs::read("];
 
 /// How many lines a control-flow head may span before its block-opening brace.
 const MAX_HEAD_SPAN: usize = 6;
@@ -281,16 +321,27 @@ fn text_between(code: &[String], from: (usize, usize), to: (usize, usize)) -> St
 /// The head opening on `code[li]`, or `None` if this line opens no scrutinised
 /// block. `let ... else` is tried first: its scrutinee sits between `=` and
 /// `else`, and treating it as an `if` would read the wrong expression.
+///
+/// A `let` line WITHOUT an `else` used to return `None` outright, which made
+/// `let src = match std::fs::read_to_string(p) { Ok(s) => s, Err(_) => return };`
+/// invisible twice over — the binding swallowed the line before this was even
+/// reached, and this gave up on it if it was. That is the shape
+/// `tests/stmt_keyword_recognizer.rs` carried on the TRACKED self-host source.
+/// The `let` prefix now only DECIDES the scrutinee when an `else` is present;
+/// otherwise the line falls through to the ordinary `if` / `match` search, which
+/// reads the initialiser's own head.
 fn head_of(code: &[String], li: usize) -> Option<Head> {
     let line = &code[li];
     if line.trim_start().starts_with("let ") {
-        let eq = plain_assign(line)?;
-        let els = find_word(line, "else", eq)?;
-        let open = find_open_brace(code, li, els + 4)?;
-        return Some(Head {
-            scrutinee: line[eq + 1..els].to_string(),
-            open,
-        });
+        if let Some(eq) = plain_assign(line) {
+            if let Some(els) = find_word(line, "else", eq) {
+                let open = find_open_brace(code, li, els + 4)?;
+                return Some(Head {
+                    scrutinee: line[eq + 1..els].to_string(),
+                    open,
+                });
+            }
+        }
     }
     let (kw, len) = find_word(line, "if", 0)
         .map(|p| (p, 2))
@@ -371,9 +422,51 @@ fn else_block_after(code: &[String], after: (usize, usize)) -> Option<(usize, us
     None
 }
 
+/// Does `expr` CALL `needle`, as a call rather than as a tail of a longer name?
+///
+/// A needle that opens with an identifier byte (`which(`, `var(`, `metadata(`)
+/// must not match `some_which(` or `to_var(`; one that opens with `.` carries
+/// its own left boundary. `expr.contains(needle)` had no boundary at all, which
+/// is why the narrow vocabulary could only be widened by spelling a leading dot
+/// into every entry — a convention nothing enforced.
+fn calls(expr: &str, needle: &str) -> bool {
+    let b = expr.as_bytes();
+    let head_is_ident = needle.as_bytes().first().is_some_and(|c| is_ident_byte(*c));
+    let mut from = 0usize;
+    while let Some(off) = expr.get(from..).and_then(|s| s.find(needle)) {
+        let at = from + off;
+        if !head_is_ident || at == 0 || !is_ident_byte(b[at - 1]) {
+            return true;
+        }
+        from = at + needle.len();
+    }
+    false
+}
+
 /// Is this expression's answer derived from a capability probe?
+///
+/// Both vocabularies count here: this decides what a control-flow HEAD is
+/// scrutinising, and a swallowed input-read failure is as fail-open as a
+/// swallowed `.exists()`.
 fn probes(expr: &str, tainted: &HashSet<String>) -> bool {
-    if CAPABILITY_SOURCES.iter().any(|s| expr.contains(s)) {
+    if AVAILABILITY_PROBES
+        .iter()
+        .chain(INPUT_READS)
+        .any(|s| calls(expr, s))
+    {
+        return true;
+    }
+    tainted.iter().any(|n| find_word(expr, n, 0).is_some())
+}
+
+/// Does `expr` yield an AVAILABILITY ANSWER — the thing a local may carry to a
+/// later head — rather than a payload?
+///
+/// [`INPUT_READS`] are deliberately absent: see that constant for the false
+/// positive tainting them produced. The residual this leaves is named in
+/// `tests/fail_open_skip_site_ratchet.rs`.
+fn binds_probe_answer(expr: &str, tainted: &HashSet<String>) -> bool {
+    if AVAILABILITY_PROBES.iter().any(|s| calls(expr, s)) {
         return true;
     }
     tainted.iter().any(|n| find_word(expr, n, 0).is_some())
@@ -432,10 +525,12 @@ pub fn skip_block_sites(rel: &str, text: &str) -> Vec<String> {
             tainted.clear(); // a name never crosses a function boundary
         }
         if let Some((name, rhs)) = simple_binding(&code[li]) {
-            if probes(&rhs, &tainted) {
+            if binds_probe_answer(&rhs, &tainted) {
                 tainted.insert(name);
             }
-            continue;
+            // NOT `continue`: an initialiser can BE the scrutinised block
+            // (`let s = match read(p) { Err(_) => return, .. };`), and skipping
+            // the line after recording the taint hid every one of them.
         }
         let Some(head) = head_of(&code, li) else {
             continue;
@@ -457,3 +552,13 @@ pub fn skip_block_sites(rel: &str, text: &str) -> Vec<String> {
     }
     open
 }
+
+/// Positive controls for the vocabulary and the block scanner.
+///
+/// They live in this DIRECTORY, beside the rule they prove, rather than in the
+/// ratchet that consumes it: a spelling added to the vocabulary without a
+/// control is then a hole visible in the same diff, and
+/// [`controls::the_vocabulary_and_its_controls_agree`] makes that mechanical
+/// rather than a habit.
+#[cfg(test)]
+mod controls;

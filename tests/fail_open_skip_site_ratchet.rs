@@ -25,7 +25,7 @@
 //! nothing asserting they do. Both are gone: the backlog is drained to zero and
 //! the gate is a flat prohibition over `tests/**/*.rs`.
 //!
-//! # The shapes this gate RECOGNISES — and the three it does not
+//! # The shapes this gate RECOGNISES — and the residuals it does not
 //!
 //! This enumeration is the claim; `.github/workflows/ci.yml` and
 //! `tests/common/gate.rs` point here instead of restating it. The earlier
@@ -42,18 +42,28 @@
 //!    live sites (`mindc_cache_phase_f`, `g2_differential_mlir`,
 //!    `mindc_build_phase_a`, `mlir_build`).
 //! 2. A SILENT capability probe: an `if` / `match` / `let ... else` whose
-//!    scrutinee is derived from `.exists(`, `which(`, `var_os(` or `.success(`,
-//!    and whose block (or its `else` branch) exits early without a verdict.
-//!    Decided over the BRACE-BALANCED BLOCK by [`skip_shape_scan`], not a line
-//!    window. The scan was once keyed on a print macro, so
-//!    `if !bin.exists() { return; }` was invisible: 17 live sites. The
-//!    vocabulary then had no `.success()`, so the FAILED-COMPILE skip this
-//!    helper exists for was invisible too: 3 live sites in
+//!    scrutinee is derived from a call in [`skip_shape_scan::AVAILABILITY_PROBES`]
+//!    or [`skip_shape_scan::INPUT_READS`], and whose block (or its `else`
+//!    branch) exits early without a verdict. Decided over the BRACE-BALANCED
+//!    BLOCK by [`skip_shape_scan`], not a line window. The scan was once keyed
+//!    on a print macro, so `if !bin.exists() { return; }` was invisible: 17 live
+//!    sites. The vocabulary then had no `.success()`, so the FAILED-COMPILE skip
+//!    this helper exists for was invisible too: 3 live sites in
 //!    `mindc_cache_phase_f`, each grading `ok` on a build that printed
 //!    `error[build][E5003]`. And the shape was pinned as TEXT — one probe line
 //!    plus a two-line tail — so five ordinary Rust spellings of it passed green
-//!    while the gate printed `12 passed`. [`skip_shape_scan`] names all five;
-//!    [`the_five_measured_escapes_are_closed`] pins them.
+//!    while the gate printed `12 passed`. The vocabulary was then an ALLOW-LIST
+//!    OF FOUR calls while this header claimed a residual of three named shapes,
+//!    so every other ordinary spelling of the same question — `.is_file()`,
+//!    `.is_dir()`, `metadata()`, `try_exists()`, the non-`_os` `var()`,
+//!    `.output()`, `.status()`, and a swallowed `read_to_string()` — walked past
+//!    it: 3 live sites, one of them on the TRACKED self-host source
+//!    (`stmt_keyword_recognizer.rs` graded a missing `main.mind` as a pass) and
+//!    one an unrouted ELF-magic skip in `g2_differential_mlir.rs` that
+//!    `MIND_BENCH_REQUIRE=1` could not turn into a failure. The vocabulary and
+//!    its per-spelling controls are now a BIJECTION, asserted by
+//!    [`skip_shape_scan::controls::the_vocabulary_and_its_controls_agree`], so a
+//!    spelling can no longer be added without a control proving it fires.
 //! 3. The superstring capability test, matched variable-agnostically. It used
 //!    to be one literal spelled `stderr.`, so the same predicate under any
 //!    other receiver was invisible: 8 live sites.
@@ -65,15 +75,20 @@
 //!    `MIND_BENCH_REQUIRE=0` ENFORCE. They call `gate::skipped`.
 //! 5. A `skipped_optional` call site that does not name what is optional.
 //!
-//! deferred, each MEASURED against the live tree (appended to `tests/if_expr.rs`,
-//! this scanner re-run) rather than guessed — a residual nobody names is the
-//! hole the last five escapes came through. None exists in the tree today:
+//! deferred. Each was MEASURED escaping the shipped scanner — handed to
+//! `skip_shape_scan::skip_block_sites` beside a control that the same run
+//! reported — rather than guessed; a residual nobody names is the hole the last
+//! escapes came through. What this list does NOT claim is that the tree holds
+//! none of them: that is precisely the question a blind detector cannot answer,
+//! and the previous wording ("None exists in the tree today") asserted it anyway
+//! while `stmt_keyword_recognizer.rs` was riding the fourth bullet below.
 //!
 //! * A skip announced ONLY in a comment above a bare early-out
-//!   (`// LLVM not available; skip corruption check`). 3 such sites, all
-//!   legitimate (2 documented `STABILITY_SKIP_LIST` gaps in
-//!   `fmt_stdlib_stability.rs`, 1 guarded in `mindfuzz_cross_substrate.rs`), so
-//!   adding it now lands red on non-defects. Upgrade path: route those three.
+//!   (`// LLVM not available; skip corruption check`). 3 such sites were
+//!   measured when this bullet was written, all legitimate (2 documented
+//!   `STABILITY_SKIP_LIST` gaps in `fmt_stdlib_stability.rs`, 1 guarded in
+//!   `mindfuzz_cross_substrate.rs`), so adding it lands red on non-defects.
+//!   Upgrade path: route those three.
 //! * A COLLAPSED `Option` probe — `if b.exists() { Some(b) } else { None }` on
 //!   ONE line. The bare-`None` early-out is decided per LINE because a
 //!   token-level `None` matches every `None =>` match PATTERN in the tree.
@@ -81,6 +96,19 @@
 //! * A probe behind an INDIRECTION — `if !have_toolchain() { return; }`. Taint
 //!   follows a `let` inside one function, never across a call. Upgrade path:
 //!   seed the taint set from the return expression of same-file helpers.
+//! * An INPUT READ bound to a local whose failure is tested later —
+//!   `let r = fs::read_to_string(p); if r.is_err() { return; }`.
+//!   [`skip_shape_scan::INPUT_READS`] deliberately do not TAINT: their `Ok` is
+//!   payload, not an availability answer, and tainting them flagged the SUCCESS
+//!   path of `fmt_stdlib_stability::check_or_skip`. Read failures still count in
+//!   a head scrutinee, which is where every live instance sat.
+//!
+//! All four share ONE upgrade path, and it is the one worth taking: invert the
+//! rule so an UNROUTED bare early-out anywhere inside a `#[test]` body under
+//! `tests/` is red REGARDLESS of scrutinee, with an explicit `// not-a-skip:`
+//! annotation for the legitimate cases. That fails closed on probe spellings
+//! nobody has thought of yet, which is the only version of this gate whose claim
+//! cannot outrun its detector.
 //!
 //! # Scope is read out of the thing being checked
 //!
@@ -89,11 +117,13 @@
 //! the routed-detection is the same `ROUTED_MARKERS` list applied to each of
 //! them. Neither is written down twice, so they cannot drift apart.
 //!
-//! `tests/skip_shape_scan/mod.rs`, which OWNS the vocabulary, is deliberately
-//! NOT exempted: it is walked like every other source and comes back clean,
-//! because it reads masked CODE and its own vocabulary is spelled as string
-//! literals. A two-entry exemption list would be the second hand-copied scope
-//! this file's doctrine is against.
+//! `tests/skip_shape_scan/mod.rs`, which OWNS the vocabulary and its positive
+//! controls, is deliberately NOT exempted: it is walked like every other source
+//! and comes back clean, because it reads masked CODE and both its vocabulary
+//! and its specimens are spelled as string literals. A two-entry exemption list
+//! would be the second hand-copied scope this file's doctrine is against. The
+//! controls live beside the rule rather than here for the same reason: the
+//! vocabulary and the proof it can SEE each spelling are one diff, not two.
 //!
 mod skip_shape_scan;
 
@@ -547,123 +577,6 @@ fn the_scanner_itself_can_see_the_bad_shape() {
     let end = print_macro_span(&wrapped, 0).expect("span must be found");
     assert_eq!(end, 3);
     assert!(is_skip_announcement(&wrapped, 0, end));
-}
-
-#[test]
-fn the_scanner_can_see_the_probe_block_shape() {
-    // Positive control for the SECOND detector. A detector that matches nothing
-    // is the `ran=0` defect this file exists to forbid, in its active form: the
-    // announced-skip scan reported a clean tree while 17 silent sites were live.
-    //
-    // Every specimen below is a WHOLE PROGRAM FRAGMENT handed to the scanner,
-    // not a line fed to a predicate. That is the point of this arm: the shapes
-    // EV1-EV5 further down are all legal Rust that a line-pair predicate cannot
-    // even be asked about.
-    fn hits(src: &str) -> Vec<String> {
-        skip_shape_scan::skip_block_sites("specimen.rs", src)
-    }
-    assert_eq!(
-        hits("if !bin.exists() {\n    return;\n}"),
-        vec!["specimen.rs:1 (probe block)".to_string()]
-    );
-
-    // Variable-agnostic: renaming the receiver must not escape the prohibition.
-    for probe in [
-        "    if !binary.exists() {",
-        "    if !artifact_2.exists() {",
-        // Inline receivers: these defeated the first draft of the detector.
-        "    if !Path::new(\"/nonexistent\").exists() {",
-        "    if !std::path::Path::new(p).exists() {",
-        "        if which::which(\"mlir-opt\").is_err() {",
-        "    if std::env::var_os(\"MIND_TRACKING_CORPUS_DIR\").is_none() {",
-        // The FAILED-COMPILE shape. Absent from the vocabulary until three
-        // sites in mindc_cache_phase_f.rs were measured grading `ok` on a build
-        // that had just printed `error[build][E5003]`.
-        "    if !s1.success() {",
-        "        if !out.status.success() {",
-        // POLARITY-FREE. Every draft that demanded a literal `if !` was evaded
-        // by writing the same decision the other way up.
-        "    if s1.success() {",
-        "    if bin.exists() {",
-    ] {
-        let src = format!("{probe}\n        return;\n    }}");
-        assert!(!hits(&src).is_empty(), "missed probe: {probe}");
-    }
-
-    // The OTHER branch is the same skip written the other way up. Every draft
-    // that scrutinised only the first block was evaded by moving the early-out.
-    assert_eq!(
-        hits("if bin.exists() {\n    run();\n} else {\n    return;\n}"),
-        vec!["specimen.rs:1 (probe block)".to_string()]
-    );
-
-    // A `return` that hands back a real verdict is not an early-out, and a
-    // block with no early-out at all is not a skip.
-    assert!(hits("if !bin.exists() {\n    return Some(bin);\n}").is_empty());
-    assert!(hits("if !bin.exists() {\n    panic!(\"no mindc\");\n}").is_empty());
-    // A probe with no control-flow block is a plain assertion path.
-    assert!(hits("assert!(bin.exists(), \"build mindc first\");").is_empty());
-
-    // A routed probe is not a finding — inside the block, or in the head.
-    assert!(
-        hits("if !bin.exists() {\n    gate::skipped(\"t\", \"no mindc\");\n    return;\n}")
-            .is_empty()
-    );
-    assert!(hits("let Some(b) = gate::compiled(\"t\", &o) else {\n    return;\n};").is_empty());
-
-    // The bare env-var NAME must no longer exempt anything, and neither may a
-    // comment that merely NAMES the helper: prose is not routing.
-    assert_eq!(
-        hits("// NOTE: does not honour MIND_BENCH_REQUIRE\nif !bin.exists() {\n    return;\n}"),
-        vec!["specimen.rs:2 (probe block)".to_string()]
-    );
-    assert_eq!(
-        hits("// gate::skipped panics under enforcement\nif !bin.exists() {\n    return;\n}"),
-        vec!["specimen.rs:2 (probe block)".to_string()]
-    );
-}
-
-/// The five ordinary Rust spellings that walked past the LINE-WINDOW detector.
-///
-/// Each was measured live: appended to `tests/if_expr.rs` on the tip and the
-/// built scanner re-run, every one reported `test result: ok. 12 passed` — a
-/// fail-open skip added to the tree while the prohibition said the tree was
-/// clean. They are the reason the decision moved from a two-line text window to
-/// the brace-balanced block in `skip_shape_scan`, and they are pinned here so
-/// the window can never come back.
-#[test]
-fn the_five_measured_escapes_are_closed() {
-    let escapes = [
-        // EV1 — the early-out sits FOUR lines under the probe; the window was 2.
-        "if !Path::new(p).exists() {\n    println!(\"a\");\n    println!(\"b\");\n\
-         println!(\"c\");\n    return;\n}",
-        // EV2 — a let-else: no `if` at all.
-        "let Ok(_t) = which::which(\"mlir-opt\") else { return; };",
-        // EV3 — a match arm: no `if`, and the exit is `return,` not `return;`.
-        "match std::env::var_os(V) { None => return, Some(_) => {} }",
-        // EV4 — the probe is BOUND first, so the scrutinee names no method.
-        "let ok = Path::new(p).exists();\nif !ok {\n    return;\n}",
-        // EV5 — the same, over a child process's exit status.
-        "let ok = out.status.success();\nif !ok {\n    return;\n}",
-    ];
-    for (n, src) in escapes.iter().enumerate() {
-        assert!(
-            !skip_shape_scan::skip_block_sites("specimen.rs", src).is_empty(),
-            "EV{} still escapes the prohibition:\n{src}",
-            n + 1
-        );
-    }
-    // Routing any of them clears it — the gate forbids the fail-OPEN skip, not
-    // the skip. Proven on the shape furthest from the original window (EV4's
-    // bound probe), so this control cannot pass by matching nothing.
-    assert!(
-        skip_shape_scan::skip_block_sites(
-            "specimen.rs",
-            "let ok = Path::new(p).exists();\nif !ok {\n    gate::skipped(\"t\", \"gone\");\n\
-             return;\n}",
-        )
-        .is_empty()
-    );
 }
 
 #[test]

@@ -37,8 +37,17 @@ name: CI
 # invocations, all eight failed with `error[build][E5003]`, and only TWO were
 # counted — the other six graded as passing tests. It now reports 8 markers and
 # 0 uncounted failures. A claim wider than its detector reads as coverage of
-# exactly the gap the detector is blind to. Three shapes are still undetected,
-# each MEASURED against the live tree and named as deferred in the same header.
+# exactly the gap the detector is blind to. Residual shapes ARE still undetected;
+# they are named as deferred in that header, each measured escaping the shipped
+# scanner. This note does not say how many, and the header no longer claims the
+# tree holds none of them: that sentence stood here while the ratchet's probe
+# vocabulary was an ALLOW-LIST OF FOUR calls and three live sites rode ordinary
+# Rust spellings straight past it — including one on the TRACKED self-host source
+# that graded a missing `examples/mindc_mind/main.mind` as a pass, and one skip in
+# `g2_differential_mlir.rs` that emitted its marker by hand and so could not be
+# turned into a failure by MIND_BENCH_REQUIRE=1. Counting residuals in a note is
+# the same defect as widening the claim: whichever number is typed here is the
+# one nobody re-measures.
 #
 # The width of that detector is itself the thing that moved. It used to pin a
 # TEXT shape — a capability probe on one line, a bare early-out within two — and
@@ -47,10 +56,13 @@ name: CI
 # and the probe bound to a local first over `.exists()` and `.success()` alike).
 # The decision now runs over the BRACE-BALANCED BLOCK of an `if` / `match` /
 # `let ... else` whose scrutinee is derived from a capability probe, owned by
-# `tests/skip_shape_scan/mod.rs` and held up by a positive control per shape.
-# That module is scanned by the prohibition it defines rather than exempted from
-# it: it reads MASKED CODE, so a shape quoted in a string literal is not the
-# shape, and a `gate::` marker in a comment can no longer buy a site a pass.
+# `tests/skip_shape_scan/mod.rs`. Its vocabulary and its positive controls are a
+# BIJECTION, asserted in both directions, so a spelling cannot enter the rule
+# without a control proving the scanner fires on it, and a control cannot outlive
+# the spelling it proves. That module is scanned by the prohibition it defines
+# rather than exempted from it: it reads MASKED CODE, so a shape quoted in a
+# string literal is not the shape, and a `gate::` marker in a comment can no
+# longer buy a site a pass.
 #
 # scripts/gate_runner_wiring_lint.py holds this declaration to the deferral, and
 # removes it the moment these steps stop being invoked directly.
