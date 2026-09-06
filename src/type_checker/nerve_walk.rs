@@ -86,7 +86,6 @@ pub fn for_each_child<'a, F: FnMut(&'a Node)>(node: &'a Node, f: &mut F) {
         // ── Two boxed operands ─────────────────────────────────────────────
         Node::Binary { left, right, .. }
         | Node::Logical { left, right, .. }
-        | Node::Bitwise { left, right, .. }
         | Node::TensorElemwise {
             lhs: left,
             rhs: right,
@@ -116,6 +115,11 @@ pub fn for_each_child<'a, F: FnMut(&'a Node)>(node: &'a Node, f: &mut F) {
             index: right,
             ..
         } => {
+            f(left);
+            f(right);
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             f(left);
             f(right);
         }

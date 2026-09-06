@@ -210,7 +210,61 @@ fn idempotence_stdlib_toml() {
 #[cfg(feature = "std-surface")]
 const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 50;
 #[cfg(not(feature = "std-surface"))]
-const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 31;
+const EXAMPLES_IDEMPOTENCE_FLOOR: usize = 25;
+
+// Measured at 68d8e172. These are an allow-list, not a skip target: any entry
+// may start passing, while a new skip or a changed cause fails at that fixture.
+#[cfg(not(feature = "std-surface"))]
+const BARE_E1042_REFUSALS: &[&str] = &[
+    "examples/dottie_collapse.mind",
+    "examples/emit_ir/main.mind",
+    "examples/grammar_mask/main.mind",
+    "examples/lexer/main.mind",
+    "examples/mindc_mind/main.mind",
+    "examples/parser/main.mind",
+    "examples/remizov_feynman.mind",
+    "examples/typecheck/main.mind",
+];
+
+#[cfg(not(feature = "std-surface"))]
+const BARE_LEGACY_PARSE_SKIPS: &[&str] = &[
+    "examples/anthropobrot.mind",
+    "examples/collatz.mind",
+    "examples/columnar/structural_scan_json.mind",
+    "examples/columnar/tiled_fold.mind",
+    "examples/compliance/auditable_model.mind",
+    "examples/cos_dottie.mind",
+    "examples/detmath_kat/main.mind",
+    "examples/fft_q16.mind",
+    "examples/fft_signal.mind",
+    "examples/galperin_pi.mind",
+    "examples/halbach_q16/main.mind",
+    "examples/halbach_q16.mind",
+    "examples/lorenz_f64.mind",
+    "examples/lorenz_q16.mind",
+    "examples/mandelbrot.mind",
+    "examples/mandelbrot_strict.mind",
+    "examples/mindc_mind/testdata/rh_f64_aggregate_canary.mind",
+    "examples/native/ci_kernel.mind",
+    "examples/native/loop.mind",
+    "examples/policy.mind",
+    "examples/remizov_benchmark.mind",
+    "examples/remizov_gpu.mind",
+    "examples/remizov_inverse.mind",
+    "examples/remizov_solver.mind",
+    "examples/remizov_verify.mind",
+];
+
+#[cfg(not(feature = "std-surface"))]
+fn expected_bare_skip_cause(label: &str) -> Option<&'static str> {
+    if BARE_E1042_REFUSALS.contains(&label) {
+        Some("E1042")
+    } else if BARE_LEGACY_PARSE_SKIPS.contains(&label) {
+        Some("legacy-parse")
+    } else {
+        None
+    }
+}
 
 #[test]
 fn idempotence_examples() {
@@ -218,6 +272,12 @@ fn idempotence_examples() {
     let cfg = default_cfg();
     let mut passed = 0usize;
     let mut skipped = 0usize;
+    #[cfg(not(feature = "std-surface"))]
+    let mut bitwise_refused = 0usize;
+    #[cfg(not(feature = "std-surface"))]
+    let mut legacy_parse_skipped = 0usize;
+    #[cfg(not(feature = "std-surface"))]
+    let mut skip_cause_mismatches = Vec::new();
 
     // Collect all .mind files under examples/
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -239,6 +299,27 @@ fn idempotence_examples() {
             passed += 1;
         } else {
             skipped += 1;
+            #[cfg(not(feature = "std-surface"))]
+            {
+                let cause = match libmind::parser::parse(&src) {
+                    Err(errors) if errors.iter().any(|e| e.cause_code == Some("E1042")) => {
+                        bitwise_refused += 1;
+                        "E1042"
+                    }
+                    Err(_) => {
+                        legacy_parse_skipped += 1;
+                        "legacy-parse"
+                    }
+                    Ok(_) => "formatter-only",
+                };
+                let expected = expected_bare_skip_cause(&label);
+                if expected != Some(cause) {
+                    skip_cause_mismatches.push(format!(
+                        "{label}: expected {}, got {cause}",
+                        expected.unwrap_or("no skip")
+                    ));
+                }
+            }
         }
     }
 
@@ -260,6 +341,25 @@ fn idempotence_examples() {
     eprintln!(
         "idempotence_examples: {passed} passed, {skipped} skipped, {} total",
         paths.len()
+    );
+    #[cfg(not(feature = "std-surface"))]
+    eprintln!("bare_skip_causes: E1042={bitwise_refused}, legacy-parse={legacy_parse_skipped}");
+    #[cfg(not(feature = "std-surface"))]
+    assert!(
+        skip_cause_mismatches.is_empty(),
+        "bare formatter skip classification changed:\n{}",
+        skip_cause_mismatches.join("\n")
+    );
+    #[cfg(not(feature = "std-surface"))]
+    assert_eq!(
+        skipped,
+        bitwise_refused + legacy_parse_skipped,
+        "every bare skip must have a measured parse-cause classification"
+    );
+    #[cfg(not(feature = "std-surface"))]
+    assert!(
+        bitwise_refused >= 6,
+        "expected at least 6 std-surface examples refused with E1042, got {bitwise_refused}"
     );
     assert!(
         passed >= EXAMPLES_IDEMPOTENCE_FLOOR,

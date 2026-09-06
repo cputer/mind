@@ -96,6 +96,7 @@ pub fn eval_const_i64(node: &Node) -> Option<i64> {
 // redefines `cos_q16` to something else folds to THAT function's behaviour (and
 // rejects if it has no fixed point) — never a compiler-assumed constant.
 
+#[cfg(feature = "std-surface")]
 use crate::ast::BitOp;
 use crate::ast::LogicalOp;
 use std::collections::BTreeMap;
@@ -187,6 +188,7 @@ fn eval_ct_expr(
                 BinOp::Ne => Ok((a != b) as i64),
             }
         }
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             op, left, right, ..
         } => {
@@ -395,6 +397,8 @@ pub fn iterate_user_fixed_point(
 mod tests {
     use super::*;
     use crate::ast::Span;
+    #[cfg(feature = "std-surface")]
+    use crate::opt::CANON_COS;
 
     fn int(v: i64) -> Node {
         Node::Lit(Literal::Int(v), Span::new(0, 0))
@@ -450,31 +454,6 @@ mod tests {
         table
     }
 
-    /// The canonical Q16.16 cos map (magnitude-based RNE qmul + degree-8 Taylor)
-    /// — the same bodies the `dottie_collapse.mind` example ships.
-    const CANON_COS: &str = r#"
-fn qmul(a: i64, b: i64) -> i64 {
-    let p: i64 = a * b;
-    let neg: bool = p < 0;
-    let mut m: i64 = p;
-    if neg { m = 0 - p; }
-    let mut q: i64 = m >> 16;
-    let rem: i64 = m & 65535;
-    if rem > 32768 { q = q + 1; } else { if rem == 32768 { if (q & 1) == 1 { q = q + 1; } } }
-    if neg { return 0 - q; }
-    return q;
-}
-fn cos_q16(x: i64) -> i64 {
-    let x2: i64 = qmul(x, x);
-    let mut acc: i64 = 2;
-    acc = qmul(acc, x2) - 91;
-    acc = qmul(acc, x2) + 2731;
-    acc = qmul(acc, x2) - 32768;
-    acc = qmul(acc, x2) + 65536;
-    return acc;
-}
-"#;
-
     /// `x = f(x)` where `f` is the single call `callee(x)`.
     fn call_x(callee: &str) -> Node {
         Node::Call {
@@ -485,6 +464,7 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
+    #[cfg(feature = "std-surface")]
     fn qmul_rne_is_bit_exact_including_negative_trap() {
         // Evaluate the USER'S qmul body directly (the RNE, magnitude-based pin).
         let fns = fn_table(CANON_COS);
@@ -499,17 +479,19 @@ fn cos_q16(x: i64) -> i64 {
         // 0.5 * 0.5 = 0.25 exact; 1.0 * v = v.
         assert_eq!(call(0x8000, 0x8000), 0x4000);
         assert_eq!(call(0x1_0000, 0x1234), 0x1234);
+        // NEGATIVE half tie: magnitude-based RNE gives -2, NOT the
+        // (p+0x8000)>>16 arithmetic-shift trap value of -1. Keep this
+        // discriminator before the other tie cases so M3 fails here.
+        assert_ne!(call(-3, 0x8000), -1);
+        assert_eq!(call(-3, 0x8000), -2);
         // Positive half ties round to even.
         assert_eq!(call(1, 0x8000), 0); // q=0 even -> stays
         assert_eq!(call(3, 0x8000), 2); // q=1 odd -> up to 2
-        // NEGATIVE half tie: magnitude-based RNE gives -2, NOT the
-        // (p+0x8000)>>16 arithmetic-shift trap value of -1.
-        assert_eq!(call(-3, 0x8000), -2);
-        assert_ne!(call(-3, 0x8000), -1);
         assert_eq!(call(-1, 0x8000), 0);
     }
 
     #[test]
+    #[cfg(feature = "std-surface")]
     fn cos_orbit_reaches_dottie_fixed_point() {
         // THE marquee: iterate x = cos_q16(x) from seed 0 for 1000 steps, running
         // the user's real cos_q16 -> the Q16.16 Dottie fixed point 0x0000BD35.
@@ -520,11 +502,11 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
-    fn cos_with_too_few_iters_depends_on_n() {
+    fn s3_too_few_iters_depends_on_n() {
         // Converges at ~step 30; N = 5 does not reach it -> depends on N (E2213).
-        let fns = fn_table(CANON_COS);
+        let fns = fn_table("fn creep(x: i64) -> i64 { return (x + 65536) / 2; }");
         assert_eq!(
-            iterate_user_fixed_point(&call_x("cos_q16"), "x", &fns, 0, 5),
+            iterate_user_fixed_point(&call_x("creep"), "x", &fns, 0, 5),
             Q16Outcome::DependsOnN
         );
     }
@@ -591,11 +573,13 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
-    fn reversed_range_leaves_seed_unchanged() {
+    fn s3_reversed_range_leaves_seed_unchanged() {
         // trip <= 0 -> f iterated zero times -> the seed (bug-class 1).
-        let fns = fn_table(CANON_COS);
+        let fns = fn_table("fn halve(x: i64) -> i64 { return x / 2; }");
+        let trip = crate::opt::collapse::q16_trip_count(10, 3);
+        assert_eq!(trip, 0, "a reversed range must execute zero times");
         assert_eq!(
-            iterate_user_fixed_point(&call_x("cos_q16"), "x", &fns, 12345, 0),
+            iterate_user_fixed_point(&call_x("halve"), "x", &fns, 12345, trip),
             Q16Outcome::Fixed(12345)
         );
     }

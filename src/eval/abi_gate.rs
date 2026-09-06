@@ -358,9 +358,12 @@ fn walk_generic_calls(node: &Node, ctx: &GenCtx, out: &mut Vec<Diagnostic>) {
         N::Paren(inner, _) | N::Neg { operand: inner, .. } | N::Ref { inner, .. } => {
             walk_generic_calls(inner, ctx, out)
         }
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            walk_generic_calls(left, ctx, out);
+            walk_generic_calls(right, ctx, out);
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             walk_generic_calls(left, ctx, out);
             walk_generic_calls(right, ctx, out);
         }
@@ -760,7 +763,12 @@ fn walk_ambiguous_ctor(
             recur(cond, out);
             body.iter().for_each(|s| recur(s, out));
         }
-        N::Binary { left, right, .. } | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } => {
+            recur(left, out);
+            recur(right, out);
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             recur(left, out);
             recur(right, out);
         }
@@ -1002,9 +1010,12 @@ fn walk_match_runnable(node: &Node, src: &str, file: Option<&str>, out: &mut Vec
         N::Paren(inner, _) | N::Neg { operand: inner, .. } | N::Ref { inner, .. } => {
             walk_match_runnable(inner, src, file, out)
         }
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            walk_match_runnable(left, src, file, out);
+            walk_match_runnable(right, src, file, out);
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             walk_match_runnable(left, src, file, out);
             walk_match_runnable(right, src, file, out);
         }

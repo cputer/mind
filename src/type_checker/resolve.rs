@@ -1124,9 +1124,12 @@ impl<'a> Resolver<'a> {
             }
 
             // ── Compound expressions: recurse into child expressions ──────
-            Node::Binary { left, right, .. }
-            | Node::Logical { left, right, .. }
-            | Node::Bitwise { left, right, .. } => {
+            Node::Binary { left, right, .. } | Node::Logical { left, right, .. } => {
+                self.walk(left);
+                self.walk(right);
+            }
+            #[cfg(feature = "std-surface")]
+            Node::Bitwise { left, right, .. } => {
                 self.walk(left);
                 self.walk(right);
             }

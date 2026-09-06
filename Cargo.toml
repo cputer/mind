@@ -149,6 +149,18 @@ name = "merge_kind_order_symmetry"
 # that has nothing to do with merge signedness.
 required-features = ["std-surface", "mlir-build"]
 
+[[test]]
+name = "issue_246_bitnot_operator"
+required-features = ["std-surface"]
+
+[[test]]
+name = "mindcraft_lint_q16_overflow"
+required-features = ["std-surface"]
+
+[[test]]
+name = "nerve_numerics_lint"
+required-features = ["std-surface"]
+
 [[bench]]
 name = "compiler"
 harness = false

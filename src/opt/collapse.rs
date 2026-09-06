@@ -679,7 +679,7 @@ fn build_q16_collapse(map: &Q16Map, preceding: &[Node], ctx: &mut Ctx) -> Option
     // range). `saturating_sub` avoids an i64 overflow for a huge const span;
     // the iteration then caps at the fuel and rejects if no fixed point is
     // reached (E2210).
-    let trip = if hi > lo { hi.saturating_sub(lo) } else { 0 };
+    let trip = q16_trip_count(lo, hi);
 
     // Fold by evaluating the user's REAL function bodies (collapse == loop by
     // construction — no name-trust). `ctx.fns` holds the module's fn bodies.
@@ -737,6 +737,11 @@ fn build_q16_collapse(map: &Q16Map, preceding: &[Node], ctx: &mut Ctx) -> Option
             None
         }
     }
+}
+
+/// Iterations in `lo..hi`, with reversed and empty ranges executing zero times.
+pub(super) fn q16_trip_count(lo: i64, hi: i64) -> i64 {
+    if hi > lo { hi.saturating_sub(lo) } else { 0 }
 }
 
 /// `acc = <const>` — the S3 fixed-point replacement.
@@ -827,6 +832,8 @@ fn bin(op: BinOp, l: Node, r: Node, sp: Span) -> Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "std-surface")]
+    use crate::opt::CANON_COS;
 
     fn ident(s: &str) -> Node {
         Node::Lit(Literal::Ident(s.into()), Span::new(0, 0))
@@ -1058,30 +1065,6 @@ mod tests {
     // The fold runs the USER'S real function bodies (option B), so every test
     // installs a fn table via `ctx_with_fns` — collapse == loop by construction.
 
-    /// The canonical Q16.16 cos map bodies (== the `dottie_collapse.mind` example).
-    const CANON_COS: &str = r#"
-fn qmul(a: i64, b: i64) -> i64 {
-    let p: i64 = a * b;
-    let neg: bool = p < 0;
-    let mut m: i64 = p;
-    if neg { m = 0 - p; }
-    let mut q: i64 = m >> 16;
-    let rem: i64 = m & 65535;
-    if rem > 32768 { q = q + 1; } else { if rem == 32768 { if (q & 1) == 1 { q = q + 1; } } }
-    if neg { return 0 - q; }
-    return q;
-}
-fn cos_q16(x: i64) -> i64 {
-    let x2: i64 = qmul(x, x);
-    let mut acc: i64 = 2;
-    acc = qmul(acc, x2) - 91;
-    acc = qmul(acc, x2) + 2731;
-    acc = qmul(acc, x2) - 32768;
-    acc = qmul(acc, x2) + 65536;
-    return acc;
-}
-"#;
-
     fn ctx_with_fns(src: &str) -> Ctx<'static> {
         let module = crate::parser::parse(src).expect("parse fn table source");
         Ctx {
@@ -1119,6 +1102,7 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
+    #[cfg(feature = "std-surface")]
     fn q16_cos_collapse_folds_to_dottie_constant() {
         // `let mut x = 0; #[collapse] for i in 0..1000 { x = cos_q16(x) }`
         // -> `x = 48437` (the Q16.16 Dottie fixed point, 0x0000BD35), computed by
@@ -1136,6 +1120,16 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
+    #[cfg(feature = "std-surface")]
+    fn canon_cos_matches_shipped_example() {
+        let shipped = include_str!("../../examples/dottie_collapse.mind");
+        assert!(
+            shipped.contains(CANON_COS.trim()),
+            "canonical qmul/cos_q16 bodies diverged from the shipped example"
+        );
+    }
+
+    #[test]
     fn q16_redefined_cos_never_folds_to_dottie_constant() {
         // THE hole-is-closed proof at the collapse layer: a module that redefines
         // `cos_q16(x) = x + 1` must NOT fold to 48437. x+1 has no Q16.16 fixed
@@ -1150,7 +1144,7 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
-    fn q16_non_const_seed_is_rejected() {
+    fn s3_non_const_seed_is_rejected() {
         // Seed comes from `let mut x = seed` (a non-const identifier) -> E2215.
         let preceding = [Node::Let {
             name: "x".into(),
@@ -1159,29 +1153,29 @@ fn cos_q16(x: i64) -> i64 {
             value: Box::new(ident("seed")),
             span: Span::new(0, 0),
         }];
-        let mut ctx = ctx_with_fns(CANON_COS);
-        assert!(build_q16_collapse(&call_map("cos_q16", 0, 1000), &preceding, &mut ctx).is_none());
+        let mut ctx = ctx_with_fns("fn halve(x: i64) -> i64 { return x / 2; }");
+        assert!(build_q16_collapse(&call_map("halve", 0, 1000), &preceding, &mut ctx).is_none());
         assert_eq!(ctx.diags.len(), 1);
         assert_eq!(ctx.diags[0].code, E_Q16_NONCONST);
     }
 
     #[test]
-    fn q16_non_const_bound_is_rejected() {
+    fn s3_non_const_bound_is_rejected() {
         // Symbolic upper bound -> E2215.
         let preceding = [let_const("x", 0)];
-        let mut map = call_map("cos_q16", 0, 0);
+        let mut map = call_map("halve", 0, 0);
         map.hi = ident("n");
-        let mut ctx = ctx_with_fns(CANON_COS);
+        let mut ctx = ctx_with_fns("fn halve(x: i64) -> i64 { return x / 2; }");
         assert!(build_q16_collapse(&map, &preceding, &mut ctx).is_none());
         assert_eq!(ctx.diags[0].code, E_Q16_NONCONST);
     }
 
     #[test]
-    fn q16_reversed_range_folds_to_seed() {
+    fn s3_reversed_range_folds_to_seed() {
         // Reversed range -> 0 iterations -> x stays the seed (bug-class 1).
         let preceding = [let_const("x", 12345)];
-        let mut ctx = ctx_with_fns(CANON_COS);
-        let node = build_q16_collapse(&call_map("cos_q16", 10, 3), &preceding, &mut ctx)
+        let mut ctx = ctx_with_fns("fn halve(x: i64) -> i64 { return x / 2; }");
+        let node = build_q16_collapse(&call_map("halve", 10, 3), &preceding, &mut ctx)
             .expect("reversed range collapses to the seed");
         let Node::Assign { value, .. } = node else {
             panic!("expected `x = <seed>`");
@@ -1218,11 +1212,11 @@ fn cos_q16(x: i64) -> i64 {
     }
 
     #[test]
-    fn q16_too_few_iters_depends_on_n_is_rejected() {
+    fn s3_too_few_iters_depends_on_n_is_rejected() {
         // cos converges at ~step 30; N=5 doesn't reach it -> E2213.
         let preceding = [let_const("x", 0)];
-        let mut ctx = ctx_with_fns(CANON_COS);
-        assert!(build_q16_collapse(&call_map("cos_q16", 0, 5), &preceding, &mut ctx).is_none());
+        let mut ctx = ctx_with_fns("fn creep(x: i64) -> i64 { return (x + 65536) / 2; }");
+        assert!(build_q16_collapse(&call_map("creep", 0, 5), &preceding, &mut ctx).is_none());
         assert_eq!(ctx.diags[0].code, E_Q16_DEPENDS_N);
     }
 }

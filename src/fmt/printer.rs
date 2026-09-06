@@ -15,8 +15,10 @@
 //! Phase 2A: no soft line-wrap.  Emits from the AST; comments are re-attached
 //! from the [`TriviaStream`].
 
+#[cfg(feature = "std-surface")]
+use crate::ast::BitOp;
 use crate::ast::{
-    Attribute, BinOp, BitOp, CallConv, EnumVariant, ExternFn, Field, FnDefData, Literal, LogicalOp,
+    Attribute, BinOp, CallConv, EnumVariant, ExternFn, Field, FnDefData, Literal, LogicalOp,
     MatchArm, Module, Node, Param, Pattern, Span, SparseLayout, StructLitField, TraitMethodSig,
     TypeAnn,
 };
@@ -1225,6 +1227,7 @@ fn emit_expr(p: &mut Printer, node: &Node) {
         Node::Logical {
             op, left, right, ..
         } => emit_logical(p, op, left, right),
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             op, left, right, ..
         } => emit_bitwise(p, op, left, right),
@@ -1915,6 +1918,7 @@ fn emit_logical(p: &mut Printer, op: &LogicalOp, left: &Node, right: &Node) {
     emit_expr(p, right);
 }
 
+#[cfg(feature = "std-surface")]
 fn emit_bitwise(p: &mut Printer, op: &BitOp, left: &Node, right: &Node) {
     emit_expr(p, left);
     p.push(" ");

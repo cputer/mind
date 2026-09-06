@@ -157,6 +157,7 @@ fn check_node(node: &Node, ctx: &LintCtx<'_>, out: &mut Vec<Diagnostic>) {
             check_node(left, ctx, out);
             check_node(right, ctx, out);
         }
+        #[cfg(feature = "std-surface")]
         Node::Bitwise { left, right, .. } => {
             check_node(left, ctx, out);
             check_node(right, ctx, out);

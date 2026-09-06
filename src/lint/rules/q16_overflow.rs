@@ -39,7 +39,9 @@
 //! Per-target escalation (`warn` on most targets, `error` on `[mindcraft.cpu]`)
 //! is deferred to Phase 5 when per-target severity plumbing lands.
 
-use crate::ast::{BinOp, BitOp, Node, TypeAnn};
+#[cfg(feature = "std-surface")]
+use crate::ast::BitOp;
+use crate::ast::{BinOp, Node, TypeAnn};
 use crate::lint::rule::{LintCtx, LintRule};
 use crate::lint::{Diagnostic, SourceSpan};
 use crate::project::RuleSeverity;
@@ -283,6 +285,7 @@ fn find_mul_inner(expr: &Node, under_shr16: bool) -> Option<(usize, usize)> {
             let _ = (left, right); // don't recurse into children of the flagged Mul
             Some((span.start(), span.end()))
         }
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             op: BitOp::Shr,
             left,
@@ -298,6 +301,7 @@ fn find_mul_inner(expr: &Node, under_shr16: bool) -> Option<(usize, usize)> {
         Node::Binary { left, right, .. } => {
             find_mul_inner(left, under_shr16).or_else(|| find_mul_inner(right, under_shr16))
         }
+        #[cfg(feature = "std-surface")]
         Node::Bitwise { left, right, .. } => {
             find_mul_inner(left, under_shr16).or_else(|| find_mul_inner(right, under_shr16))
         }

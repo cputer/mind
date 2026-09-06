@@ -73,7 +73,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{BinOp, BitOp, FnDefData, Literal, Module, Node, Span as AstSpan, TypeAnn};
+#[cfg(feature = "std-surface")]
+use crate::ast::BitOp;
+use crate::ast::{BinOp, FnDefData, Literal, Module, Node, Span as AstSpan, TypeAnn};
 use crate::diagnostics::Diagnostic as Pretty;
 
 use super::diag_from_span;
@@ -570,6 +572,7 @@ fn check_q16_multiply(fd: &FnDefData, src: &str, file: Option<&str>, errs: &mut 
     let mut hits: Vec<AstSpan> = Vec::new();
     for stmt in &fd.body {
         walk(stmt, &mut |n| match n {
+            #[cfg(feature = "std-surface")]
             Node::Bitwise {
                 op: BitOp::Shr,
                 left,

@@ -37,16 +37,16 @@ use trivia::{TriviaCollector, strip_comments_with_trivia};
 /// subset". Bitwise is not in that subset: `ir::BinOp` has no BitAnd/BitOr/
 /// BitXor/Shl/Shr variants there. Refusing in the PARSER keeps the whole
 /// pipeline consistent and turns what was a compiler panic into a diagnostic
-/// carrying a source offset. Naming the operator also consumes the `BitOp`
-/// payload, which is otherwise dead in this cfg.
+/// carrying a source offset. Naming the operator also consumes the parser's
+/// bit-token payload, which is otherwise dead in this cfg.
 #[cfg(not(feature = "std-surface"))]
-fn bitwise_needs_std_surface(op: crate::ast::BitOp, compound: bool) -> String {
+fn bitwise_needs_std_surface(op: BitToken, compound: bool) -> String {
     let sym = match op {
-        crate::ast::BitOp::Or => "|",
-        crate::ast::BitOp::And => "&",
-        crate::ast::BitOp::Xor => "^",
-        crate::ast::BitOp::Shl => "<<",
-        crate::ast::BitOp::Shr => ">>",
+        BitToken::Or => "|",
+        BitToken::And => "&",
+        BitToken::Xor => "^",
+        BitToken::Shl => "<<",
+        BitToken::Shr => ">>",
     };
     let eq = if compound { "=" } else { "" };
     format!(
@@ -56,10 +56,20 @@ fn bitwise_needs_std_surface(op: crate::ast::BitOp, compound: bool) -> String {
     )
 }
 
+#[cfg(not(feature = "std-surface"))]
+fn bitwise_parse_error(parser: &P<'_>, op: BitToken, compound: bool) -> ParseError {
+    let mut error = parser.err(bitwise_needs_std_surface(op, compound));
+    error.cause_code = Some("E1042");
+    error
+}
+
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub offset: usize,
     pub message: String,
+    /// Stable cause code for diagnostics whose parser boundary has a
+    /// feature-specific contract. Ordinary parse errors remain `None`.
+    pub cause_code: Option<&'static str>,
 }
 
 impl std::fmt::Display for ParseError {
@@ -137,7 +147,7 @@ enum PrattOp {
     LogicalAnd,
     Cmp(BinOp),
     Arith(BinOp),
-    Bit(crate::ast::BitOp),
+    Bit(BitToken),
     /// `expr as type` postfix cast (right operand is a `TypeAnn`,
     /// not an expression).
     AsCast,
@@ -159,7 +169,29 @@ enum PrattOp {
 #[derive(Debug, Clone, Copy)]
 enum CompoundOp {
     Arith(BinOp),
-    Bit(crate::ast::BitOp),
+    Bit(BitToken),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BitToken {
+    Or,
+    And,
+    Xor,
+    Shl,
+    Shr,
+}
+
+#[cfg(feature = "std-surface")]
+impl From<BitToken> for crate::ast::BitOp {
+    fn from(token: BitToken) -> Self {
+        match token {
+            BitToken::Or => Self::Or,
+            BitToken::And => Self::And,
+            BitToken::Xor => Self::Xor,
+            BitToken::Shl => Self::Shl,
+            BitToken::Shr => Self::Shr,
+        }
+    }
 }
 
 /// The closed set of statement-leading keywords `parse_stmt` dispatches on.
@@ -397,6 +429,7 @@ impl<'a> P<'a> {
         ParseError {
             offset: self.pos,
             message,
+            cause_code: None,
         }
     }
 
@@ -1438,7 +1471,7 @@ impl<'a> P<'a> {
             // cursor advances so the offset points at the operator itself.
             #[cfg(not(feature = "std-surface"))]
             if let CompoundOp::Bit(op) = cop {
-                return Err(self.err(bitwise_needs_std_surface(op, true)));
+                return Err(bitwise_parse_error(self, op, true));
             }
             self.pos += width;
             self.skip_ws_and_newlines();
@@ -1452,12 +1485,17 @@ impl<'a> P<'a> {
                         right: Box::new(right),
                         span,
                     },
+                    #[cfg(feature = "std-surface")]
                     CompoundOp::Bit(op) => Node::Bitwise {
-                        op,
+                        op: op.into(),
                         left: Box::new(left),
                         right: Box::new(right),
                         span,
                     },
+                    #[cfg(not(feature = "std-surface"))]
+                    CompoundOp::Bit(_) => {
+                        unreachable!("bitwise compound assignment was refused above")
+                    }
                 }
             };
             match expr {
@@ -3582,13 +3620,13 @@ impl<'a> P<'a> {
                 // PANICKED (exit 101) on source as simple as `a | 1`.
                 #[cfg(feature = "std-surface")]
                 PrattOp::Bit(b) => Node::Bitwise {
-                    op: b,
+                    op: b.into(),
                     left: Box::new(left),
                     right: Box::new(right),
                     span,
                 },
                 #[cfg(not(feature = "std-surface"))]
-                PrattOp::Bit(b) => return Err(self.err(bitwise_needs_std_surface(b, false))),
+                PrattOp::Bit(b) => return Err(bitwise_parse_error(self, b, false)),
                 PrattOp::AsCast => unreachable!(),
                 // RFC 0012 Phase B: tensor operators desugar in parse_pratt
                 // to their dedicated AST nodes. lower_expr handles both at
@@ -3626,8 +3664,8 @@ impl<'a> P<'a> {
         let b2 = self.b.get(p + 2).copied().unwrap_or(0);
         // Three-char shift-assign (checked before the `<<`/`>>` infix shapes).
         match (b0, b1, b2) {
-            (b'<', b'<', b'=') => return Some((CompoundOp::Bit(crate::ast::BitOp::Shl), 3)),
-            (b'>', b'>', b'=') => return Some((CompoundOp::Bit(crate::ast::BitOp::Shr), 3)),
+            (b'<', b'<', b'=') => return Some((CompoundOp::Bit(BitToken::Shl), 3)),
+            (b'>', b'>', b'=') => return Some((CompoundOp::Bit(BitToken::Shr), 3)),
             _ => {}
         }
         if b1 != b'=' {
@@ -3640,9 +3678,9 @@ impl<'a> P<'a> {
             b'*' => CompoundOp::Arith(BinOp::Mul),
             b'/' => CompoundOp::Arith(BinOp::Div),
             b'%' => CompoundOp::Arith(BinOp::Mod),
-            b'&' => CompoundOp::Bit(crate::ast::BitOp::And),
-            b'|' => CompoundOp::Bit(crate::ast::BitOp::Or),
-            b'^' => CompoundOp::Bit(crate::ast::BitOp::Xor),
+            b'&' => CompoundOp::Bit(BitToken::And),
+            b'|' => CompoundOp::Bit(BitToken::Or),
+            b'^' => CompoundOp::Bit(BitToken::Xor),
             _ => return None,
         };
         Some((op, 2))
@@ -3670,8 +3708,8 @@ impl<'a> P<'a> {
             (b'!', b'=') => return Some((PrattOp::Cmp(BinOp::Ne), 5, 6, 2)),
             (b'<', b'=') => return Some((PrattOp::Cmp(BinOp::Le), 5, 6, 2)),
             (b'>', b'=') => return Some((PrattOp::Cmp(BinOp::Ge), 5, 6, 2)),
-            (b'<', b'<') => return Some((PrattOp::Bit(crate::ast::BitOp::Shl), 11, 12, 2)),
-            (b'>', b'>') => return Some((PrattOp::Bit(crate::ast::BitOp::Shr), 11, 12, 2)),
+            (b'<', b'<') => return Some((PrattOp::Bit(BitToken::Shl), 11, 12, 2)),
+            (b'>', b'>') => return Some((PrattOp::Bit(BitToken::Shr), 11, 12, 2)),
             // RFC 0012 Phase B: dot-prefix elementwise operators `.+ .- .* ./`.
             // Precedence mirrors the RFC 0012 §4.7 table:
             //   .* and ./ bind tighter than .+ and .- (levels 13/14 and 9/10).
@@ -3711,9 +3749,9 @@ impl<'a> P<'a> {
             b'>' => Some((PrattOp::Cmp(BinOp::Gt), 5, 6, 1)),
             b'+' => Some((PrattOp::Arith(BinOp::Add), 9, 10, 1)),
             b'-' => Some((PrattOp::Arith(BinOp::Sub), 9, 10, 1)),
-            b'|' => Some((PrattOp::Bit(crate::ast::BitOp::Or), 11, 12, 1)),
-            b'&' => Some((PrattOp::Bit(crate::ast::BitOp::And), 11, 12, 1)),
-            b'^' => Some((PrattOp::Bit(crate::ast::BitOp::Xor), 11, 12, 1)),
+            b'|' => Some((PrattOp::Bit(BitToken::Or), 11, 12, 1)),
+            b'&' => Some((PrattOp::Bit(BitToken::And), 11, 12, 1)),
+            b'^' => Some((PrattOp::Bit(BitToken::Xor), 11, 12, 1)),
             b'*' => Some((PrattOp::Arith(BinOp::Mul), 13, 14, 1)),
             b'/' => Some((PrattOp::Arith(BinOp::Div), 13, 14, 1)),
             b'%' => Some((PrattOp::Arith(BinOp::Mod), 13, 14, 1)),
@@ -6043,6 +6081,7 @@ pub fn parse(input: &str) -> Result<Module, Vec<ParseError>> {
                     .map(|d| ParseError {
                         offset: 0,
                         message: format!("{}: {}", d.code, d.message),
+                        cause_code: None,
                     })
                     .collect())
             }
@@ -6082,9 +6121,10 @@ pub fn parse_with_diagnostics_in_file(
             if diags.is_empty() { Ok(m) } else { Err(diags) }
         }
         Err(e) => {
+            let code = e.cause_code.unwrap_or("E1001");
             let diag = PrettyDiagnostic {
                 phase: "parse",
-                code: "E1001",
+                code,
                 severity: crate::diagnostics::Severity::Error,
                 message: e.message,
                 span: Some(DiagnosticSpan::from_offsets(

@@ -116,6 +116,7 @@ pub enum TensorElemOp {
 
 /// Bitwise binary operator (Phase 10.5 Tier-1).
 /// Held separate from `BinOp` for the same matching-stability reason.
+#[cfg(feature = "std-surface")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitOp {
     /// `|` bitwise or
@@ -749,6 +750,7 @@ pub enum Node {
     },
     /// Bitwise binary expression: `a | b`, `a & b`, `a ^ b`, `a << b`, `a >> b`.
     /// Phase 10.5 Tier-1.
+    #[cfg(feature = "std-surface")]
     Bitwise {
         op: BitOp,
         left: Box<Node>,
@@ -1127,11 +1129,12 @@ impl Node {
             | Node::Assert { span, .. }
             | Node::As { span, .. }
             | Node::Logical { span, .. }
-            | Node::Bitwise { span, .. }
             | Node::Match { span, .. }
             | Node::Try { span, .. }
             | Node::Ref { span, .. }
             | Node::ExternBlock { span, .. } => *span,
+            #[cfg(feature = "std-surface")]
+            Node::Bitwise { span, .. } => *span,
             #[cfg(feature = "std-surface")]
             Node::While { span, .. } => *span,
             #[cfg(feature = "std-surface")]

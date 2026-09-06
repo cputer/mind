@@ -414,9 +414,11 @@ fn scalar_refs_ident(node: &Node, name: &str) -> bool {
         Node::Lit(_, _) => false,
         Node::Paren(inner, _) => scalar_refs_ident(inner, name),
         Node::Neg { operand, .. } => scalar_refs_ident(operand, name),
-        Node::Binary { left, right, .. }
-        | Node::Bitwise { left, right, .. }
-        | Node::Logical { left, right, .. } => {
+        Node::Binary { left, right, .. } | Node::Logical { left, right, .. } => {
+            scalar_refs_ident(left, name) || scalar_refs_ident(right, name)
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             scalar_refs_ident(left, name) || scalar_refs_ident(right, name)
         }
         Node::Call { args, .. } => args.iter().any(|a| scalar_refs_ident(a, name)),

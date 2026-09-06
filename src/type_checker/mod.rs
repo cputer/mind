@@ -1935,6 +1935,7 @@ fn infer_expr(node: &Node, env: &TypeEnv) -> Result<(ValueType, AstSpan), TypeEr
             Ok((ValueType::ScalarBool, *span))
         }
         // Bitwise: integer-typed; result type matches the left operand's type.
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             left, right, span, ..
         } => {
@@ -3211,9 +3212,12 @@ fn collect_rebound_node(node: &Node, out: &mut HashSet<String>) {
                 collect_rebound_node(e, out);
             }
         }
-        Node::Binary { left, right, .. }
-        | Node::Bitwise { left, right, .. }
-        | Node::Logical { left, right, .. } => {
+        Node::Binary { left, right, .. } | Node::Logical { left, right, .. } => {
+            collect_rebound_node(left, out);
+            collect_rebound_node(right, out);
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             collect_rebound_node(left, out);
             collect_rebound_node(right, out);
         }
@@ -3614,6 +3618,7 @@ fn walk_expr_class_checks(
             walk_expr_class_checks(left, ctx, src, file, errs);
             walk_expr_class_checks(right, ctx, src, file, errs);
         }
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             op: _, left, right, ..
         } => {

@@ -1965,6 +1965,7 @@ pub(crate) fn eval_value_expr_mode(
             Ok(Value::Int(matches!(r, Value::Int(n) if n != 0) as i64))
         }
         // Bitwise: integer-only at preview level.
+        #[cfg(feature = "std-surface")]
         Node::Bitwise {
             op, left, right, ..
         } => {

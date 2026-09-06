@@ -598,6 +598,7 @@ pub(crate) fn infer_concrete_arg_type(
             }
         }
         // Bitwise (`& | ^ << >>`) yields the (shared) operand type.
+        #[cfg(feature = "std-surface")]
         ast::Node::Bitwise { left, right, .. } => {
             let l = infer_concrete_arg_type(left, bindings, fn_returns)?;
             let r = infer_concrete_arg_type(right, bindings, fn_returns)?;
@@ -815,9 +816,11 @@ fn node_mentions_type_name(node: &ast::Node, tp: &str) -> bool {
         N::Paren(inner, _) | N::Neg { operand: inner, .. } | N::Ref { inner, .. } => {
             node_mentions_type_name(inner, tp)
         }
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            node_mentions_type_name(left, tp) || node_mentions_type_name(right, tp)
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             node_mentions_type_name(left, tp) || node_mentions_type_name(right, tp)
         }
         N::Call { args, .. } => args.iter().any(|a| node_mentions_type_name(a, tp)),
@@ -852,7 +855,11 @@ fn may_reference_enum_prelude(n: &ast::Node) -> bool {
         N::Lit(Literal::Int(_), _) | N::Lit(Literal::Float(_), _) | N::Lit(Literal::Str(_), _) => {
             false
         }
-        N::Binary { left, right, .. } | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } => {
+            may_reference_enum_prelude(left) || may_reference_enum_prelude(right)
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             may_reference_enum_prelude(left) || may_reference_enum_prelude(right)
         }
         N::Paren(inner, _) | N::Neg { operand: inner, .. } => may_reference_enum_prelude(inner),
@@ -2797,6 +2804,7 @@ fn infer_narrow_arith_ty(
         ),
         // Finding 3: a shift result carries the LEFT operand's declared width
         // (the count's width is irrelevant), so recurse only into `left`.
+        #[cfg(feature = "std-surface")]
         ast::Node::Bitwise {
             op: ast::BitOp::Shl | ast::BitOp::Shr,
             left,
@@ -3945,9 +3953,11 @@ fn ast_reads_ident(node: &ast::Node, targets: &std::collections::HashSet<String>
     match node {
         N::Lit(Literal::Ident(name), _) => targets.contains(name),
         N::Lit(..) => false,
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            ast_reads_ident(left, targets) || ast_reads_ident(right, targets)
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             ast_reads_ident(left, targets) || ast_reads_ident(right, targets)
         }
         N::Paren(inner, _)
@@ -4152,9 +4162,11 @@ fn expr_contains_call(node: &ast::Node) -> bool {
         | N::TensorMatmul { .. }
         | N::TensorElemwise { .. } => true,
         N::Lit(..) => false,
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => expr_contains_call(left) || expr_contains_call(right),
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            expr_contains_call(left) || expr_contains_call(right)
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => expr_contains_call(left) || expr_contains_call(right),
         N::Paren(inner, _)
         | N::Neg { operand: inner, .. }
         | N::Not { operand: inner, .. }
@@ -4672,9 +4684,12 @@ fn descend_for_continue(node: &mut ast::Node, step: &ast::Node) {
         }
         N::ForEach { collection, .. } => descend_for_continue(collection, step),
         // ---- pure expression wrappers: recurse into operands -------------
-        N::Binary { left, right, .. }
-        | N::Logical { left, right, .. }
-        | N::Bitwise { left, right, .. } => {
+        N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+            descend_for_continue(left, step);
+            descend_for_continue(right, step);
+        }
+        #[cfg(feature = "std-surface")]
+        N::Bitwise { left, right, .. } => {
             descend_for_continue(left, step);
             descend_for_continue(right, step);
         }

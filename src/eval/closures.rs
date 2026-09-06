@@ -560,9 +560,12 @@ fn node_children_mut(node: &mut Node) -> Vec<&mut Node> {
     let mut out: Vec<&mut Node> = Vec::new();
     match node {
         // ── Binary-shaped ────────────────────────────────────────────────
-        Node::Binary { left, right, .. }
-        | Node::Logical { left, right, .. }
-        | Node::Bitwise { left, right, .. } => {
+        Node::Binary { left, right, .. } | Node::Logical { left, right, .. } => {
+            out.push(left);
+            out.push(right);
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             out.push(left);
             out.push(right);
         }
@@ -772,9 +775,12 @@ fn find_closure_span(node: &Node) -> Option<Span> {
 pub(crate) fn node_children_ref(node: &Node) -> Vec<&Node> {
     let mut out: Vec<&Node> = Vec::new();
     match node {
-        Node::Binary { left, right, .. }
-        | Node::Logical { left, right, .. }
-        | Node::Bitwise { left, right, .. } => {
+        Node::Binary { left, right, .. } | Node::Logical { left, right, .. } => {
+            out.push(left);
+            out.push(right);
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             out.push(left);
             out.push(right);
         }

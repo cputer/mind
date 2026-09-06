@@ -180,7 +180,11 @@ fn node_mentions_narrow(node: &Node) -> bool {
             .any(|v| v.payload.iter().any(ty_mentions_narrow)),
         Node::Assert { cond, .. } => node_mentions_narrow(cond),
         Node::As { expr, ty, .. } => ty_mentions_narrow(ty) || node_mentions_narrow(expr),
-        Node::Logical { left, right, .. } | Node::Bitwise { left, right, .. } => {
+        Node::Logical { left, right, .. } => {
+            node_mentions_narrow(left) || node_mentions_narrow(right)
+        }
+        #[cfg(feature = "std-surface")]
+        Node::Bitwise { left, right, .. } => {
             node_mentions_narrow(left) || node_mentions_narrow(right)
         }
         Node::StructLit { fields, .. } => fields.iter().any(|f| node_mentions_narrow(&f.value)),
