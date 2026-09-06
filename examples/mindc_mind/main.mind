@@ -38282,12 +38282,14 @@ pub fn nb_sha256_fold_loop(h_addr: i64, v: i64, fi: i64) -> i64 {
     nb_sha256_fold_loop(h_addr, v, fi + 1)
 }
 
-pub fn nb_sha256_compress(block_addr: i64, h_addr: i64) -> i64 {
-    let w_addr: i64 = __mind_alloc(512);
+// Compress one block using scratch owned by the enclosing hash invocation.
+// nb_sha256_w0_loop overwrites W[0..15], nb_sha256_wsched_loop overwrites
+// W[16..63], and nb_sha256_vinit_loop overwrites v[0..7] before any round reads
+// them, so the same buffers are lifetime-safe to reuse for the next block.
+pub fn nb_sha256_compress(block_addr: i64, h_addr: i64, w_addr: i64, v: i64) -> i64 {
     let _w0: i64 = nb_sha256_w0_loop(block_addr, w_addr, 0);
     let _ws: i64 = nb_sha256_wsched_loop(w_addr, 16);
     // Working vars a..h in a stride-8 scratch (memory-backed, single-carry round).
-    let v: i64 = __mind_alloc(64);
     let _vi: i64 = nb_sha256_vinit_loop(v, h_addr, 0);
     let _rl: i64 = nb_sha256_round_loop(v, w_addr, 0);
     nb_sha256_fold_loop(h_addr, v, 0)
@@ -38317,13 +38319,15 @@ pub fn nb_sha256_hinit_loop(h_addr: i64, hi: i64) -> i64 {
     __mind_store_i64(h_addr + hi * 8, nb_h_init(hi));
     nb_sha256_hinit_loop(h_addr, hi + 1)
 }
-// Process each 64-byte block, indices blk..num_blocks-1.
-pub fn nb_sha256_blocks_loop(buf: i64, h_addr: i64, blk: i64, num_blocks: i64) -> i64 {
+// Process each 64-byte block, indices blk..num_blocks-1, reusing the scratch
+// private to this nb_sha256 call. Compression completes and folds into h_addr
+// before recursion, so no two blocks have overlapping scratch lifetimes.
+pub fn nb_sha256_blocks_loop(buf: i64, h_addr: i64, w_addr: i64, v: i64, blk: i64, num_blocks: i64) -> i64 {
     if blk >= num_blocks {
         return 0;
     }
-    let _c: i64 = nb_sha256_compress(buf + blk * 64, h_addr);
-    nb_sha256_blocks_loop(buf, h_addr, blk + 1, num_blocks)
+    let _c: i64 = nb_sha256_compress(buf + blk * 64, h_addr, w_addr, v);
+    nb_sha256_blocks_loop(buf, h_addr, w_addr, v, blk + 1, num_blocks)
 }
 // Serialise the 8-word digest big-endian, indices di..7.
 pub fn nb_sha256_out_loop(h_addr: i64, out_addr: i64, di: i64) -> i64 {
@@ -38373,9 +38377,16 @@ pub fn nb_sha256(in_addr: i64, in_len: i64, out_addr: i64) -> i64 {
     // H state, stride-8.
     let h_addr: i64 = __mind_alloc(64);
     let _hi: i64 = nb_sha256_hinit_loop(h_addr, 0);
+    // Per-invocation compression scratch. The old implementation allocated a
+    // fresh 512-byte schedule + 64-byte working state for EVERY 64-byte block;
+    // the fixed native bump arena retained all of that dead scratch until the
+    // outer trace-hash reclaim. One private pair per hash keeps concurrent hash
+    // invocations independent while bounding scratch to 592 arena bytes total.
+    let w_addr: i64 = __mind_alloc(512);
+    let v: i64 = __mind_alloc(64);
     // Process each 64-byte block, then serialise the digest big-endian.
     let num_blocks: i64 = padded_len / 64;
-    let _bl: i64 = nb_sha256_blocks_loop(buf, h_addr, 0, num_blocks);
+    let _bl: i64 = nb_sha256_blocks_loop(buf, h_addr, w_addr, v, 0, num_blocks);
     nb_sha256_out_loop(h_addr, out_addr, 0)
 }
 

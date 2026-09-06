@@ -653,23 +653,37 @@ def sha256_leg_rung(lib) -> int:
     independent inputs, incl. a large one the size of a real mic@3 module. SHA-256 is
     collision-resistant, so a single wrong byte in the pure-MIND digest flips it — a
     match across these inputs is a non-fakeable proof the algorithm is byte-exact."""
+    # Fixed known answers keep this rung independent of hashlib for its verdict.
+    # hashlib is still checked below as a second implementation/control. Lengths
+    # straddle SHA-256's 55/56-byte padding transition, full-block edges, and
+    # multiple-block reuse of the same pure-MIND compression scratch.
     cases = [
-        ("abc", b"abc"),
-        ("empty-via-1byte", b"\x00"),
-        ("64B-block-edge", bytes(range(64))),
-        ("55B (1-block pad edge)", bytes(range(55))),
-        ("56B (2-block pad edge)", bytes(range(56))),
-        ("4KiB", bytes((i * 31 + 7) & 0xFF for i in range(4096))),
+        ("abc", b"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        ("1B-zero", b"\x00", "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"),
+        ("55B-seq", bytes(range(55)), "463eb28e72f82e0a96c0a4cc53690c571281131f672aa229e0d45ae59b598b59"),
+        ("56B-seq", bytes(range(56)), "da2ae4d6b36748f2a318f23e7ab1dfdf45acdc9d049bd80e59de82a60895f562"),
+        ("63B-seq", bytes(range(63)), "29af2686fd53374a36b0846694cc342177e428d1647515f078784d69cdb9e488"),
+        ("64B-seq", bytes(range(64)), "fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108"),
+        ("65B-seq", bytes(range(65)), "4bfd2c8b6f1eec7a2afeb48b934ee4b2694182027e6d0fc075074f2fabb31781"),
+        ("119B-seq", bytes(range(119)), "da18797ed7c3a777f0847f429724a2d8cd5138e6ed2895c3fa1a6d39d18f7ec6"),
+        ("120B-seq", bytes(range(120)), "f52b23db1fbb6ded89ef42a23ce0c8922c45f25c50b568a93bf1c075420bbb7c"),
+        ("127B-seq", bytes(range(127)), "92ca0fa6651ee2f97b884b7246a562fa71250fedefe5ebf270d31c546bfea976"),
+        ("128B-seq", bytes(range(128)), "471fb943aa23c511f6f72f8d1652d9c880cfa392ad80503120547703e56a2be5"),
+        ("129B-seq", bytes(range(129)), "5099c6a56203f9687f7d33f4bfdf576d31dc91f6b695ecea38b2770c87631135"),
+        ("1000B-a", b"a" * 1000, "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"),
+        ("4KiB-pattern", bytes((i * 31 + 7) & 0xFF for i in range(4096)), "d41d438c379110c7f7b2c561b1f04f26c1b4549110791f8e022f48974280c13e"),
     ]
     all_ok = True
-    for name, data in cases:
+    for name, data, known_hex in cases:
         got = mind_sha256(lib, data)
-        exp = hashlib.sha256(data).digest()
-        ok = got == exp
+        known = bytes.fromhex(known_hex)
+        control = hashlib.sha256(data).digest()
+        ok = got == known and control == known
         all_ok = all_ok and ok
         print(
             f"  {'PASS' if ok else 'FAIL'}  sha256({name}, {len(data)}B) "
-            f"mind={got.hex()[:16]} hashlib={exp.hex()[:16]}"
+            f"mind={got.hex()[:16]} known={known.hex()[:16]} "
+            f"hashlib={control.hex()[:16]}"
         )
         if not ok:
             return 1
