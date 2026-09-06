@@ -17,6 +17,7 @@ mod array_lengths;
 pub mod nerve_lint;
 mod nerve_walk;
 mod qualified_enums;
+use qualified_enums::variant_payload_of;
 mod resolve;
 #[cfg(feature = "std-surface")]
 mod slice_abi;
@@ -2774,17 +2775,6 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static ENUM_PAYLOADS: std::cell::RefCell<Option<EnumPayloadTable>> =
         const { std::cell::RefCell::new(None) };
-}
-
-/// Look up a variant's declared payload `TypeAnn`s by bare `"Enum::Variant"`.
-fn variant_payload_of(enum_name: &str, variant: &str) -> Option<Vec<crate::ast::TypeAnn>> {
-    let key = format!("{enum_name}::{variant}");
-    let payload =
-        ENUM_PAYLOADS.with(|cell| cell.borrow().as_ref().and_then(|t| t.get(&key).cloned()));
-    #[cfg(feature = "cross-module-imports")]
-    let payload = payload
-        .or_else(|| crate::ir::with_global_enums(|g| g.qualified.payload_types.get(&key).cloned()));
-    payload
 }
 
 /// Build the payload registry from a module's `Node::EnumDef` items.

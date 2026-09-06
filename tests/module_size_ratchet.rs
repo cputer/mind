@@ -152,7 +152,7 @@ const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ("src/parser/expand_bimap.rs", 1836),
     ("src/parser/mod.rs", 6170),
     ("src/project/mod.rs", 3587),
-    ("src/type_checker/mod.rs", 6628),
+    ("src/type_checker/mod.rs", 6621),
     ("src/type_checker/resolve.rs", 1319),
     ("tests/cross_substrate_identity.rs", 3288),
     ("tests/g2_differential_mlir.rs", 1020),

@@ -2,10 +2,21 @@
 // Licensed under the Apache License, Version 2.0.
 // Part of the MIND project (Machine Intelligence Native Design).
 
-//! Fail-closed validation for unresolved module-qualified type spellings.
+//! Module-qualified type validation and enum payload resolution.
 
 use crate::ast::{Module, Node, Pattern, TypeAnn};
 use crate::diagnostics::Diagnostic;
+
+/// Resolve payload types locally first, then by the canonical project enum key.
+pub(super) fn variant_payload_of(enum_name: &str, variant: &str) -> Option<Vec<TypeAnn>> {
+    let key = format!("{enum_name}::{variant}");
+    let payload =
+        super::ENUM_PAYLOADS.with(|cell| cell.borrow().as_ref().and_then(|t| t.get(&key).cloned()));
+    #[cfg(feature = "cross-module-imports")]
+    let payload = payload
+        .or_else(|| crate::ir::with_global_enums(|g| g.qualified.payload_types.get(&key).cloned()));
+    payload
+}
 
 pub(super) fn validate(module: &Module, src: &str, file: Option<&str>) -> Vec<Diagnostic> {
     let mut errors = Vec::new();

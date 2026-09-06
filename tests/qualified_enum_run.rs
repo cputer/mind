@@ -132,7 +132,7 @@ fn qualified_enum_paths_run_and_unknown_paths_refuse() {
         );
         return;
     }
-    let proj = std::env::temp_dir().join(format!("mind_qualified_enum_{}", std::process::id()));
+    let proj = crate::common::scratch_dir("qualified_enum_run").join("qualified");
     let src = proj.join("src");
     let _ = std::fs::remove_dir_all(&proj);
     std::fs::create_dir_all(&src).expect("mkdir src");
@@ -430,7 +430,7 @@ fn nested_import_terminal_alias_keeps_the_defining_owner() {
         );
         return;
     }
-    let proj = std::env::temp_dir().join(format!("mind_qualified_nested_{}", std::process::id()));
+    let proj = crate::common::scratch_dir("qualified_enum_run").join("nested");
     let nested = proj.join("src/nested");
     let _ = std::fs::remove_dir_all(&proj);
     std::fs::create_dir_all(&nested).expect("mkdir nested src");

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1632 | **Est. tokens:** ~3066290
-**Generated:** 2026-09-06 19:28 UTC
+**Files:** 1632 | **Est. tokens:** ~3066411
+**Generated:** 2026-09-06 19:37 UTC
 
 ## Token Budget Guide
 
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 6 | ~36216 |
+| `src/type_checker/` | 6 | ~36345 |
 | `src/type_checker/slice_abi/` | 1 | ~6878 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 367 | ~693411 |
+| `tests/` | 367 | ~693403 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1253,7 +1253,7 @@
 - `array_lengths.rs` (~492 tok, medium) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
-- `qualified_enums.rs` (~2946 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `qualified_enums.rs` (~3075 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
 - `slice_abi.rs` (~7700 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
@@ -1894,7 +1894,7 @@
 - `phase_g_keystone_bootstrap.rs` (~7667 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `public_cpu_native_link.rs` (~1528 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `qualified_enum_run.rs` (~3930 tok, huge) — Copyright 2025 STARGA Inc.
+- `qualified_enum_run.rs` (~3922 tok, huge) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
 - `reductions_preview.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
