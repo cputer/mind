@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — aggregate constants preserve struct values (#247)
+- Struct-valued constants and fixed arrays of structs now lower their real
+  record handles instead of substituting zero, including indexed/nested field
+  reads and constants declared after their first function use.
+- Dynamic fixed arrays use ordered value-semantic `ArrayStore` construction,
+  including fixed-array call arguments. Unresolved field reads and writes fail
+  closed instead of producing or discarding a zero placeholder.
+- Standalone shared-library compilation now resolves returned-struct fields
+  inside assertions, parenthesized fixed-array receivers, and array aliases;
+  scalar shadows clear stale aggregate type information.
+
 ### Fixed — public CPU executable linking
 - Native CPU projects link against bundled runtime support without an installed commercial runtime. Accelerator backends retain their installed-runtime requirements.
 - Unresolved symbols and non-native source modules fail the build and remove stale executable output; CPU link failures cannot leave a runtime launcher in place of a native binary.

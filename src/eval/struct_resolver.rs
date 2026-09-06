@@ -195,7 +195,15 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
     let mut var_to_struct: HashMap<String, String> = HashMap::new();
     for item in &module.items {
         match item {
-            Node::Let { name, value, .. } => {
+            Node::Let {
+                name, ann, value, ..
+            }
+            | Node::Const {
+                name,
+                ty: ann,
+                value,
+                ..
+            } => {
                 walk_expr(
                     value,
                     &var_to_struct,
@@ -204,11 +212,15 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     &field_types,
                     &mut types,
                 );
-                if let Some(t) = infer_struct(value, &var_to_struct, &fn_returns, &field_types) {
-                    if struct_defs.iter().any(|s| s == &t) {
-                        var_to_struct.insert(name.clone(), t);
-                    }
-                }
+                update_binding(
+                    name,
+                    ann.as_ref(),
+                    Some(value),
+                    &struct_defs,
+                    &fn_returns,
+                    &field_types,
+                    &mut var_to_struct,
+                );
             }
             Node::Assign { name, value, .. } => {
                 walk_expr(
@@ -230,14 +242,15 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                 // Seed fn scope with module-level bindings, then add params.
                 let mut fn_vars = var_to_struct.clone();
                 for p in params {
-                    // Peel `&T` / `&mut T` / `[T]` / `&[T]` down to the
-                    // inner `Named(T)` so by-reference struct params
-                    // (`c: &Cfg`) seed the same way by-value ones do.
-                    if let Some(t) = unwrap_to_named(&p.ty) {
-                        if struct_defs.iter().any(|s| s == t) {
-                            fn_vars.insert(p.name.clone(), t.to_string());
-                        }
-                    }
+                    update_binding(
+                        &p.name,
+                        Some(&p.ty),
+                        None,
+                        &struct_defs,
+                        &fn_returns,
+                        &field_types,
+                        &mut fn_vars,
+                    );
                 }
                 for stmt in body {
                     walk_stmt(
@@ -277,13 +290,31 @@ fn walk_stmt(
     types: &mut FieldAccessTypes,
 ) {
     match stmt {
-        Node::Let { name, value, .. } | Node::Assign { name, value, .. } => {
+        Node::Let {
+            name, ann, value, ..
+        } => {
             walk_expr(value, fn_vars, fn_returns, struct_defs, field_types, types);
-            if let Some(t) = infer_struct(value, fn_vars, fn_returns, field_types) {
-                if struct_defs.iter().any(|s| s == &t) {
-                    fn_vars.insert(name.clone(), t);
-                }
-            }
+            update_binding(
+                name,
+                ann.as_ref(),
+                Some(value),
+                struct_defs,
+                fn_returns,
+                field_types,
+                fn_vars,
+            );
+        }
+        Node::Assign { name, value, .. } => {
+            walk_expr(value, fn_vars, fn_returns, struct_defs, field_types, types);
+            update_binding(
+                name,
+                None,
+                Some(value),
+                struct_defs,
+                fn_returns,
+                field_types,
+                fn_vars,
+            );
         }
         Node::Return { value: Some(v), .. } => {
             walk_expr(v, fn_vars, fn_returns, struct_defs, field_types, types);
@@ -341,6 +372,9 @@ fn walk_expr(
         // operand is walked; `infer_struct` correctly keeps returning `None`
         // for the cast expression itself.
         Node::As { expr, .. } => walk_expr(expr, vars, fn_returns, struct_defs, field_types, types),
+        Node::Assert { cond, .. } => {
+            walk_expr(cond, vars, fn_returns, struct_defs, field_types, types)
+        }
         Node::Call { args, .. } => {
             for a in args {
                 walk_expr(a, vars, fn_returns, struct_defs, field_types, types);
@@ -420,6 +454,27 @@ fn walk_expr(
             for f in fields {
                 walk_expr(&f.value, vars, fn_returns, struct_defs, field_types, types);
             }
+        }
+        Node::ArrayLit { elements, .. } => {
+            for element in elements {
+                walk_expr(element, vars, fn_returns, struct_defs, field_types, types);
+            }
+        }
+        Node::IndexAccess {
+            receiver, index, ..
+        } => {
+            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(index, vars, fn_returns, struct_defs, field_types, types);
+        }
+        Node::IndexAssign {
+            receiver,
+            index,
+            value,
+            ..
+        } => {
+            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(index, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(value, vars, fn_returns, struct_defs, field_types, types);
         }
         // RFC 0005 P0g — `receiver.field = value`. Two records are needed
         // for a nested write (`o.inner.v = x`):
@@ -534,6 +589,105 @@ fn unwrap_to_named(ty: &TypeAnn) -> Option<&str> {
     }
 }
 
+fn array_element_struct(ty: &TypeAnn, struct_defs: &[String]) -> Option<String> {
+    let TypeAnn::Array { element, .. } = ty else {
+        return None;
+    };
+    let name = unwrap_to_named(element)?;
+    struct_defs
+        .iter()
+        .any(|known| known == name)
+        .then(|| name.to_string())
+}
+
+fn fixed_array_element_key(name: &str) -> String {
+    // NUL cannot occur in a parsed identifier, so this internal side-table key
+    // cannot alias a user binding.
+    format!("\0fixed-array-element:{name}")
+}
+
+// A present scalar binding must stop Ident inference from falling back to a
+// same-named module const. NUL cannot occur in source identifiers or struct
+// names, so this value occupies the lexical slot without resolving as a type.
+const NON_AGGREGATE_BINDING: &str = "\0non-aggregate-binding";
+
+fn update_binding(
+    name: &str,
+    ann: Option<&TypeAnn>,
+    value: Option<&Node>,
+    struct_defs: &[String],
+    fn_returns: &HashMap<String, String>,
+    field_types: &FieldTypes,
+    out: &mut HashMap<String, String>,
+) {
+    // Resolve the new value against the previous lexical binding first (`let a
+    // = a` may intentionally read an outer `a`), then replace both side-table
+    // entries together. A scalar shadow or reassignment must clear stale struct
+    // and array-element knowledge instead of authorizing a later field load.
+    let declared_struct = if value.is_none() {
+        ann.and_then(unwrap_to_named)
+            .filter(|candidate| struct_defs.iter().any(|known| known == *candidate))
+            .map(str::to_string)
+    } else {
+        None
+    };
+    let direct = value
+        .and_then(|node| infer_struct(node, out, fn_returns, field_types))
+        .or(declared_struct);
+    let element = ann
+        .and_then(|ty| array_element_struct(ty, struct_defs))
+        .or_else(|| {
+            value.and_then(|node| infer_array_element_struct(node, out, fn_returns, field_types))
+        });
+
+    out.remove(name);
+    out.remove(&fixed_array_element_key(name));
+    out.insert(
+        name.to_string(),
+        direct
+            .filter(|name| struct_defs.iter().any(|s| s == name))
+            .unwrap_or_else(|| NON_AGGREGATE_BINDING.to_string()),
+    );
+    out.insert(
+        fixed_array_element_key(name),
+        element
+            .filter(|name| struct_defs.iter().any(|s| s == name))
+            .unwrap_or_else(|| NON_AGGREGATE_BINDING.to_string()),
+    );
+}
+
+fn infer_array_element_struct(
+    expr: &Node,
+    vars: &HashMap<String, String>,
+    fn_returns: &HashMap<String, String>,
+    field_types: &FieldTypes,
+) -> Option<String> {
+    match expr {
+        Node::Lit(Literal::Ident(name), _) => vars
+            .get(&fixed_array_element_key(name))
+            .cloned()
+            .or_else(|| {
+                crate::ir::module_const_type(name).and_then(|ty| match ty {
+                    TypeAnn::Array { element, .. } => unwrap_to_named(&element).map(str::to_string),
+                    _ => None,
+                })
+            }),
+        Node::ArrayLit { elements, .. } if !elements.is_empty() => {
+            let first = infer_struct(&elements[0], vars, fn_returns, field_types)?;
+            elements
+                .iter()
+                .all(|item| {
+                    infer_struct(item, vars, fn_returns, field_types).as_deref() == Some(&first)
+                })
+                .then_some(first)
+        }
+        Node::Paren(inner, _) | Node::Ref { inner, .. } => {
+            infer_array_element_struct(inner, vars, fn_returns, field_types)
+        }
+        _ => None,
+    }
+}
+
 /// Infer the struct-type name of an expression, if known. Returns
 /// `None` for scalar / unresolvable / not-a-struct expressions.
 fn infer_struct(
@@ -545,10 +699,15 @@ fn infer_struct(
     match expr {
         // The most common cases first — direct StructLit + Ident lookup.
         Node::StructLit { name, .. } => Some(name.clone()),
-        Node::Lit(Literal::Ident(v), _) => vars.get(v).cloned(),
+        Node::Lit(Literal::Ident(v), _) => vars.get(v).cloned().or_else(|| {
+            crate::ir::module_const_type(v).and_then(|ty| unwrap_to_named(&ty).map(str::to_string))
+        }),
         Node::Call { callee, .. } => fn_returns.get(callee).cloned(),
         Node::Paren(inner, _) => infer_struct(inner, vars, fn_returns, field_types),
         Node::Ref { inner, .. } => infer_struct(inner, vars, fn_returns, field_types),
+        Node::IndexAccess { receiver, .. } => {
+            infer_array_element_struct(receiver, vars, fn_returns, field_types)
+        }
         // Chained access — `a.b` resolves to the struct type of field `b`
         // when that field is itself struct-typed. We first resolve the
         // receiver `a` to its struct name `S` (recursively, so deeper

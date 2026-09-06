@@ -332,7 +332,7 @@ lanes pending RFC 0021 step 5 demotion to `mind-model@2`. See
 ## Testing
 
 The MIND compiler includes a comprehensive test suite with 2,424+ tests
-(`#[test]` / `#[tokio::test]` across `src/` and `tests/`) in 325+ test files
+(`#[test]` / `#[tokio::test]` across `src/` and `tests/`) in 350+ test files
 covering parsing, type checking, IR generation, MLIR lowering, and execution.
 Both figures are RE-DERIVED from the tree by `scripts/check_claims.py`
 (`[counts]` in `config/capabilities.toml`): the Docs Claims gate fails if the

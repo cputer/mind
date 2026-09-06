@@ -20,10 +20,10 @@
 //!   from the fn's parameter list (not from a `StructLit`-bound
 //!   `Let`). The resolver seeds fn-body bindings from `Param.ty`.
 //!
-//! Each test asserts that the side-table makes the FieldAccess lower
-//! into a real `__mind_load_i64` rather than a placeholder, AND that
+//! Each valid test asserts that the side-table makes the FieldAccess lower
+//! into a real `__mind_load_i64`, AND that
 //! the load's address argument is computed from a freshly-lowered
-//! receiver (not from `env`).
+//! receiver (not from `env`). Ill-typed synthetic ASTs must fail closed.
 //!
 //! Gated: `cargo test --features std-surface --test std_surface_field_access_step2`.
 
@@ -32,6 +32,7 @@
 use libmind::ast::{Field, FnDefData, Literal, Module, Node, Param, Span, StructLitField, TypeAnn};
 use libmind::eval::lower::lower_to_ir;
 use libmind::ir::Instr;
+use libmind::parser::parse;
 
 fn sp() -> Span {
     Span::new(0, 0)
@@ -207,13 +208,13 @@ fn step2_fn_return_receiver_resolves_field_access() {
 }
 
 #[test]
-fn step2_fn_with_non_struct_return_does_not_pollute_side_table() {
+#[should_panic(expected = "unresolved receiver while lowering field `anything`")]
+fn step2_fn_with_non_struct_return_fails_closed() {
     // fn raw() -> i64 { return 7 }
     // let v = raw().anything   // not actually a field access on a struct
     //
     // The resolver MUST NOT enter `raw → "i64"` into fn_returns,
-    // since i64 isn't a struct. The FieldAccess must fall through
-    // to the placeholder.
+    // since i64 isn't a struct. The invalid FieldAccess must be refused.
     let module = Module {
         items: vec![
             Node::FnDef(
@@ -251,19 +252,14 @@ fn step2_fn_with_non_struct_return_does_not_pollute_side_table() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
-
-    let loads = count_calls_deep(&ir.instrs, "__mind_load_i64");
-    assert_eq!(
-        loads, 0,
-        "Non-struct-returning fn must not produce a load; got {loads}"
-    );
+    let _ = lower_to_ir(&module);
 }
 
 // ─── Case (1) — chained access (infrastructure check) ────────────────
 
 #[test]
-fn step2_chained_access_falls_through_when_inner_field_is_scalar() {
+#[should_panic(expected = "unresolved receiver while lowering field `b`")]
+fn step2_chained_access_on_scalar_fails_closed() {
     // struct Pair { a: i64, b: i64 }
     // let p = Pair { a: 1, b: 2 }
     // let v = p.a.b   // p.a is i64, .b on i64 is meaningless
@@ -272,8 +268,8 @@ fn step2_chained_access_falls_through_when_inner_field_is_scalar() {
     // outer receiver's type is i64, not a struct. Inner `p.a` still
     // produces its own load. The resolver records `inner_span →
     // "Pair"` so that, in real source, the outer FieldAccess (with a
-    // distinct span) finds no entry and falls through to the
-    // placeholder. This test uses distinct synthetic spans to mirror
+    // distinct span) finds no entry and refuses the invalid expression.
+    // This test uses distinct synthetic spans to mirror
     // what the parser produces in real source.
     let inner_span = Span::new(100, 103);
     let outer_span = Span::new(100, 105);
@@ -318,25 +314,71 @@ fn step2_chained_access_falls_through_when_inner_field_is_scalar() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let _ = lower_to_ir(&module);
+}
 
-    // Outer (p.a).b receiver is `FieldAccess` whose own type is i64
-    // (not a struct), so the resolver records nothing for outer_span
-    // and Step 2 has no entry. The outer FieldAccess falls through
-    // to the ConstI64(0) placeholder. In the current placeholder
-    // path the receiver isn't separately lowered, so the inner is
-    // dropped along with the outer — zero loads total. This is the
-    // expected Step-2-scope behavior: chained access only resolves
-    // when both levels can be type-tracked, which today requires the
-    // outer field to be struct-typed (a Step-3 / nested-struct-
-    // fields concern, deferred). The important invariant proved
-    // here is that Step 2 does NOT over-eagerly insert a load via
-    // span aliasing or i64-as-struct misclassification.
-    let loads = count_calls_deep(&ir.instrs, "__mind_load_i64");
-    assert_eq!(
-        loads, 0,
-        "chained (p.a).b on i64 inner: Step 2 must not emit any load (deferred to Step 3 nested-fields), got {loads}"
-    );
+#[test]
+#[should_panic(expected = "unresolved receiver while lowering field `a`")]
+fn fixed_array_scalar_rebind_clears_element_type() {
+    let module = parse(
+        r#"
+struct Pair { a: i64 }
+
+fn invalid() -> i64 {
+    let value: [Pair; 1] = [Pair { a: 11 }];
+    let value: i64 = 7;
+    return value[0].a;
+}
+"#,
+    )
+    .expect("parse scalar fixed-array shadow");
+
+    // A same-scope scalar rebind must remove the old array-element type.
+    // Keeping it would authorize a field load from scalar storage and emit
+    // successful wrong code instead of refusing the invalid receiver.
+    let _ = lower_to_ir(&module);
+}
+
+#[test]
+#[should_panic(expected = "unresolved receiver while lowering field `a`")]
+fn scalar_local_shadow_does_not_recover_module_struct_const_type() {
+    let module = parse(
+        r#"
+struct Pair { a: i64 }
+const P: Pair = Pair { a: 11 };
+
+fn invalid() -> i64 {
+    let P: i64 = 3;
+    return P.a;
+}
+"#,
+    )
+    .expect("parse module struct-const shadow");
+
+    // `module_const_type("P")` must not resurrect Pair after the local scalar
+    // binding occupied that name; treating integer 3 as a record address would
+    // be successful wrong code or an invalid memory read.
+    let _ = lower_to_ir(&module);
+}
+
+#[test]
+#[should_panic(expected = "unresolved receiver while lowering field `a`")]
+fn scalar_param_shadow_does_not_recover_module_array_const_type() {
+    let module = parse(
+        r#"
+struct Pair { a: i64 }
+const ITEMS: [Pair; 1] = [Pair { a: 11 }];
+
+fn invalid(ITEMS: i64) -> i64 {
+    return ITEMS[0].a;
+}
+"#,
+    )
+    .expect("parse module array-const parameter shadow");
+
+    // The occupied parameter binding must block both direct and fixed-array
+    // fallback to the same-named module constant.
+    let _ = lower_to_ir(&module);
 }
 
 // ─── Smoke: Step 1 + Step 2 don't double-resolve ─────────────────────

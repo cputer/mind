@@ -162,13 +162,13 @@ normative target; `GAP` = distance; `EVIDENCE` = citation/observation.
 - GAP = mutable/local fixed `[f64;N]` has no typed backing (falls to vec).
 - EVIDENCE = probe "missing type information … array load base" (mutable/local `[f64;N]` falls to the untyped std.vec heap); §2.
 
-### Q8 — Fixed-array call ABI — **OPEN (traced: does not lower today)**
-- CURRENT_RUST_MLIR = **UNSUPPORTED**. Passing `[i64;3]` or `[f64;3]` to a fn both COMPILE_FAIL "missing type information for value". The per-fn param typing (`fn_param_kinds`, `lower.rs:459-478`) is a scalar/narrow-int ABI (`"f64"`/`"f32"`/`"i64"`); an array param never receives `ValueKind::Tensor`, so the callee's `a[i]` ArrayLoad base is untyped (error #239).
+### Q8 — Fixed-array call ABI — **PARTIAL**
+- CURRENT_RUST_MLIR = fixed arrays carried in the i64 aggregate ABI lower and run for i64 scalars and struct-record handles. A literal argument is constructed as a fixed tensor through ordered `ArrayStore` values, and the callee signature supplies the fixed-array type for indexed reads. The f64 call boundary remains unverified here.
 - CURRENT_SELFHOST = **UNSUPPORTED**. `fixed_arg_i64`/`fixed_arg_f64` COMPILE_FAIL "unsupported construct".
 - CURRENT_EVALUATOR = OPEN (not probed; likely supported via value list).
-- CANONICAL_DECISION = pass by pointer/reference; `N` known from the callee signature / monomorphized instance. Do **not** add a fat pointer solely to carry `N`. **Do NOT assume `N` survives the boundary today — it does not, because the argument does not lower at all.**
-- GAP = the entire fixed-array call boundary is unimplemented on both compiled backends. `FIXED_ARRAY_CALL_BOUNDARY_LENGTH=N/A (arg never lowers)`; `BOUNDS=N/A`; `CAUSE=array params get no aggregate ValueKind (MLIR) / unsupported construct (native)`.
-- EVIDENCE = probe `fixed_arg_i64`+`fixed_arg_f64` both COMPILE_FAIL on both backends; `lower.rs:459-478`, error site `src/mlir/lowering.rs:239`.
+- CANONICAL_DECISION = pass by fixed value aggregate; `N` is known from the callee signature / monomorphized instance. Do not add a fat pointer solely to carry `N`.
+- GAP = self-host remains unsupported; Rust/MLIR f64 call parity is unverified.
+- EVIDENCE = `tests/aggregate_const_run.rs` executes `[Pair;2]` across a call boundary and reads the second record; the historical `fixed_arg_f64` probe remains the open comparison.
 
 ### Q9 — Dynamic-array call ABI
 - CURRENT_RUST_MLIR = the `[addr|len|cap]` descriptor passed as an opaque i64 handle; `len` survives via the descriptor.
@@ -231,10 +231,10 @@ normative target; `GAP` = distance; `EVIDENCE` = citation/observation.
 - EVIDENCE = `render_dense_elem`/`format_number`; #305 (sub-EPSILON destroyed).
 
 ### Q18 — Const arrays
-- CURRENT = `ConstDenseTensor` (f64/f32) / `ConstArray` (i64).
+- CURRENT = `ConstDenseTensor` (f64/f32) / `ConstArray` (literal i64). Struct-valued and computed i64-ABI constants are materialized at each use as a zero fixed aggregate plus ordered `ArrayStore` incarnations; no element is coerced to zero.
 - CANONICAL_DECISION = **`TIER_B_CONST_DESIGN=KEEP`**, frozen at `3dd11ce8`.
-- GAP = none for const.
-- EVIDENCE = `tests/const_f64_array_run.rs` (dlopen exec, exact bits incl. `-0.0` + dynamic index).
+- GAP = none for the Rust/MLIR const surfaces above; self-host struct-array parity remains tracked separately.
+- EVIDENCE = `tests/const_f64_array_run.rs` (dlopen exec, exact bits incl. `-0.0` + dynamic index); `tests/aggregate_const_run.rs` (struct constant, nested struct array, signed scalar control, declared-after-use, repeated artifact identity).
 
 ### Q19 — Mutable arrays
 - CURRENT_RUST_MLIR = `let mut a:[T;N]; a[i]=v` on a plain fixed `[T;N]` / const-literal `tensor<T[N]>` receiver **WORKS straight-line AND inside a LOOP body** (`for` / `while`, including nested). It lowers to `Instr::ArrayStore` (value-semantic — `tensor.insert` yields a FRESH aggregate incarnation); the fn-body statement dispatch rebinds the receiver name to that fresh id for straight-line writes, and the F2 region-exit machinery threads it across loop iterations — the mutated `[T;N]` becomes a value-semantic `tensor<NxT>` loop iter-arg (typed header/body/`^while_after` block-args), so every post-loop read observes every write (verified by `tests/array_store_run.rs`: `a[0]=9;return a[0]`→9, two-write→90, `tensor` literal→9, sibling→2, `for k in 0..3 {a[k]=k*10}`→20, `while` fill→7, nested for-in-for→6; and the post-bufferization LLVM IR carries NO per-iteration malloc/memcpy — the tensor iter-arg is a self-cycling memref-descriptor phi, so cross-substrate byte-identity holds). Inside a BRANCH body (`if`/`else`, including different indices per branch) it **also WORKS**: the mutated `[T;N]` is threaded as a value-semantic `tensor<NxT>` `^if_after` merge block-arg (the then/else edge carries the stored incarnation, the untouched edge the pre-if tensor), so a post-if read sees the taken branch's write and the not-taken path preserves the original (verified: `if T {a[0]=9} return a[0]`→9, sibling→2, `if F {a[0]=9}`→1, `if/else` both-store→taken edge, different-index→per-element; post-bufferize `memref.alloc`/`memref.copy` count matches the loop baseline = one-time materialisation, NO per-branch copy). `a[i]=v` now works in EVERY position — straight-line, loop, and branch. Working mutable receivers (`array<T>` → `vec_set`, `bytes[N]` → `__mind_store_i8`) and all reads are unaffected. The **silent store-drop is eliminated and nothing is fail-closed** for a fixed-aggregate `a[i]=v`.

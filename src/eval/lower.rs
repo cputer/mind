@@ -44,6 +44,10 @@ use crate::ir::ValueId;
 use crate::types::DType;
 use crate::types::ShapeDim;
 
+#[cfg(feature = "std-surface")]
+#[path = "fixed_array.rs"]
+mod fixed_array;
+
 // ---------------------------------------------------------------------------
 // Small-object PRIMARY allocator (iter 1613) — replaced the iter-81
 // single-class burst-bin magazine (see the iter-78/iter-81 note above).
@@ -1441,12 +1445,15 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                     // RH f64-aggregate: top-level `let a: [f64/f32; N] = [lit..]`
                     // → typed ConstDenseTensor.
                     #[cfg(feature = "std-surface")]
-                    Some(TypeAnn::Array { element, length }) => {
-                        match lower_fixed_dense_array_binding(element, *length, value, &mut ir) {
-                            Some(id) => id,
-                            None => lower_expr(value, &mut ir, &env, &struct_env, receiver_types),
-                        }
-                    }
+                    Some(TypeAnn::Array { element, length }) => fixed_array::lower_binding(
+                        element,
+                        *length,
+                        value,
+                        &mut ir,
+                        |node, inner_ir| {
+                            lower_expr(node, inner_ir, &env, &struct_env, receiver_types)
+                        },
+                    ),
                     // `array<T>` binding whose RHS is an array literal `[..]`:
                     // lower onto the std.vec heap runtime (vec_new + vec_push
                     // chain) instead of the const-array/tensor path.
@@ -1700,6 +1707,14 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                     });
                     env.insert(name.clone(), id);
                     ir.instrs.push(Instr::Output(id));
+                } else if fixed_array::needs_runtime_construction(element, *length, value, &ir) {
+                    // Struct/runtime expressions cannot be serialized in
+                    // `ConstArray.values`. Keep the declaration value-neutral;
+                    // each identifier use inlines the source literal through
+                    // ordered ArrayStore construction in its own SSA namespace.
+                    let id = ir.fresh();
+                    ir.instrs.push(Instr::ConstI64(id, 0));
+                    ir.instrs.push(Instr::Output(id));
                 } else {
                     let values = extract_array_lit_values(value);
                     ir.const_array_defs.insert(name.clone(), values.clone());
@@ -1811,67 +1826,6 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     }
 
     ir
-}
-
-/// Route a local `let a: [f64; N] = [lit, ...]` (or `[f32; N]`) fixed-array
-/// binding to a TYPED `ConstDenseTensor` carrying the exact per-element
-/// IEEE-754 bits, so a following `a[i]` load / `a[i] = v` store recovers a
-/// well-typed `Tensor { dtype: F64/F32, .. }` base. The generic i64
-/// `ConstArray` path (the `_ => lower_expr` default) coerces every float
-/// literal to 0 and registers only `Tensor { I64 }`, so the executable
-/// `ArrayLoad`/`ArrayStore` then fails "missing type information" (or would
-/// mis-read the element as i64). Returns `None` for a non-float element type,
-/// a non-`ArrayLit` RHS, or a length/literal-count mismatch, so the caller
-/// keeps the byte-identical i64/i32 fixed-array path (keystone gate) and real
-/// type errors still surface on the ordinary path. #320 Step D / RH
-/// f64-aggregate surface.
-#[cfg(feature = "std-surface")]
-fn lower_fixed_dense_array_binding(
-    element: &TypeAnn,
-    length: u32,
-    value: &ast::Node,
-    ir: &mut IRModule,
-) -> Option<ValueId> {
-    let dtype = match element {
-        TypeAnn::ScalarF64 => DType::F64,
-        TypeAnn::ScalarF32 => DType::F32,
-        TypeAnn::Named(n) if n == "f64" => DType::F64,
-        TypeAnn::Named(n) if n == "f32" => DType::F32,
-        _ => return None,
-    };
-    let elements = match value {
-        ast::Node::ArrayLit { elements, .. } => elements.as_slice(),
-        _ => return None,
-    };
-    // Fail-closed length parity: a mismatch is a real type error. Fall back to
-    // the ordinary path (which surfaces it) rather than silently zero-fill /
-    // truncate here.
-    if elements.len() != length as usize {
-        return None;
-    }
-    // Fail-closed on a NON-CONST element (audit finding): `dense_elem_bits`
-    // resolves each element via `extract_const_f64(..).unwrap_or(0.0)`, so a
-    // non-literal element (`let a: [f64; 2] = [x, 1.0]`) would be SILENTLY baked
-    // to 0.0 — a wrong-value miscompile. Every element must be a compile-time
-    // const here; otherwise fall back to the ordinary path (a runtime
-    // element-wise init or a loud type error), never a silent zero. `f64`/`f32`
-    // both extract through `extract_const_f64` (see `dense_elem_bits`).
-    if elements.iter().any(|e| extract_const_f64(e).is_none()) {
-        return None;
-    }
-    let data: Vec<u64> = elements
-        .iter()
-        .map(|e| dense_elem_bits(e, &dtype))
-        .collect();
-    let shape = vec![ShapeDim::Known(length as usize)];
-    let id = ir.fresh();
-    ir.instrs.push(Instr::ConstDenseTensor {
-        dst: id,
-        dtype,
-        shape,
-        data,
-    });
-    Some(id)
 }
 
 fn lower_tensor_binding(
@@ -5265,7 +5219,22 @@ fn lower_expr(
                          const reference) — refusing to inline (that would loop)."
                     );
                 }
-                let id = lower_expr(&cval, ir, env, struct_env, receiver_types);
+                let declared = crate::ir::module_const_type(name);
+                let id = match declared {
+                    Some(TypeAnn::Array { element, length }) => {
+                        fixed_array::lower_runtime_construction(
+                            &element,
+                            length,
+                            &cval,
+                            ir,
+                            |item, inner_ir| {
+                                lower_expr(item, inner_ir, env, struct_env, receiver_types)
+                            },
+                        )
+                        .unwrap_or_else(|| lower_expr(&cval, ir, env, struct_env, receiver_types))
+                    }
+                    _ => lower_expr(&cval, ir, env, struct_env, receiver_types),
+                };
                 crate::ir::end_resolving_const(name);
                 return id;
             }
@@ -6102,18 +6071,21 @@ fn lower_expr(
                             // / growable-bytes arms below, so intercepting it here is
                             // behaviour-preserving.
                             #[cfg(feature = "std-surface")]
-                            Some(TypeAnn::Array { element, length }) => {
-                                lower_fixed_dense_array_binding(element, *length, value, &mut fn_ir)
-                                    .unwrap_or_else(|| {
-                                        lower_expr(
-                                            value,
-                                            &mut fn_ir,
-                                            &fn_env,
-                                            &fn_struct_env,
-                                            receiver_types,
-                                        )
-                                    })
-                            }
+                            Some(TypeAnn::Array { element, length }) => fixed_array::lower_binding(
+                                element,
+                                *length,
+                                value,
+                                &mut fn_ir,
+                                |node, inner_ir| {
+                                    lower_expr(
+                                        node,
+                                        inner_ir,
+                                        &fn_env,
+                                        &fn_struct_env,
+                                        receiver_types,
+                                    )
+                                },
+                            ),
                             // `array<T>` binding with an array-literal RHS:
                             // lower onto the std.vec heap runtime.
                             #[cfg(feature = "std-surface")]
@@ -6580,18 +6552,21 @@ fn lower_expr(
                         // fn-body arm). None for i64/i32/non-literal → byte-identical
                         // default path.
                         #[cfg(feature = "std-surface")]
-                        Some(TypeAnn::Array { element, length }) => {
-                            match lower_fixed_dense_array_binding(element, *length, value, ir) {
-                                Some(id) => id,
-                                None => lower_expr(
-                                    value,
-                                    ir,
+                        Some(TypeAnn::Array { element, length }) => fixed_array::lower_binding(
+                            element,
+                            *length,
+                            value,
+                            ir,
+                            |node, inner_ir| {
+                                lower_expr(
+                                    node,
+                                    inner_ir,
                                     &local_env,
                                     &local_struct_env,
                                     receiver_types,
-                                ),
-                            }
-                        }
+                                )
+                            },
+                        ),
                         // `array<T>` binding with an array-literal RHS: lower
                         // onto the std.vec heap runtime.
                         #[cfg(feature = "std-surface")]
@@ -6897,23 +6872,21 @@ fn lower_expr(
                             // RH f64-aggregate: `let a: [f64/f32; N] = [lit..]` in a
                             // then/if-arm body → typed ConstDenseTensor.
                             #[cfg(feature = "std-surface")]
-                            Some(TypeAnn::Array { element, length }) => {
-                                match lower_fixed_dense_array_binding(
-                                    element,
-                                    *length,
-                                    value,
-                                    &mut then_ir,
-                                ) {
-                                    Some(id) => id,
-                                    None => lower_expr(
-                                        value,
-                                        &mut then_ir,
+                            Some(TypeAnn::Array { element, length }) => fixed_array::lower_binding(
+                                element,
+                                *length,
+                                value,
+                                &mut then_ir,
+                                |node, inner_ir| {
+                                    lower_expr(
+                                        node,
+                                        inner_ir,
                                         &then_env,
                                         &then_struct_env,
                                         receiver_types,
-                                    ),
-                                }
-                            }
+                                    )
+                                },
+                            ),
                             // `array<T>` binding with an array-literal RHS: lower
                             // onto the std.vec heap runtime (vec_new + vec_push)
                             // exactly like the top-level and while-body Let arms.
@@ -7285,21 +7258,21 @@ fn lower_expr(
                                 // an else/match-arm body → typed ConstDenseTensor.
                                 #[cfg(feature = "std-surface")]
                                 Some(TypeAnn::Array { element, length }) => {
-                                    match lower_fixed_dense_array_binding(
+                                    fixed_array::lower_binding(
                                         element,
                                         *length,
                                         value,
                                         &mut else_ir,
-                                    ) {
-                                        Some(id) => id,
-                                        None => lower_expr(
-                                            value,
-                                            &mut else_ir,
-                                            &else_env,
-                                            &else_struct_env,
-                                            receiver_types,
-                                        ),
-                                    }
+                                        |node, inner_ir| {
+                                            lower_expr(
+                                                node,
+                                                inner_ir,
+                                                &else_env,
+                                                &else_struct_env,
+                                                receiver_types,
+                                            )
+                                        },
+                                    )
                                 }
                                 // `array<T> = [..]` inside an else/match-arm body:
                                 // lower onto the std.vec heap runtime, mirroring the
@@ -7859,11 +7832,30 @@ fn lower_expr(
             // byte-identically through `lower_expr` as before; the default
             // (non-std-surface) build is cfg'd to the exact prior code.
             #[cfg(feature = "std-surface")]
+            let fixed_param_types = ir
+                .fn_signatures
+                .get(callee)
+                .map(|(params, _)| params.clone())
+                .unwrap_or_default();
+            #[cfg(feature = "std-surface")]
             let arg_ids: Vec<ValueId> = args
                 .iter()
                 .enumerate()
                 .map(|(i, a)| {
                     if let ast::Node::ArrayLit { elements, .. } = a {
+                        if let Some(TypeAnn::Array { element, length }) = fixed_param_types.get(i) {
+                            if let Some(id) = fixed_array::lower_runtime_construction(
+                                element,
+                                *length,
+                                a,
+                                ir,
+                                |item, inner_ir| {
+                                    lower_expr(item, inner_ir, env, struct_env, receiver_types)
+                                },
+                            ) {
+                                return id;
+                            }
+                        }
                         if callee_array_lit_param(callee, i) {
                             return lower_array_surface_lit(
                                 elements,
@@ -8865,9 +8857,9 @@ fn lower_expr(
         // lower the receiver expression for its base-address value
         // and then add the field's 8-byte offset as before.
         //
-        // Unresolved receivers fall through to a `ConstI64(0)`
-        // placeholder so the IR shape is stable and older modules
-        // still compile.
+        // A legal typed receiver must resolve through one of those paths.
+        // Anything else fails closed; fabricating zero is a wrong-answer
+        // artifact, never a stable compatibility behavior.
         #[cfg(feature = "std-surface")]
         ast::Node::FieldAccess {
             receiver,
@@ -9028,11 +9020,9 @@ fn lower_expr(
                     let addr = match var_name_opt {
                         Some(var_name) => match env.get(&var_name) {
                             Some(id) => *id,
-                            None => {
-                                let id = ir.fresh();
-                                ir.instrs.push(Instr::ConstI64(id, 0));
-                                return id;
-                            }
+                            None => panic!(
+                                "resolved struct receiver `{var_name}` has no SSA binding while lowering field `{field}` — refusing to emit const 0"
+                            ),
                         },
                         None => lower_expr(receiver, ir, env, struct_env, receiver_types),
                     };
@@ -9083,28 +9073,9 @@ fn lower_expr(
                         loaded
                     }
                 }
-                None => {
-                    // Receiver type still unresolvable even after the
-                    // side-table — emit placeholder so the module
-                    // produces a stable IR shape. Step 3 will lift the
-                    // remaining cases (heap-allocated fields of struct
-                    // type, generics) when std.vec needs them.
-                    //
-                    // KNOWN HOLE (#234): this placeholder is a WRONG-ANSWER
-                    // generator — `fn total(xs: &[i64]) -> i64 { return
-                    // xs.length }` compiles its whole body to `arith.constant
-                    // 0`, builds clean to a real ELF and returns 0 instead of
-                    // 3, with no diagnostic. Fail-closing it here is NOT a
-                    // local change: `std_surface_field_access{,_step2}` pin
-                    // this placeholder as the intended RFC 0005 Step 1/2
-                    // contract, and refusing instead overflows the stack in
-                    // `std_surface_json`. Closing it needs the Step 3 receiver
-                    // resolution (or an explicit decision to retire that
-                    // contract), not a panic bolted onto this arm.
-                    let id = ir.fresh();
-                    ir.instrs.push(Instr::ConstI64(id, 0));
-                    id
-                }
+                None => panic!(
+                    "unresolved receiver while lowering field `{field}` at {span:?} — refusing to emit const 0 (a silent miscompile)"
+                ),
             }
         }
         // RFC 0005 P0g — `receiver.field = value` writes IN PLACE to the
@@ -9129,8 +9100,7 @@ fn lower_expr(
         // the inner field's declared type), so `lower_expr(receiver, …)`
         // re-lowers `o.inner` to the inner record's base address and the
         // store targets `base + idx*8` exactly like the flat case.
-        // Unresolved receivers fall through to a `ConstI64(0)` placeholder,
-        // matching the read arm, so older modules still compile.
+        // Unresolved receivers fail closed, matching the read arm.
         #[cfg(feature = "std-surface")]
         ast::Node::FieldAssign {
             receiver,
@@ -9185,11 +9155,9 @@ fn lower_expr(
                     let addr = match var_name_opt {
                         Some(var_name) => match env.get(&var_name) {
                             Some(id) => *id,
-                            None => {
-                                let id = ir.fresh();
-                                ir.instrs.push(Instr::ConstI64(id, 0));
-                                return id;
-                            }
+                            None => panic!(
+                                "resolved struct receiver `{var_name}` has no SSA binding while lowering assignment to field `{field}` — refusing to emit const 0"
+                            ),
                         },
                         None => lower_expr(receiver, ir, env, struct_env, receiver_types),
                     };
@@ -9218,13 +9186,9 @@ fn lower_expr(
                     // (unit) id is the value this expression yields.
                     store_ret
                 }
-                None => {
-                    // Receiver type unresolvable — emit a stable placeholder,
-                    // mirroring the read arm, so older modules still compile.
-                    let id = ir.fresh();
-                    ir.instrs.push(Instr::ConstI64(id, 0));
-                    id
-                }
+                None => panic!(
+                    "unresolved receiver while lowering assignment to field `{field}` at {span:?} — refusing to emit const 0 (a silent dropped store)"
+                ),
             }
         }
         // RFC 0005 Phase 6.2b Gap 2 — anonymous array literal `[v0, v1, …]`
@@ -11840,10 +11804,9 @@ fn lower_stmt_seq(
                     // → typed ConstDenseTensor.
                     #[cfg(feature = "std-surface")]
                     Some(TypeAnn::Array { element, length }) => {
-                        match lower_fixed_dense_array_binding(element, *length, value, ir) {
-                            Some(id) => id,
-                            None => lower_expr(value, ir, env, struct_env, receiver_types),
-                        }
+                        fixed_array::lower_binding(element, *length, value, ir, |node, inner_ir| {
+                            lower_expr(node, inner_ir, env, struct_env, receiver_types)
+                        })
                     }
                     _ => lower_expr(value, ir, env, struct_env, receiver_types),
                 };

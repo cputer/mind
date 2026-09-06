@@ -12,13 +12,10 @@
 //!   - `field_addr = addr + 8 * field_index` (or `addr` when index == 0),
 //!   - `result = __mind_load_i64(field_addr)`.
 //!
-//! Step 1 only resolves the receiver when it is a plain `Ident` bound to
-//! a `StructLit` in the same (or an enclosing) scope. Anything more
-//! exotic — chained access `a.b.c`, FieldAccess of a function return,
-//! FieldAccess on a struct-typed parameter — falls through to a
-//! placeholder `ConstI64(0)` so older modules still compile. Step 2 will
-//! extend resolution via a fold-through-StructLit IR pass or via
-//! type-checker annotations.
+//! Step 1 resolves a plain `Ident` bound to a `StructLit` in the same (or an
+//! enclosing) scope. The Step 2 resolver covers typed parameters, function
+//! returns, and nested receivers. Any receiver or field that still cannot be
+//! resolved fails closed instead of silently producing `ConstI64(0)`.
 //!
 //! Gated: `cargo test --features std-surface --test std_surface_field_access`.
 
@@ -216,10 +213,10 @@ fn field_access_nonzero_field_uses_addr_plus_offset() {
 }
 
 #[test]
-fn field_access_unknown_receiver_falls_back_to_placeholder() {
-    // FieldAccess on an Ident that is NOT in struct_env (e.g., never
-    // bound to a StructLit) must fall through to ConstI64(_, 0), not
-    // emit a __mind_load_i64.
+#[should_panic(expected = "unresolved receiver while lowering field `anything`")]
+fn field_access_unknown_receiver_fails_closed() {
+    // This hand-built invalid AST bypasses the type checker. Lowering must
+    // refuse it rather than manufacture a successful zero-valued read.
     let module = Module {
         items: vec![
             // bare ident, no StructLit, no struct_env entry
@@ -238,19 +235,14 @@ fn field_access_unknown_receiver_falls_back_to_placeholder() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
-
-    assert_eq!(
-        count_calls(&ir.instrs, "__mind_load_i64"),
-        0,
-        "Step 1 must not emit a load when receiver type is unresolved"
-    );
+    let _ = lower_to_ir(&module);
 }
 
 #[test]
-fn field_access_unknown_struct_field_falls_back_to_placeholder() {
+#[should_panic(expected = "unresolved receiver while lowering field `c_does_not_exist`")]
+fn field_access_unknown_struct_field_fails_closed() {
     // Known struct var, but the requested field is not in the StructDef.
-    // Must fall back to placeholder, not emit a load at a guessed offset.
+    // Refuse it rather than emit a load at a guessed offset or return zero.
     let module = Module {
         items: vec![
             Node::StructDef {
@@ -282,19 +274,33 @@ fn field_access_unknown_struct_field_falls_back_to_placeholder() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let _ = lower_to_ir(&module);
+}
 
-    // The StructLit's 2 stores stay, but FieldAccess must not emit a load.
-    assert_eq!(
-        count_calls(&ir.instrs, "__mind_store_i64"),
-        2,
-        "stores come from the StructLit"
-    );
-    assert_eq!(
-        count_calls(&ir.instrs, "__mind_load_i64"),
-        0,
-        "unknown field name must NOT produce a load at a guessed offset"
-    );
+#[test]
+#[should_panic(expected = "unresolved receiver while lowering assignment to field `anything`")]
+fn field_assign_unknown_receiver_fails_closed() {
+    // Field writes use the same resolver as reads. An unresolved write must
+    // not be discarded while returning a zero placeholder.
+    let module = Module {
+        items: vec![
+            Node::Let {
+                name: "x".to_string(),
+                mutable: true,
+                ann: None,
+                value: Box::new(lit_int(99)),
+                span: sp(),
+            },
+            Node::FieldAssign {
+                receiver: Box::new(ident("x")),
+                field: "anything".to_string(),
+                value: Box::new(lit_int(7)),
+                span: sp(),
+            },
+        ],
+    };
+
+    let _ = lower_to_ir(&module);
 }
 
 #[test]
