@@ -257,6 +257,8 @@ const BARE_LEGACY_PARSE_SKIPS: &[&str] = &[
 
 #[cfg(not(feature = "std-surface"))]
 fn expected_bare_skip_cause(label: &str) -> Option<&'static str> {
+    let normalized = label.replace('\\', "/");
+    let label = normalized.as_str();
     if BARE_E1042_REFUSALS.contains(&label) {
         Some("E1042")
     } else if BARE_LEGACY_PARSE_SKIPS.contains(&label) {

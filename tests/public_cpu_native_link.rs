@@ -9,7 +9,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(all(target_os = "linux", feature = "mlir-build"))]
+#![cfg(all(unix, target_os = "linux", feature = "mlir-build"))]
 
 mod common;
 
