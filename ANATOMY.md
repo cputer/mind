@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1550 | **Est. tokens:** ~3023183
-**Generated:** 2026-09-06 15:03 UTC
+**Files:** 1551 | **Est. tokens:** ~3026323
+**Generated:** 2026-09-06 15:05 UTC
 
 ## Token Budget Guide
 
@@ -127,7 +127,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 364 | ~680514 |
+| `tests/` | 365 | ~683654 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1504,6 +1504,7 @@
 - `xnode_driver.c` (~2833 tok, huge)
 ### `tests/`
 
+- `cross_substrate_reference_consistency.rs` (~3140 tok, huge) — Copyright 2025 STARGA Inc.
 - `crypto_vectors_driver.py` (~2653 tok, huge) — # Official-vector driver for std/aes_gcm.mind + std/hkdf.mind (pure-MIND crypto).
 - `determinism_veto_control.rs` (~1490 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics.rs` (~688 tok, large) — Copyright 2025 STARGA Inc.
