@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1548 | **Est. tokens:** ~3014643
-**Generated:** 2026-09-06 14:20 UTC
+**Files:** 1548 | **Est. tokens:** ~3015536
+**Generated:** 2026-09-06 14:33 UTC
 
 ## Token Budget Guide
 
@@ -103,7 +103,7 @@
 | `src/doc/` | 3 | ~11002 |
 | `src/eval/` | 19 | ~93863 |
 | `src/eval/stdlib/` | 2 | ~8586 |
-| `src/exec/` | 3 | ~4592 |
+| `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
 | `src/ir/` | 6 | ~78076 |
@@ -127,7 +127,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 363 | ~678200 |
+| `tests/` | 363 | ~678163 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1096,7 +1096,7 @@
 ### `src/exec/`
 
 - `conv.rs` (~435 tok, medium) — Copyright 2025 STARGA Inc.
-- `cpu.rs` (~3570 tok, huge) — Copyright 2025 STARGA Inc.
+- `cpu.rs` (~4500 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~587 tok, large) — Copyright 2025 STARGA Inc.
 ### `src/ffi/`
 
@@ -1578,7 +1578,7 @@
 - `for_continue_step_injection.rs` (~1302 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~10735 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~10698 tok, huge) — Copyright 2025 STARGA Inc.
 - `gate_assert_count_contract_test.py` (~6964 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.

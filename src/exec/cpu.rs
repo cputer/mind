@@ -45,7 +45,7 @@ fn shape_usize(shape: &[ShapeDim]) -> Option<Vec<usize>> {
         .collect()
 }
 
-fn get_f32<'a>(t: &'a TensorVal) -> Option<&'a [f32]> {
+fn get_f32(t: &TensorVal) -> Option<&[f32]> {
     t.as_f32()
 }
 
@@ -96,8 +96,8 @@ pub fn exec_div(lhs: &TensorVal, rhs: &TensorVal) -> R<TensorVal> {
 fn scalar_op(t: &TensorVal, s: f32, f: fn(f32, f32) -> f32) -> R<TensorVal> {
     let data = get_f32(t).ok_or_else(|| ExecError::Unsupported("not materialized".into()))?;
     let mut out = Vec::with_capacity(data.len());
-    for i in 0..data.len() {
-        out.push(f(data[i], s));
+    for &value in data {
+        out.push(f(value, s));
     }
     let shape = t
         .shape_as_usize()
@@ -136,8 +136,8 @@ pub fn exec_div_scalar(t: &TensorVal, scalar: f32, tensor_on_left: bool) -> R<Te
 pub fn exec_sum_all(t: &TensorVal) -> R<TensorVal> {
     let data = get_f32(t).ok_or_else(|| ExecError::Unsupported("not materialized".into()))?;
     let mut total: f32 = 0.0;
-    for i in 0..data.len() {
-        total += data[i];
+    for &value in data {
+        total += value;
     }
     Ok(TensorVal::from_materialized_f32(vec![], vec![total]))
 }
@@ -148,8 +148,8 @@ pub fn exec_mean_all(t: &TensorVal) -> R<TensorVal> {
         return Err(ExecError::Shape("mean of empty tensor".into()));
     }
     let mut total: f32 = 0.0;
-    for i in 0..data.len() {
-        total += data[i];
+    for &value in data {
+        total += value;
     }
     let mean = total / data.len() as f32;
     Ok(TensorVal::from_materialized_f32(vec![], vec![mean]))
@@ -160,9 +160,9 @@ pub fn exec_mean_all(t: &TensorVal) -> R<TensorVal> {
 // ---------------------------------------------------------------------------
 
 pub fn relu_inplace(buf: &mut [f32]) {
-    for i in 0..buf.len() {
-        if buf[i] < 0.0 {
-            buf[i] = 0.0;
+    for value in buf.iter_mut() {
+        if *value < 0.0 {
+            *value = 0.0;
         }
     }
 }
@@ -170,8 +170,8 @@ pub fn relu_inplace(buf: &mut [f32]) {
 pub fn exec_relu(t: &TensorVal) -> R<TensorVal> {
     let data = get_f32(t).ok_or_else(|| ExecError::Unsupported("not materialized".into()))?;
     let mut out = Vec::with_capacity(data.len());
-    for i in 0..data.len() {
-        out.push(if data[i] > 0.0 { data[i] } else { 0.0 });
+    for &value in data {
+        out.push(if value > 0.0 { value } else { 0.0 });
     }
     let shape = t
         .shape_as_usize()
@@ -312,7 +312,7 @@ pub fn exec_transpose(t: &TensorVal, perm: &[usize]) -> R<TensorVal> {
     }
 
     // Permute each element
-    for flat_idx in 0..numel {
+    for (flat_idx, &value) in data[..numel].iter().enumerate() {
         // Convert flat index to multi-dimensional index in old shape
         let mut remaining = flat_idx;
         let mut old_idx = vec![0usize; rank];
@@ -327,7 +327,7 @@ pub fn exec_transpose(t: &TensorVal, perm: &[usize]) -> R<TensorVal> {
             new_flat += old_idx[perm[d]] * new_strides[d];
         }
 
-        out[new_flat] = data[flat_idx];
+        out[new_flat] = value;
     }
 
     Ok(TensorVal::from_materialized_f32(new_shape, out))
@@ -417,4 +417,98 @@ pub fn exec_dot(lhs: &TensorVal, rhs: &TensorVal) -> R<TensorVal> {
     }
 
     Ok(TensorVal::from_materialized_f32(vec![], vec![sum]))
+}
+
+#[cfg(test)]
+mod loop_rewrite_tests {
+    //! Focused coverage for the six loops rewritten away from index-based
+    //! iteration. None of these functions had a test before: `exec_transpose`
+    //! had exactly one caller and no assertion anywhere, and `relu_inplace` was
+    //! referenced nowhere outside this file. A rewrite that changes indexing or
+    //! iteration order would have been invisible.
+    use super::*;
+
+    fn f32s(t: &TensorVal) -> Vec<f32> {
+        get_f32(t).expect("materialized").to_vec()
+    }
+
+    #[test]
+    fn scalar_op_preserves_element_order() {
+        let t = TensorVal::from_materialized_f32(vec![2, 3], vec![1., 2., 3., 4., 5., 6.]);
+        let out = exec_add_scalar(&t, 10.0).expect("add_scalar");
+        assert_eq!(f32s(&out), vec![11., 12., 13., 14., 15., 16.]);
+    }
+
+    #[test]
+    fn sum_all_accumulates_in_index_order() {
+        // At 2^24, adding 1 rounds back to 2^24. Reversing these inputs
+        // instead preserves the 1, so this control distinguishes the order.
+        let t = TensorVal::from_materialized_f32(vec![3], vec![16_777_216.0, 1.0, -16_777_216.0]);
+        assert_eq!(f32s(&exec_sum_all(&t).expect("sum_all")), vec![0.0]);
+        let reversed =
+            TensorVal::from_materialized_f32(vec![3], vec![-16_777_216.0, 1.0, 16_777_216.0]);
+        assert_eq!(f32s(&exec_sum_all(&reversed).expect("sum_all")), vec![1.0]);
+    }
+
+    #[test]
+    fn mean_all_matches_ordered_sum_over_len() {
+        let t = TensorVal::from_materialized_f32(vec![3], vec![16_777_216.0, 1.0, -16_777_216.0]);
+        assert_eq!(f32s(&exec_mean_all(&t).expect("mean_all")), vec![0.0]);
+        let reversed =
+            TensorVal::from_materialized_f32(vec![3], vec![-16_777_216.0, 1.0, 16_777_216.0]);
+        assert_eq!(
+            f32s(&exec_mean_all(&reversed).expect("mean_all")),
+            vec![1.0 / 3.0]
+        );
+    }
+
+    #[test]
+    fn mean_all_still_rejects_empty() {
+        let t = TensorVal::from_materialized_f32(vec![0], vec![]);
+        assert!(
+            exec_mean_all(&t).is_err(),
+            "empty tensor must stay an error"
+        );
+    }
+
+    #[test]
+    fn relu_clamps_negatives_only() {
+        let t = TensorVal::from_materialized_f32(vec![5], vec![-1., 0., 1., -0.5, 2.]);
+        let out = exec_relu(&t).expect("relu");
+        assert_eq!(f32s(&out), vec![0., 0., 1., 0., 2.]);
+    }
+
+    #[test]
+    fn relu_inplace_clamps_negatives_only() {
+        let mut buf = [-1.0f32, 0.0, 1.0, -0.5, 2.0];
+        relu_inplace(&mut buf);
+        assert_eq!(buf, [0.0, 0.0, 1.0, 0.0, 2.0]);
+    }
+
+    #[test]
+    fn transpose_2x3_permutes_every_element() {
+        // The change here replaced `data[flat_idx]` with the iterator item while
+        // keeping flat_idx (which is also used as a VALUE to derive the
+        // multi-dimensional index). If that binding were wrong the mapping would
+        // scramble, so assert the full permuted contents, not just the shape.
+        let t = TensorVal::from_materialized_f32(vec![2, 3], vec![1., 2., 3., 4., 5., 6.]);
+        let out = exec_transpose(&t, &[1, 0]).expect("transpose");
+        assert_eq!(f32s(&out), vec![1., 4., 2., 5., 3., 6.]);
+    }
+
+    #[test]
+    fn transpose_identity_is_a_copy() {
+        let t = TensorVal::from_materialized_f32(vec![2, 2], vec![1., 2., 3., 4.]);
+        let out = exec_transpose(&t, &[0, 1]).expect("transpose");
+        assert_eq!(f32s(&out), vec![1., 2., 3., 4.]);
+    }
+
+    #[test]
+    fn transpose_rejects_wrong_perm_length() {
+        let t = TensorVal::from_materialized_f32(vec![2, 2], vec![1., 2., 3., 4.]);
+        assert!(
+            exec_transpose(&t, &[0]).is_err(),
+            "perm/rank mismatch must stay an error"
+        );
+    }
 }

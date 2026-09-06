@@ -684,9 +684,10 @@ pub fn eval_module_value_with_env_mode(
         #[cfg(feature = "mlir-jit")]
         ExecMode::MlirJitCpu => {
             let ir = lower_to_ir(m);
-            let mut opts = mlir_export::MlirEmitOptions::default();
-            opts.mode = mlir_export::MlirEmitMode::Executable;
-            opts.lower_preset = Some(MlirLowerPreset::JitCpu.as_str().to_string());
+            let opts = mlir_export::MlirEmitOptions {
+                mode: mlir_export::MlirEmitMode::Executable,
+                lower_preset: Some(MlirLowerPreset::JitCpu.as_str().to_string()),
+            };
             let mlir_text = mlir_export::emit_mlir_with_opts(&ir, &opts);
             match mlir_jit::MlirJit::new() {
                 Ok(jit) => match jit.run_mlir_text(&mlir_text, "main", &[]) {
@@ -1534,11 +1535,8 @@ pub(crate) fn eval_value_expr_mode(
                                     if matches!(mode, ExecMode::Cuda) {
                                         let gpu_result = GPU_MATMUL_FN.with(|f| {
                                             let func = f.borrow();
-                                            if let Some(ref matmul_fn) = *func {
-                                                Some(matmul_fn(&tl_exec, &tr_exec))
-                                            } else {
-                                                None
-                                            }
+                                            func.as_ref()
+                                                .map(|matmul_fn| matmul_fn(&tl_exec, &tr_exec))
                                         });
                                         if let Some(Ok(result)) = gpu_result {
                                             return Ok(Value::Tensor(result));
