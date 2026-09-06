@@ -28,6 +28,7 @@ pub mod module_table;
 /// Per-target executable link driver (ELF / PE-COFF / Mach-O dispatch). Only the
 /// host ELF arm is wired today; the others fail loud until their slice lands.
 mod compiled_sources;
+mod embedded_entry;
 mod link;
 mod runtime_link;
 
@@ -2362,7 +2363,15 @@ fn compile_single_source(
             // byte-identity guarantee — surfacing the real diagnostic keeps a
             // "build succeeded" from masking a degraded/unparseable module.
             warn_embedded_fallback(source, &source_code, &diags, opts.verbose);
-            compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
+            compile_embedded_source(
+                source,
+                &source_code,
+                output,
+                backend,
+                opts,
+                is_entry,
+                FallbackReason::SourceNotNativelyCompilable,
+            )?;
             // The SOURCE did not compile — never a capability gap, whatever the
             // host has installed.
             return Ok(NativeOutcome::Fallback(
@@ -2434,7 +2443,15 @@ fn compile_single_source(
             }
             Err(_) => {
                 // `mlir-opt` / `clang` absent from PATH: a HOST capability gap.
-                compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
+                compile_embedded_source(
+                    source,
+                    &source_code,
+                    output,
+                    backend,
+                    opts,
+                    is_entry,
+                    FallbackReason::NativeToolchainAbsent,
+                )?;
                 return Ok(NativeOutcome::Fallback(
                     FallbackReason::NativeToolchainAbsent,
                 ));
@@ -2445,7 +2462,15 @@ fn compile_single_source(
     #[cfg(not(feature = "mlir-build"))]
     {
         let _ = &products; // products.ir is only consumed by the mlir-build path
-        compile_embedded_source(source, &source_code, output, backend, opts, is_entry)?;
+        compile_embedded_source(
+            source,
+            &source_code,
+            output,
+            backend,
+            opts,
+            is_entry,
+            FallbackReason::NoNativeBackend,
+        )?;
         // This binary carries no native backend at all: a HOST capability gap.
         Ok(NativeOutcome::Fallback(FallbackReason::NoNativeBackend))
     }
@@ -2463,7 +2488,10 @@ fn compile_embedded_source(
     backend: &str,
     _opts: &BuildOptions,
     is_entry: bool,
+    fallback_reason: FallbackReason,
 ) -> Result<()> {
+    embedded_entry::require_supported(is_entry, fallback_reason)?;
+
     let module_name = source
         .file_stem()
         .unwrap_or_default()
