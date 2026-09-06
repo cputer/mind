@@ -36,7 +36,7 @@
 //! substrates are little-endian).
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Fixed non-zero base "address" of the arena. Offsets below this are
 /// invalid, so `__mind_alloc` never returns 0 for a successful allocation
@@ -50,6 +50,9 @@ const MEM_CAP_BYTES: usize = 1 << 30; // 1 GiB
 
 thread_local! {
     static MEM: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// Requested extents keyed by their deterministic arena address. The
+    /// backing vector is rounded for alignment, but padding is not readable.
+    static ALLOCS: RefCell<BTreeMap<i64, usize>> = const { RefCell::new(BTreeMap::new()) };
     /// Offsets returned by `materialize_str` — the pointers to native string
     /// RECORDS marshalled from a `Value::Str` at the `string`-typed-param
     /// boundary. Tracked so `==`/`!=` between two of them can fail loud instead
@@ -64,6 +67,7 @@ thread_local! {
 /// and order-independent.
 pub fn reset() {
     MEM.with(|m| m.borrow_mut().clear());
+    ALLOCS.with(|a| a.borrow_mut().clear());
     STR_RECORDS.with(|s| s.borrow_mut().clear());
 }
 
@@ -111,18 +115,32 @@ fn alloc(n: i64) -> Result<i64, String> {
     }
     // Round the size up to 8 so every allocation is 8-aligned, matching the
     // alignment guarantee compiled code gets from malloc.
-    let n = (n as usize).div_ceil(8) * 8;
+    let requested = usize::try_from(n)
+        .map_err(|_| "__mind_alloc: size does not fit the host address model".to_string())?;
+    let n = requested
+        .checked_add(7)
+        .and_then(|v| v.checked_div(8))
+        .and_then(|v| v.checked_mul(8))
+        .ok_or_else(|| "__mind_alloc: size arithmetic overflow".to_string())?;
     MEM.with(|m| {
         let mut mem = m.borrow_mut();
         let top = mem.len();
-        if top + n > MEM_CAP_BYTES {
+        let end = top
+            .checked_add(n)
+            .ok_or_else(|| "__mind_alloc: arena size arithmetic overflow".to_string())?;
+        if end > MEM_CAP_BYTES {
             return Err(format!(
                 "__mind_alloc: interpreter memory cap exceeded ({} + {} > {} bytes)",
                 top, n, MEM_CAP_BYTES
             ));
         }
-        let addr = MEM_BASE + top as i64;
-        mem.resize(top + n, 0);
+        let addr = MEM_BASE
+            .checked_add(
+                i64::try_from(top).map_err(|_| "__mind_alloc: address overflow".to_string())?,
+            )
+            .ok_or_else(|| "__mind_alloc: address overflow".to_string())?;
+        mem.resize(end, 0);
+        ALLOCS.with(|a| a.borrow_mut().insert(addr, requested));
         Ok(addr)
     })
 }
@@ -214,11 +232,23 @@ fn check_range(addr: i64, size: usize, mem_len: usize) -> Result<usize, String> 
             "memory access out of bounds: address {addr} below arena base {MEM_BASE}"
         ));
     }
-    let off = (addr - MEM_BASE) as usize;
-    if off.checked_add(size).is_none_or(|end| end > mem_len) {
+    let off = usize::try_from(addr - MEM_BASE)
+        .map_err(|_| format!("memory access out of bounds: invalid address {addr}"))?;
+    let end = off.checked_add(size);
+    let extent_ok = ALLOCS.with(|a| {
+        a.borrow()
+            .range(..=addr)
+            .next_back()
+            .and_then(|(&start, &extent)| {
+                let within = usize::try_from(addr - start).ok()?;
+                (within <= extent && size <= extent - within).then_some(())
+            })
+            .is_some()
+    });
+    if end.is_none_or(|v| v > mem_len) || !extent_ok {
         return Err(format!(
-            "memory access out of bounds: [{addr}, {addr}+{size}) outside allocated \
-             arena (top {})",
+            "memory access out of bounds: [{addr}, {addr}+{size}) outside one \
+             allocated extent (arena top {})",
             MEM_BASE + mem_len as i64
         ));
     }
@@ -245,6 +275,7 @@ mod tests {
         reset();
         assert_eq!(alloc(0).unwrap(), 0);
         assert_eq!(alloc(-4).unwrap(), 0);
+        assert!(alloc(i64::MAX).is_err());
     }
 
     #[test]
@@ -276,6 +307,32 @@ mod tests {
         assert!(eval_intrinsic("__mind_load_i8", &[p + 8]).is_err());
         assert!(eval_intrinsic("__mind_store_i8", &[0, 7]).is_err());
         assert!(eval_intrinsic("__mind_load_i8", &[MEM_BASE - 1]).is_err());
+    }
+
+    #[test]
+    fn allocation_extent_rejects_padding_and_cross_allocation_reads() {
+        reset();
+        let p = alloc(1).unwrap();
+        let q = alloc(8).unwrap();
+        assert!(eval_intrinsic("__mind_load_i8", &[p + 1]).is_err());
+        assert!(eval_intrinsic("__mind_load_i64", &[p]).is_err());
+        assert!(eval_intrinsic("__mind_load_i64", &[q - 1]).is_err());
+        assert!(eval_intrinsic("__mind_store_i8", &[p + 1, 7]).is_err());
+        assert_eq!(eval_intrinsic("__mind_load_i8", &[q]).unwrap(), 0);
+    }
+
+    #[test]
+    fn string_records_and_reset_keep_valid_boundaries() {
+        reset();
+        let rec = materialize_str("abc").unwrap();
+        assert!(is_str_record(rec));
+        assert_eq!(eval_intrinsic("__mind_load_i64", &[rec + 8]).unwrap(), 3);
+        reset();
+        assert!(!is_str_record(rec));
+        let p = alloc(8).unwrap();
+        assert_eq!(p, MEM_BASE);
+        assert_eq!(eval_intrinsic("__mind_store_i64", &[p, 42]).unwrap(), 0);
+        assert_eq!(eval_intrinsic("__mind_load_i64", &[p]).unwrap(), 42);
     }
 
     #[test]
