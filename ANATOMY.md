@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1517 | **Est. tokens:** ~2959639
-**Generated:** 2026-09-06 07:59 UTC
+**Files:** 1517 | **Est. tokens:** ~2961762
+**Generated:** 2026-09-06 08:01 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 167 | ~427012 |
+| `examples/mindc_mind/` | 167 | ~427794 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 353 | ~661310 |
+| `tests/` | 353 | ~662651 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -652,7 +652,7 @@
 - `fixed_point_smoke.py` (~3275 tok, huge)
 - `fixture.mind` (~183 tok, small) — Phase 6.4 emit_ir smoke fixture.
 - `full_strtab_smoke.py` (~1663 tok, huge)
-- `gap_corpus_smoke.py` (~4874 tok, huge)
+- `gap_corpus_smoke.py` (~5656 tok, huge)
 - `general_float_netverify.py` (~1986 tok, huge) — general_float_netverify.py — GENERAL-path f64 value battery (B0 gate lift).
 - `lockstep_lint.py` (~4127 tok, huge) — lockstep_lint.py -- native-ELF walker lockstep linter for the pure-MIND self-host compiler.
 - `match_struct_smoke.py` (~1350 tok, large)
@@ -1556,7 +1556,7 @@
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `g2_differential_mlir.rs` (~10847 tok, huge) — Copyright 2025 STARGA Inc.
-- `gate_assert_count_contract_test.py` (~5623 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
+- `gate_assert_count_contract_test.py` (~6964 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.

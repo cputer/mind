@@ -481,6 +481,116 @@ def case_lint_scans_the_real_corpus_for_verdict_shape() -> None:
           smoke_wiring_lint.scan_verdict_shape_violations(), [])
 
 
+# ── gap_corpus_smoke: an exemption is a classification, not an assertion ────
+#
+# The AST-kind coverage lint in examples/mindc_mind/gap_corpus_smoke.py prints
+# one row per declared kind. A SOURCE_PROBES kind's row is a coverage check that
+# ran against the corpus; a SYNTHETIC / NO_ORACLE_CONSTRUCT kind's row records
+# that nothing was byte-compared for it. The shim counts every line carrying a
+# verdict token, so those exemption rows must carry none — otherwise the gate
+# reports N kinds "covered" while N-4 were checked. These cases exercise the
+# pure classification function with the module's REAL tables; no oracle, no
+# compiler, no `.so` is involved (the gate resolves those only inside main()).
+
+def _gap_kind_rows(fixture_texts: list[str], **tables: dict[str, str]
+                   ) -> tuple[bool, int, list[str], list[str]]:
+    """Run ast_kind_coverage with optional table overrides; capture its rows."""
+    import contextlib
+    import io
+
+    import gap_corpus_smoke as gap
+
+    saved = {name: getattr(gap, name) for name in tables}
+    for name, value in tables.items():
+        setattr(gap, name, value)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            ok, ran, failures = gap.ast_kind_coverage(fixture_texts)
+    finally:
+        for name, value in saved.items():
+            setattr(gap, name, value)
+    rows = [ln for ln in buf.getvalue().splitlines() if "AST node kind" in ln]
+    return ok, ran, failures, rows
+
+
+def _gap_corpus_texts() -> list[str]:
+    corpus = REPO / "tests" / "selfhost_gaps"
+    paths = sorted(corpus.glob("*.mind")) + sorted((corpus / "never_wrong").glob("*.mind"))
+    return [p.read_text(encoding="utf-8") for p in paths]
+
+
+def case_gap_corpus_exempt_kinds_are_not_counted() -> None:
+    """On the real corpus: one row per kind; only probed kinds carry a token."""
+    import gap_corpus_smoke as gap
+    from gate_assert import VERDICT_RE, is_skip_line
+
+    ok, ran, failures, rows = _gap_kind_rows(_gap_corpus_texts())
+    exempt = set(gap.SYNTHETIC) | set(gap.NO_ORACLE_CONSTRUCT)
+    exempt_rows = [r for r in rows if any(f" {k}:" in r for k in exempt)]
+    counted = [r for r in rows if VERDICT_RE.search(r)]
+    check("gap: real corpus classification is clean", (ok, failures), (True, []))
+    check("gap: one row per declared kind", len(rows), ran)
+    check("gap: one row per exempt kind", len(exempt_rows), len(exempt))
+    check("gap: exempt rows carry no verdict token",
+          [r for r in exempt_rows if VERDICT_RE.search(r)], [])
+    check("gap: exempt rows are not skip lines",
+          [r for r in exempt_rows if is_skip_line(r)], [])
+    check("gap: counted rows == probed kinds", len(counted), len(gap.SOURCE_PROBES))
+    check("gap: every counted row is a literal PASS",
+          [r for r in counted if not r.startswith("[PASS] ")], [])
+
+
+def case_gap_corpus_unexercised_probe_is_a_failed_row() -> None:
+    """An empty corpus reds EVERY probed kind, one [FAIL] row each; exempt rows
+    stay token-free — an empty corpus must not turn an exemption into a pass."""
+    import gap_corpus_smoke as gap
+    from gate_assert import VERDICT_RE
+
+    ok, ran, failures, rows = _gap_kind_rows([])
+    fails = [r for r in rows if r.startswith("[FAIL] ")]
+    exempt = set(gap.SYNTHETIC) | set(gap.NO_ORACLE_CONSTRUCT)
+    exempt_rows = [r for r in rows if any(f" {k}:" in r for k in exempt)]
+    check("gap: empty corpus is not ok", ok, False)
+    check("gap: every probed kind is a FAIL row", len(fails), len(gap.SOURCE_PROBES))
+    check("gap: no PASS row survives an empty corpus",
+          [r for r in rows if r.startswith("[PASS] ")], [])
+    check("gap: exempt rows still uncounted on an empty corpus",
+          [r for r in exempt_rows if VERDICT_RE.search(r)], [])
+
+
+def case_gap_corpus_stale_classification_is_a_failed_row() -> None:
+    """A kind classified in the lint but no longer declared in main.mind is a
+    visible [FAIL] row, not only a summary line the per-case count cannot see."""
+    import gap_corpus_smoke as gap
+
+    stale = dict(gap.SYNTHETIC)
+    stale["ast_never_declared_probe"] = "planted by the contract test"
+    ok, _, failures, rows = _gap_kind_rows(_gap_corpus_texts(), SYNTHETIC=stale)
+    check("gap: stale classification is not ok", ok, False)
+    check("gap: stale classification names itself",
+          [f for f in failures if f.startswith("ast_never_declared_probe:")] != [], True)
+    check("gap: stale classification is a FAIL row",
+          [r for r in rows if r.startswith("[FAIL] AST node kind ast_never_declared_probe:")] != [],
+          True)
+
+
+def case_gap_corpus_unclassified_kind_is_a_failed_row() -> None:
+    """A declared kind with no entry in any table is a [FAIL] row: a kind
+    nobody classified is a construct that can hide a miscompile."""
+    import gap_corpus_smoke as gap
+
+    probes = dict(gap.SOURCE_PROBES)
+    victim = "ast_while"
+    check("gap: mutation target is a probed kind", victim in probes, True)
+    del probes[victim]
+    ok, _, _, rows = _gap_kind_rows(_gap_corpus_texts(), SOURCE_PROBES=probes)
+    check("gap: unclassified kind is not ok", ok, False)
+    check("gap: unclassified kind is a FAIL row naming the gap",
+          [r for r in rows if r.startswith(f"[FAIL] AST node kind {victim}:")
+           and "NEW AST node kind" in r] != [], True)
+
+
 def main() -> int:
     for fn in sorted(
         (v for k, v in globals().items() if k.startswith("case_")),

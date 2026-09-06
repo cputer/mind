@@ -21,9 +21,21 @@ The gate enforces three invariants:
                          See `ast_kind_coverage` for why the kind list is read out of
                          main.mind rather than restated here.
 
+Per-case rows and what scripts/gate_assert.py counts from them:
+  * one `[PASS]`/`[FAIL]` line per oracle-valid fixture — a byte comparison (or a
+    safe refusal / crash classification) that actually ran;
+  * one `[PASS]`/`[FAIL]` line per SOURCE_PROBES kind — a fixture-coverage check that
+    actually ran against the corpus text;
+  * one `[EXEMPT]` line per SYNTHETIC / NO_ORACLE_CONSTRUCT kind — a CLASSIFICATION,
+    not a comparison: nothing was byte-compared for that kind, so the row carries no
+    verdict token and is NOT counted toward `asserted=`. A kind whose classification
+    is stale, or a kind nobody classified, is a `[FAIL]` row like any other.
+
 Verdicts:
-  PASS    — 0 wrong-bytes, byte-exact >= floor, every AST node kind covered
-  FAIL    — any wrong-bytes, a coverage-floor regression, or an unexercised node kind
+  PASS    — 0 wrong-bytes, byte-exact >= floor, every probed AST node kind covered and
+            every exempt kind still declared
+  FAIL    — any wrong-bytes, a coverage-floor regression, an unexercised probed kind,
+            an unclassified kind, or a stale classification
   BLOCKED — .so / mindc missing
 
 CI: point MINDC_SO at the freshly built self-host .so; a missing .so then HARD-FAILS
@@ -45,11 +57,24 @@ _DEFAULT_SO = _HERE / "libmindc_mind.so"  # legacy in-tree path (fallback only)
 sys.path.insert(0, str(_HERE))
 from _selfhost_so import resolve_so  # noqa: E402
 
-SO = resolve_so()
-MINDC = pathlib.Path(
-    os.environ.get("MINDC", str(_HERE.parents[1] / "target" / "release" / "mindc"))
-)
+# Resolved at the top of main(), not at import: `resolve_so()` refuses a stale
+# oracle by raising, which is the right thing for the gate and the wrong thing
+# for tests/gate_assert_count_contract_test.py, which imports this module only
+# to exercise the pure `ast_kind_coverage` classification below. The refusal
+# still happens before any fixture is read — same fail-closed behaviour, same
+# point in the CLI run, one line later.
+SO = None
+MINDC = None
 CORPUS = _HERE.parents[1] / "tests" / "selfhost_gaps"
+
+
+def _resolve_oracles():
+    """Bind SO / MINDC exactly as the import-time resolution used to."""
+    global SO, MINDC
+    SO = resolve_so()
+    MINDC = pathlib.Path(
+        os.environ.get("MINDC", str(_HERE.parents[1] / "target" / "release" / "mindc"))
+    )
 
 _P = ctypes.POINTER(ctypes.c_int64)
 
@@ -279,15 +304,36 @@ def ast_kind_coverage(fixture_texts):
                 f"tests/selfhost_gaps/ (or never_wrong/ if the driver refuses it) — "
                 "an unexercised kind is a construct whose bytes nothing compares."
             )
-    for k in kinds:
+    # One row per kind. The token on the row states what was CHECKED for it:
+    #   [FAIL]   any failure above (unclassified, stale classification, or a
+    #            probed kind no fixture exercises) — including kinds that are
+    #            classified here but no longer declared, which iterate below so
+    #            a drifted lint scope is a visible red row, not only a summary;
+    #   [PASS]   a SOURCE_PROBES kind with >= 1 fixture matching its probe — a
+    #            coverage check that ran against the corpus text;
+    #   [EXEMPT] a SYNTHETIC / NO_ORACLE_CONSTRUCT kind — a classification only.
+    #            Nothing was byte-compared, so the row deliberately carries NO
+    #            verdict token: scripts/gate_assert.py must not count an
+    #            exemption as an assertion. The literal tokens are spelled out
+    #            (not interpolated) so smoke_wiring_lint's per-case scan can see
+    #            them, and tests/gate_assert_count_contract_test.py pins that the
+    #            [EXEMPT] rows stay token-free even if a reason string changes.
+    stale = sorted(mapped - set(kinds))
+    for k in list(kinds) + stale:
         kind_failures = [failure for failure in failures if failure.startswith(f"{k}:")]
-        verdict = "FAIL" if kind_failures else "PASS"
-        detail = kind_failures[0] if kind_failures else "fixture coverage present or explicitly classified"
-        print(f"[{verdict}] AST node kind {k}: {detail}")
+        if kind_failures:
+            print(f"[FAIL] AST node kind {k}: {kind_failures[0]}")
+        elif k in SOURCE_PROBES:
+            print(f"[PASS] AST node kind {k}: >= 1 corpus fixture matches its source probe")
+        else:
+            bucket = "SYNTHETIC" if k in SYNTHETIC else "NO_ORACLE_CONSTRUCT"
+            reason = SYNTHETIC.get(k) or NO_ORACLE_CONSTRUCT.get(k)
+            print(f"[EXEMPT] AST node kind {k}: not byte-compared — {bucket}: {reason}")
     return not failures, len(kinds), failures
 
 
 def main():
+    _resolve_oracles()
     if not SO.exists():
         if os.environ.get("MINDC_SO"):
             print(f"ERROR: {SO} not found (MINDC_SO is set — refusing to skip)")
@@ -428,10 +474,14 @@ def main():
         ok = False
 
     if ok:
+        # cov_ok means mapped == kinds exactly, so the exempt count is the size
+        # of the two exemption buckets and the rest were fixture-covered.
+        exempt = len(SYNTHETIC) + len(NO_ORACLE_CONSTRUCT)
         print(
             f"PASS: 0 wrong-bytes; {byte_exact}/{total} byte-exact "
             f"(>= floor {FLOOR}), {len(fail_closed)} safe fail-closed, "
-            f"{cov_ran} AST node kinds covered"
+            f"{cov_ran - exempt} of {cov_ran} AST node kinds fixture-covered, "
+            f"{exempt} exempt (synthetic / no-oracle, not byte-compared)"
         )
         return 0
     return 1
