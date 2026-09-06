@@ -13,7 +13,6 @@
 // Part of the MIND project (Machine Intelligence Native Design).
 
 #[cfg(feature = "cpu-exec")]
-
 /// Shared fail-closed capability gate (`common::gate`): a skip must panic
 /// under `MIND_BENCH_REQUIRE=1` and otherwise report `ran=0`.
 mod common;

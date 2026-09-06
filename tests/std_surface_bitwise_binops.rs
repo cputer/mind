@@ -183,7 +183,7 @@ fn bitand_emits_arith_andi_in_mlir() {
 #[cfg(feature = "mlir-lowering")]
 #[test]
 fn bitor_emits_arith_ori_in_mlir() {
-    use libmind::ir::{IRModule, ValueId};
+    use libmind::ir::IRModule;
     use libmind::mlir::lower_ir_to_mlir;
 
     let mut m = IRModule::new();
@@ -211,7 +211,7 @@ fn bitor_emits_arith_ori_in_mlir() {
 #[cfg(feature = "mlir-lowering")]
 #[test]
 fn bitxor_emits_arith_xori_in_mlir() {
-    use libmind::ir::{IRModule, ValueId};
+    use libmind::ir::IRModule;
     use libmind::mlir::lower_ir_to_mlir;
 
     let mut m = IRModule::new();
@@ -239,7 +239,7 @@ fn bitxor_emits_arith_xori_in_mlir() {
 #[cfg(feature = "mlir-lowering")]
 #[test]
 fn shl_emits_arith_shli_in_mlir() {
-    use libmind::ir::{IRModule, ValueId};
+    use libmind::ir::IRModule;
     use libmind::mlir::lower_ir_to_mlir;
 
     let mut m = IRModule::new();
@@ -267,7 +267,7 @@ fn shl_emits_arith_shli_in_mlir() {
 #[cfg(feature = "mlir-lowering")]
 #[test]
 fn shr_emits_arith_shrsi_in_mlir() {
-    use libmind::ir::{IRModule, ValueId};
+    use libmind::ir::IRModule;
     use libmind::mlir::lower_ir_to_mlir;
 
     let mut m = IRModule::new();

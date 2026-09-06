@@ -1,4 +1,10 @@
-use libmind::conformance::{ConformanceOptions, ConformanceProfile, NO_GPU_CASES, run_conformance};
+use libmind::conformance::{ConformanceOptions, ConformanceProfile, run_conformance};
+// Used only by the fail-closed test below, which is itself gated on the GPU
+// feature being ABSENT; under --all-features that test compiles out and an
+// ungated import would dangle. Gating the import to match its single use keeps
+// the non-GPU case intact instead of removing it.
+#[cfg(not(feature = "mlir-gpu"))]
+use libmind::conformance::NO_GPU_CASES;
 
 #[test]
 fn cpu_conformance_profile_passes() {

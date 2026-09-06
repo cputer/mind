@@ -15,7 +15,6 @@
 mod common;
 
 #[cfg(feature = "mlir-exec")]
-
 /// Get the path to the mind binary from the cargo target directory
 #[cfg(feature = "mlir-exec")]
 #[cfg(feature = "mlir-exec")]

@@ -347,8 +347,8 @@ fn if_return_mlir_does_not_place_return_mid_block() {
     for (i, line) in lines.iter().enumerate() {
         if line.trim_start().starts_with("return ") || line.trim_start() == "return" {
             // Check the next non-empty, non-comment line.
-            for j in (i + 1)..lines.len() {
-                let next = lines[j].trim();
+            for (j, next_line) in lines.iter().enumerate().skip(i + 1) {
+                let next = next_line.trim();
                 if next.is_empty() || next.starts_with("//") {
                     continue;
                 }

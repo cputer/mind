@@ -20,8 +20,6 @@
 
 #![cfg(all(feature = "std-surface", feature = "mlir-lowering"))]
 
-use std::collections::HashMap;
-
 use libmind::ast::{Literal, Module, Node, Span};
 use libmind::ir::{IRModule, Instr, ValueId};
 use libmind::mlir::lower_ir_to_mlir;
