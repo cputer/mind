@@ -137,8 +137,9 @@ mod tests {
 
     /// A keyword followed by a parenthesised unary `!` is ordinary MIND: `!`
     /// binds at atom precedence, so negating a compound expression REQUIRES the
-    /// `!( … )` form. `return`/`if`/`while` are keywords, not callees, and the
-    /// formatter must accept every one of these.
+    /// `!( … )` form. `return`/`if` are keywords, not callees, and the formatter
+    /// must accept every one of these in EVERY feature profile — they are part
+    /// of the frozen low-level grammar that `--no-default-features` builds.
     #[test]
     fn parenthesised_unary_not_after_keywords_formats() {
         expect_all_accepted(
@@ -147,9 +148,45 @@ mod tests {
                 "fn f(a: bool, b: bool) -> bool { return !(a); }\n",
                 "fn f(a: bool, b: bool) -> bool { return !(a && b); }\n",
                 "fn f(a: bool, b: bool) -> i64 { if !(a && b) { return 1; } return 0; }\n",
-                "fn f(a: bool, b: bool) -> i64 { while !(a && b) { return 1; } return 0; }\n",
                 "fn f(a: bool, b: bool) -> i64 { if !(a) { return 1; } else { return 0; } }\n",
             ],
+        );
+    }
+
+    /// `while` is a `std-surface` statement (`parse_while` is cfg-gated); the
+    /// bare grammar reads `while` as a plain identifier. The fixture is shared
+    /// by the std-surface acceptance test and the bare rejection pin below so
+    /// the two profiles are provably testing the same source.
+    const WHILE_UNARY_NOT_FIXTURE: &str =
+        "fn f(a: bool, b: bool) -> i64 { while !(a && b) { return 1; } return 0; }\n";
+
+    /// The `while` leg of the keyword rule, run only where the compiler
+    /// actually parses `while`. Under `std-surface` the adjacency guard must
+    /// not mistake `while !(…)` for a macro any more than `return !(…)`.
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn parenthesised_unary_not_after_while_formats() {
+        expect_all_accepted(
+            "unary not after while",
+            &[
+                WHILE_UNARY_NOT_FIXTURE,
+                "fn f(a: bool) -> i64 { while !(a) { return 1; } return 0; }\n",
+            ],
+        );
+    }
+
+    /// Bare-build boundary pin: a `std-surface` program must not be silently
+    /// reconstructed by a formatter built without that feature. This fixture
+    /// fails to parse bare (`while` is an identifier there, and the shape does
+    /// not survive), so the formatter fails closed rather than rewriting it. If
+    /// `while` is ever admitted to the bare grammar, this test goes red on
+    /// purpose: move the fixture to the accepted set above, do not delete it.
+    #[cfg(not(feature = "std-surface"))]
+    #[test]
+    fn while_fixture_is_rejected_without_std_surface() {
+        expect_all_rejected(
+            "std-surface while without std-surface",
+            &[WHILE_UNARY_NOT_FIXTURE],
         );
     }
 
