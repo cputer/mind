@@ -17,10 +17,8 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(label: &str) -> Self {
         let nonce = SCRATCH_NONCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "mind-xsi-receipts-{label}-{}-{nonce}",
-            std::process::id()
-        ));
+        let path =
+            crate::common::scratch_dir("cross_substrate_receipts").join(format!("{label}-{nonce}"));
         std::fs::create_dir(&path).expect("create receipt-test scratch directory");
         Self(path)
     }

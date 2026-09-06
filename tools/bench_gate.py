@@ -38,6 +38,7 @@ frontier assertion.
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from pathlib import Path
@@ -115,6 +116,13 @@ def _to_us(value: float, unit: str) -> float:
     return value
 
 
+def _require_measurement(value: float, label: str, *, allow_zero: bool = False) -> float:
+    """Reject forged or malformed timing values before they reach the gate."""
+    if not math.isfinite(value) or (value < 0 if allow_zero else value <= 0):
+        raise ValueError(f"{label} must be finite and {'non-negative' if allow_zero else 'positive'}")
+    return value
+
+
 def _leaf(bench_id: str) -> str:
     return bench_id.rsplit("/", 1)[-1]
 
@@ -141,12 +149,16 @@ def parse_reference(path: Path | None, prefix: str | None = None) -> dict[str, f
     for raw in text.splitlines():
         m = BENCHER_LINE.search(raw)
         if m:
-            out.setdefault(m.group("id"), _to_us(float(m.group("value")), m.group("unit")))
+            value = _to_us(float(m.group("value")), m.group("unit"))
+            _require_measurement(value, f"reference {m.group('id')}")
+            out.setdefault(m.group("id"), value)
     for raw in text.splitlines():
         m = REF_LINE.search(raw)
         if m:
+            value = float(m.group("value"))
+            _require_measurement(value, f"reference {m.group('name')}")
             key = f"{prefix}/{m.group('name')}" if prefix else m.group("name")
-            out.setdefault(key, float(m.group("value")))
+            out.setdefault(key, value)
     return out
 
 
@@ -169,10 +181,13 @@ def parse_current(path: Path) -> dict[str, tuple[float, float | None]]:
             if name in out:
                 continue
             us = _to_us(float(m.group("value")), m.group("unit"))
+            _require_measurement(us, f"current {name}")
             rel_var: float | None = None
             if m.group("variance") is not None and us > 0:
                 vunit = m.group("vunit") or m.group("unit")
-                rel_var = _to_us(float(m.group("variance")), vunit) / us
+                spread = _to_us(float(m.group("variance")), vunit)
+                _require_measurement(spread, f"current {name} spread", allow_zero=True)
+                rel_var = spread / us
             out[name] = (us, rel_var)
 
     # Pass 2: default two-line "Benchmarking <id>: / time: [low mid high]".
@@ -188,6 +203,13 @@ def parse_current(path: Path) -> dict[str, tuple[float, float | None]]:
                 low = _to_us(float(t.group(1)), t.group(2))
                 mid = _to_us(float(t.group(3)), t.group(4))
                 high = _to_us(float(t.group(5)), t.group(6))
+                _require_measurement(low, f"current {pending} low")
+                _require_measurement(mid, f"current {pending} median")
+                _require_measurement(high, f"current {pending} high")
+                if not low <= mid <= high:
+                    raise ValueError(
+                        f"current {pending} interval must satisfy low <= median <= high"
+                    )
                 rel_var = ((high - low) / mid) if mid > 0 else None
                 out[pending] = (mid, rel_var)
             pending = None
@@ -248,11 +270,17 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    champion = parse_reference(args.champion)
-    # The legacy correctness-milestone floor carries short fixture names that
-    # were measured for the compiler_pipeline bench; key them onto that full id
-    # so they only gate those benches (never a same-named fixture elsewhere).
-    floor = parse_reference(args.floor, prefix=args.floor_prefix)
+    try:
+        champion = parse_reference(args.champion)
+        # The legacy correctness-milestone floor carries short fixture names that
+        # were measured for the compiler_pipeline bench; key them onto that full id
+        # so they only gate those benches (never a same-named fixture elsewhere).
+        floor = parse_reference(args.floor, prefix=args.floor_prefix)
+        current = parse_current(args.current)
+    except (OSError, ValueError) as exc:
+        print("asserted=0")
+        print(f"::error::bench gate input is malformed or unreadable: {exc}")
+        return 4
     if not champion and not floor:
         # FAIL-CLOSED: neither reference readable. Previously this substituted a
         # hardcoded DEFAULT_BASELINE_US, which meant a missing/renamed/corrupt
@@ -265,7 +293,6 @@ def main() -> int:
         return 4
     # Gate whatever names the references declare (champion preferred).
     watched = sorted(champion.keys() or floor.keys())
-    current = parse_current(args.current)
 
     rows: list[tuple[str, float | None, float | None, float, float, float | None, str]] = []
     missing: list[str] = []

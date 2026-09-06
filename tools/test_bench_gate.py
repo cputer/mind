@@ -8,6 +8,7 @@ inconclusive code, not a false green.
 
 Run: ``python3 tools/test_bench_gate.py`` (no third-party deps).
 """
+import os
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,92 @@ def bencher(small_ns: int, medium_ns: int, large_ns: int, spread: int = 50) -> s
 
 def main() -> int:
     failures: list[str] = []
+
+    preflight = HERE.parent / "scripts" / "preflight.sh"
+    preflight_text = preflight.read_text(encoding="utf-8")
+    wiring_cases = [
+        ("preflight pins the committed correctness floor",
+         "base=.bench-baseline-2026-06-01-correctness.txt" in preflight_text),
+        ("preflight records the compiler bench exit status",
+         "bench_rc=0" in preflight_text and "|| bench_rc=$?" in preflight_text),
+        ("preflight rejects a failed compiler bench",
+         'if [ "$bench_rc" -ne 0 ]; then' in preflight_text),
+        ("preflight uses a fresh private bench-output directory",
+         'mktemp -d "${TMPDIR:-/tmp}/mind-preflight-bench.XXXXXX"' in preflight_text
+         and 'bench_out="$bench_tmp/bench.out"' in preflight_text
+         and 'bench_target="$bench_tmp/target"' in preflight_text
+         and 'CARGO_TARGET_DIR="$bench_target"' in preflight_text
+         and "/tmp/preflight-bench.out" not in preflight_text),
+        ("preflight rejects missing gate prerequisites",
+         'bad "bench gate prerequisites missing:' in preflight_text),
+        ("preflight does not select a floor by mtime",
+         "ls -t .bench-baseline-*correctness" not in preflight_text),
+    ]
+    for label, ok in wiring_cases:
+        print(f"[{'PASS' if ok else 'FAIL'}] {label}")
+        if not ok:
+            failures.append(label)
+
+    # Execute only the extracted bench block with a fake cargo that fails. This
+    # proves the shell records the command failure and never grades stale output.
+    preflight_start = preflight_text.index(
+        '  step "bench gate (frozen low-level frontend)'
+    )
+    preflight_end = preflight_text.index("\nfi\n\necho", preflight_start)
+    preflight_block = preflight_text[preflight_start:preflight_end]
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / ".bench-baseline-2026-06-01-correctness.txt").write_text(GOOD_BASELINE)
+        (d / "tools").mkdir()
+        (d / "tools" / "bench_gate.py").write_text(
+            "from pathlib import Path\n"
+            "import os\n"
+            "Path(os.environ['GATE_MARKER']).write_text('called')\n"
+        )
+        fake_bin = d / "bin"
+        fake_bin.mkdir()
+        fake_cargo = fake_bin / "cargo"
+        fake_cargo.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$PREFLIGHT_FAKE_CARGO_RC\" -ne 0 ]; then\n"
+            "  echo cargo-failed >&2\n"
+            "  exit \"$PREFLIGHT_FAKE_CARGO_RC\"\n"
+            "fi\n"
+            "exit 0\n"
+        )
+        fake_cargo.chmod(0o755)
+        shell = (
+            "set -uo pipefail\nfail=0\nPF_TARGET=target-preflight\n"
+            "step() { :; }\nbad() { echo BAD: $*; fail=1; }\n"
+            + preflight_block
+            + '\nexit "$fail"\n'
+        )
+        marker = d / "gate-called"
+        env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
+                   GATE_MARKER=str(marker))
+        failed_bench = subprocess.run(
+            ["bash", "-c", shell], cwd=d,
+            env=dict(env, PREFLIGHT_FAKE_CARGO_RC="17"),
+            capture_output=True, text=True,
+        )
+        ok = (failed_bench.returncode != 0
+              and "compiler bench command failed" in failed_bench.stdout
+              and "bench logs retained in " in failed_bench.stdout
+              and not marker.exists())
+        print(f"[{'PASS' if ok else 'FAIL'}] failed compiler bench is rejected before comparator")
+        if not ok:
+            failures.append(f"failed compiler bench shell control: {failed_bench.stdout + failed_bench.stderr}")
+
+        succeeded_bench = subprocess.run(
+            ["bash", "-c", shell], cwd=d,
+            env=dict(env, PREFLIGHT_FAKE_CARGO_RC="0"),
+            capture_output=True, text=True,
+        )
+        ok = succeeded_bench.returncode == 0 and marker.exists()
+        print(f"[{'PASS' if ok else 'FAIL'}] successful compiler bench invokes comparator")
+        if not ok:
+            failures.append(f"successful compiler bench shell control: {succeeded_bench.stdout + succeeded_bench.stderr}")
+
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
         base = d / "baseline.txt"
@@ -69,6 +156,38 @@ def main() -> int:
             "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter (+/- 80)\n"
             "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 14689 ns/iter (+/- 2157)\n"
         )
+        zero_current = d / "zero-current.out"
+        zero_current.write_text(bencher(0, 0, 0))
+        huge = "9" * 400 + ".0"
+        nonfinite_current = d / "nonfinite-current.out"
+        nonfinite_current.write_text(
+            f"test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: {huge} ns/iter\n"
+            + GOOD_CURRENT.split("\n", 1)[1]
+        )
+        zero_baseline = d / "zero-baseline.txt"
+        zero_baseline.write_text("small_matmul: 0.00 µs\nmedium_mlp: 6.13 µs\nlarge_network: 16.82 µs\n")
+        nonfinite_baseline = d / "nonfinite-baseline.txt"
+        nonfinite_baseline.write_text(
+            f"small_matmul: {huge} µs\nmedium_mlp: 6.13 µs\nlarge_network: 16.82 µs\n"
+        )
+        reversed_current = d / "reversed-current.out"
+        reversed_current.write_text(
+            "Benchmarking compiler_pipeline/parse_typecheck_ir/small_matmul:\n"
+            "                        time:   [3.0 µs 2.0 µs 1.0 µs]\n"
+            + "Benchmarking compiler_pipeline/parse_typecheck_ir/medium_mlp:\n"
+            "                        time:   [6.0 µs 6.1 µs 6.2 µs]\n"
+            "Benchmarking compiler_pipeline/parse_typecheck_ir/large_network:\n"
+            "                        time:   [16.0 µs 16.1 µs 16.2 µs]\n"
+        )
+        out_of_order_current = d / "out-of-order-current.out"
+        out_of_order_current.write_text(
+            "Benchmarking compiler_pipeline/parse_typecheck_ir/small_matmul:\n"
+            "                        time:   [2.0 µs 3.0 µs 2.5 µs]\n"
+            + "Benchmarking compiler_pipeline/parse_typecheck_ir/medium_mlp:\n"
+            "                        time:   [6.0 µs 6.1 µs 6.2 µs]\n"
+            "Benchmarking compiler_pipeline/parse_typecheck_ir/large_network:\n"
+            "                        time:   [16.0 µs 16.1 µs 16.2 µs]\n"
+        )
 
         cases = [
             ("empty current -> exit 4 (the vacuous-PASS hole)", run(base, empty), 4),
@@ -76,6 +195,12 @@ def main() -> int:
             ("missing baseline -> exit 4 (no default substitution)", run(d / "nope.txt", good), 4),
             ("valid full run -> exit 0 (normal PASS preserved)", run(base, good), 0),
             ("one of three frontier fixtures noisy -> nonzero (no false green)", run(base, one_noisy), 2),
+            ("zero current measurement -> exit 4 (no forged speedup)", run(base, zero_current), 4),
+            ("non-finite current measurement -> exit 4", run(base, nonfinite_current), 4),
+            ("reversed Criterion interval -> exit 4", run(base, reversed_current), 4),
+            ("out-of-order Criterion interval -> exit 4", run(base, out_of_order_current), 4),
+            ("zero reference measurement -> exit 4", run(zero_baseline, good), 4),
+            ("non-finite reference measurement -> exit 4", run(nonfinite_baseline, good), 4),
         ]
         for label, output, want in (
             ("full run reports asserted=3", run_capture(base, good).stdout, "asserted=3"),

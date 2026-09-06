@@ -549,8 +549,10 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
   fi
 
   step "bench gate (frozen low-level frontend)  [bench-gate.yml, --no-default-features]"
-  base=$(ls -t .bench-baseline-*correctness*.txt 2>/dev/null | head -1)
-  if [ -n "$base" ] && [ -f tools/bench_gate.py ]; then
+  # Pin the same committed floor as bench-gate.yml. Selecting by mtime made a
+  # later historical correctness file silently change the local gate.
+  base=.bench-baseline-2026-06-01-correctness.txt
+  if [ -f "$base" ] && [ -f tools/bench_gate.py ]; then
     # ISOLATED TARGET DIR, same reason as the mindc-check step above — and this one is
     # nastier, because `cargo bench` builds in the RELEASE profile and this invocation
     # passes --no-default-features with NO feature flags at all. Run in the shared
@@ -562,15 +564,31 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
     # which reads like a compiler regression and is really just a feature-stripped binary.
     # The gate is unaffected: bench_gate.py compares against a committed
     # .bench-baseline-*.txt file, not criterion's own on-disk history.
-    CARGO_TARGET_DIR="$PF_TARGET" cargo bench --bench compiler --no-default-features -- \
-      --warm-up-time 3 --measurement-time 8 --output-format bencher > /tmp/preflight-bench.out 2>/dev/null
-    if python3 tools/bench_gate.py --baseline "$base" --current /tmp/preflight-bench.out --threshold 0.10; then
-      echo "ok (regression <= +10% vs $base; speedups always pass)"
+    bench_tmp=""
+    if bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/mind-preflight-bench.XXXXXX"); then
+      bench_out="$bench_tmp/bench.out"
+      bench_err="$bench_tmp/bench.err"
+      bench_target="$bench_tmp/target"
+      bench_rc=0
+      CARGO_TARGET_DIR="$bench_target" cargo bench --bench compiler --no-default-features -- \
+        --warm-up-time 3 --measurement-time 8 --output-format bencher \
+        > "$bench_out" 2>"$bench_err" || bench_rc=$?
+      if [ "$bench_rc" -ne 0 ]; then
+        bad "compiler bench command failed (exit $bench_rc); the regression gate was not evaluated"
+        tail -15 "$bench_err"
+        echo "bench logs retained in $bench_tmp"
+      elif python3 tools/bench_gate.py --baseline "$base" --current "$bench_out" --threshold 0.10; then
+        echo "ok (regression <= +10% vs $base; speedups always pass)"
+        rm -rf "$bench_tmp"
+      else
+        bad "frozen-frontend bench regression >+10% vs $base — STOP & decide: revert, or re-bless baseline if a dramatic win elsewhere justifies it"
+        echo "bench logs retained in $bench_tmp"
+      fi
     else
-      bad "frozen-frontend bench regression >+10% vs $base — STOP & decide: revert, or re-bless baseline if a dramatic win elsewhere justifies it"
+      bad "could not create a private temporary directory for compiler bench output"
     fi
   else
-    echo "skip (no correctness baseline / bench_gate.py)"
+    bad "bench gate prerequisites missing: expected $base and tools/bench_gate.py"
   fi
 fi
 
