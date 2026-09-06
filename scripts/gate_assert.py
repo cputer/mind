@@ -304,7 +304,17 @@ def run_script(path: str, argv: list[str]) -> int:
         exec(code, g)
     except SystemExit as e:  # the corpus's normal exit path
         c = e.code
-        rc = 0 if c is None else (c if isinstance(c, int) else 1)
+        if c is None:
+            rc = 0
+        elif isinstance(c, int):
+            rc = c
+        else:
+            # Match Python's command-line behaviour for ``sys.exit(message)``.
+            # Gate helpers use a string-valued SystemExit to name fail-closed
+            # setup errors; swallowing it reduces a precise diagnostic to the
+            # unactionable pair ``asserted=0`` / ``exit 1``.
+            print(c, file=sys.stderr)
+            rc = 1
     except BaseException:  # noqa: BLE001 — a crashed gate is a failed gate
         import traceback
 

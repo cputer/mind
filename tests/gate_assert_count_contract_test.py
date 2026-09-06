@@ -152,6 +152,24 @@ def case_forged_line_on_stdout_fails_closed() -> None:
     check("forged count on stdout", _asserted(out), 0)
 
 
+def case_string_system_exit_preserves_its_diagnostic() -> None:
+    """Python prints a string-valued SystemExit before exiting non-zero.
+
+    Gate helpers use this form for fail-closed setup errors.  The shim must not
+    turn the named error into a bare ``asserted=0`` failure.
+    """
+    rc, out, allout = _run(
+        'raise SystemExit("FAIL[synthetic]: required artifact is stale")\n'
+    )
+    check("string SystemExit remains non-zero", rc, 1)
+    check(
+        "string SystemExit diagnostic is visible",
+        "FAIL[synthetic]: required artifact is stale" in allout,
+        True,
+    )
+    check("string SystemExit verdict is counted", _asserted(out), 1)
+
+
 def case_runner_ignores_a_forged_count() -> None:
     """End to end: run_gate.py must reject the forged gate, not report 99."""
     with tempfile.TemporaryDirectory() as td:

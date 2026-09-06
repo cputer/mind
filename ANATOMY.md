@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1548 | **Est. tokens:** ~3015536
-**Generated:** 2026-09-06 14:33 UTC
+**Files:** 1548 | **Est. tokens:** ~3016442
+**Generated:** 2026-09-06 15:00 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 167 | ~429417 |
+| `examples/mindc_mind/` | 167 | ~429571 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21838 |
-| `scripts/` | 29 | ~110635 |
+| `scripts/` | 29 | ~110733 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -93,7 +93,7 @@
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
-| `src/build/` | 8 | ~25068 |
+| `src/build/` | 8 | ~25480 |
 | `src/build/cache/` | 3 | ~3150 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10417 |
@@ -127,7 +127,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 363 | ~678163 |
+| `tests/` | 363 | ~678405 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -670,7 +670,7 @@
 - `oracle_parity_lint.py` (~4516 tok, huge)
 - `param_types_smoke.py` (~1273 tok, large)
 - `ref_netverify.py` (~1473 tok, large) — # Canonical independent net-verify harness for i64 references in the native-ELF backend.
-- `rh_f64_aggregate_canary_smoke.py` (~1443 tok, large) — RH f64-aggregate surface canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
+- `rh_f64_aggregate_canary_smoke.py` (~1597 tok, huge) — RH f64-aggregate surface canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
 - `ri_d1_frozen_profile_gate.py` (~3278 tok, huge) — RI-D1 readiness gate (task #313): prove `mindc build --backend native` is READY to be
 - `self_host_andor_precedence_smoke.py` (~1680 tok, huge) — Front-end PARITY battery for `&&` / `||` precedence + short-circuit.
 - `self_host_andor_smoke.py` (~2142 tok, huge) — Permanent battery for the self-host `&&` / `||` short-circuit operators.
@@ -894,7 +894,7 @@
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
 - `exec_semantics_gate.sh` (~10099 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
-- `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
+- `gate_assert.py` (~3627 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
 - `install.sh` (~1054 tok, large) — MIND compiler (mindc) installer — downloads a pre-built binary from the
@@ -1027,9 +1027,9 @@
 
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~9924 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~9861 tok, huge) — Copyright 2025 STARGA Inc.
 - `project_transaction.rs` (~288 tok, medium) — Copyright 2026 STARGA Inc.
-- `source_key.rs` (~2744 tok, huge) — Copyright 2025 STARGA Inc.
+- `source_key.rs` (~3219 tok, huge) — Copyright 2025 STARGA Inc.
 - `source_snapshot_tests.rs` (~1337 tok, large) — Copyright 2025-2026 STARGA Inc.
 ### `src/cache/`
 
@@ -1363,7 +1363,7 @@
 
 - `compound_assign.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
 - `cond_truthiness.rs` (~840 tok, large) — Copyright 2025 STARGA Inc.
-- `conformance.rs` (~1407 tok, large) — Exit status alone cannot distinguish "everything passed" from "nothing
+- `conformance.rs` (~1493 tok, large) — Used only by the fail-closed test below, which is itself gated on the GPU
 ### `tests/conformance/cpu_baseline/`
 
 - `autodiff_pairwise.runtime` (~1 tok, tiny) — 0
@@ -1579,7 +1579,7 @@
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `g2_differential_mlir.rs` (~10698 tok, huge) — Copyright 2025 STARGA Inc.
-- `gate_assert_count_contract_test.py` (~6964 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
+- `gate_assert_count_contract_test.py` (~7131 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.
@@ -2047,7 +2047,7 @@
 - `std_surface_arena.rs` (~1346 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_array_literals.rs` (~2013 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_async.rs` (~4323 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_bitwise_binops.rs` (~2391 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_bitwise_binops.rs` (~2380 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_break_continue.rs` (~1335 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_call_lowering.rs` (~834 tok, large) — Copyright 2025 STARGA Inc.
@@ -2060,8 +2060,8 @@
 - `std_surface_fndef_lowering.rs` (~1484 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_http.rs` (~4055 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_i32_intrinsics.rs` (~824 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_if_statement.rs` (~3414 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_intrinsics.rs` (~2438 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_if_statement.rs` (~3422 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_intrinsics.rs` (~2430 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_ansi.rs` (~793 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_io_canon.rs` (~4907 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_module.rs` (~1540 tok, huge) — Copyright 2025 STARGA Inc.

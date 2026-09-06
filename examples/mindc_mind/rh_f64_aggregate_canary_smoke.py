@@ -58,10 +58,10 @@ def _run(p: pathlib.Path) -> int:
     return subprocess.run([str(p)], timeout=30).returncode
 
 
-def _mlir_leg(tmp: pathlib.Path) -> bool:
+def _mlir_leg(tmp: pathlib.Path, canary: pathlib.Path) -> bool:
     so = tmp / "canary_mlir.so"
     r = subprocess.run(
-        [MINDC, "build", str(_CANARY), "--release", "--emit=cdylib", "--out", str(so)],
+        [MINDC, "build", str(canary), "--release", "--emit=cdylib", "--out", str(so)],
         capture_output=True, text=True, timeout=180,
     )
     if not so.exists() or so.stat().st_size < 256:
@@ -84,7 +84,7 @@ def _mlir_leg(tmp: pathlib.Path) -> bool:
     return ok
 
 
-def _native_leg(tmp: pathlib.Path) -> bool:
+def _native_leg(tmp: pathlib.Path, canary: pathlib.Path) -> bool:
     elf = os.environ.get(
         "MINDC_NATIVE_ELF",
         str(_REPO / "examples" / "mindc_mind" / "testdata" / "selfhost_loop" / "stage1.elf"),
@@ -97,7 +97,7 @@ def _native_leg(tmp: pathlib.Path) -> bool:
     env.setdefault("MINDC_STD_DIR", str(_REPO / "std"))
     out = tmp / "canary_native.elf"
     r = subprocess.run(
-        [MINDC, "build", str(_CANARY), "--backend", "native", "--out", str(out)],
+        [MINDC, "build", str(canary), "--backend", "native", "--out", str(out)],
         capture_output=True, text=True, timeout=180, env=env,
     )
     if _is_elf(out):
@@ -123,8 +123,16 @@ def main() -> int:
         return 0
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
-        mlir_ok = _mlir_leg(tmp)
-        native_ok = _native_leg(tmp)
+        # An explicit build of the repository-owned fixture is governed by the
+        # repository Mind.toml.  The project adapter temporarily rewrites that
+        # manifest's entry and restores its bytes, which advances its mtime and
+        # makes the already-built self-host oracle look stale to every later
+        # gate.  Compile an exact byte copy as an isolated one-file project so
+        # this canary cannot mutate a compile input belonging to another gate.
+        canary = tmp / _CANARY.name
+        canary.write_bytes(_CANARY.read_bytes())
+        mlir_ok = _mlir_leg(tmp, canary)
+        native_ok = _native_leg(tmp, canary)
     if mlir_ok and native_ok:
         print("ALL PASS  RH f64-aggregate surface: MLIR path bit-exact (37); native "
               "leg accounted for (fail-closed until store+array-param+reseed land).")
