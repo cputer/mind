@@ -1007,34 +1007,13 @@ pub fn verify_module(module: &IRModule) -> Result<(), IrVerifyError> {
                 return Err(IrVerifyError::DuplicateDefinition(dst));
             }
         }
-        // A TOP-LEVEL control-flow node also defines its region-EXIT / MERGE ids
-        // — `While.exit_ids` (the `^while_after` block args) and `If.merges[i].0`
-        // (the `^if_after` block args) — which `instruction_dst` does NOT report
-        // (`ir/mod.rs`: `While => None`, `If => Some(dst)` only). Those ids are
-        // synthesized at region exit, are not produced by any instruction inside
-        // the region body, and are exactly what the lowering rebinds an outer
-        // `mut` to for code AFTER the region. Without exposing them, ordinary
-        // script-style top-level MIND — `let mut r = 0; if c { r = … } r` or the
-        // `while` analog — had its trailing `Output` read a merge/exit id that
-        // was never inserted here, and `verify_module` rejected a well-formed
-        // module with E3001 (`--emit cdylib`: hard failure, no artifact;
-        // `--emit binary`: a silent runtime-JIT-fallback stub that exits 0
-        // without ever computing the value).
-        //
-        // The same gap also mis-fired on the UNTRUSTED-ARTIFACT surface: mic@3
-        // has serialised `exit_ids` / `merges` since wire version `0x02`, and
-        // `mindc verify` (src/bin/mindc.rs) runs `check_ssa_well_formed` AND
-        // `verify_module`, asserting in a comment that "the two verifiers agree
-        // on the SSA verdict". They did not — a decoded artifact carrying a
-        // top-level `While`/`If` passed the consumer check and then failed the
-        // in-pipeline one, so `mindc verify` reported `ssa_valid: NO` (exit 1)
-        // on a well-formed third-party artifact.
-        //
-        // Delegate to `expose_region_definitions` — the SINGLE shared source of
-        // truth already used by `check_ssa_stream` (consumer) and
-        // `validate_ssa_stream` (in-pipeline, one region deeper), whose doc
-        // comment has always claimed `verify_module` uses it too. Now it does,
-        // so the three walks can never diverge on control-flow exposure.
+        // Top-level control flow also exposes region-exit/merge IDs: While's
+        // exit_ids and If's merge destinations, beyond instruction_dst. These
+        // are the post-region bindings used by subsequent instructions. The
+        // same shared exposure helper serves consumer and pipeline verification,
+        // so decoded mic@3 and freshly lowered IR agree on their visibility.
+        // Without it, valid top-level mutation fails E3001 at the trailing use.
+        // Body-internal values remain scoped to the region, never exposed here.
         //
         // NON-WEAKENING: every id the helper exposes that `instruction_dst` did
         // NOT already account for is inserted under the SAME single-assignment
@@ -1045,15 +1024,23 @@ pub fn verify_module(module: &IRModule) -> Result<(), IrVerifyError> {
         // re-bound. (Only the node's own `dst` is skipped — it was just inserted,
         // duplicate-checked, above; `Region.result` reaches us the same way.)
         // So this adds definitions AND a rejection; it removes neither.
-        let node_dst = instruction_dst(instr);
-        let mut exposed: BTreeSet<ValueId> = BTreeSet::new();
-        expose_region_definitions(instr, &mut exposed);
-        for exposed_id in exposed {
-            if Some(exposed_id) == node_dst {
-                continue;
-            }
-            if !defined.insert(exposed_id) {
-                return Err(IrVerifyError::DuplicateDefinition(exposed_id));
+        // Straight-line instructions expose only the dst already checked above.
+        // Avoid allocating a second tree just to insert and discard that id.
+        #[cfg(feature = "std-surface")]
+        if matches!(
+            instr,
+            Instr::If { .. } | Instr::While { .. } | Instr::Region { .. }
+        ) {
+            let node_dst = instruction_dst(instr);
+            let mut exposed: BTreeSet<ValueId> = BTreeSet::new();
+            expose_region_definitions(instr, &mut exposed);
+            for exposed_id in exposed {
+                if Some(exposed_id) == node_dst {
+                    continue;
+                }
+                if !defined.insert(exposed_id) {
+                    return Err(IrVerifyError::DuplicateDefinition(exposed_id));
+                }
             }
         }
         // `next_id` must cover EVERY id this instruction contributes to the

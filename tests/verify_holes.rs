@@ -170,6 +170,29 @@ fn while_valid_cond_passes() {
 
 #[cfg(feature = "std-surface")]
 #[test]
+fn top_level_while_exit_is_visible_after_loop() {
+    let mut m = valid_while_module();
+    m.instrs[2] = Instr::Output(ValueId(3));
+    assert!(verify_module(&m).is_ok());
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn top_level_while_exit_cannot_alias_a_live_value() {
+    let mut m = valid_while_module();
+    if let Instr::While { exit_ids, .. } = &mut m.instrs[1] {
+        exit_ids[0] = ValueId(0);
+    } else {
+        panic!("expected a top-level loop");
+    }
+    assert!(matches!(
+        verify_module(&m),
+        Err(IrVerifyError::DuplicateDefinition(ValueId(0)))
+    ));
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
 fn while_dangling_cond_rejected() {
     let mut m = valid_while_module();
     // Corrupt the While cond_id to a value defined nowhere in the loop namespace.
@@ -209,6 +232,41 @@ fn if_valid_passes() {
         check_ssa_well_formed(&valid_if_module()).is_ok(),
         "an If with defined cond/then/else results must pass"
     );
+}
+
+#[cfg(feature = "std-surface")]
+fn top_level_if_with_merge() -> IRModule {
+    let mut m = valid_if_module();
+    m.instrs.insert(0, Instr::ConstI64(ValueId(4), 0));
+    if let Instr::If { merges, .. } = &mut m.instrs[1] {
+        merges.push((ValueId(5), ValueId(1), ValueId(2)));
+    } else {
+        panic!("expected a top-level conditional");
+    }
+    m.instrs[2] = Instr::Output(ValueId(5));
+    m.next_id = 6;
+    m
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn top_level_if_merge_is_visible_after_conditional() {
+    assert!(verify_module(&top_level_if_with_merge()).is_ok());
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn top_level_if_merge_cannot_alias_a_live_value() {
+    let mut m = top_level_if_with_merge();
+    if let Instr::If { merges, .. } = &mut m.instrs[1] {
+        merges[0].0 = ValueId(4);
+    } else {
+        panic!("expected a top-level conditional");
+    }
+    assert!(matches!(
+        verify_module(&m),
+        Err(IrVerifyError::DuplicateDefinition(ValueId(4)))
+    ));
 }
 
 #[cfg(feature = "std-surface")]
