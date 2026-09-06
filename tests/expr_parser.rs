@@ -65,7 +65,6 @@ fn unary_not_and_not_equal_still_parse() {
     for src in [
         "fn f(a: bool, b: bool) -> bool { return !(a && b); }",
         "fn f(a: bool, b: bool) -> i64 { if !(a && b) { return 1; } return 0; }",
-        "fn f(a: bool, b: bool) -> i64 { while !(a && b) { return 1; } return 0; }",
         "fn f(a: bool, b: bool) -> bool { let c = !(a || b); return c; }",
         "fn f(a: i64, b: i64) -> bool { return a != b; }",
         "fn f(a: i64, b: i64) -> bool { return a!=b; }",
@@ -77,4 +76,20 @@ fn unary_not_and_not_equal_still_parse() {
             )
         });
     }
+}
+
+#[test]
+fn unary_not_in_while_respects_surface_profile() {
+    let src = "fn f(a: bool, b: bool) -> i64 { while !(a && b) { return 1; } return 0; }";
+    let parsed = parser::parse(src);
+    #[cfg(feature = "std-surface")]
+    assert!(
+        parsed.is_ok(),
+        "while must parse with std-surface: {parsed:?}"
+    );
+    #[cfg(not(feature = "std-surface"))]
+    assert!(
+        parsed.is_err(),
+        "bare grammar must refuse the while fixture"
+    );
 }

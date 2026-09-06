@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1521 | **Est. tokens:** ~2982028
-**Generated:** 2026-09-06 09:24 UTC
+**Files:** 1521 | **Est. tokens:** ~2982123
+**Generated:** 2026-09-06 09:39 UTC
 
 ## Token Budget Guide
 
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 357 | ~666724 |
+| `tests/` | 357 | ~666819 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1496,7 +1496,7 @@
 - `enum_soundness.rs` (~1411 tok, large) — Copyright 2025 STARGA Inc.
 - `enum_struct_variant_run.rs` (~1280 tok, large) — Copyright 2025 STARGA Inc.
 - `exec_basic.rs` (~785 tok, large) — Copyright 2025 STARGA Inc.
-- `expr_parser.rs` (~821 tok, large) — Copyright 2025 STARGA Inc.
+- `expr_parser.rs` (~916 tok, large) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_a.rs` (~2678 tok, huge) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_b.rs` (~5956 tok, huge) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_c.rs` (~3413 tok, huge) — Copyright 2025 STARGA Inc.
