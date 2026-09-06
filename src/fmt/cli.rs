@@ -457,6 +457,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn malformed_source_is_not_written() {
+        let dir = tempfile::tempdir().expect("temporary fixture directory");
+        let path = dir.path().join("broken.mind");
+        let source = b"fn broken() { let content = format!(\"{}\", 1); }\n";
+        fs::write(&path, source).expect("write fixture");
+
+        let result = process_file(&path, false, false, &MindcraftFormatConfig::default());
+
+        assert!(result.is_err(), "unsupported syntax must fail closed");
+        assert_eq!(fs::read(&path).expect("read fixture"), source);
+    }
+
+    #[test]
     fn diff_identical_is_empty() {
         assert_eq!(unified_diff_str("a\nb\nc\n", "a\nb\nc\n", 3), "");
     }

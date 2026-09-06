@@ -32,3 +32,49 @@ fn division_and_zero_guard() {
     let module = parser::parse("1 / 0").unwrap();
     assert!(eval::eval_first_expr(&module).is_err());
 }
+
+/// A `!` welded to an identifier is a macro invocation, and MIND has no macros.
+///
+/// Before this was rejected the front-end RECOVERED the shape — `format` became
+/// a bare expression statement and `!("{}", 1)` a second, unary-not statement,
+/// because MIND statements need no separator. Every consumer then saw a program
+/// nobody wrote; `mindc fmt` rewrote such a file in place and exited 0.
+#[test]
+fn macro_invocation_is_rejected_not_recovered() {
+    for src in [
+        "fn f() { let c = format!(\"{}\", 1); }",
+        "fn f() { let c = vec![1, 2]; }",
+        "fn f() { let c = m!{1}; }",
+        "fn f() { let c = std.fmt.format!(\"{}\", 1); }",
+    ] {
+        let errs = parser::parse(src).expect_err(&format!("must not recover: {src:?}"));
+        assert!(
+            errs.iter().any(|e| e.message.contains("macro invocation")),
+            "diagnostic must name the construct, got {:?} for {src:?}",
+            errs.iter().map(|e| e.message.clone()).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// The rule is adjacency and nothing else. `!` is a prefix operator binding at
+/// atom precedence, so `!( … )` is the ONLY spelling for negating a compound
+/// expression — rejecting it would break ordinary source. Keywords never reach
+/// the identifier arm, and `!=` is the two-byte comparison operator.
+#[test]
+fn unary_not_and_not_equal_still_parse() {
+    for src in [
+        "fn f(a: bool, b: bool) -> bool { return !(a && b); }",
+        "fn f(a: bool, b: bool) -> i64 { if !(a && b) { return 1; } return 0; }",
+        "fn f(a: bool, b: bool) -> i64 { while !(a && b) { return 1; } return 0; }",
+        "fn f(a: bool, b: bool) -> bool { let c = !(a || b); return c; }",
+        "fn f(a: i64, b: i64) -> bool { return a != b; }",
+        "fn f(a: i64, b: i64) -> bool { return a!=b; }",
+    ] {
+        parser::parse(src).unwrap_or_else(|e| {
+            panic!(
+                "valid source must parse: {src:?}: {:?}",
+                e.iter().map(|x| x.message.clone()).collect::<Vec<_>>()
+            )
+        });
+    }
+}

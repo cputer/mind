@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1520 | **Est. tokens:** ~2965216
-**Generated:** 2026-09-06 08:38 UTC
+**Files:** 1520 | **Est. tokens:** ~2967581
+**Generated:** 2026-09-06 08:47 UTC
 
 ## Token Budget Guide
 
@@ -104,7 +104,7 @@
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
-| `src/fmt/` | 3 | ~21737 |
+| `src/fmt/` | 3 | ~23588 |
 | `src/ir/` | 6 | ~78361 |
 | `src/ir/compact/` | 3 | ~15292 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 356 | ~665080 |
+| `tests/` | 356 | ~665594 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1092,8 +1092,8 @@
 - `sys.rs` (~3348 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/fmt/`
 
-- `cli.rs` (~3873 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~594 tok, large) — Copyright 2025 STARGA Inc.
+- `cli.rs` (~4013 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2305 tok, huge) — Copyright 2025 STARGA Inc.
 - `printer.rs` (~17270 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
@@ -1495,7 +1495,7 @@
 - `enum_soundness.rs` (~1411 tok, large) — Copyright 2025 STARGA Inc.
 - `enum_struct_variant_run.rs` (~1280 tok, large) — Copyright 2025 STARGA Inc.
 - `exec_basic.rs` (~785 tok, large) — Copyright 2025 STARGA Inc.
-- `expr_parser.rs` (~307 tok, medium) — Copyright 2025 STARGA Inc.
+- `expr_parser.rs` (~821 tok, large) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_a.rs` (~2678 tok, huge) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_b.rs` (~5956 tok, huge) — Copyright 2025 STARGA Inc.
 - `extern_c_phase_c.rs` (~3413 tok, huge) — Copyright 2025 STARGA Inc.

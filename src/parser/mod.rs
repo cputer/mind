@@ -4506,6 +4506,37 @@ impl<'a> P<'a> {
         let ident = self
             .dotted_ident()
             .ok_or_else(|| self.unexpected_prefix_err())?;
+        // A `!` welded to the identifier is a macro invocation (`format!(…)`,
+        // `vec![…]`), whatever delimiter follows. MIND has no macros, and no MIND
+        // expression spells `name!` — the only `!` that may legally touch an
+        // identifier on its right is the two-byte `!=` operator, excluded below.
+        //
+        // Without this, the permissive front-end RECOVERS the shape instead of
+        // rejecting it: `name` parses as a bare expression statement, the
+        // remaining `!(…)` as a second statement (unary-not), because MIND
+        // statements need no separator. Every consumer then sees a program the
+        // author did not write — `mindc fmt` in particular rewrote
+        // `let c = format!("{}", 1);` to `let c = format;` + `!("{}", 1)` and
+        // exited 0, shrinking the file while reporting success.
+        //
+        // The test is deliberately ADJACENCY-only, and only on this arm:
+        //
+        // - `!` after whitespace is genuine unary-not at atom precedence, which
+        //   is the REQUIRED spelling for negating a compound expression
+        //   (`return !(a && b)`); rejecting it would break ordinary source.
+        // - Keywords never reach here — `return` / `if` / `while` / `assert` /
+        //   `print` are consumed by their own arms, so `assert !{ … }` stays a
+        //   keyword applied to a negated block.
+        //
+        // The residue is that a mistyped `assert!(x)` / `print!(x)` still parses
+        // as keyword-plus-unary-not. Closing that means requiring statement
+        // separators, which is a grammar change across every `.mind` source, not
+        // a fix to this arm.
+        if self.b.get(self.pos) == Some(&b'!') && self.b.get(self.pos + 1) != Some(&b'=') {
+            return Err(self.err(format!(
+                "macro invocation `{ident}!` is not supported; MIND has no macros"
+            )));
+        }
         self.skip_ws();
         // `map<K,V>.new(args)` / `set<T>.new()` / `array<T>.new()` — a generic-type
         // STATIC CONSTRUCTOR in expression position. Gated on the exact collection
