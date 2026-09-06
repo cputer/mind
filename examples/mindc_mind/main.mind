@@ -1590,6 +1590,15 @@ pub fn ast_new_index(span_lo: i64, span_hi: i64, base: i64, idx: i64) -> i64 {
     n
 }
 
+// Synthetic payload-enum word read. It keeps the ordinary index shape for the
+// shared parser/evaluator, while child2 marks the node for the native mic@3
+// pre-fold that mirrors the oracle's boxed-record `__mind_load_i64` lowering.
+pub fn ast_new_payload_word(span_lo: i64, span_hi: i64, base: i64, word: i64) -> i64 {
+    let n: i64 = ast_new_index(span_lo, span_hi, base, mk_syn_intlit(word));
+    __mind_store_i64(n + 40, 1);
+    n
+}
+
 // `BASE[IDX] = RHS ;` index-write statement node.
 pub fn ast_new_index_assign(span_lo: i64, span_hi: i64, base: i64, idx: i64, value: i64) -> i64 {
     let n: i64 = ast_alloc();
@@ -3240,18 +3249,18 @@ pub fn for_make_incr(var_lo: i64, var_hi: i64) -> i64 {
 }
 
 // Build `let VAR = CTR` — the per-iteration element copy for the HYGIENIC range-
-// for desugar. VAR (var_lo,var_hi) is the user's loop variable; CTR (var_lo,ctr_hi)
-// is the hidden counter, which spans the header text "VAR in LO..HI" (containing
+// for desugar. VAR (var_lo,var_hi) is the user's loop variable; CTR (ctr_lo,ctr_hi)
+// is the hidden counter, which spans the full header text "for VAR in LO..HI" (containing
 // spaces + `..` dots), so its bytes can never equal a user identifier. The copy is
 // a body-local `let`, so nb_emit_while's while-body let-env scoping drops it at loop
 // exit: VAR cannot escape to clobber a shadowed outer binding, and a body write to
 // VAR hits THIS copy, never the counter (mirrors the Rust For-arm `let mut VAR =
 // __for_i` element bind, 450875ed). The type leaf reuses VAR's span (classifies as
 // width-64 INT / no struct, exactly like an explicit `: i64`).
-pub fn for_make_var_copy(var_lo: i64, var_hi: i64, ctr_hi: i64) -> i64 {
+pub fn for_make_var_copy(var_lo: i64, var_hi: i64, ctr_lo: i64, ctr_hi: i64) -> i64 {
     let vname: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
     let vty: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
-    let ctr_ref: i64 = ast_new_leaf(ast_ident(), var_lo, ctr_hi);
+    let ctr_ref: i64 = ast_new_leaf(ast_ident(), ctr_lo, ctr_hi);
     ast_new_let(var_lo, var_hi, vname, vty, ctr_ref)
 }
 
@@ -3417,7 +3426,26 @@ pub fn for_if_assigns_var(node: i64, buf: i64, var_lo: i64, var_hi: i64) -> i64 
 //       trailing increment, and an increment placed INSIDE the continue's if-branch
 //       does not carry out of the branch in this while model (verified: it hangs).
 //       Form (B) sidesteps that by keeping the increment top-level and unconditional.
-pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
+pub fn for_acc_declares_var(acc: Vec, buf: i64, var_lo: i64, var_hi: i64, i: i64) -> i64 {
+    if i >= vec_len(acc) {
+        return 0;
+    }
+    let stmt: i64 = __mind_load_i64(vec_addr(acc) + i * 8);
+    if ast_kind(stmt) == ast_let() {
+        // A prior range-for's parser-generated counter/binder let starts at its
+        // source `for`; it is not an authored outer binding. Counting it would
+        // spuriously hygienize a later fresh loop that reuses the same binder.
+        if span_is_for_counter(buf, ast_span_lo(stmt), ast_span_hi(stmt)) == 0 {
+            let name: i64 = ast_child0(stmt);
+            if span_bytes_equal(buf, ast_span_lo(name), ast_span_hi(name), var_lo, var_hi) == 1 {
+                return 1;
+            }
+        }
+    }
+    for_acc_declares_var(acc, buf, var_lo, var_hi, i + 1)
+}
+
+pub fn parse_for(toks: Vec, pos: i64, buf: i64, acc: Vec, out: i64) -> i64 {
     let kw_lo: i64 = tok_lo(toks, pos);
     let var_lo: i64 = tok_lo(toks, pos + 1);
     let var_hi: i64 = tok_hi(toks, pos + 1);
@@ -3443,6 +3471,7 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
     let has_cont: i64 = for_has_own_continue(sa, sl, 0);
     let lo_lo: i64 = ast_span_lo(pr_node(lo_res));
     let lo_hi: i64 = ast_span_hi(pr_node(lo_res));
+    let hi_lo: i64 = ast_span_lo(pr_node(hi_res));
     let hi_hi: i64 = ast_span_hi(pr_node(hi_res));
     // Shared i64 type classifier (VAR's span "i" -> width-64 INT / no struct, exactly
     // like an explicit `: i64`; nb_width_of_ann / nb_let_descriptor read the span only
@@ -3458,8 +3487,9 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
     // exactly as the oracle emits it (no hidden counter, no pre-hoisted bound).
     // This is byte-identical to `mindc --emit-mic3`. It is taken ONLY for the
     // shapes the oracle treats as non-hygienic here: no own-`continue`, BODY does
-    // not write VAR, and HI is a plain integer literal (so END cannot read a
-    // body-mutated value nor be a call — the oracle's other hygiene triggers).
+    // not write VAR, and HI is either a plain integer literal or a distinct
+    // identifier the body does not write. Those bounds cannot be calls, and an
+    // identifier that the body leaves alone has the same value on every test.
     // Every other shape falls through to the hidden-counter form below, which the
     // nfn driver refuses (fail-CLOSED — never wrong bytes vs the oracle's
     // hygienic emit, which the self-host cannot yet reproduce byte-for-byte).
@@ -3469,27 +3499,48 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
         0
     };
     let body_writes: i64 = for_body_assigns_var(sa, sl, buf, var_lo, var_hi, 0);
+    let end_is_stable_ident: i64 = if ast_kind(pr_node(hi_res)) == ast_ident() {
+        if span_bytes_equal(buf, var_lo, var_hi, hi_lo, hi_hi) == 0 {
+            if for_body_assigns_var(sa, sl, buf, hi_lo, hi_hi, 0) == 0 {
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    let end_is_inline: i64 = end_is_lit + end_is_stable_ident;
+    // A preceding same-block let makes the range binder hygienic in the Rust
+    // lowerer even when END is otherwise inline-safe. The parser already has
+    // those statements in `acc`; keep the byte-neutral form off that path so
+    // the body-local binder cannot overwrite the outer binding at loop exit.
+    let shadows_outer: i64 = for_acc_declares_var(acc, buf, var_lo, var_hi, 0);
     if has_cont == 0 {
         if body_writes == 0 {
-            if end_is_lit == 1 {
-                let vname: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
-                let let_var: i64 = ast_new_let(kw_lo, lo_hi, vname, ty, pr_node(lo_res));
-                let wb0: Vec = for_append_stmts(sa, sl, 0, vec_new());
-                let wb1: Vec = vec_push(wb0, for_make_incr(var_lo, var_hi));
-                let wbody: i64 = ast_new_block(body_open, close_hi, vec_addr(wb1), vec_len(wb1));
-                let vref: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
-                let cond: i64 = ast_new_binop(var_lo, var_hi, vref, pr_node(hi_res), op_lt());
-                let while_bn: i64 = ast_new_while(kw_lo, close_hi, cond, wbody);
-                __mind_store_i64(out + 0, let_var);
-                __mind_store_i64(out + 8, while_bn);
-                __mind_store_i64(out + 16, 0);
-                return after_close;
+            if end_is_inline == 1 {
+                if shadows_outer == 0 {
+                    let vname: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
+                    let let_var: i64 = ast_new_let(kw_lo, lo_hi, vname, ty, pr_node(lo_res));
+                    let wb0: Vec = for_append_stmts(sa, sl, 0, vec_new());
+                    let wb1: Vec = vec_push(wb0, for_make_incr(var_lo, var_hi));
+                    let wbody: i64 = ast_new_block(body_open, close_hi, vec_addr(wb1), vec_len(wb1));
+                    let vref: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
+                    let cond: i64 = ast_new_binop(var_lo, var_hi, vref, pr_node(hi_res), op_lt());
+                    let while_bn: i64 = ast_new_while(kw_lo, close_hi, cond, wbody);
+                    __mind_store_i64(out + 0, let_var);
+                    __mind_store_i64(out + 8, while_bn);
+                    __mind_store_i64(out + 16, 0);
+                    return after_close;
+                }
             }
         }
     }
 
     // ---- Byte-neutral continue form (oracle !needs_hygiene WITH own-continue) --
-    // Same gate as the fast path (no body write to VAR, literal END) but WITH an
+    // Same gate as the fast path (no body write to VAR, inline-safe END) but WITH an
     // own-level `continue`: the oracle KEEPS the byte-neutral desugar and splices
     // `VAR = VAR + 1` before every own-level continue (inject_step_before_continue,
     // lower.rs 3817), then appends the tail increment — NO hidden counter.
@@ -3498,19 +3549,21 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
     // s = s + i; i = i + 1; }` (strtab has no `__for_i_N`).
     if has_cont == 1 {
         if body_writes == 0 {
-            if end_is_lit == 1 {
-                let vname_c: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
-                let let_var_c: i64 = ast_new_let(kw_lo, lo_hi, vname_c, ty, pr_node(lo_res));
-                let inj: Vec = for_inject_step(sa, sl, 0, vec_new(), var_lo, var_hi);
-                let wb1c: Vec = vec_push(inj, for_make_incr(var_lo, var_hi));
-                let wbody_c: i64 = ast_new_block(body_open, close_hi, vec_addr(wb1c), vec_len(wb1c));
-                let vref_c: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
-                let cond_c: i64 = ast_new_binop(var_lo, var_hi, vref_c, pr_node(hi_res), op_lt());
-                let while_cn: i64 = ast_new_while(kw_lo, close_hi, cond_c, wbody_c);
-                __mind_store_i64(out + 0, let_var_c);
-                __mind_store_i64(out + 8, while_cn);
-                __mind_store_i64(out + 16, 0);
-                return after_close;
+            if end_is_inline == 1 {
+                if shadows_outer == 0 {
+                    let vname_c: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
+                    let let_var_c: i64 = ast_new_let(kw_lo, lo_hi, vname_c, ty, pr_node(lo_res));
+                    let inj: Vec = for_inject_step(sa, sl, 0, vec_new(), var_lo, var_hi);
+                    let wb1c: Vec = vec_push(inj, for_make_incr(var_lo, var_hi));
+                    let wbody_c: i64 = ast_new_block(body_open, close_hi, vec_addr(wb1c), vec_len(wb1c));
+                    let vref_c: i64 = ast_new_leaf(ast_ident(), var_lo, var_hi);
+                    let cond_c: i64 = ast_new_binop(var_lo, var_hi, vref_c, pr_node(hi_res), op_lt());
+                    let while_cn: i64 = ast_new_while(kw_lo, close_hi, cond_c, wbody_c);
+                    __mind_store_i64(out + 0, let_var_c);
+                    __mind_store_i64(out + 8, while_cn);
+                    __mind_store_i64(out + 16, 0);
+                    return after_close;
+                }
             }
         }
     }
@@ -3533,16 +3586,16 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
         // semantics — a `continue` jumps to the header, which re-runs the cond then
         // the top increment, so the counter still advances).
         // let CTR = LO - 1
-        let ctr_name_b: i64 = ast_new_leaf(ast_ident(), var_lo, hi_hi);
+        let ctr_name_b: i64 = ast_new_leaf(ast_ident(), kw_lo, hi_hi);
         let init_b: i64 = ast_new_binop(var_lo, lo_hi, pr_node(lo_res), mk_syn_intlit(1), op_sub());
         let let_ctr_b: i64 = ast_new_let(kw_lo, lo_hi, ctr_name_b, ty, init_b);
         // body = [ CTR = CTR + 1 ; let VAR = CTR ; BODY... ]
-        let tb0: Vec = vec_push(vec_new(), for_make_incr(var_lo, hi_hi));
-        let tb1: Vec = vec_push(tb0, for_make_var_copy(var_lo, var_hi, hi_hi));
+        let tb0: Vec = vec_push(vec_new(), for_make_incr(kw_lo, hi_hi));
+        let tb1: Vec = vec_push(tb0, for_make_var_copy(var_lo, var_hi, kw_lo, hi_hi));
         let tb2: Vec = for_append_stmts(sa, sl, 0, tb1);
         let wbody_b: i64 = ast_new_block(body_open, close_hi, vec_addr(tb2), vec_len(tb2));
         // cond = (CTR + 1) < BND
-        let cplus: i64 = ast_new_binop(var_lo, hi_hi, ast_new_leaf(ast_ident(), var_lo, hi_hi), mk_syn_intlit(1), op_add());
+        let cplus: i64 = ast_new_binop(kw_lo, hi_hi, ast_new_leaf(ast_ident(), kw_lo, hi_hi), mk_syn_intlit(1), op_add());
         let cond_b: i64 = ast_new_binop(var_lo, hi_hi, cplus, ast_new_leaf(ast_ident(), lo_lo, hi_hi), op_lt());
         let while_b: i64 = ast_new_while(kw_lo, close_hi, cond_b, wbody_b);
         __mind_store_i64(out + 0, let_ctr_b);
@@ -3553,15 +3606,15 @@ pub fn parse_for(toks: Vec, pos: i64, buf: i64, out: i64) -> i64 {
 
     // Form (A): BOTTOM-increment on the hidden counter.
     // let CTR = LO
-    let ctr_name_a: i64 = ast_new_leaf(ast_ident(), var_lo, hi_hi);
+    let ctr_name_a: i64 = ast_new_leaf(ast_ident(), kw_lo, hi_hi);
     let let_ctr_a: i64 = ast_new_let(kw_lo, lo_hi, ctr_name_a, ty, pr_node(lo_res));
     // body = [ let VAR = CTR ; BODY... ; CTR = CTR + 1 ]
-    let ab0: Vec = vec_push(vec_new(), for_make_var_copy(var_lo, var_hi, hi_hi));
+    let ab0: Vec = vec_push(vec_new(), for_make_var_copy(var_lo, var_hi, kw_lo, hi_hi));
     let ab1: Vec = for_append_stmts(sa, sl, 0, ab0);
-    let ab2: Vec = vec_push(ab1, for_make_incr(var_lo, hi_hi));
+    let ab2: Vec = vec_push(ab1, for_make_incr(kw_lo, hi_hi));
     let wbody_a: i64 = ast_new_block(body_open, close_hi, vec_addr(ab2), vec_len(ab2));
     // cond = CTR < BND
-    let cond_a: i64 = ast_new_binop(var_lo, hi_hi, ast_new_leaf(ast_ident(), var_lo, hi_hi), ast_new_leaf(ast_ident(), lo_lo, hi_hi), op_lt());
+    let cond_a: i64 = ast_new_binop(kw_lo, hi_hi, ast_new_leaf(ast_ident(), kw_lo, hi_hi), ast_new_leaf(ast_ident(), lo_lo, hi_hi), op_lt());
     let while_a: i64 = ast_new_while(kw_lo, close_hi, cond_a, wbody_a);
     __mind_store_i64(out + 0, let_ctr_a);
     __mind_store_i64(out + 8, let_bnd);
@@ -4016,7 +4069,7 @@ pub fn parse_block_stmts(toks: Vec, pos: i64, buf: i64, acc: Vec, is_fn_body: i6
     if tok_kind(toks, pos) == tk_ident() {
         if is_ident_for(buf, tok_lo(toks, pos), tok_hi(toks, pos)) == 1 {
             let fout: i64 = __mind_alloc(24);
-            let fnp: i64 = parse_for(toks, pos, buf, fout);
+            let fnp: i64 = parse_for(toks, pos, buf, acc, fout);
             // The byte-neutral single-var form emits only TWO sibling statements
             // (`let VAR = LO ; while ...`) and stores 0 at out+16; the hidden-
             // counter form emits three. Skip a 0 slot so the two-statement form
@@ -5442,7 +5495,7 @@ pub fn mt_scalar_arm(toks: Vec, pat_pos: i64, buf: i64, scrut_start: i64, kw_lo:
 pub fn mt_bind_prepend(toks: Vec, pat_pos: i64, buf: i64, scrut_start: i64, kw_lo: i64, val_blk: i64, pat_end_hi: i64) -> i64 {
     let name: i64 = ast_new_leaf(ast_ident(), tok_lo(toks, pat_pos + 5), tok_hi(toks, pat_pos + 5));
     let scrut_b: ParseResult = parse_expr_ns(toks, scrut_start, buf, 1);
-    let payread: i64 = ast_new_index(kw_lo, pat_end_hi, pr_node(scrut_b), mk_syn_intlit(1));
+    let payread: i64 = ast_new_payload_word(kw_lo, pat_end_hi, pr_node(scrut_b), 1);
     let blet: i64 = ast_new_let(0, 0, name, 0, payread);
     pnt_prepend_stmt(val_blk, blet)
 }
@@ -5451,10 +5504,8 @@ pub fn mt_bind_prepend(toks: Vec, pat_pos: i64, buf: i64, scrut_start: i64, kw_l
 // variant, or `Name::Variant(x)` binding a payload variant): cond =
 // SCRUT[0] == tag (the tag word of the 2-word block), then = the arm block
 // (binding form: with `let x = SCRUT[1];` prepended), else = recursive rest
-// (mode 2, same-enum required). EXHAUSTIVENESS: when this is the LAST arm
-// (next pattern position is `}`) and the seen-bitmask now covers ALL
-// variants, the arm becomes the UNCONDITIONAL else block — tags are the
-// 0-based decl positions (unique), so the dropped condition is implied.
+// (mode 2, same-enum required). Every arm retains its tag test, including the
+// final declared variant, matching the oracle's fail-closed unknown-tag path.
 pub fn mt_payload_arm(toks: Vec, pat_pos: i64, buf: i64, scrut_start: i64, kw_lo: i64, mode: i64, enlo: i64, enhi: i64, seen: i64, tag: i64, has_bind: i64, vhi: i64) -> ParseResult {
     let pat_lo: i64 = tok_lo(toks, pat_pos);
     let pat_hi: i64 = tok_hi(toks, pat_pos);
@@ -5487,20 +5538,24 @@ pub fn mt_payload_arm(toks: Vec, pat_pos: i64, buf: i64, scrut_start: i64, kw_lo
         pr_node(val_res)
     };
     let newseen: i64 = seen | (1 << tag);
-    // Terminal-coverage: last arm + full coverage -> unconditional else.
+    let scrut_i: ParseResult = parse_expr_ns(toks, scrut_start, buf, 1);
+    let tagread: i64 = ast_new_payload_word(kw_lo, pat_end_hi, pr_node(scrut_i), 0);
+    let cond: i64 = ast_new_binop(kw_lo, pat_end_hi, tagread, ent_syn_node(tag, pat_lo, pat_end_hi), op_eq());
+    // A final arm that completes the declared variant set still carries its
+    // condition. The oracle lowers its absent else to ConstI64(0); recursing at
+    // `}` would instead poison an otherwise exhaustive match.
     if at_eof(toks, next_pos) == 0 {
         if tok_kind(toks, next_pos) == tk_rbrace() {
             let nvar: i64 = pnt_variant_count(toks, buf, pat_lo, pat_hi);
             if nvar > 0 {
                 if newseen == (1 << nvar) - 1 {
-                    return pr_new(next_pos, arm_blk);
+                    let z0: Vec = vec_new();
+                    let zblk: i64 = ast_new_block(pat_lo, pat_end_hi, vec_addr(z0), vec_len(z0));
+                    return pr_new(next_pos, ast_new_if(kw_lo, ast_span_hi(arm_blk), cond, arm_blk, zblk));
                 }
             }
         }
     }
-    let scrut_i: ParseResult = parse_expr_ns(toks, scrut_start, buf, 1);
-    let tagread: i64 = ast_new_index(kw_lo, pat_end_hi, pr_node(scrut_i), mk_syn_intlit(0));
-    let cond: i64 = ast_new_binop(kw_lo, pat_end_hi, tagread, ent_syn_node(tag, pat_lo, pat_end_hi), op_eq());
     let rest: ParseResult = parse_match_chain(toks, next_pos, buf, scrut_start, kw_lo, 2, pat_lo, pat_hi, newseen);
     let else_blk: i64 = mt_wrap_else(pr_node(rest));
     let if_node: i64 = ast_new_if(kw_lo, ast_span_hi(pr_node(rest)), cond, arm_blk, else_blk);
@@ -5874,22 +5929,40 @@ pub fn skip_unknown_item_d(toks: Vec, pos: i64, depth: i64) -> i64 {
 // restating it -- upgrade path: emit the inert-attribute list from
 // src/parser/mod.rs into a generated fixture both sides read.
 pub fn attr_span_is_inline(buf: i64, lo: i64, hi: i64) -> i64 {
-    if hi - lo != 6 { return 0; }
-    if load_byte(buf, lo + 0) != 105 { return 0; }
-    if load_byte(buf, lo + 1) != 110 { return 0; }
-    if load_byte(buf, lo + 2) != 108 { return 0; }
-    if load_byte(buf, lo + 3) != 105 { return 0; }
-    if load_byte(buf, lo + 4) != 110 { return 0; }
-    if load_byte(buf, lo + 5) != 101 { return 0; }
+    if hi - lo != 6 {
+        return 0;
+    }
+    if load_byte(buf, lo + 0) != 105 {
+        return 0;
+    }
+    if load_byte(buf, lo + 1) != 110 {
+        return 0;
+    }
+    if load_byte(buf, lo + 2) != 108 {
+        return 0;
+    }
+    if load_byte(buf, lo + 3) != 105 {
+        return 0;
+    }
+    if load_byte(buf, lo + 4) != 110 {
+        return 0;
+    }
+    if load_byte(buf, lo + 5) != 101 {
+        return 0;
+    }
     1
 }
 
 pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
-    if tok_kind(toks, pos) != tk_ident() { return 0; }
+    if tok_kind(toks, pos) != tk_ident() {
+        return 0;
+    }
     let lo: i64 = tok_lo(toks, pos);
     let n: i64 = tok_hi(toks, pos) - lo;
     if attr_span_is_inline(buf, lo, lo + n) == 1 {
-        if tok_kind(toks, pos + 1) == tk_rbracket() { return 1; }
+        if tok_kind(toks, pos + 1) == tk_rbracket() {
+            return 1;
+        }
         return 0;
     }
     if n == 4 {
@@ -10907,6 +10980,110 @@ pub fn intern_find(strbuf: i64, offs: i64, n: i64, src: i64, lo: i64, hi: i64, i
     intern_find(strbuf, offs, n, src, lo, hi, i + 1)
 }
 
+// Hidden hygienic range counters use the source span `for VAR in LO..HI`
+// internally so they cannot alias any user identifier. On the mic@3 wire they
+// carry the Rust oracle's deterministic `__for_i_<span.start>` name.
+pub fn span_is_for_counter(src: i64, lo: i64, hi: i64) -> i64 {
+    if hi - lo < 4 {
+        return 0;
+    }
+    if load_byte(src, lo + 0) != 102 {
+        return 0;
+    }
+    if load_byte(src, lo + 1) != 111 {
+        return 0;
+    }
+    if load_byte(src, lo + 2) != 114 {
+        return 0;
+    }
+    // Require a lexer-valid boundary after the exact `for` keyword. This
+    // rejects identifier prefixes such as `forest`/`format`, accepts every
+    // whitespace byte the lexer skips, and accepts an immediately adjacent
+    // line comment. Block comments are not MIND syntax and remain rejected.
+    let sep: i64 = load_byte(src, lo + 3);
+    if is_space(sep) == 1 {
+        return 1;
+    }
+    if sep == 47 {
+        if hi - lo >= 5 {
+            if load_byte(src, lo + 4) == 47 {
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+pub fn for_counter_prefix_byte(i: i64) -> i64 {
+    if i == 0 {
+        return 95;
+    }
+    if i == 1 {
+        return 95;
+    }
+    if i == 2 {
+        return 102;
+    }
+    if i == 3 {
+        return 111;
+    }
+    if i == 4 {
+        return 114;
+    }
+    if i == 5 {
+        return 95;
+    }
+    if i == 6 {
+        return 105;
+    }
+    95
+}
+
+pub fn for_counter_write_prefix(dst: i64, i: i64) -> i64 {
+    if i >= 8 {
+        return 8;
+    }
+    __mind_store_i8(dst + i, for_counter_prefix_byte(i));
+    for_counter_write_prefix(dst, i + 1)
+}
+
+pub fn for_counter_write_digits(dst: i64, n: i64, at: i64) -> i64 {
+    let next: i64 = if n >= 10 {
+        for_counter_write_digits(dst, n / 10, at)
+    } else {
+        at
+    };
+    __mind_store_i8(dst + next, 48 + n % 10);
+    next + 1
+}
+
+pub fn for_counter_name(src: i64, lo: i64, hi: i64) -> i64 {
+    let tmp: i64 = __mind_alloc(32);
+    let _p: i64 = for_counter_write_prefix(tmp, 0);
+    let n: i64 = for_counter_write_digits(tmp, lo, 8);
+    let rec: i64 = __mind_alloc(24);
+    __mind_store_i64(rec + 0, tmp);
+    __mind_store_i64(rec + 8, n);
+    __mind_store_i64(rec + 16, span_is_for_counter(src, lo, hi));
+    rec
+}
+
+pub fn intern_for_counter(strbuf: i64, offs: i64, ccell: i64, src: i64, lo: i64, hi: i64) -> i64 {
+    let rec: i64 = for_counter_name(src, lo, hi);
+    if __mind_load_i64(rec + 16) == 0 {
+        return intern_span(strbuf, offs, ccell, src, lo, hi);
+    }
+    intern_span(strbuf, offs, ccell, __mind_load_i64(rec + 0), 0, __mind_load_i64(rec + 8))
+}
+
+pub fn find_for_counter(strbuf: i64, offs: i64, n: i64, src: i64, lo: i64, hi: i64) -> i64 {
+    let rec: i64 = for_counter_name(src, lo, hi);
+    if __mind_load_i64(rec + 16) == 0 {
+        return intern_find(strbuf, offs, n, src, lo, hi, 0);
+    }
+    intern_find(strbuf, offs, n, __mind_load_i64(rec + 0), 0, __mind_load_i64(rec + 8), 0)
+}
+
 // Copy src[lo..hi) into strbuf starting at `dst`; return the new write cursor.
 pub fn intern_copy(strbuf: i64, dst: i64, src: i64, lo: i64, hi: i64) -> i64 {
     if lo >= hi {
@@ -11303,7 +11480,7 @@ pub fn intern_while_live_names(strbuf: i64, offs: i64, ccell: i64, src: i64, stm
     if while_name_let_or_assigned_before(src, stmts_addr, lo, hi, i, 0) == 1 {
         return intern_while_live_names(strbuf, offs, ccell, src, stmts_addr, stmts_len, i + 1);
     }
-    let _ni: i64 = intern_span(strbuf, offs, ccell, src, lo, hi);
+    let _ni: i64 = intern_for_counter(strbuf, offs, ccell, src, lo, hi);
     intern_while_live_names(strbuf, offs, ccell, src, stmts_addr, stmts_len, i + 1)
 }
 
@@ -13891,10 +14068,26 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let then_sl: i64 = ast_aux(then_blk);
     let else_sa: i64 = ast_child0(else_blk);
     let else_sl: i64 = ast_aux(else_blk);
-    let then_nlets: i64 = then_sl - 1;
-    let else_nlets: i64 = else_sl - 1;
-    let then_val_expr: i64 = __mind_load_i64(then_sa + then_nlets * 8);
-    let else_val_expr: i64 = __mind_load_i64(else_sa + else_nlets * 8);
+    let then_nlets: i64 = if then_sl == 0 {
+        0
+    } else {
+        then_sl - 1
+    };
+    let else_nlets: i64 = if else_sl == 0 {
+        0
+    } else {
+        else_sl - 1
+    };
+    let then_val_expr: i64 = if then_sl == 0 {
+        0
+    } else {
+        __mind_load_i64(then_sa + then_nlets * 8)
+    };
+    let else_val_expr: i64 = if else_sl == 0 {
+        0
+    } else {
+        __mind_load_i64(else_sa + else_nlets * 8)
+    };
     // cond
     let cond_id: i64 = flatten_branch_lv(cond_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, base0, lvenv, nlv);
     if cond_id < 0 {
@@ -13916,12 +14109,20 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let then_val_base0: i64 = letchain_vid_base(then_sa, then_nlets, after_cond + 1, buf, params_addr, n_params, lvenv, nlv, strbuf, offs, ncount);
     // INSTR count = block length contribution (an if-expr value is ONE OP_IF); SPAN =
     // its vid delta (an if-expr value consumes its whole OP_IF's vids).
-    let then_val_instrs: i64 = branch_val_instrs(then_val_expr, buf, params_addr, n_params, then_lvbuf, nlv + then_nlets);
+    let then_val_instrs: i64 = if then_val_expr == 0 {
+        0
+    } else {
+        branch_val_instrs(then_val_expr, buf, params_addr, n_params, then_lvbuf, nlv + then_nlets)
+    };
     if then_val_instrs < 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
     }
-    let then_val_span: i64 = branch_val_span(then_val_expr, buf, params_addr, n_params, then_val_base0, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount);
+    let then_val_span: i64 = if then_val_expr == 0 {
+        0
+    } else {
+        branch_val_span(then_val_expr, buf, params_addr, n_params, then_val_base0, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount)
+    };
     if then_val_span < 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -13930,7 +14131,11 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let else_lvbuf: i64 = __mind_alloc((nlv + else_nlets + 66) * 24);
     let _ec: i64 = lvenv_copy(else_lvbuf, lvenv, nlv, 0);
     let else_let_instrs: i64 = sum_let_init_nonparam(else_sa, else_nlets, 0, buf, params_addr, n_params, else_lvbuf, nlv);
-    let else_val_instrs: i64 = branch_val_instrs(else_val_expr, buf, params_addr, n_params, else_lvbuf, nlv + else_nlets);
+    let else_val_instrs: i64 = if else_val_expr == 0 {
+        0
+    } else {
+        branch_val_instrs(else_val_expr, buf, params_addr, n_params, else_lvbuf, nlv + else_nlets)
+    };
     if else_val_instrs < 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -13940,7 +14145,11 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let then_val_end: i64 = then_val_base0 + then_val_span;
     let else_synth: i64 = then_val_end;
     let else_val_base0: i64 = letchain_vid_base(else_sa, else_nlets, else_synth + 1, buf, params_addr, n_params, lvenv, nlv, strbuf, offs, ncount);
-    let else_val_span: i64 = branch_val_span(else_val_expr, buf, params_addr, n_params, else_val_base0, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount);
+    let else_val_span: i64 = if else_val_expr == 0 {
+        0
+    } else {
+        branch_val_span(else_val_expr, buf, params_addr, n_params, else_val_base0, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount)
+    };
     if else_val_span < 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -13960,8 +14169,16 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     // vid-allocation order: the let inits emit before the trailing value).
     let then_init_ec: i64 = block_init_escape_probe(then_sa, then_nlets, after_cond + 1, buf, params_addr, n_params, then_lvbuf, nlv, strbuf, offs, ncount, then_lvbuf, nlv + then_nlets, 0, 0);
     let else_init_ec: i64 = block_init_escape_probe(else_sa, else_nlets, else_synth + 1, buf, params_addr, n_params, else_lvbuf, nlv, strbuf, offs, ncount, else_lvbuf, nlv + else_nlets, 0, 0);
-    let then_ec: i64 = branch_escape_probe(then_val_expr, buf, params_addr, n_params, then_val_base0, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount, then_lvbuf, nlv + then_nlets + then_init_ec);
-    let else_ec: i64 = branch_escape_probe(else_val_expr, buf, params_addr, n_params, else_val_base0, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount, else_lvbuf, nlv + else_nlets + else_init_ec);
+    let then_ec: i64 = if then_val_expr == 0 {
+        0
+    } else {
+        branch_escape_probe(then_val_expr, buf, params_addr, n_params, then_val_base0, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount, then_lvbuf, nlv + then_nlets + then_init_ec)
+    };
+    let else_ec: i64 = if else_val_expr == 0 {
+        0
+    } else {
+        branch_escape_probe(else_val_expr, buf, params_addr, n_params, else_val_base0, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount, else_lvbuf, nlv + else_nlets + else_init_ec)
+    };
     // F2 branch-local-let scope (mirror lower.rs then_local_decls): the merge set omits
     // NON-ESCAPING leading branch-local lets. Done WITHOUT touching the shared blk_* helpers
     // or mixedblock: pass a SHIFTED merge-buffer pointer (buf + nlets*24) + the escape-only
@@ -13995,7 +14212,12 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let then_vb: i64 = __mind_alloc(64 * 24);
     let then_vnb: i64 = __mind_alloc(8);
     __mind_store_i64(then_vnb, 0);
-    let s8: EmitState = emit_branch_value_lv(s7, then_val_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, then_val_base, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount, then_rcell, then_vok, then_vb, then_vnb);
+    let s8: EmitState = if then_val_expr == 0 {
+        __mind_store_i64(then_rcell, then_synth);
+        s7
+    } else {
+        emit_branch_value_lv(s7, then_val_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, then_val_base, then_lvbuf, nlv + then_nlets, strbuf, offs, ncount, then_rcell, then_vok, then_vb, then_vnb)
+    };
     if __mind_load_i64(then_vok) == 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -14024,7 +14246,12 @@ pub fn emit_if_expr_block_lv(s: EmitState, if_node: i64, buf: i64, params_addr: 
     let else_vb: i64 = __mind_alloc(64 * 24);
     let else_vnb: i64 = __mind_alloc(8);
     __mind_store_i64(else_vnb, 0);
-    let s14: EmitState = emit_branch_value_lv(s13, else_val_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, else_val_base, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount, else_rcell, else_vok, else_vb, else_vnb);
+    let s14: EmitState = if else_val_expr == 0 {
+        __mind_store_i64(else_rcell, else_synth);
+        s13
+    } else {
+        emit_branch_value_lv(s13, else_val_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, else_val_base, else_lvbuf, nlv + else_nlets, strbuf, offs, ncount, else_rcell, else_vok, else_vb, else_vnb)
+    };
     if __mind_load_i64(else_vok) == 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -14947,11 +15174,19 @@ pub fn emit_if_expr_any_lv(s: EmitState, if_node: i64, buf: i64, params_addr: i6
     let else_blk: i64 = ast_child2(if_node);
     let tn: i64 = ast_aux(then_blk) - 1;
     let en: i64 = ast_aux(else_blk) - 1;
-    if tn == 0 {
-        if en == 0 {
+    if tn <= 0 {
+        if en <= 0 {
             let c: i64 = ast_child0(if_node);
-            let t: i64 = branch_single_expr(then_blk);
-            let e: i64 = branch_single_expr(else_blk);
+            let t: i64 = if tn < 0 {
+                0
+            } else {
+                branch_single_expr(then_blk)
+            };
+            let e: i64 = if en < 0 {
+                0
+            } else {
+                branch_single_expr(else_blk)
+            };
             return emit_if_expr_lv(s, c, t, e, buf, params_addr, n_params, nodes, cursor, vidbuf, base0, okcell, lvenv, nlv, strbuf, offs, ncount, bindout, nbind_cell);
         }
     }
@@ -15253,8 +15488,16 @@ pub fn emit_if_expr_lv(s: EmitState, cond_expr: i64, then_expr: i64, else_expr: 
     // bubble path (which now ALSO bubbles those escapes upward via bindout). Otherwise (the
     // common case — a leaf both-single-expr if) the merge is empty, nbind stays 0, and the
     // original layout is byte-identical.
-    let then_en: i64 = branch_escape_count(then_expr, buf, params_addr, n_params, base0 + 1, lvenv, nlv, strbuf, offs, ncount);
-    let else_en: i64 = branch_escape_count(else_expr, buf, params_addr, n_params, base0 + 1, lvenv, nlv, strbuf, offs, ncount);
+    let then_en: i64 = if then_expr == 0 {
+        0
+    } else {
+        branch_escape_count(then_expr, buf, params_addr, n_params, base0 + 1, lvenv, nlv, strbuf, offs, ncount)
+    };
+    let else_en: i64 = if else_expr == 0 {
+        0
+    } else {
+        branch_escape_count(else_expr, buf, params_addr, n_params, base0 + 1, lvenv, nlv, strbuf, offs, ncount)
+    };
     if then_en + else_en > 0 {
         return emit_if_expr_lv_bubble(s, cond_expr, then_expr, else_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, base0, okcell, lvenv, nlv, strbuf, offs, ncount, then_en, else_en, bindout, nbind_cell);
     }
@@ -15271,18 +15514,31 @@ pub fn emit_if_expr_lv(s: EmitState, cond_expr: i64, then_expr: i64, else_expr: 
     let s4: EmitState = emit_mic3_tree_body(s3, nodes, cond_n, vidbuf, buf, strbuf, offs, ncount, 0);
     let after_cond: i64 = base0 + cond_nonparam;
     let then_synth: i64 = after_cond;
-    let then_is_if: i64 = is_any_value_if_expr(then_expr);
-    let then_instrs: i64 = if then_is_if == 1 {
-        1
+    let then_is_if: i64 = if then_expr == 0 {
+        0
     } else {
-        count_nonparam_nodes_lv(then_expr, buf, params_addr, n_params, lvenv, nlv)
+        is_any_value_if_expr(then_expr)
+    };
+    let then_instrs: i64 = if then_expr == 0 {
+        0
+    } else {
+        if then_is_if == 1 {
+            1
+        } else {
+            count_nonparam_nodes_lv(then_expr, buf, params_addr, n_params, lvenv, nlv)
+        }
     };
     let s5: EmitState = emit_uleb128(s4, then_instrs + 1);
     let s6: EmitState = emit_mic3_const_i64(s5, then_synth, 0);
     let trcell: i64 = __mind_alloc(8);
     let tvok: i64 = __mind_alloc(8);
     __mind_store_i64(tvok, 1);
-    let s7: EmitState = emit_branch_value_lv(s6, then_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, after_cond + 1, lvenv, nlv, strbuf, offs, ncount, trcell, tvok, 0, 0);
+    let s7: EmitState = if then_expr == 0 {
+        __mind_store_i64(trcell, then_synth);
+        s6
+    } else {
+        emit_branch_value_lv(s6, then_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, after_cond + 1, lvenv, nlv, strbuf, offs, ncount, trcell, tvok, 0, 0)
+    };
     if __mind_load_i64(tvok) == 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -15297,18 +15553,31 @@ pub fn emit_if_expr_lv(s: EmitState, cond_expr: i64, then_expr: i64, else_expr: 
         after_cond + 1 + then_instrs
     };
     let else_synth: i64 = after_then;
-    let else_is_if: i64 = is_any_value_if_expr(else_expr);
-    let else_instrs: i64 = if else_is_if == 1 {
-        1
+    let else_is_if: i64 = if else_expr == 0 {
+        0
     } else {
-        count_nonparam_nodes_lv(else_expr, buf, params_addr, n_params, lvenv, nlv)
+        is_any_value_if_expr(else_expr)
+    };
+    let else_instrs: i64 = if else_expr == 0 {
+        0
+    } else {
+        if else_is_if == 1 {
+            1
+        } else {
+            count_nonparam_nodes_lv(else_expr, buf, params_addr, n_params, lvenv, nlv)
+        }
     };
     let s9: EmitState = emit_uleb128(s8, else_instrs + 1);
     let s10: EmitState = emit_mic3_const_i64(s9, else_synth, 0);
     let ercell: i64 = __mind_alloc(8);
     let evok: i64 = __mind_alloc(8);
     __mind_store_i64(evok, 1);
-    let s11: EmitState = emit_branch_value_lv(s10, else_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, else_synth + 1, lvenv, nlv, strbuf, offs, ncount, ercell, evok, 0, 0);
+    let s11: EmitState = if else_expr == 0 {
+        __mind_store_i64(ercell, else_synth);
+        s10
+    } else {
+        emit_branch_value_lv(s10, else_expr, buf, params_addr, n_params, nodes, cursor, vidbuf, else_synth + 1, lvenv, nlv, strbuf, offs, ncount, ercell, evok, 0, 0)
+    };
     if __mind_load_i64(evok) == 0 {
         __mind_store_i64(okcell, 0 - 1);
         return s;
@@ -15336,8 +15605,10 @@ pub fn emit_if_expr_lv(s: EmitState, cond_expr: i64, then_expr: i64, else_expr: 
 pub fn branch_is_value_block(blk: i64) -> i64 {
     let sa: i64 = ast_child0(blk);
     let sl: i64 = ast_aux(blk);
-    if sl < 1 {
-        return 0;
+    // An empty block has the oracle's implicit unit value, represented by the
+    // branch's synthetic ConstI64(0) without an additional value instruction.
+    if sl == 0 {
+        return 1;
     }
     let nl: i64 = count_leading_lets(sa, sl, 0);
     if nl != sl - 1 {
@@ -16624,7 +16895,12 @@ pub fn emit_stmt_seq(s: EmitState, nodes: i64, vidbuf: i64, src: i64, strbuf: i6
         let sw: EmitState = emit_mic3_while_general(s, w_node, src, pa10, np10, base, seq_lvbuf, seq_nlv, strbuf, offs, ncount, w_merge, w_nm, w_end, w_ok);
         // trailing unit ConstI64 at endbase (= one past the exit_ids).
         let sw2: EmitState = emit_mic3_const_i64(sw, __mind_load_i64(w_end), 0);
-        return emit_stmt_seq(sw2, nodes, vidbuf, src, strbuf, offs, ncount, plan, nplan, base + w_delta, i + 1, seq_lvbuf, seq_nlv, seqr, envk);
+        // Publish each carried exit value to the position-aware live env. A later
+        // while must read the first while's dominating exit ids, just as the
+        // trailing expression already does through build_trail_env.
+        let w_n: i64 = __mind_load_i64(w_nm);
+        let _ap10: i64 = lvenv_append_escapes(seq_lvbuf, seq_nlv, w_merge, w_n, 0);
+        return emit_stmt_seq(sw2, nodes, vidbuf, src, strbuf, offs, ncount, plan, nplan, base + w_delta, i + 1, seq_lvbuf, seq_nlv + w_n, seqr, envk);
     }
     if ty == 2 {
         // NESTED if-return segment -> ONE outer OP_IF whose then-branch is `synth +
@@ -17283,7 +17559,25 @@ pub fn field_rewrite_expr(node: i64, src: i64, srt: i64, fn_node: i64, load_lo: 
         return 0;
     }
     let k: i64 = ast_kind(node);
+    // Payload-match parser nodes use an index-shaped marker (child2==1), but
+    // boxed enum words lower as raw i64 loads rather than ArrayLoad. Rewrite
+    // only that explicit marker; ordinary source and tuple indices stay intact.
+    if k == ast_index() {
+        if ast_child2(node) == 1 {
+            let idx: i64 = ast_child1(node);
+            if ast_kind(idx) == ast_int_lit() {
+                if ast_child1(idx) == 1 {
+                    let recv: i64 = field_rewrite_expr(ast_child0(node), src, srt, fn_node, load_lo, load_hi);
+                    return field_build_load_call(recv, ast_child0(idx), load_lo, load_hi);
+                }
+            }
+            return node;
+        }
+    }
     if k == ast_field() {
+        if srt_count(srt) < 1 {
+            return node;
+        }
         let orig: i64 = ast_child0(node);
         let recv: i64 = field_rewrite_expr(orig, src, srt, fn_node, load_lo, load_hi);
         __mind_store_i64(node + 24, recv);
@@ -17449,13 +17743,11 @@ pub fn field_rewrite_stmts(stmts_addr: i64, stmts_len: i64, i: i64, src: i64, sr
     field_rewrite_stmts(stmts_addr, stmts_len, i + 1, src, srt, fn_node, load_lo, load_hi)
 }
 
-// Pre-fold one fn's body. Guard: at least one struct in the registry AND the
-// literal "__mind_load_i64" present in source (else no fold can resolve and the
-// callee span would be invalid). Rewrites the body block's statements in place.
+// Pre-fold one fn's body. Guard: the literal "__mind_load_i64" is present in
+// source (else the synthetic callee span would be invalid). Struct field reads
+// additionally require a nonempty registry; marked enum payload reads do not.
+// Rewrites the body block's statements in place.
 pub fn field_prefold_body(src: i64, src_len: i64, fn_node: i64, srt: i64) -> i64 {
-    if srt_count(srt) < 1 {
-        return 0;
-    }
     let cell: i64 = __mind_alloc(16);
     if find_load_name_span(src, src_len, 0, cell) == 0 {
         return 0;
@@ -21324,6 +21616,13 @@ pub fn flatten_expr_env(node: i64, src: i64, params_addr: i64, n_params: i64, no
         return flatten_expr_env(ast_child0(node), src, params_addr, n_params, nodes, cursor, env, nlets);
     }
     if k == ast_ident() {
+        // A body `let` shadows a parameter after its initializer. The let
+        // environment contains only bindings already flattened, so checking it
+        // first preserves the parameter on the RHS and the let at later uses.
+        let lslot: i64 = letenv_lookup(src, ast_span_lo(node), ast_span_hi(node), env, nlets, 0);
+        if lslot >= 0 {
+            return lslot;
+        }
         let pidx: i64 = resolve_param(params_addr, n_params, src, ast_span_lo(node), ast_span_hi(node));
         if pidx >= 0 {
             let slot: i64 = __mind_load_i64(cursor);
@@ -21334,9 +21633,7 @@ pub fn flatten_expr_env(node: i64, src: i64, params_addr: i64, n_params: i64, no
             __mind_store_i64(cursor, slot + 1);
             return slot;
         }
-        // Not a param: must be a previously-bound let name (reuse its slot).
-        let lslot: i64 = letenv_lookup(src, ast_span_lo(node), ast_span_hi(node), env, nlets, 0);
-        return lslot;
+        return 0 - 1;
     }
     if k == ast_int_lit() {
         // SYNTHETIC int-lit (field-read offset): child1==1 sentinel -> value in
@@ -28141,7 +28438,7 @@ pub fn emit_while_live_vars(s: EmitState, lv: i64, nlv_w: i64, strbuf: i64, offs
     if i >= nlv_w {
         return s;
     }
-    let nidx: i64 = intern_find(strbuf, offs, ncount, src, __mind_load_i64(lv + i * 24 + 0), __mind_load_i64(lv + i * 24 + 8), 0);
+    let nidx: i64 = find_for_counter(strbuf, offs, ncount, src, __mind_load_i64(lv + i * 24 + 0), __mind_load_i64(lv + i * 24 + 8));
     let s1: EmitState = emit_uleb128(s, nidx);
     let s2: EmitState = emit_uleb128(s1, __mind_load_i64(lv + i * 24 + 16));
     emit_while_live_vars(s2, lv, nlv_w, strbuf, offs, ncount, src, i + 1)

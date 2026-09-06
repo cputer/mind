@@ -295,7 +295,12 @@ compare.
 | `cast_u8_1.mind` | narrow cast `as u8` | 46 B vs 66 B, diff@5 |
 | `cast_i32_1.mind` | narrow cast `as i32` | 53 B vs 58 B, diff@5 |
 | `for_nonliteral_end_1.mind` | `for i in 0..n` (non-literal bound) hidden-counter desugar | 91 B vs 83 B, diff@12 |
+| `for_shadowed_bound_1.mind` | loop binder shadows the same-named outer bound | 96 B vs 97 B, hidden counter name differed before fix; 97 B byte-exact after |
+| `for_shadowed_outer_let_1.mind` | literal-bound loop binder shadows a preceding same-block let | 65 B vs 74 B, loop exit overwrote outer binding before fix; 74 B byte-exact after |
+| `for_shadowed_sequential_1.mind` | two sequential hygienic loops carry the same accumulator | 150 B vs 150 B, diff@113 before fix; 150 B byte-exact after |
+| `for_shadowed_trivia_1.mind` | shadowed outer/bound/sequential loops with tab or newline after `for` | hidden counter used raw header trivia before fix; exact keyword-boundary naming after |
 | `match_enum_payload_1.mind` | `match` on an enum with a payload binding | 80 B vs 129 B, diff@5 |
+| `match_enum_payload_reordered_1.mind` | payload binding in the final exhaustive arm | 80 B vs 129 B, diff@5 before fix; 129 B byte-exact after |
 
 Added byte-exact (they close a zero-fixture kind and ratchet the floor 143 → 145):
 `use_item_1.mind` (`ast_use`), `while_counter_1.mind` (`ast_while`).

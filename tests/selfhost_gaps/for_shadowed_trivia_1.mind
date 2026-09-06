@@ -1,0 +1,36 @@
+fn outer_tab()->i64 {
+let i=100;
+for	i in 0..3 { }
+i
+}
+fn outer_newline()->i64 {
+let i=100;
+for
+i in 0..3 { }
+i
+}
+fn bound_tab(i:i64)->i64 {
+let mut s=0;
+for	i in 0..i { s=s+1; }
+i+s
+}
+fn bound_newline(i:i64)->i64 {
+let mut s=0;
+for
+i in 0..i { s=s+1; }
+i+s
+}
+fn sequential_tab(i:i64)->i64 {
+let mut s=0;
+for	i in 0..i { s=s+1; }
+for	i in 1..i { s=s+1; }
+i+s
+}
+fn sequential_newline(i:i64)->i64 {
+let mut s=0;
+for
+i in 0..i { s=s+1; }
+for
+i in 1..i { s=s+1; }
+i+s
+}

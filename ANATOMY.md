@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1540 | **Est. tokens:** ~3010825
-**Generated:** 2026-09-06 13:30 UTC
+**Files:** 1545 | **Est. tokens:** ~3011010
+**Generated:** 2026-09-06 13:39 UTC
 
 ## Token Budget Guide
 
@@ -177,7 +177,7 @@
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
 | `tests/runtime/` | 2 | ~135 |
-| `tests/selfhost_gaps/` | 158 | ~10442 |
+| `tests/selfhost_gaps/` | 163 | ~10627 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
@@ -1899,6 +1899,10 @@
 - `for_range_multistmt_1.mind` (~29 tok, tiny) — fn f(a: i64) -> i64 {
 - `for_range_simple_1.mind` (~24 tok, tiny) — fn f(a: i64) -> i64 {
 - `for_range_zero_1.mind` (~24 tok, tiny) — fn f(a: i64) -> i64 {
+- `for_shadowed_bound_1.mind` (~16 tok, tiny) — fn f(i:i64)->i64 {
+- `for_shadowed_outer_let_1.mind` (~12 tok, tiny) — fn f()->i64 {
+- `for_shadowed_sequential_1.mind` (~22 tok, tiny) — fn f(i:i64)->i64 {
+- `for_shadowed_trivia_1.mind` (~117 tok, small) — fn outer_tab()->i64 {
 - `index-in-if_1.mind` (~19 tok, tiny)
 - `int_underscore_group_1.mind` (~7 tok, tiny) — fn f() -> i64 {
 - `int_underscore_million_1.mind` (~8 tok, tiny) — fn f() -> i64 {
@@ -1912,6 +1916,7 @@
 - `let-ifexpr-seq_7.mind` (~46 tok, tiny)
 - `let_shadow_param_1.mind` (~16 tok, tiny) — fn f(n: i64) -> i64 {
 - `match_enum_payload_1.mind` (~29 tok, tiny) — fn f(e: E) -> i64 {
+- `match_enum_payload_reordered_1.mind` (~18 tok, tiny) — fn f(e:E)->i64 {
 - `matchcall-scrutinee_0arg.mind` (~24 tok, tiny) — fn g() -> i64 {
 - `matchcall-scrutinee_1arg.mind` (~33 tok, tiny) — fn g(a: i64) -> i64 {
 - `matchcall-scrutinee_arith.mind` (~21 tok, tiny) — fn f(a: i64) -> i64 {

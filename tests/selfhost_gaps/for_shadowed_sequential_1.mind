@@ -1,0 +1,6 @@
+fn f(i:i64)->i64 {
+let mut s=0;
+for i in 0..i { s=s+1; }
+for i in 1..i { s=s+1; }
+i+s
+}

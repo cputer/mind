@@ -1,0 +1,4 @@
+enum E { B, A(i64) }
+fn f(e:E)->i64 {
+match e { E::B=>0, E::A(x)=>x }
+}
