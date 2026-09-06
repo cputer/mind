@@ -21,8 +21,10 @@
 #![cfg(feature = "std-surface")]
 
 use libmind::eval::lower::lower_to_ir;
-use libmind::ir::Instr;
+use libmind::ir::{Instr, ValueId};
 use libmind::parser;
+#[cfg(feature = "mlir-lowering")]
+use libmind::{MlirLowerError, compile_ir_to_mlir_text};
 
 // ── Test 1: basic array literal parses + lowers ──────────────────────────────
 
@@ -142,5 +144,96 @@ fn type_mismatch_length_rejected() {
         has_length_msg,
         "diagnostic should mention length mismatch, got: {:?}",
         diags
+    );
+}
+
+// ── Test 6: alias-typed array parameter keeps aggregate metadata ────────────
+
+#[test]
+#[cfg(feature = "mlir-lowering")]
+fn alias_typed_array_param_lowers_like_its_target() {
+    fn mlir(src: &str) -> String {
+        let module = parser::parse(src).expect("array-param module must parse");
+        let mut ir = lower_to_ir(&module);
+        compile_ir_to_mlir_text(&mut ir).expect("array-param module must lower to MLIR")
+    }
+
+    let alias_src = r#"
+type Element = f64
+type ElementArray = [Element; 4]
+type Words = ElementArray
+type Result = Element
+
+fn first(values: Words) -> Result {
+    return values[0]
+}
+"#;
+    let direct_src = r#"
+fn first(values: [f64; 4]) -> f64 {
+    return values[0]
+}
+"#;
+
+    fn first_fn(text: &str) -> &str {
+        let start = text.find("  func.func @first(").expect("first function");
+        let end = text[start..]
+            .find("\n  }\n")
+            .map(|offset| start + offset + "\n  }\n".len())
+            .expect("first function end");
+        &text[start..end]
+    }
+
+    let alias_mlir = mlir(alias_src);
+    let direct_mlir = mlir(direct_src);
+
+    assert_eq!(
+        first_fn(&alias_mlir),
+        first_fn(&direct_mlir),
+        "a type alias must preserve the target array's ABI and ValueKind metadata"
+    );
+    assert!(
+        alias_mlir.contains("func.func @first(%0: tensor<4xf64>) -> f64"),
+        "alias-typed array parameter must retain its tensor boundary: {alias_mlir}"
+    );
+    assert_eq!(
+        alias_mlir,
+        mlir(alias_src),
+        "alias resolution must emit deterministic MLIR"
+    );
+
+    fn assert_array_load_refusal(src: &str, reason: &str) {
+        let module = parser::parse(src).expect("refusal module must parse");
+        let mut ir = lower_to_ir(&module);
+        let err = compile_ir_to_mlir_text(&mut ir)
+            .expect_err("unresolved aggregate type must not acquire an invented ABI");
+        assert!(
+            matches!(
+                err,
+                MlirLowerError::MissingTypeInfo {
+                    value: ValueId(0),
+                    context: "array load base"
+                }
+            ),
+            "{reason} must retain the fail-closed array-load refusal: {err}"
+        );
+    }
+
+    assert_array_load_refusal(
+        r#"
+type Recursive = [Recursive; 1]
+
+fn first(values: Recursive) -> i64 {
+    return values[0]
+}
+"#,
+        "cyclic alias",
+    );
+    assert_array_load_refusal(
+        r#"
+fn first(values: Missing) -> i64 {
+    return values[0]
+}
+"#,
+        "unresolved named type",
     );
 }

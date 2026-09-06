@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1521 | **Est. tokens:** ~2981538
-**Generated:** 2026-09-06 09:59 UTC
+**Files:** 1522 | **Est. tokens:** ~2983601
+**Generated:** 2026-09-06 10:00 UTC
 
 ## Token Budget Guide
 
@@ -100,7 +100,7 @@
 | `src/diagnostics/` | 3 | ~14137 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~10987 |
-| `src/eval/` | 16 | ~88819 |
+| `src/eval/` | 17 | ~90215 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 357 | ~666810 |
+| `tests/` | 357 | ~667477 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -1079,6 +1079,7 @@
 
 - `struct_resolver.rs` (~6767 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
+- `type_aliases.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/exec/`
 
@@ -2013,7 +2014,7 @@
 - `std_llvm_bindings_smoke.rs` (~2673 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_mlir_bindings_smoke.rs` (~4872 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_arena.rs` (~1346 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_array_literals.rs` (~1334 tok, large) — Copyright 2025 STARGA Inc.
+- `std_surface_array_literals.rs` (~2001 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_async.rs` (~4323 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bitwise_binops.rs` (~2391 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.

@@ -1396,16 +1396,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     // during the loop below; this pre-pass only widens visibility. Metadata only —
     // an all-i64 module records all-`ScalarI64` and lowers byte-identically.
     #[cfg(feature = "std-surface")]
-    for item in &module.items {
-        if let ast::Node::FnDef(fd, _) = item {
-            if fd.type_params.is_empty() {
-                let param_types: Vec<crate::ast::TypeAnn> =
-                    fd.params.iter().map(|p| p.ty.clone()).collect();
-                ir.fn_signatures
-                    .insert(fd.name.clone(), (param_types, fd.ret_type.clone()));
-            }
-        }
-    }
+    super::type_aliases::collect_local_fn_signatures(&module.items, &mut ir);
 
     // RFC 0012 §5.1 — register every IMPORTED `pub fn` signature (declared
     // param + return ABI) from the active whole-project module table, so a
@@ -5847,7 +5838,8 @@ fn lower_expr(
                 let param_types: Vec<crate::ast::TypeAnn> =
                     params.iter().map(|p| p.ty.clone()).collect();
                 ir.fn_signatures
-                    .insert(name.clone(), (param_types, ret_type.clone()));
+                    .entry(name.clone())
+                    .or_insert((param_types, ret_type.clone()));
             }
             // `ret_type` only feeds the std-surface signature table above; touch
             // it in the default build so the destructured binding isn't flagged

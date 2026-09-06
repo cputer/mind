@@ -19,9 +19,7 @@ use std::collections::HashMap;
 use crate::ast::BinOp;
 
 use crate::ast::Literal;
-
 use crate::ast::Module;
-
 use crate::ast::Node;
 
 use crate::ast::TensorElemOp;
@@ -51,6 +49,8 @@ pub mod lower;
 #[cfg(feature = "std-surface")]
 pub(crate) mod narrow_scan;
 pub mod traits;
+#[cfg(feature = "std-surface")]
+mod type_aliases;
 // RFC 0005 P0f Step 2 — pre-pass that builds a span-keyed side-table
 // of `FieldAccess` receiver struct types so lowering can resolve
 // chained access, fn returns, and struct-typed parameters.
