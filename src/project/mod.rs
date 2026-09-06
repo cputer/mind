@@ -2686,7 +2686,10 @@ fn link_binary(
 
     if opts.verbose {
         match &runtime {
-            Some(runtime) => println!("  Linking with runtime: {}", runtime.dir.display()),
+            Some(runtime) => println!(
+                "  Linking with runtime: {}",
+                runtime.dir.join(runtime.file_name).display()
+            ),
             None => println!("  Linking CPU binary with bundled runtime support"),
         }
     }
