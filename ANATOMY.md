@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1521 | **Est. tokens:** ~2982123
-**Generated:** 2026-09-06 09:39 UTC
+**Files:** 1521 | **Est. tokens:** ~2981538
+**Generated:** 2026-09-06 09:59 UTC
 
 ## Token Budget Guide
 
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21838 |
-| `scripts/` | 29 | ~111211 |
+| `scripts/` | 29 | ~110635 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 357 | ~666819 |
+| `tests/` | 357 | ~666810 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -892,7 +892,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~10675 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~10099 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -2062,9 +2062,9 @@
 - `stride_gather_grad.rs` (~312 tok, medium) — Copyright 2025 STARGA Inc.
 - `stride_preview.rs` (~279 tok, medium) — Copyright 2025 STARGA Inc.
 - `stride_types.rs` (~244 tok, medium) — Copyright 2025 STARGA Inc.
-- `string_eq_len_run.rs` (~774 tok, large) — Copyright 2025 STARGA Inc.
+- `string_eq_len_run.rs` (~703 tok, large) — Copyright 2025 STARGA Inc.
 - `string_escape_decode_run.rs` (~1159 tok, large) — Copyright 2025 STARGA Inc.
-- `string_escape_fail_closed.rs` (~883 tok, large) — Copyright 2025 STARGA Inc.
+- `string_escape_fail_closed.rs` (~959 tok, large) — Copyright 2025 STARGA Inc.
 - `string_escape_parse.rs` (~483 tok, medium) — Copyright 2025 STARGA Inc.
 - `string_from_bytes_run.rs` (~664 tok, large) — Copyright 2025 STARGA Inc.
 - `string_pattern_escape_decode.rs` (~1069 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
@@ -2083,7 +2083,7 @@
 - `tensor_param_fail_loud_run.rs` (~2609 tok, huge) — Copyright 2025 STARGA Inc.
 - `tensor_stdlib.rs` (~549 tok, large) — Copyright 2025 STARGA Inc.
 - `tensor_symbolic.rs` (~542 tok, large) — Copyright 2025 STARGA Inc.
-- `test_harness_root_cause_error.rs` (~772 tok, large) — Copyright 2025 STARGA Inc.
+- `test_harness_root_cause_error.rs` (~758 tok, large) — Copyright 2025 STARGA Inc.
 - `tls13_finished_driver.py` (~3085 tok, huge) — # Official-vector driver for std/tls13_finished.mind (pure-MIND TLS 1.3
 - `tls13_handshake_driver.py` (~6662 tok, huge) — # Official-vector driver for std/tls13_handshake.mind (pure-MIND TLS 1.3
 - `tls13_keyschedule_driver.py` (~2863 tok, huge) — # Official-vector driver for std/tls13_keyschedule.mind (pure-MIND TLS 1.3 key

@@ -1,44 +1,14 @@
 #!/usr/bin/env bash
 # exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 #
-# WHY THIS EXISTS
-# ---------------
-# Measured at f2a2d87d: 123 integration-test files / 262 test functions were reachable
-# by NO `cargo test` invocation in .github/workflows/ci.yml or scripts/preflight.sh.
-# An unsatisfied file-level `#![cfg(...)]` ERASES the file while the harness still
-# prints `ok. 0 passed` and exits 0, so the alias-miscompile gate and the
-# ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP gate were EMPTY HARNESSES in every CI
-# run — a lowering regression that made `a[i]` skip its bounds check was caught by
-# NOTHING.
+# Runs the feature combinations whose cfg-gated tests ordinary CI misses.
+# Each tier checks positive aggregate and critical-harness execution counts,
+# named failures, captured cargo exit status, and capability-skip markers.
+# Raw logs remain intact; ANSI decoding is confined to the analysis copy.
+# Doctrine and measurement history: docs/gates/exec-semantics-tiers.md.
+# Defeat replays: scripts/test_exec_semantics_gate.py.
 #
-# GATE-EVIDENCE RULE (the doctrine scripts/preflight.sh already states in its header):
-# never accept `exit 0` as proof a gate ran. Every tier below asserts a POSITIVE count
-# of tests EXECUTED (passed + failed + ignored) against a floor, so a future
-# feature-gating accident cannot silently zero it.
-#
-# "DID IT RUN" IS HALF THE QUESTION; "DID IT PASS" IS THE OTHER HALF.
-# The tier verdict rests on THREE independent readings of the same run, because any
-# one of them can be defeated alone:
-#   1. the triage below, over cargo's rerun hint — for EVERY harness kind it names
-#      (`--test <n>`, `--lib`, `--doc`, `--bin <n>`, `--bench <n>`), not just the
-#      integration targets; a hint this gate cannot parse is itself a failure;
-#   2. the aggregate `failed` count summed from the harnesses' own `test result:`
-#      lines, attributed per-harness so the quarantine keeps working;
-#   3. cargo's own exit status, recorded into the log and compared — a non-zero exit
-#      nothing in the log can account for fails the tier.
-# scripts/test_exec_semantics_gate.py replays a synthetic log for each defeat and
-# asserts the EXIT CODE, never the prose.
-#
-# DOCTRINE: docs/gates/exec-semantics-tiers.md — the measurements behind every rule
-# here, and the defect each one was paid for with.
-#
-# Usage:
-#   scripts/exec_semantics_gate.sh                 # all tiers
-#   scripts/exec_semantics_gate.sh exec            # one tier: exec | lowering | pkg
-#   scripts/exec_semantics_gate.sh --print-count   # report counts, never fail
-#   scripts/exec_semantics_gate.sh --from-log <log> <tier>
-#                                                  # ANALYSIS-ONLY: re-read a saved
-#                                                  # tier log without running cargo
+# Usage: [exec|lowering|pkg] | --print-count | --from-log <log> <tier>
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -290,15 +260,8 @@ destination.write_bytes(data)
 PY
 }
 
-# --- THE TWO ran=0 VERDICTS, and the membership test they share --------------
-# These lived in a sourced scripts/exec_semantics_markers.sh for one landing and
-# are home on purpose. The split bought room the DOCTRINE PROSE was consuming,
-# at the price of a second shell surface to keep coherent and one more tracked
-# harness file, against the ratchet in scripts/check_gate_wiring.py that exists
-# to stop that drift. The words moved to docs/gates/exec-semantics-tiers.md
-# instead; the checks belong with the counts they are judged against.
-# Both print their own FAIL block and return non-zero; the caller folds that
-# into its `rc`.
+# Shared marker classification stays beside the tier counts it protects.
+# Doctrine and historical measurements: docs/gates/exec-semantics-tiers.md.
 
 # True when $1 is one of the remaining arguments.
 in_list() { local n=$1; shift; local e; for e in "$@"; do [ "$e" = "$n" ] && return 0; done; return 1; }

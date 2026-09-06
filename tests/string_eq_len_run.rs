@@ -50,11 +50,8 @@ pub fn int_eq_unchanged() -> i64 {
 #[test]
 fn string_len_runs() {
     let mindc = mindc_bin();
-    if !mindc.exists() {
-        println!("string-eq-len-run: mindc not found; skipping");
-        return;
-    }
-    let dir = std::env::temp_dir();
+    assert!(mindc.exists(), "string_eq_len_run requires the built mindc");
+    let dir = common::scratch_dir("string_eq_len_run");
     let src = dir.join("mind_string_eq_len_run.mind");
     let so = dir.join("mind_string_eq_len_run.so");
     std::fs::write(&src, SRC).expect("write src");
@@ -63,13 +60,8 @@ fn string_len_runs() {
         .args([src.to_str().unwrap(), "--emit-shared", so.to_str().unwrap()])
         .output()
         .expect("run mindc");
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("mlir-build") && stderr.contains("requires") {
-            println!("string-eq-len-run: needs mlir-build; skipping");
-            return;
-        }
-        panic!("string-eq-len-run: mindc --emit-shared failed:\n{stderr}");
+    if !common::gate::compiled("string_eq_len_run", &out) {
+        return;
     }
 
     let py = format!(

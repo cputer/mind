@@ -32,15 +32,15 @@ const GOOD: &str =
 #[test]
 fn unknown_string_escape_is_rejected() {
     let mindc = mindc_bin();
-    if !mindc.exists() {
-        println!("string-escape-fail-closed: mindc not found; skipping");
-        return;
-    }
-    let src = std::env::temp_dir().join("mind_escape_bad.mind");
+    assert!(
+        mindc.exists(),
+        "string_escape_fail_closed requires the built mindc"
+    );
+    let src = common::scratch_dir("string_escape_fail_closed").join("mind_escape_bad.mind");
     std::fs::write(&src, BAD).expect("write src");
 
     let out = Command::new(&mindc)
-        .args(["check", src.to_str().unwrap()])
+        .args(["check", "--no-fmt", "--no-lint", src.to_str().unwrap()])
         .output()
         .expect("run mindc check");
     let combined = format!(
@@ -61,21 +61,25 @@ fn unknown_string_escape_is_rejected() {
 #[test]
 fn supported_escapes_still_accepted() {
     let mindc = mindc_bin();
-    if !mindc.exists() {
-        println!("string-escape-fail-closed: mindc not found; skipping");
-        return;
-    }
-    let src = std::env::temp_dir().join("mind_escape_good.mind");
+    assert!(
+        mindc.exists(),
+        "string_escape_fail_closed requires the built mindc"
+    );
+    let src = common::scratch_dir("string_escape_fail_closed").join("mind_escape_good.mind");
     std::fs::write(&src, GOOD).expect("write src");
 
     let out = Command::new(&mindc)
-        .args(["check", src.to_str().unwrap()])
+        .args(["check", "--no-fmt", "--no-lint", src.to_str().unwrap()])
         .output()
         .expect("run mindc check");
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success(),
+        "supported escapes must check successfully:\n{combined}"
     );
     assert!(
         !combined.contains("unknown string escape"),
@@ -86,18 +90,22 @@ fn supported_escapes_still_accepted() {
 #[test]
 fn fmt_does_not_rewrite_an_unknown_escape() {
     let mindc = mindc_bin();
-    if !mindc.exists() {
-        println!("string-escape-fail-closed: mindc not found; skipping");
-        return;
-    }
-    let src = std::env::temp_dir().join("mind_escape_fmt.mind");
+    assert!(
+        mindc.exists(),
+        "string_escape_fail_closed requires the built mindc"
+    );
+    let src = common::scratch_dir("string_escape_fail_closed").join("mind_escape_fmt.mind");
     std::fs::write(&src, BAD).expect("write src");
 
-    let _ = Command::new(&mindc)
+    let out = Command::new(&mindc)
         .args(["fmt", src.to_str().unwrap()])
         .output()
         .expect("run mindc fmt");
 
+    assert!(
+        !out.status.success(),
+        "formatting an unknown escape must fail"
+    );
     let after = std::fs::read_to_string(&src).expect("read back");
     assert_eq!(
         after, BAD,

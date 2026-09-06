@@ -48,15 +48,20 @@ fn test_real_failure() {
 
 fn run_mindc_test(name: &str, src: &str) -> String {
     let mindc = mindc_bin();
-    if !mindc.exists() {
-        return String::new();
-    }
-    let path = std::env::temp_dir().join(name);
+    assert!(
+        mindc.exists(),
+        "test_harness_root_cause_error requires the built mindc"
+    );
+    let path = common::scratch_dir("test_harness_root_cause_error").join(name);
     std::fs::write(&path, src).expect("write src");
     let out = Command::new(&mindc)
         .args(["test", path.to_str().unwrap()])
         .output()
         .expect("run mindc test");
+    assert!(
+        !out.status.success(),
+        "the deliberately failing test must exit nonzero"
+    );
     format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
@@ -67,10 +72,6 @@ fn run_mindc_test(name: &str, src: &str) -> String {
 #[test]
 fn unresolved_callee_ref_names_the_undefined_symbol() {
     let combined = run_mindc_test("mind_r10_poisoned.mind", POISONED);
-    if combined.is_empty() {
-        println!("test-harness-root-cause: mindc not found; skipping");
-        return;
-    }
     assert!(
         combined.contains("UNDEFINED_CONST_XYZ"),
         "the failure must name the undefined symbol that actually aborted the \
@@ -81,10 +82,6 @@ fn unresolved_callee_ref_names_the_undefined_symbol() {
 #[test]
 fn a_genuine_assert_failure_is_unchanged() {
     let combined = run_mindc_test("mind_r10_healthy.mind", HEALTHY);
-    if combined.is_empty() {
-        println!("test-harness-root-cause: mindc not found; skipping");
-        return;
-    }
     assert!(
         combined.contains("a should be 3"),
         "a real assertion failure must still report its own message:\n{combined}"
