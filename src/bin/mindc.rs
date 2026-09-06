@@ -46,7 +46,7 @@ use libmind::{ConformanceOptions, ConformanceProfile, conformance};
 #[cfg(any(feature = "mlir-lowering", feature = "mlir-build"))]
 use libmind::pipeline::{MlirProducts, lower_to_mlir};
 
-#[cfg(feature = "mlir-build")]
+#[cfg(any(feature = "mlir-build", feature = "cross-module-imports"))]
 use std::path::Path;
 
 #[derive(Parser, Debug)]
@@ -1371,11 +1371,11 @@ fn run_workspace_build(
     };
     let selected = ws_opts.filter_members(&members, &sorted);
 
-    if selected.is_empty()
-        && let Some(pkg) = package
-    {
-        eprintln!("error[workspace]: package '{pkg}' not found in workspace");
-        process::exit(2);
+    if selected.is_empty() {
+        if let Some(pkg) = package {
+            eprintln!("error[workspace]: package '{pkg}' not found in workspace");
+            process::exit(2);
+        }
     }
 
     let mut any_failed = false;
@@ -1506,11 +1506,11 @@ fn run_workspace_test(
     };
     let selected = ws_opts.filter_members(&members, &sorted);
 
-    if selected.is_empty()
-        && let Some(pkg) = package
-    {
-        eprintln!("error[workspace]: package '{pkg}' not found in workspace");
-        process::exit(2);
+    if selected.is_empty() {
+        if let Some(pkg) = package {
+            eprintln!("error[workspace]: package '{pkg}' not found in workspace");
+            process::exit(2);
+        }
     }
 
     let reporter_kind = if reporter == "json" {
@@ -3271,6 +3271,9 @@ fn emit_shared_if_requested(
     cli: &CompileArgs,
     _products: &libmind::pipeline::CompileProducts,
     _source: &str,
+    #[cfg(feature = "cross-module-imports")] _scope: Option<
+        &libmind::project::single_file_scope::ProjectScope,
+    >,
 ) {
     if cli.emit_shared.is_some() {
         eprintln!(

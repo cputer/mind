@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1540 | **Est. tokens:** ~3010453
-**Generated:** 2026-09-06 13:05 UTC
+**Files:** 1540 | **Est. tokens:** ~3010689
+**Generated:** 2026-09-06 13:15 UTC
 
 ## Token Budget Guide
 
@@ -99,8 +99,8 @@
 | `src/deps/` | 1 | ~9388 |
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
-| `src/doc/` | 3 | ~10987 |
-| `src/eval/` | 19 | ~93860 |
+| `src/doc/` | 3 | ~11002 |
+| `src/eval/` | 19 | ~93863 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
@@ -117,7 +117,7 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 14 | ~31000 |
+| `src/project/` | 14 | ~31007 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -177,7 +177,7 @@
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
 | `tests/runtime/` | 2 | ~135 |
-| `tests/selfhost_gaps/` | 158 | ~10231 |
+| `tests/selfhost_gaps/` | 158 | ~10442 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
@@ -1057,10 +1057,10 @@
 
 - `html.rs` (~956 tok, large) — Copyright 2025 STARGA Inc.
 - `markdown.rs` (~2644 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~7387 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~7402 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/eval/`
 
-- `abi_gate.rs` (~12154 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
+- `abi_gate.rs` (~12157 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
 - `assert_check.rs` (~989 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9335 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1200,7 +1200,7 @@
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5905 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~4075 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~4082 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `source_snapshot.rs` (~600 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1823,7 +1823,7 @@
 - `scalar_cast_unsigned_narrow_run.rs` (~1047 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/selfhost_gaps/`
 
-- `GAPS.md` (~5736 tok, huge) — Self-host nfn driver — gap inventory (fuzz-discovered)
+- `GAPS.md` (~5947 tok, huge) — Self-host nfn driver — gap inventory (fuzz-discovered)
 - `andor_and_direct_1.mind` (~12 tok, tiny) — fn f(a: bool, b: bool) -> bool {
 - `andor_and_ifcond_1.mind` (~18 tok, tiny) — fn f(a: i64, b: i64) -> i64 {
 - `andor_and_letinit_1.mind` (~23 tok, tiny) — fn f(a: i64, b: i64) -> i64 {

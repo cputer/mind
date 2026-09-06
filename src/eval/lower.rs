@@ -1273,11 +1273,12 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
         if MONO.with(|c| !c.borrow().templates.is_empty()) {
             for item in &module.items {
                 if let ast::Node::FnDef(fd, _) = item {
-                    if fd.type_params.is_empty()
-                        && let Some(rt) = &fd.ret_type
-                        && mangle_suffix(rt).is_some()
-                    {
-                        m.insert(fd.name.clone(), rt.clone());
+                    if fd.type_params.is_empty() {
+                        if let Some(rt) = &fd.ret_type {
+                            if mangle_suffix(rt).is_some() {
+                                m.insert(fd.name.clone(), rt.clone());
+                            }
+                        }
                     }
                 }
             }

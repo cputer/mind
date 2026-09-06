@@ -234,6 +234,7 @@ fn capture_scope_from_paths(
 }
 
 /// Build project scope from source text already captured by the build driver.
+#[cfg(feature = "mlir-build")]
 pub(crate) fn capture_project_scope_from_texts<'a>(
     entry: &Path,
     entry_source: &str,

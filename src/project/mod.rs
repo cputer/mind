@@ -2139,10 +2139,10 @@ fn collect_global_enum_item(item: &crate::ast::Node, enums: &mut crate::ir::Glob
     // Every fn → its declared return type, for `let x = f(...)` RHS type
     // inference (`let raw = decorator_arg_string(d); raw.split(…)`).
     #[cfg(feature = "std-surface")]
-    if let crate::ast::Node::FnDef(fd, _) = item
-        && let Some(rt) = &fd.ret_type
-    {
-        enums.fn_returns.insert(fd.name.clone(), rt.clone());
+    if let crate::ast::Node::FnDef(fd, _) = item {
+        if let Some(rt) = &fd.ret_type {
+            enums.fn_returns.insert(fd.name.clone(), rt.clone());
+        }
     }
     // Descend into a `module { … }` wrapper (a transparent `Node::Block`).
     if let crate::ast::Node::Block { stmts, .. } = item {

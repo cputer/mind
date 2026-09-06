@@ -214,10 +214,10 @@ pub fn check_generic_resolvable(module: &Module, src: &str, file: Option<&str>) 
         if let Node::FnDef(fd, _) = item {
             if !fd.type_params.is_empty() {
                 templates.insert(fd.name.as_str());
-            } else if let Some(rt) = &fd.ret_type
-                && crate::eval::lower::mangle_suffix(rt).is_some()
-            {
-                fn_returns.insert(fd.name.clone(), rt.clone());
+            } else if let Some(rt) = &fd.ret_type {
+                if crate::eval::lower::mangle_suffix(rt).is_some() {
+                    fn_returns.insert(fd.name.clone(), rt.clone());
+                }
             }
         }
     }

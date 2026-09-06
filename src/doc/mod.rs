@@ -283,21 +283,21 @@ fn extract_file_doc(path: &Path) -> Result<FileDoc, String> {
             })
             .collect();
         for node in &expanded.items {
-            if let Node::FnDef(fd, span) = node
-                && fd.is_pub
-            {
-                let (name, params, ret_type) = (&fd.name, &fd.params, &fd.ret_type);
-                if !original.contains(name.as_str()) {
-                    // A synthesised fn carries the enum's span, so the offset-based
-                    // doc-comment lookup would bleed the enum's comment onto it;
-                    // give it a generated provenance line instead.
-                    items.push(DocItem {
-                        kind: ItemKind::Fn,
-                        name: name.clone(),
-                        signature: render_fn_sig(name, params, ret_type.as_ref()),
-                        doc: "Derived by `#[bimap]`.".to_string(),
-                        line: offset_to_line(&source, span.start()),
-                    });
+            if let Node::FnDef(fd, span) = node {
+                if fd.is_pub {
+                    let (name, params, ret_type) = (&fd.name, &fd.params, &fd.ret_type);
+                    if !original.contains(name.as_str()) {
+                        // A synthesised fn carries the enum's span, so the offset-based
+                        // doc-comment lookup would bleed the enum's comment onto it;
+                        // give it a generated provenance line instead.
+                        items.push(DocItem {
+                            kind: ItemKind::Fn,
+                            name: name.clone(),
+                            signature: render_fn_sig(name, params, ret_type.as_ref()),
+                            doc: "Derived by `#[bimap]`.".to_string(),
+                            line: offset_to_line(&source, span.start()),
+                        });
+                    }
                 }
             }
         }
