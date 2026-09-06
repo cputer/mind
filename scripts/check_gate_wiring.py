@@ -115,8 +115,7 @@ GATED_EVENTS = ("push", "pull_request")
 # / `in_list` came home byte-for-byte, and the gate is 773 lines: under BOTH
 # ratchets, with no second surface (declare -F source guards, un-`local` interface
 # arrays) to keep coherent. Paying one ratchet with the other was never a saving.
-# Two import-only extractions keep the native-oracle and diagnostic-project
-# helpers out of already oversized smokes; their callers' line budgets shrink.
+# Two import-only extractions shrink oversized native-oracle/diagnostic smokes.
 HARNESS_CEILING = 252
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
