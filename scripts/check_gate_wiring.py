@@ -102,16 +102,18 @@ GATED_EVENTS = ("push", "pull_request")
 # mutation proof at all but a GATE in its own right: it is the only thing asserting
 # that _selfhost_so.resolve_so() still refuses an oracle it cannot prove fresh, and
 # that no sibling smoke opts out of that contract unnamed.
-# 250 -> 251 for scripts/exec_semantics_markers.sh, which adds no harness: it is
-# the SEAM of scripts/exec_semantics_gate.sh, which had crossed the 800-line house
-# ceiling (729 -> 843) carrying the ran=0 marker consumer and the ENV_TOLERATED
-# shrink-ratchet. Total harness LINES go DOWN; the file count goes up by one
-# because a ceiling breach is repaid by splitting, and this ratchet counts files.
-# The alternative -- leaving one gate script 43 lines over the limit -- trades a
-# ratchet this gate owns for a ratchet tests/module_size_ratchet.rs owns, which is
-# not a saving. That ratchet now covers scripts/ and tests/ too, so the next such
-# breach is caught where it happens instead of by a reviewer counting lines.
-HARNESS_CEILING = 251
+# 250 -> 251 -> 250. scripts/exec_semantics_markers.sh was split out of
+# scripts/exec_semantics_gate.sh when that gate crossed the 800-line house ceiling
+# (729 -> 843), and this ceiling was raised to admit it. That trade was wrong and is
+# REVERSED: the lines that pushed the gate over were predominantly DOCTRINE PROSE --
+# the tier-table measurement history, the marker-capture finding, the `class=`
+# fatality rationale -- and prose that has outgrown a comment block belongs in a
+# document, not in a second shell file. The prose moved to
+# docs/gates/exec-semantics-tiers.md, `consume_skip_markers` / `check_dead_tolerance`
+# / `in_list` came home byte-for-byte, and the gate is 773 lines: under BOTH
+# ratchets, with no second surface (declare -F source guards, un-`local` interface
+# arrays) to keep coherent. Paying one ratchet with the other was never a saving.
+HARNESS_CEILING = 250
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

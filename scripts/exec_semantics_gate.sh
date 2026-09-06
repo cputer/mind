@@ -5,34 +5,16 @@
 # ---------------
 # Measured at f2a2d87d: 123 integration-test files / 262 test functions were reachable
 # by NO `cargo test` invocation in .github/workflows/ci.yml or scripts/preflight.sh.
-# Every broad `cargo test` in CI runs `--no-default-features` with at most
-# {std-surface, cross-module-imports, autodiff, mlir-lowering, cpu-buffers}; the only
-# runs that enable `mlir-build` are `--test <single-target>` SELECTORS, and exactly ONE
-# of the 110 mlir-build-gated files (cross_substrate_identity) is named by one.
-#
-# A file-level `#![cfg(all(unix, feature = "mlir-build", ...))]` that is unsatisfied
-# ERASES the file — and the harness still prints `ok. 0 passed` and exits 0:
-#
-#   $ cargo test --no-default-features --features std-surface,cross-module-imports \
-#       --test alias_miscompile_run --test array_oob_trap_run
-#   running 0 tests
-#   test result: ok. 0 passed; 0 failed; ...      <- the alias-miscompile gate
-#   running 0 tests
-#   test result: ok. 0 passed; 0 failed; ...      <- the array-OOB bounds-TRAP gate
-#   CARGO EXIT=0
-#
-# So the alias-miscompile gate and the ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
-# gate were EMPTY HARNESSES in every CI run. A lowering regression that made `a[i]`
-# skip its bounds check, or reintroduced the alias miscompile, was caught by NOTHING.
+# An unsatisfied file-level `#![cfg(...)]` ERASES the file while the harness still
+# prints `ok. 0 passed` and exits 0, so the alias-miscompile gate and the
+# ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP gate were EMPTY HARNESSES in every CI
+# run — a lowering regression that made `a[i]` skip its bounds check was caught by
+# NOTHING.
 #
 # GATE-EVIDENCE RULE (the doctrine scripts/preflight.sh already states in its header):
-# never accept `exit 0` as proof a gate ran. Every tier below asserts a POSITIVE test
-# count against a floor, so a future feature-gating accident cannot silently zero it.
-#
-# The floor counts tests EXECUTED (passed + failed + ignored). That is deterministic
-# from the source tree given the feature set — unlike a pass count it does not move
-# with the environment — and it collapses to 0 under exactly the accident being
-# guarded against.
+# never accept `exit 0` as proof a gate ran. Every tier below asserts a POSITIVE count
+# of tests EXECUTED (passed + failed + ignored) against a floor, so a future
+# feature-gating accident cannot silently zero it.
 #
 # "DID IT RUN" IS HALF THE QUESTION; "DID IT PASS" IS THE OTHER HALF.
 # The tier verdict rests on THREE independent readings of the same run, because any
@@ -44,10 +26,11 @@
 #      lines, attributed per-harness so the quarantine keeps working;
 #   3. cargo's own exit status, recorded into the log and compared — a non-zero exit
 #      nothing in the log can account for fails the tier.
-# Measured before (2) and (3) existed and while (1) matched only `--test <n>`: a tier
-# log carrying a lib harness with `3 failed` printed `failed=3` and, three lines
-# later, `ok[exec]: ... 0 failing` — exit 0. scripts/test_exec_semantics_gate.py
-# replays that log and eight more, and asserts the exit code of each.
+# scripts/test_exec_semantics_gate.py replays a synthetic log for each defeat and
+# asserts the EXIT CODE, never the prose.
+#
+# DOCTRINE: docs/gates/exec-semantics-tiers.md — the measurements behind every rule
+# here, and the defect each one was paid for with.
 #
 # Usage:
 #   scripts/exec_semantics_gate.sh                 # all tiers
@@ -58,31 +41,6 @@
 #                                                  # tier log without running cargo
 set -uo pipefail
 cd "$(dirname "$0")/.."
-
-# The ran=0 SKIP-MARKER CONSUMER and the ENV_TOLERATED shrink-ratchet live in a
-# sourced library beside this file. Not a style preference: the house ceiling is
-# 800 lines and this gate crossed it (729 -> 843) while those two verdicts were
-# being taught to read the marker's `class=` field and to fail on dead
-# tolerance. tests/module_size_ratchet.rs now enforces that ceiling over
-# scripts/ and tests/ as well as src/, so the seam is carried rather than owed.
-#
-# Fail closed on BOTH halves of "the library is there": a source that fails, and
-# a library that sourced but defines nothing. Without the second, an emptied
-# library would surface as a bare exit-127 with no cause named — and this is the
-# gate whose whole subject is a check that asserted nothing.
-MARKERS_LIB="scripts/exec_semantics_markers.sh"
-# shellcheck source=scripts/exec_semantics_markers.sh
-. "$MARKERS_LIB" || {
-  echo "cannot source $MARKERS_LIB — half this gate's verdicts would be missing" >&2
-  exit 2
-}
-for _fn in in_list consume_skip_markers check_dead_tolerance; do
-  declare -F "$_fn" >/dev/null || {
-    echo "$MARKERS_LIB sourced but does not define $_fn — refusing to run a gate" >&2
-    echo "with a verdict missing; see its CONTRACT header." >&2
-    exit 2
-  }
-done
 
 # ---------------------------------------------------------------------------
 # TIER DEFINITIONS.  RE-MEASURED at the wave that added the fail-closed capability
@@ -102,29 +60,12 @@ done
 #   lowering  std-surface,mlir-lowering                        335      1891   1876
 #   pkg       pkg                                              334      1474   1462
 #
-# RE-MEASURED BY RUNNING ALL THREE TIERS at the landing that made the ran=0
-# markers visible -- one full `scripts/exec_semantics_gate.sh` run, the numbers
-# above read off its own `harnesses` / `tests executed` lines, not arithmetic on
-# a previous measurement. That landing adds no test and deletes none: it is the
-# same run twice over, once with the marker discarded by libtest's capture and
-# once with it written to the process stdout handle, and BOTH read 340 / 2170,
-# 335 / 1891, 334 / 1474. (The rejected `-- --show-output` alternative read
-# 345 / 2179, 340 / 1900, 339 / 1483 on the identical tree -- it splices captured
-# `test result:` lines into this log and inflates the very floors below.) The
-# gap against the previous table is coverage four later commits added while the
-# floors sat still, which is exactly the slack the doctrine above forbids.
-#
-# Re-measured AT THE TIP of the landing, not mid-wave: floors pinned at 332/2102
-# mid-wave and then left alone while four further commits added test files sat 4
-# harnesses and 31 tests below the tree, and that slack was exactly the coverage the
-# wave itself had just added — the ratchet was carrying its own new gates as
-# deletable. Demonstrated on the tier's own log: erasing five whole harnesses
-# (bare_variant_ambiguity_run, bitwise_no_panic_any_feature, bytes_fixed_into_vec_run,
-# conv2d_grad, cross_module) left 331/2109, and the floors 328/2085 printed no
-# complaint. The doctrine below applies to THIS landing too, or it is a slogan.
-#
-# (Superseded: measured@f2a2d87d was 317/1913, 318/1663, 317/1265; mid-wave was
-#  332/2102, 327/1830, 326/1415.)
+# Re-measure AT THE TIP of a landing, never mid-wave, and read the numbers off a
+# real run's own `harnesses` / `tests executed` lines rather than doing arithmetic
+# on a previous measurement. `-- --show-output` is REJECTED as a way to see skip
+# markers: it inflates these very floors. Both rules were paid for — the
+# measurement history and the demonstrations are in
+# docs/gates/exec-semantics-tiers.md §1-2.
 # ---------------------------------------------------------------------------
 TIERS=(exec lowering pkg)
 
@@ -182,46 +123,15 @@ REQUIRE_TOOLCHAIN_pkg=0
 #       expects `func.call @__mind_load_i64(%`; the intrinsic now lowers inline to
 #       `llvm.inttoptr` + `llvm.load`. Stale shape expectation, not a miscompile.
 # CRITICAL_<tier> — per-harness minimums for the gates each tier NAMES as the reason
-# it exists. An AGGREGATE floor cannot protect a SPECIFIC test: measured slack was 14
-# tests against FLOOR_TESTS_exec, and an erased test file still prints
-# `test result: ok. 0 passed` so the HARNESS count does not move either. Re-erasing
-# exactly the two files this gate was written to defend therefore produced
-# ALL TIERS OK / exit 0 — the gate could not protect the thing it names.
+# it exists. An AGGREGATE floor cannot protect a SPECIFIC test: re-erasing exactly the
+# two files this gate was written to defend once produced ALL TIERS OK / exit 0.
 # Format: "<target> <min_executed>", checked INDEPENDENTLY of the floors.
 #
-# PER-TIER, not global. A global list is wrong twice over: a target is only expected
-# to run in the tier whose features satisfy its `#![cfg(...)]`, so checking the
-# mlir-build gates in the `lowering`/`pkg` tiers would red those tiers for a target
-# they correctly do not build — and it would leave `lowering` and `pkg` with NO
-# per-harness minimum at all, which is precisely the hole this check exists to close
-# (pkg's 2 files / 2 tests are invisible inside a four-figure aggregate floor).
-#
-# The count compared is tests EXECUTED (passed + failed + ignored), not passed: this
-# check answers "did the substance run", and a target that ran and FAILED is caught
-# by the quarantine triage below with a message that names the real problem. Counting
-# `passed` here would report a failing gate as "did not run".
-#
-# A row is added by the SAME change that adds the gate it protects: a new gate whose
-# only protection is the aggregate floor is a gate anyone may delete. The fail-closed
-# skip gates below carry no `required-features`, so they build and run in ALL THREE
-# tiers — measured per tier (21, 4, 6 and 2 executed in exec, lowering and pkg alike),
-# never assumed from one of them.
-#
-# The same argument reaches the META-gates: harness_scratch_isolation guards the scratch
-# ISOLATION the wedge gates' artifacts depend on (two test processes on one box writing
-# one fixed temp path is a flake that reads as a compiler regression), and
-# module_size_ratchet guards the 800-line ceiling and its budget table. Both walk the
-# tree from disk and carry no `required-features`, so they run in all three tiers —
-# measured 3 and 5 executed in each, never assumed from one. mindc_artifact_name is
-# listed for `exec` only: its 4 resolver tests build everywhere, but the 3 end-to-end
-# tests that drive `mindc build` are `#[cfg(feature = "mlir-build")]` and only this
-# tier's feature set has it, so 7 is an exec number and 4 is what the others would see.
-#
-# fail_closed_capability_skip_stub_exec is the ONE with a file-level cfg: `#![cfg(unix)]`,
-# because it spawns a POSIX shell stub and `ci.yml`'s build_test matrix also runs
-# windows-latest. Every tier here runs on a unix host, so the row is a real minimum in
-# all three; on Windows cargo does not build the target at all and there is nothing to
-# count. harness_portability is what keeps that gate at FILE scope instead of per item.
+# PER-TIER, not global; the count compared is tests EXECUTED, not passed; and a row is
+# added by the SAME change that adds the gate it protects — a new gate whose only
+# protection is the aggregate floor is a gate anyone may delete. Every minimum below
+# was measured IN ITS OWN TIER, never assumed from another.
+# The full argument and the per-row measurements: docs/gates/exec-semantics-tiers.md §5.
 CRITICAL_exec=(
   "determinism_veto_control 2"       # the determinism-by-default veto positive control
   "alias_miscompile_run 1"    # the alias-miscompile regression gate
@@ -282,32 +192,13 @@ QUARANTINE_pkg=()
 #   mindfuzz_cross_substrate  — needs the MLIR toolchain; soft-skips in ci.yml's
 #       build_test job. Also already excluded by scripts/preflight.sh.
 ENV_TOLERATED_exec=(g2_differential_mlir)
-# g2_differential_mlir is listed for ALL THREE tiers, not just exec.
-#
-# It has no [[test]] required-features entry, so cargo builds it in every tier — but
-# it dlopens a libmindc_mind.so that only the exec tier's feature set can produce
-# (FEATURES_exec carries mlir-build; lowering and pkg deliberately do not). In those
-# two tiers it therefore skips and emits `ran=0`, which the SKIP-MARKER CONSUMER above
-# treats as fatal. Without these entries that consumer would RED two tiers that are
-# green today, for a target that cannot meaningfully run in them.
-#
-# This is not a weakening: g2 is a real gate in exec, where it is now also exempt from
-# crash-tolerance (a MIND_CRASH escapes tolerance and fails the tier). Here it records
-# an honest environmental skip.
-#
-# The long-term fix this comment used to only RECOMMEND has since been APPLIED: both
-# g2_differential_mlir and mindfuzz_cross_substrate now carry
-# `required-features = ["mlir-build"]` in Cargo.toml, so cargo does not build them in
-# tiers that cannot run them. Structural absence beats runtime tolerance.
-#
-# mindfuzz_cross_substrate is therefore no longer listed below for `lowering`/`pkg`:
-# it is not built there at all, so tolerating its failure was dead configuration
-# describing a target those tiers never see. g2 stays listed for `exec`, where it IS
-# built and can fail for the documented environmental reason.
-# ...and REMOVED from lowering/pkg by the same argument: with
-# `required-features = ["mlir-build"]` cargo does not build g2 in either tier, so
-# those entries tolerated a ran=0 that can no longer be emitted there. The
-# TOLERANCE SHRINK-RATCHET below now fails the tier on exactly this shape.
+# `lowering` and `pkg` are EMPTY on purpose. Both g2_differential_mlir and
+# mindfuzz_cross_substrate now carry `required-features = ["mlir-build"]` in
+# Cargo.toml, so cargo does not build them in tiers that cannot run them, and an
+# entry naming a target a tier never builds is dead configuration — the TOLERANCE
+# SHRINK-RATCHET below reds a tier on exactly that shape. Structural absence beats
+# runtime tolerance; the retirement history is in
+# docs/gates/exec-semantics-tiers.md §4.
 ENV_TOLERATED_lowering=()
 ENV_TOLERATED_pkg=()
 
@@ -360,6 +251,159 @@ rerun_selector() {
     @bench:*) echo "--bench ${1#@bench:}" ;;
     *)        echo "--test $1" ;;
   esac
+}
+
+# --- THE TWO ran=0 VERDICTS, and the membership test they share --------------
+# These lived in a sourced scripts/exec_semantics_markers.sh for one landing and
+# are home on purpose. The split bought room the DOCTRINE PROSE was consuming,
+# at the price of a second shell surface to keep coherent and one more tracked
+# harness file, against the ratchet in scripts/check_gate_wiring.py that exists
+# to stop that drift. The words moved to docs/gates/exec-semantics-tiers.md
+# instead; the checks belong with the counts they are judged against.
+# Both print their own FAIL block and return non-zero; the caller folds that
+# into its `rc`.
+
+# True when $1 is one of the remaining arguments.
+in_list() { local n=$1; shift; local e; for e in "$@"; do [ "$e" = "$n" ] && return 0; done; return 1; }
+
+# consume_skip_markers <log> <tier> <require_toolchain> [env-tolerated-target...]
+#
+# `ran=0` is a failure to EXECUTE — a DIFFERENT question from "did it pass", and
+# the two need separate verdicts because the fixes are unrelated. Fail-closed by
+# default: a ran=0 from any target not named in ENV_TOLERATED_<tier> and not
+# carrying a `class=` the gate helper declares legal here reds the tier, so the
+# next gate to print a marker is enforced without anyone wiring it up.
+#
+# Sets four arrays in the CALLER's scope, deliberately un-`local`: `zero_fatal`,
+# `zero_ok`, `zero_expected` and `env_skipped`. The tier loop reads them BY NAME
+# — the failure triage grants environmental tolerance ONLY on `env_skipped` —
+# so they are the interface, not an implementation detail to be renamed.
+#
+# Doctrine, and the measurement behind every rule here (why the marker had to
+# leave libtest's capture to be seen at all, why attribution resets at every
+# compilation-unit boundary, and which `class=` is fatal where):
+# docs/gates/exec-semantics-tiers.md §3.
+consume_skip_markers() {
+  local log=$1 tier=$2 require_toolchain=$3
+  shift 3
+  local tolerated=("$@")
+  local ret=0
+  local -a markers
+  local m mtarget mname mran mclass z
+  mapfile -t markers < <(
+    awk '
+      # Clear attribution at EVERY compilation-unit boundary, not just at
+      # `Running tests/*.rs`: cargo also emits `Doc-tests`, `Running benches/...`
+      # and `Running unittests src/lib.rs`, and without this reset a marker from
+      # one of those inherits the last tests/<t>.rs identity — which can silently
+      # downgrade a genuine ran=0 from fatal to tolerated. Fails closed to
+      # <unattributed> instead.
+      /^[[:space:]]*(Running|Doc-tests) / { t = "" }
+      match($0, /Running tests\/[A-Za-z0-9_]+\.rs/) {
+        t = substr($0, RSTART + 14, RLENGTH - 17); next
+      }
+      /SDLC-GATE [A-Za-z0-9_.-]+ ran=[0-9]+/ {
+        name = ""; ran = ""; cls = ""
+        for (i = 1; i < NF; i++) if ($i == "SDLC-GATE") { name = $(i + 1); break }
+        for (i = 1; i <= NF; i++) if ($i ~ /^ran=[0-9]+$/) { ran = substr($i, 5); break }
+        # The absence CLASS the producer stamped (tests/common/gate.rs::Absent).
+        # A producer that stamps none is `unclassified` and stays FAIL-CLOSED
+        # below — a marker may never buy tolerance by omitting a field.
+        for (i = 1; i <= NF; i++) if ($i ~ /^class=[a-z]+$/) { cls = substr($i, 7); break }
+        if (name != "" && ran != "")
+          printf "%s %s %s %s\n", (t == "" ? "<unattributed>" : t), name, ran,
+                                   (cls == "" ? "unclassified" : cls)
+      }' "$log" | sort -u
+  )
+  zero_fatal=()
+  zero_ok=()
+  # A ran=0 whose CLASS the gate helper already declared legal here. Counted and
+  # printed on every run, never fatal -- and never a SECOND rule, which is the
+  # whole reason the class travels in the marker:
+  #   class=optional   gate.rs::is_fail_closed answers NO for Absent::OptionalInput
+  #       in EVERY tier. A tier that failed on it would be a second, contradictory
+  #       owner of one rule; what was missing was VISIBILITY, never fatality.
+  #   class=toolchain in a REQUIRE_TOOLCHAIN_<tier>=0 tier
+  #       REQUIRE_TOOLCHAIN_<tier> IS this tier's answer to "may a toolchain
+  #       absence skip here", and gate.rs applies the identical rule per-process
+  #       through MIND_BENCH_REQUIRE. In a =1 tier the helper PANICS instead of
+  #       marking, so a toolchain marker arriving there stays FATAL below.
+  # Neither arm is named in ENV_TOLERATED, deliberately: that list ALSO excuses a
+  # target's FAILURES, and only one of those two permissions is being granted.
+  zero_expected=()
+  # Targets that ACTUALLY reported an environmental skip. This is the evidence
+  # tolerance is granted on below -- not the mere fact of being listed.
+  env_skipped=()
+  for m in ${markers[@]+"${markers[@]}"}; do
+    read -r mtarget mname mran mclass <<<"$m"
+    [ "$mran" = 0 ] || continue
+    if in_list "$mtarget" ${tolerated[@]+"${tolerated[@]}"}; then
+      zero_ok+=("$mname (tests/$mtarget.rs)")
+      env_skipped+=("$mtarget")
+    elif [ "$mclass" = optional ] \
+      || { [ "$mclass" = toolchain ] && [ "$require_toolchain" != 1 ]; }; then
+      zero_expected+=("$mname (tests/$mtarget.rs)")
+    else
+      zero_fatal+=("$mname (tests/$mtarget.rs)")
+    fi
+  done
+  if [ ${#zero_fatal[@]} -gt 0 ]; then
+    echo
+    echo "FAIL[$tier]: ${#zero_fatal[@]} gate(s) reported ran=0 — they did not EXECUTE."
+    for z in "${zero_fatal[@]}"; do echo "  - $z"; done
+    echo "  A failure to EXECUTE, not a failure to pass: these asserted NOTHING, so the"
+    echo "  tier's green says nothing about what they defend. Each is one of two shapes:"
+    echo "    * class=toolchain here, where REQUIRE_TOOLCHAIN_$tier=$require_toolchain demands a real"
+    echo "      backend — install the toolchain; a skip asserts NOTHING. (The gate helper"
+    echo "      PANICS on this, so a marker means a producer that never read the rule.)"
+    echo "    * no class= field at all — a producer outside tests/common/gate.rs. Stamp its"
+    echo "      absence class, or — if the skip is genuinely environmental — name the"
+    echo "      target in ENV_TOLERATED_$tier with the reason, where it stays counted."
+    ret=1
+  fi
+  if [ ${#zero_ok[@]} -gt 0 ]; then
+    echo "gates that did NOT run : ${#zero_ok[@]}  (env-tolerated ran=0 — a skip, never a pass)"
+    for z in "${zero_ok[@]}"; do echo "  - $z"; done
+  fi
+  if [ ${#zero_expected[@]} -gt 0 ]; then
+    echo "gates that did NOT run : ${#zero_expected[@]}  (class the helper declares legal here — a skip, never a pass)"
+    for z in "${zero_expected[@]}"; do echo "  - $z"; done
+  fi
+  return $ret
+}
+
+# check_dead_tolerance <log> <tier> <harnesses> <floor_h> [env-tolerated-target...]
+#
+# The missing half of the quarantine ratchet. A tolerated name absent from this
+# tier's own `Running tests/<t>.rs` set is tolerance for something the tier never
+# ran: it cannot excuse anything today and silently pre-approves a ran=0 the day
+# the target becomes buildable. Judged against the tier's OWN log, never a
+# hand-copied expectation. See docs/gates/exec-semantics-tiers.md §4.
+check_dead_tolerance() {
+  local log=$1 tier=$2 harnesses=$3 floor_h=$4
+  shift 4
+  local tolerated=("$@")
+  local ret=0
+  local -a tier_targets dead_tolerance
+  local tname d
+  mapfile -t tier_targets < <(
+    grep -oE 'Running tests/[A-Za-z0-9_]+\.rs' "$log" | sed -e 's|Running tests/||' -e 's|\.rs$||' | sort -u
+  )
+  dead_tolerance=()
+  for tname in ${tolerated[@]+"${tolerated[@]}"}; do
+    in_list "$tname" ${tier_targets[@]+"${tier_targets[@]}"} || dead_tolerance+=("$tname")
+  done
+  if [ ${#dead_tolerance[@]} -gt 0 ] && [ "$harnesses" -ge "$floor_h" ]; then
+    echo
+    echo "FAIL[$tier]: ENV_TOLERATED_$tier names ${#dead_tolerance[@]} target(s) this tier never built."
+    for d in "${dead_tolerance[@]}"; do echo "  - $d"; done
+    echo "  Tolerance for a target that does not run here is dead configuration: it"
+    echo "  cannot excuse anything today and silently pre-approves a ran=0 the day the"
+    echo "  target becomes buildable. Remove the entry (structural absence beats runtime"
+    echo "  tolerance), or restore the target to this tier."
+    ret=1
+  fi
+  return $ret
 }
 
 overall=0
@@ -480,19 +524,14 @@ for tier in "${want[@]}"; do
   fi
 
   # --- SKIP-MARKER CONSUMER: ran=0 is a failure to EXECUTE -----------------
-  # Carried in scripts/exec_semantics_markers.sh, whose CONTRACT header holds the
-  # doctrine this check rests on. It sets `zero_fatal`, `zero_ok`,
-  # `zero_expected` and `env_skipped` in this scope: the failure triage below
-  # reads `env_skipped` as the evidence environmental tolerance is granted on,
-  # and the ok banner reads the other two so a green tier can never hide the
-  # gates it was green ABOUT LESS than it looks.
+  # Sets `zero_fatal`, `zero_ok`, `zero_expected` and `env_skipped` in this
+  # scope: the failure triage below reads `env_skipped` as the evidence
+  # environmental tolerance is granted on, and the ok banner reads the other two
+  # so a green tier can never hide that it is green ABOUT LESS than it looks.
   consume_skip_markers "$log" "$tier" "$require_toolchain" \
     ${tolerated[@]+"${tolerated[@]}"} || rc=1
 
   # --- TOLERANCE SHRINK-RATCHET (the missing half of the quarantine ratchet) --
-  # Also carried in scripts/exec_semantics_markers.sh. Judged against the tier's
-  # OWN log — a tolerated name absent from the `Running tests/<t>.rs` set is
-  # tolerance for something this tier never ran.
   check_dead_tolerance "$log" "$tier" "$harnesses" "$floor_h" \
     ${tolerated[@]+"${tolerated[@]}"} || rc=1
 
