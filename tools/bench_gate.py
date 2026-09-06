@@ -29,6 +29,10 @@ re-blesses automatically; a human/CI confirmation run commits the new champion.
 Bench selection is generic: the gate watches whatever bench names appear in the
 champion (or floor) reference, so adding `simple_benchmarks` (scalar_math et al.)
 to the gate is just adding them to the champion file — no code change here.
+
+The gate also requires a minimum number of trustworthy frontier fixtures. A
+partial result with noisy rows is inconclusive and cannot pass as a complete
+frontier assertion.
 """
 
 from __future__ import annotations
@@ -227,6 +231,12 @@ def main() -> int:
         help="a bench whose criterion (+/- N) spread exceeds this fraction of "
         "its median is INCONCLUSIVE (loaded box), not a regression.",
     )
+    ap.add_argument(
+        "--min-trusted",
+        type=int,
+        default=3,
+        help="minimum trustworthy frontier fixtures required; default 3",
+    )
     args = ap.parse_args()
 
     champion = parse_reference(args.champion)
@@ -240,6 +250,7 @@ def main() -> int:
         # reference file still produced a green gate measured against a baked-in
         # number nobody re-derived. A perf gate with no reference has nothing to
         # compare against and must say so.
+        print("asserted=0")
         print("::error::bench gate has NO reference: neither --champion nor --floor "
               "was readable. Refusing to invent a baseline.")
         return 4
@@ -307,6 +318,9 @@ def main() -> int:
     print()
 
     noisy = [r[0] for r in rows if r[6] == "NOISY"]
+    # Machine-readable count consumed by the shared gate runner. Only complete,
+    # low-variance fixture comparisons contribute to the assertion count.
+    print(f"asserted={trusted}")
     if failed:
         print(
             "::error::pipeline regression exceeded "
@@ -325,6 +339,13 @@ def main() -> int:
         for m in missing:
             print(f"  - {m}")
         return 4
+    if trusted < args.min_trusted:
+        print(
+            f"::error::bench gate FAILED: only {trusted} trustworthy frontier "
+            f"fixture(s) asserted; minimum is {args.min_trusted}. "
+            f"Noisy fixtures exceed the {args.max_rel_variance:.0%} trust bar."
+        )
+        return 2
     if trusted == 0 and noisy:
         print(
             f"::warning::all benches inconclusive (spread > {args.max_rel_variance:.0%}): "

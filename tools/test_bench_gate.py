@@ -25,11 +25,15 @@ GOOD_BASELINE = "small_matmul:   3.00 µs\nmedium_mlp:   6.13 µs\nlarge_network
 
 
 def run(baseline: Path, current: Path) -> int:
+    return run_capture(baseline, current).returncode
+
+
+def run_capture(baseline: Path, current: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(GATE), "--baseline", str(baseline), "--current", str(current)],
         capture_output=True,
         text=True,
-    ).returncode
+    )
 
 
 def main() -> int:
@@ -44,13 +48,28 @@ def main() -> int:
         empty.write_text("")
         partial = d / "partial.out"
         partial.write_text("\n".join(GOOD_CURRENT.splitlines()[:2]) + "\n")
+        one_noisy = d / "one-noisy.out"
+        one_noisy.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench: 3000 ns/iter (+/- 50)\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench: 6100 ns/iter (+/- 80)\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench: 14689 ns/iter (+/- 2157)\n"
+        )
 
         cases = [
             ("empty current -> exit 4 (the vacuous-PASS hole)", run(base, empty), 4),
             ("partial current 2/3 -> exit 4 (no silent skip)", run(base, partial), 4),
             ("missing baseline -> exit 4 (no default substitution)", run(d / "nope.txt", good), 4),
             ("valid full run -> exit 0 (normal PASS preserved)", run(base, good), 0),
+            ("one of three frontier fixtures noisy -> nonzero (no false green)", run(base, one_noisy), 2),
         ]
+        for label, output, want in (
+            ("full run reports asserted=3", run_capture(base, good).stdout, "asserted=3"),
+            ("noisy fixture run reports asserted=2", run_capture(base, one_noisy).stdout, "asserted=2"),
+        ):
+            ok = want in output
+            print(f"[{'PASS' if ok else 'FAIL'}] {label}")
+            if not ok:
+                failures.append(label)
         # --- transition-line parsing (the superseded-number bug) ------------
         # A real baseline file narrates the re-baseline in prose BEFORE stating
         # the frozen numbers:
