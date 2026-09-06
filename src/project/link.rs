@@ -28,6 +28,7 @@
 //! `[targets.*].target` seam in [`crate::project`]). Each is turned on behind its
 //! own byte-identity gate in a later slice.
 
+use super::runtime_link::RuntimeLink;
 use crate::target::{LinkFlavor, Target};
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
@@ -43,10 +44,9 @@ pub struct LinkCtx<'a> {
     pub objects: &'a [PathBuf],
     /// Final executable path (the caller appends any OS extension).
     pub output: &'a Path,
-    /// Directory holding the MIND runtime library (`-L`).
-    pub lib_dir: &'a Path,
-    /// Runtime library base name (`-l<name>`).
-    pub runtime_link: &'a str,
+    /// Installed runtime for accelerator backends. Native CPU objects use the
+    /// public runtime-support shim and carry no private runtime dependency.
+    pub runtime: Option<&'a RuntimeLink>,
     /// Release profile — adds `-O3 -flto`.
     pub release: bool,
     /// Print the assembled link command.
@@ -83,12 +83,10 @@ impl LinkDriver {
 
     /// ELF (Linux) executable link.
     ///
-    /// This is a faithful, order-preserving extraction of the historical native
-    /// link path: shim → objects → `-o` → `-L`/`-l` → `-ldl -lpthread -lm` →
-    /// the byte-neutral `-Wl,-z,relro/now/noexecstack` hardening → the Linux
-    /// `-rpath` pair → the release `-O3 -flto`. The flag set and its ORDER are
-    /// held identical so the emitted ELF stays byte-for-byte what it was before
-    /// this driver existed (the keystone byte-identity gate is the proof).
+    /// Runtime-backed targets preserve the historical order: shim → objects →
+    /// `-o` → `-L`/`-l` → system libraries → hardening → rpath → optimization.
+    /// The public CPU path omits only the installed-runtime and rpath arguments;
+    /// its MIND intrinsics resolve from the shim linked first.
     fn link_elf(&self, ctx: &LinkCtx) -> Result<()> {
         let mut cmd = Command::new(ctx.cc);
 
@@ -105,9 +103,10 @@ impl LinkDriver {
         // Output path.
         cmd.arg("-o").arg(ctx.output);
 
-        // MIND runtime library.
-        cmd.arg(format!("-L{}", ctx.lib_dir.display()));
-        cmd.arg(format!("-l{}", ctx.runtime_link));
+        if let Some(runtime) = ctx.runtime {
+            cmd.arg(format!("-L{}", runtime.dir.display()));
+            cmd.arg(format!("-l{}", runtime.link_name));
+        }
 
         // Standard libraries.
         cmd.arg("-ldl"); // dlopen on Linux
@@ -133,9 +132,10 @@ impl LinkDriver {
         // fresh reference_hashes.toml blessing ceremony owned by
         // mind-cross-substrate (Constitution §I.3), NOT in this byte-neutral path.
 
-        // Runtime-library rpath lookup (Linux).
-        cmd.arg(format!("-Wl,-rpath,{}", ctx.lib_dir.display()));
-        cmd.arg("-Wl,-rpath,$ORIGIN/../lib");
+        if let Some(runtime) = ctx.runtime {
+            cmd.arg(format!("-Wl,-rpath,{}", runtime.dir.display()));
+            cmd.arg("-Wl,-rpath,$ORIGIN/../lib");
+        }
 
         // Optimization flags.
         if ctx.release {
@@ -183,9 +183,10 @@ impl LinkDriver {
         // Output path (caller has appended `.exe`).
         cmd.arg("-o").arg(ctx.output);
 
-        // MIND runtime library.
-        cmd.arg(format!("-L{}", ctx.lib_dir.display()));
-        cmd.arg(format!("-l{}", ctx.runtime_link));
+        if let Some(runtime) = ctx.runtime {
+            cmd.arg(format!("-L{}", runtime.dir.display()));
+            cmd.arg(format!("-l{}", runtime.link_name));
+        }
 
         // Standard libraries — Windows/mingw set (NO -ldl; winpthreads + libm +
         // the CNG bcrypt import lib). No ELF `-Wl,-z,*` and no rpath (see above).

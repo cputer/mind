@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — public CPU executable linking
+- Native CPU projects link against bundled runtime support without an installed commercial runtime. Accelerator backends retain their installed-runtime requirements.
+- Unresolved symbols and non-native source modules fail the build and remove stale executable output; CPU link failures cannot leave a runtime launcher in place of a native binary.
+- Linux execution tests verify clean-build byte identity, absence of private runtime dependencies, and refusal of invalid modules and unresolved symbols.
+
 ### Fixed — `mindc test` evaluates a body once, in order, and a body that errors cannot pass (#240, #241, #243)
 - The runner evaluated the test body through the interpreter, discarded the result, then
   walked the AST a second time evaluating only `assert` nodes against its own env. One design,

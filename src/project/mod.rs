@@ -29,6 +29,7 @@ pub mod module_table;
 /// host ELF arm is wired today; the others fail loud until their slice lands.
 mod compiled_sources;
 mod link;
+mod runtime_link;
 
 /// Artifact naming and placement — the single owner of the name stem
 /// (`[targets.*] output` > `[build] output` > `[package] name`), the fallback
@@ -1092,8 +1093,15 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
     // failed to parse on a host with no runtime library reports a PURE capability
     // gap (the link refuses first, and the fallback facts below are never
     // reached), and a consumer grades a program that does not compile as a SKIP.
-    link_binary(&compiled, &output_path, &backend, opts, &build_target)
-        .map_err(|e| outranked_by_compile(e, fallback_reason))?;
+    link_binary(
+        &compiled,
+        &output_path,
+        &backend,
+        opts,
+        &build_target,
+        fallback_reason,
+    )
+    .map_err(|e| outranked_by_compile(e, fallback_reason))?;
 
     if opts.verbose {
         println!("  Output: {}", output_path.display());
@@ -2718,24 +2726,44 @@ fn link_binary(
     backend: &str,
     opts: &BuildOptions,
     build_target: &crate::target::Target,
+    compile_cause: Option<FallbackReason>,
 ) -> Result<()> {
-    // Check for runtime library
-    let lib_dir = find_runtime_lib(backend)?;
+    let runtime = runtime_link::resolve(backend)?;
 
-    if opts.verbose {
-        println!("  Linking with runtime: {}", lib_dir.display());
+    // Shim-only CPU executables can be linked only from genuinely native
+    // objects. An embedded runtime-JIT wrapper has no installed runtime to
+    // execute it, so refuse before the linker can mint an unusable ELF.
+    if runtime.is_none() {
+        if let Some(cause) = compile_cause {
+            let _ = fs::remove_file(output);
+            return Err(anyhow::Error::new(CodedRefusal::new(
+                cause,
+                "public CPU executable requires every source module to compile natively; \
+                 refusing to link a runtime-JIT fallback object",
+            )));
+        }
     }
 
-    // Determine runtime library name
-    #[allow(unused_variables)]
-    let (runtime_lib, runtime_link) = get_runtime_lib_names(backend);
+    if opts.verbose {
+        match &runtime {
+            Some(runtime) => println!("  Linking with runtime: {}", runtime.dir.display()),
+            None => println!("  Linking CPU binary with bundled runtime support"),
+        }
+    }
 
-    // Try native linking first
-    let link_result = native_link(objects, output, &lib_dir, runtime_link, opts, build_target);
+    let link_result = native_link(objects, output, runtime.as_ref(), opts, build_target);
 
     if link_result.is_ok() {
         return Ok(());
     }
+
+    // The public CPU path has no installed runtime to launch. A failed native
+    // link (including an unresolved symbol) is the final result, and must not
+    // leave a shell script that could be mistaken for the requested binary.
+    let Some(runtime) = runtime else {
+        let _ = fs::remove_file(output);
+        return link_result;
+    };
 
     // Fallback to a launcher shell script when native linking fails. This is the
     // executable-path analogue of the cdylib false-green guarded by #306: the
@@ -2806,10 +2834,10 @@ fi
             name = manifest.package.name,
             version = manifest.package.version,
             backend = backend,
-            runtime = runtime_lib,
+            runtime = runtime.file_name,
             project_root = project_root.display(),
             entry = entry_path.display(),
-            lib_dir = lib_dir.display(),
+            lib_dir = runtime.dir.display(),
         );
 
         fs::write(output, script)?;
@@ -2826,8 +2854,8 @@ fi
             manifest.package.name,
             manifest.package.version,
             backend,
-            lib_dir.display(),
-            lib_dir.display(),
+            runtime.dir.display(),
+            runtime.dir.display(),
             backend,
             entry_path.display(),
         );
@@ -2837,101 +2865,11 @@ fi
     Ok(())
 }
 
-/// Get runtime library names for a backend
-fn get_runtime_lib_names(backend: &str) -> (&'static str, &'static str) {
-    match backend {
-        "cuda" | "cuda-ampere" | "cuda-hopper" | "cuda-blackwell" | "cuda-rubin" => {
-            #[cfg(target_os = "linux")]
-            {
-                ("libmind_cuda_linux-x64.so", "mind_cuda_linux-x64")
-            }
-            #[cfg(target_os = "windows")]
-            {
-                ("mind_cuda_windows-x64.dll", "mind_cuda_windows-x64")
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-            {
-                ("libmind_cuda_linux-x64.so", "mind_cuda_linux-x64")
-            }
-        }
-        "rocm" | "rocm-mi300" => {
-            #[cfg(target_os = "linux")]
-            {
-                ("libmind_rocm_linux-x64.so", "mind_rocm_linux-x64")
-            }
-            #[cfg(target_os = "windows")]
-            {
-                ("mind_rocm_windows-x64.dll", "mind_rocm_windows-x64")
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-            {
-                ("libmind_rocm_linux-x64.so", "mind_rocm_linux-x64")
-            }
-        }
-        "metal" | "metal-m4" => ("libmind_metal_macos-arm64.dylib", "mind_metal_macos-arm64"),
-        "webgpu" => {
-            #[cfg(target_os = "linux")]
-            {
-                ("libmind_webgpu_linux-x64.so", "mind_webgpu_linux-x64")
-            }
-            #[cfg(target_os = "macos")]
-            {
-                (
-                    "libmind_webgpu_macos-arm64.dylib",
-                    "mind_webgpu_macos-arm64",
-                )
-            }
-            #[cfg(target_os = "windows")]
-            {
-                ("mind_webgpu_windows-x64.dll", "mind_webgpu_windows-x64")
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-            {
-                ("libmind_webgpu_linux-x64.so", "mind_webgpu_linux-x64")
-            }
-        }
-        "directx" => ("mind_directx_windows-x64.dll", "mind_directx_windows-x64"),
-        "oneapi" => {
-            #[cfg(target_os = "linux")]
-            {
-                ("libmind_oneapi_linux-x64.so", "mind_oneapi_linux-x64")
-            }
-            #[cfg(target_os = "windows")]
-            {
-                ("mind_oneapi_windows-x64.dll", "mind_oneapi_windows-x64")
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-            {
-                ("libmind_oneapi_linux-x64.so", "mind_oneapi_linux-x64")
-            }
-        }
-        _ => {
-            #[cfg(target_os = "linux")]
-            {
-                ("libmind_cpu_linux-x64.so", "mind_cpu_linux-x64")
-            }
-            #[cfg(target_os = "macos")]
-            {
-                ("libmind_cpu_macos-arm64.dylib", "mind_cpu_macos-arm64")
-            }
-            #[cfg(target_os = "windows")]
-            {
-                ("mind_cpu_windows-x64.dll", "mind_cpu_windows-x64")
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-            {
-                ("libmind_cpu_linux-x64.so", "mind_cpu_linux-x64")
-            }
-        }
-    }
-}
-
 /// Attempt native linking with clang/gcc
 fn native_link(
     objects: &[PathBuf],
     output: &Path,
-    lib_dir: &Path,
-    runtime_link: &str,
+    runtime: Option<&runtime_link::RuntimeLink>,
     opts: &BuildOptions,
     build_target: &crate::target::Target,
 ) -> Result<()> {
@@ -2984,8 +2922,7 @@ fn native_link(
         cc: &cc,
         objects,
         output,
-        lib_dir,
-        runtime_link,
+        runtime,
         release: opts.release,
         verbose: opts.verbose,
         runtime_shim,
@@ -2998,67 +2935,6 @@ fn native_link(
     // does not perturb the host executable; it only routes a cross request to the
     // matching container instead of the historical fail-loud at `build_project`.
     LinkDriver::new(*build_target).link(&ctx)
-}
-
-/// Find the MIND runtime library for a backend.
-///
-/// Search order:
-///   1. `MIND_LIB_DIR` environment override.
-///   2. `~/.mind/lib` (canonical install path).
-fn find_runtime_lib(backend: &str) -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("Cannot determine home directory"))?;
-    let mind_lib = home.join(".mind").join("lib");
-
-    // Map backend to library name
-    let lib_name = match backend {
-        "cuda" | "cuda-ampere" | "cuda-hopper" | "cuda-blackwell" | "cuda-rubin" => {
-            "libmind_cuda_linux-x64.so"
-        }
-        "rocm" | "rocm-mi300" => "libmind_rocm_linux-x64.so",
-        "metal" | "metal-m4" => "libmind_metal_macos-arm64.dylib",
-        "webgpu" => "libmind_webgpu_linux-x64.so",
-        // Wafer-scale: separate library per generation because the
-        // CSL toolchain and host SDK pins differ for WSE-2 vs WSE-3.
-        // Default "cerebras" selects WSE-3 (CS-3) since that is the
-        // current shipping generation.
-        "cerebras" | "wse3" | "cs3" => "libmind_cerebras_wse3_linux-x64.so",
-        "wse2" | "cs2" => "libmind_cerebras_wse2_linux-x64.so",
-        _ => "libmind_cpu_linux-x64.so",
-    };
-
-    // 1. MIND_LIB_DIR environment override (highest priority)
-    if let Ok(env_dir) = std::env::var("MIND_LIB_DIR") {
-        let env_path = PathBuf::from(&env_dir);
-        if env_path.join(lib_name).exists() {
-            return Ok(env_path);
-        }
-    }
-
-    // 2. Canonical install path
-    let lib_path = mind_lib.join(lib_name);
-    if lib_path.exists() {
-        return Ok(mind_lib);
-    }
-
-    // 3. Fallback: return the canonical dir if it exists at all so the
-    //    caller can produce a precise "library file missing" error rather
-    //    than a generic "directory not found".
-    if mind_lib.exists() {
-        return Ok(mind_lib);
-    }
-
-    // A HOST-capability fact, not a defect: the runtime ships separately under a
-    // commercial licence, so a public checkout and a stock CI runner both lack
-    // it by default. The cause travels as a TYPED payload (see
-    // `diagnostics::refusal`) because the build orchestrator re-wraps this error
-    // and would otherwise erase the only fact its consumer needs.
-    Err(anyhow::Error::new(CodedRefusal::new(
-        FallbackReason::RuntimeLibraryAbsent,
-        format!(
-            "MIND runtime not found for backend '{backend}'. \
-             See https://mindlang.dev/enterprise for licensing."
-        ),
-    )))
 }
 
 /// Run a built project

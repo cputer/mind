@@ -21,8 +21,8 @@
 //!   was the literal `"app"` — a third spelling matching neither the other
 //!   owner nor its own doc comment.
 //!
-//! Both spellings reach disk. On a host WITH the native backend the
-//! orchestrator renames the compile path's file to its own spelling, so
+//! Both spellings historically reached disk. On a host WITH the native backend
+//! the orchestrator renames the compile path's file to its own spelling, so
 //! `<package.name>` wins; on a host whose entry fell back to the runtime-JIT
 //! launcher the build refuses (`build::error::refuse_if_fell_back`) BEFORE that
 //! rename, leaving the artifact under the compile path's spelling (`app`). One
@@ -32,10 +32,10 @@
 //! carrying `mlir-build` (every binary that runs the tests below, since cargo
 //! builds `CARGO_BIN_EXE_mindc` with this target's own features) refuses with
 //! `E5004` when the MLIR tools are absent, and only a binary built WITHOUT the
-//! feature ever mints `E5003`. A third refusal — `E5002`, no runtime library —
-//! stops inside the link BEFORE any artifact is emitted and leaves the directory
-//! empty. So the artifact-name claim is stated over what reached disk, never
-//! over a cause code; see [`assert_artifact_names`].
+//! feature ever mints `E5003`. The public CPU path now refuses any runtime-JIT
+//! fallback before linking and leaves the directory empty. So the artifact-name
+//! claim is stated over what reached disk, never over a cause code; see
+//! [`assert_artifact_names`].
 //!
 //! That divergence is not cosmetic: a downstream harness must hand-type one of
 //! the two rules to find the artifact, and picking the wrong one is how a
@@ -44,8 +44,8 @@
 //! # What is asserted
 //!
 //! [`artifact_stem`] is the single resolver; the tests below pin its precedence
-//! directly and pin that `mindc build` REPORTS and WRITES that one name on both
-//! the native path and the launcher-refusal path.
+//! directly, pin that `mindc build` REPORTS and WRITES that one name on the
+//! native path, and pin that a CPU fallback leaves no launcher artifact.
 //!
 //! Gate: `cargo test --release --features "mlir-build std-surface cross-module-imports" --test mindc_artifact_name`
 
@@ -219,24 +219,11 @@ mod e2e {
         );
     }
 
-    /// The LAUNCHER-refusal path names its artifact after the same stem —
-    /// DRIVEN here, never waited for.
-    ///
-    /// This is the path the module header is written about, and no host in the
-    /// matrix reaches it by accident: it needs the native toolchain to be absent
-    /// (so the entry is embedded as a runtime-JIT fallback) AND a runtime
-    /// library to be found (so the link is attempted at all, and emits the
-    /// launcher when it fails). Both are compiler INPUTS, so this supplies them
-    /// — `MLIR_OPT` naming a file that does not resolve, and `MIND_LIB_DIR`
-    /// naming a directory holding a library the linker will reject — and the
-    /// refusal that follows is the same one a genuinely toolchain-less host
-    /// gets, from the same code path.
-    ///
-    /// Without this the refusal branch of the two tests above is unexecuted on
-    /// every developer machine and every CI runner in the matrix, and a branch
-    /// that never runs pins nothing.
+    /// A CPU runtime-JIT fallback is refused before linking and leaves no
+    /// artifact. The public CPU link accepts genuinely native objects only, so
+    /// an installed-runtime stub must not revive the old launcher path.
     #[test]
-    fn the_launcher_refusal_names_its_artifact_after_the_same_stem() {
+    fn cpu_fallback_refusal_leaves_no_launcher_artifact() {
         // The runtime-JIT fallback compiles its embedded wrapper with `cc`
         // (`project::compile_embedded_source`), so a host without one cannot
         // reach the launcher-refusal path at all. Routed through the one gate:
@@ -262,11 +249,8 @@ mod e2e {
              [build]\nentry = \"src/main.mind\"\n",
         );
 
-        // `find_runtime_lib` checks only that the file EXISTS, so a stub is what
-        // turns "no runtime at all" (which refuses inside the link, before any
-        // artifact) into "a runtime the link rejects" — the state that emits the
-        // launcher. It lives beside `src/`, which is the only directory the
-        // source walk reads.
+        // This valid-looking private runtime was enough to drive the historical
+        // CPU launcher fallback. CPU linkage must ignore it now.
         let lib_dir = dir.join("stub-runtime");
         fs::create_dir_all(&lib_dir).expect("create stub runtime dir");
         fs::write(
@@ -293,8 +277,8 @@ mod e2e {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
             !out.status.success(),
-            "a build whose entry fell back to the runtime-JIT launcher must \
-             refuse, not report success.\n--- stderr ---\n{stderr}"
+            "a build whose entry fell back to the runtime JIT must refuse, not \
+             report success.\n--- stderr ---\n{stderr}"
         );
         // By CODE, through the compiler's own header parser: the refusal must be
         // the toolchain-absent one this test drove, so a build that refused for
@@ -306,7 +290,7 @@ mod e2e {
             capability::NATIVE_TOOLCHAIN_ABSENT,
             capability::cause_codes(&stderr)
         );
-        assert_artifact_names(&target_dir, "artifact_name_launcher", true);
+        assert_artifact_names(&target_dir, "artifact_name_launcher", false);
     }
 }
 

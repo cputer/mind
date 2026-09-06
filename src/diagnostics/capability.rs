@@ -115,11 +115,10 @@
 /// defect — see `pipeline::CompileError::BackendUnavailable`.
 pub const TARGET_BACKEND_UNAVAILABLE: &str = "E5001";
 
-/// The MIND runtime library for the requested backend is not installed on this
-/// host: neither `MIND_LIB_DIR` nor `~/.mind/lib` holds it. The runtime ships
-/// separately under a commercial licence, so its absence is the DEFAULT state
-/// of a public checkout and of a stock CI runner — a host-capability fact,
-/// never a defect.
+/// The installed MIND runtime library required by a non-CPU backend is absent:
+/// neither `MIND_LIB_DIR` nor `~/.mind/lib` holds it. Native CPU executables use
+/// the bundled public runtime-support shim; accelerator runtimes ship separately,
+/// so their absence is a host-capability fact, never a compiler defect.
 pub const RUNTIME_LIBRARY_ABSENT: &str = "E5002";
 
 /// The binary carries no native backend at all: it was built without the

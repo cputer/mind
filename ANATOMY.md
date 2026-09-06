@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1524 | **Est. tokens:** ~2987313
-**Generated:** 2026-09-06 10:35 UTC
+**Files:** 1526 | **Est. tokens:** ~2990222
+**Generated:** 2026-09-06 10:42 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29153 |
+| `./` | 33 | ~29173 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -97,7 +97,7 @@
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10829 |
 | `src/deps/` | 1 | ~9345 |
-| `src/diagnostics/` | 3 | ~14137 |
+| `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~10987 |
 | `src/eval/` | 18 | ~91208 |
@@ -117,7 +117,7 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 8 | ~21902 |
+| `src/project/` | 9 | ~23518 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -126,7 +126,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 358 | ~671960 |
+| `tests/` | 359 | ~673237 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -209,7 +209,7 @@
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
 - `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
-- `Cargo.toml` (~3407 tok, huge) — [package]
+- `Cargo.toml` (~3427 tok, huge) — [package]
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
@@ -1040,7 +1040,7 @@
 - `mod.rs` (~9345 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/diagnostics/`
 
-- `capability.rs` (~9054 tok, huge) — Copyright 2025 STARGA Inc.
+- `capability.rs` (~9050 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~3729 tok, huge) — Copyright 2025 STARGA Inc.
 - `refusal.rs` (~1354 tok, large) — Copyright 2025 STARGA Inc.
 ### `src/distributed/`
@@ -1191,8 +1191,9 @@
 
 - `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
-- `link.rs` (~2603 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5820 tok, huge) — Copyright 2025 STARGA Inc.
+- `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1624,7 +1625,7 @@
 - `mic3_parser_dos.rs` (~1891 tok, huge) — Copyright 2025 STARGA Inc.
 - `micb_dos_reject.rs` (~2341 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc.rs` (~2105 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_artifact_name.rs` (~4367 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_artifact_name.rs` (~4118 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_build_phase_a.rs` (~5557 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_cache_phase_f.rs` (~7095 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1780,6 +1781,7 @@
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `phase_g_keystone_bootstrap.rs` (~7291 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
+- `public_cpu_native_link.rs` (~1526 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
 - `reductions_preview.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
