@@ -248,7 +248,7 @@ pub fn compiled(target: &str, out: &Output) -> bool {
 /// * A bless log was indistinguishable from a green gate. It now opens with one
 ///   unmissable banner, printed once per process.
 pub fn bless_mode() -> bool {
-    let on = matches!(std::env::var("MIND_BENCH_BLESS").as_deref(), Ok("1"));
+    let on = bless_requested();
     if !on {
         return false;
     }
@@ -267,6 +267,12 @@ pub fn bless_mode() -> bool {
         );
     });
     true
+}
+
+/// True only for the exact BLESS value, without printing its process banner.
+#[allow(dead_code)]
+pub fn bless_requested() -> bool {
+    matches!(std::env::var("MIND_BENCH_BLESS").as_deref(), Ok("1"))
 }
 
 /// WHICH absence a gate met. The class, not the call site, decides whether
@@ -366,6 +372,43 @@ pub fn skipped_optional(target: &str, reason: &str) {
     );
 }
 
+/// An optional-input skip attributed to one stable case inside a suite.
+///
+/// The absence decision is still [`skipped_because`]'s decision.  `case=` only
+/// lets a runtime inventory prove which case returned without parsing prose.
+#[allow(dead_code)]
+pub fn skipped_optional_case(target: &str, case: &str, reason: &str) {
+    forbid_skip_if_enforced(
+        target,
+        reason,
+        Absent::OptionalInput,
+        enforce_real_backend(),
+    );
+    marker_to(
+        &mut default_sink(),
+        target,
+        Some(case),
+        0,
+        "optional",
+        None,
+        Some(reason),
+    );
+}
+
+/// Report a completed case after its load-bearing assertion has passed.
+#[allow(dead_code)]
+pub fn completed_case(target: &str, case: &str, evidence: &str) {
+    marker_to(
+        &mut default_sink(),
+        target,
+        Some(case),
+        1,
+        "executed",
+        Some(evidence),
+        None,
+    );
+}
+
 /// The [`Absent`] class, spelled INTO the marker.
 ///
 /// The tier script has to decide whether a `ran=0` is fatal, and that decision
@@ -389,6 +432,25 @@ fn marker_line(target: &str, reason: &str, absent: Absent) -> String {
         "SDLC-GATE {target} ran=0 fail=0 class={}  (capability skip: {reason})",
         class_token(absent)
     )
+}
+
+fn marker_to<W: std::io::Write>(
+    w: &mut W,
+    target: &str,
+    case: Option<&str>,
+    ran: u8,
+    class: &str,
+    evidence: Option<&str>,
+    reason: Option<&str>,
+) {
+    let case = case.map_or(String::new(), |case| format!(" case={case}"));
+    let evidence = evidence.map_or(String::new(), |kind| format!(" evidence={kind}"));
+    let reason = reason.map_or(String::new(), |why| format!("  (capability skip: {why})"));
+    let _ = writeln!(
+        w,
+        "SDLC-GATE {target}{case} ran={ran} fail=0 class={class}{evidence}{reason}"
+    );
+    let _ = w.flush();
 }
 
 /// Write the marker to `w`.

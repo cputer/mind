@@ -3680,6 +3680,22 @@ fn let_rhs_collection_track(
     if matches!(value, ast::Node::Lit(Literal::Str(_), _)) {
         return Some(("String".to_string(), None));
     }
+    // An indexed read from a tracked collection carries the element owner of
+    // that collection.  For-each lowering materialises each element as a
+    // synthesized `let x = __fe_coll[idx]`; without this case the shared
+    // let-binding resolver clears the element sentinel that ForEach seeded,
+    // so a subsequent String method (for example `part.trim()`) cannot be
+    // desugared and the lowered call receives the unresolved zero value.
+    // Keep this path driven by the explicit `__elem__<name>` metadata so it
+    // also covers ordinary `let x = arr[i]` aliases without guessing from an
+    // untyped i64 SSA value.
+    if let ast::Node::IndexAccess { receiver, .. } = value {
+        if let ast::Node::Lit(Literal::Ident(source), _) = receiver.as_ref() {
+            if let Some(elem) = struct_env.get(&format!("__elem__{source}")) {
+                return Some((elem.clone(), None));
+            }
+        }
+    }
     // A string method whose result is itself a string (`text.slice(..)`,
     // `s.trim()`) or an `array<string>` (`s.split(..)`) — track the binding so a
     // chained method on the result (`text.slice(0, n).byte_at(i)` via a let)
@@ -10272,7 +10288,12 @@ fn lower_expr(
             #[cfg(feature = "std-surface")]
             if let Some(elem) = foreach_element_sentinel(collection, ir, struct_env, receiver_types)
             {
-                fe_struct_env.insert(var.clone(), elem);
+                fe_struct_env.insert(var.clone(), elem.clone());
+                // The synthesized element-binding below is resolved like any
+                // other `let`. Retain the element owner on the hidden
+                // collection so that resolver can recover it from
+                // `__fe_coll[idx]` instead of erasing the seeded `var` entry.
+                fe_struct_env.insert(format!("__elem__{coll_var}"), elem);
             }
 
             let idx_ident = ast::Node::Lit(Literal::Ident(idx_var.clone()), *span);

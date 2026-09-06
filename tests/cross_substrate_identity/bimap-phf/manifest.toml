@@ -34,6 +34,7 @@ name = "bimap-phf"
 description = "#[bimap] enum Currency perfect-hash (phf-v1 seedless-CHD) from_str construction fingerprint — the compile-time trace_hash (canonical mic@3 bytes) of examples/bimap_currency, pinning table-byte-identity of the synthesised O(1) inverse across substrates."
 weight = 1.0
 substrates = ["avx2", "neon"]
+evidence_kind = "compiler-construction"
 
 # The input is the example source itself — no LCG, no runtime operands. The
 # construction is a pure function of the source + the derive, so the artifact is

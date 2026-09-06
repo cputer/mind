@@ -342,6 +342,7 @@ jobs:
       https_proxy: ""
       no_proxy: ""
       MIND_BENCH_REQUIRE: "1"
+      MIND_INTDOT_VNNI_VERIFY: "1"
 
     steps:
       - name: Checkout
@@ -406,12 +407,31 @@ jobs:
             --features "mlir-build std-surface cross-module-imports" --bin mindc
 
       - name: Cross-substrate reproducibility gate
+        id: xsi_gate
         # Host substrate (avx2 on x86_64, neon on aarch64) is verified here;
-        # the other substrate is verified on its sibling matrix runner.
+        # the other substrate is verified on its sibling matrix runner. Every
+        # manifest case must atomically publish a measured/deferred receipt;
+        # the second target compares that executed set to the manifest set.
         run: |
+          set -euo pipefail
+          receipt_dir="$(mktemp -d "$RUNNER_TEMP/mind-xsi-receipts.XXXXXX")"
+          echo "receipt_dir=$receipt_dir" >> "$GITHUB_OUTPUT"
+          export MIND_XSI_RECEIPTS_DIR="$receipt_dir"
           cargo test --no-default-features \
             --features "mlir-build std-surface cross-module-imports" \
             --test cross_substrate_identity -- --nocapture
+          cargo test --no-default-features \
+            --features "mlir-build std-surface cross-module-imports" \
+            --test cross_substrate_receipts -- --include-ignored --nocapture
+
+      - name: Preserve asserting cross-substrate evidence
+        if: ${{ always() && steps.xsi_gate.outputs.receipt_dir != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-substrate-evidence-${{ matrix.substrate }}-${{ github.sha }}
+          path: ${{ steps.xsi_gate.outputs.receipt_dir }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Harvest per-substrate canary hashes (bless manifest)
         # NOT a gate — the gate above already ran and had to pass. This is a

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1638 | **Est. tokens:** ~3092952
-**Generated:** 2026-09-06 20:17 UTC
+**Files:** 1640 | **Est. tokens:** ~3100891
+**Generated:** 2026-09-06 20:58 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35472 |
+| `.github/workflows/` | 9 | ~35727 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -45,7 +45,7 @@
 | `benchmarks/jax_comparison/` | 5 | ~4642 |
 | `benchmarks/mojo/` | 8 | ~4300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4828 |
-| `config/` | 2 | ~3338 |
+| `config/` | 2 | ~3329 |
 | `docs/` | 36 | ~101486 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9315 |
@@ -128,16 +128,16 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 368 | ~702287 |
+| `tests/` | 369 | ~704841 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~7157 |
+| `tests/common/` | 3 | ~12264 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4113 |
 | `tests/cross_substrate_identity/array-store-branch/` | 2 | ~974 |
 | `tests/cross_substrate_identity/array-store-loop/` | 2 | ~1081 |
-| `tests/cross_substrate_identity/bimap-phf/` | 2 | ~1665 |
+| `tests/cross_substrate_identity/bimap-phf/` | 2 | ~1675 |
 | `tests/cross_substrate_identity/collatz/` | 2 | ~962 |
 | `tests/cross_substrate_identity/dot-f32-v-4093/` | 2 | ~1222 |
 | `tests/cross_substrate_identity/dot-i16-4096/` | 2 | ~648 |
@@ -146,7 +146,7 @@
 | `tests/cross_substrate_identity/galperin-pi/` | 2 | ~1004 |
 | `tests/cross_substrate_identity/gemm-i8-64x64x64/` | 2 | ~707 |
 | `tests/cross_substrate_identity/gemm-i8-mt-64x64x64/` | 2 | ~872 |
-| `tests/cross_substrate_identity/gemm-i8-vnni-64x64x64/` | 2 | ~921 |
+| `tests/cross_substrate_identity/gemm-i8-vnni-64x64x64/` | 2 | ~943 |
 | `tests/cross_substrate_identity/gemm-q16-64x64x64/` | 2 | ~616 |
 | `tests/cross_substrate_identity/gemm-q16-fused-64x64x64/` | 2 | ~896 |
 | `tests/cross_substrate_identity/gemv-i16-256x256/` | 2 | ~594 |
@@ -264,7 +264,7 @@
 
 - `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~23589 tok, huge) — name: CI
+- `ci.yml` (~23844 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -417,7 +417,7 @@
 - `scientific_benchmark_raw.py` (~2485 tok, huge)
 ### `config/`
 
-- `capabilities.toml` (~2366 tok, huge) — [ir]
+- `capabilities.toml` (~2357 tok, huge) — [ir]
 - `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
@@ -1378,8 +1378,9 @@
 - `collection_mutation_expr_position_run.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/common/`
 
-- `gate.rs` (~4581 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~2576 tok, huge) — Copyright 2025 STARGA Inc.
+- `gate.rs` (~4999 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2581 tok, huge) — Copyright 2025 STARGA Inc.
+- `xsi_gate.rs` (~4684 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
 - `compound_assign.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
@@ -1429,7 +1430,7 @@
 - `reference_hashes.toml` (~445 tok, medium) — avx2 = "50b3efb2da5eb89764302f3781d390e9121c12cb8f87faaa69f5d0f46bf39f31"
 ### `tests/cross_substrate_identity/bimap-phf/`
 
-- `manifest.toml` (~780 tok, large) — version = "1"
+- `manifest.toml` (~790 tok, large) — version = "1"
 - `reference_hashes.toml` (~885 tok, large) — avx2 = "33483ee02a0b062becb8c8f7c1078e0bc17c543298971514e37e371b2b86bc01"
 ### `tests/cross_substrate_identity/collatz/`
 
@@ -1465,7 +1466,7 @@
 - `reference_hashes.toml` (~391 tok, medium) — avx2 = "917d353b18fd7f5ea4dab7dd02b786f5ccc4a2d954f695084ca0a88214d699c7"
 ### `tests/cross_substrate_identity/gemm-i8-vnni-64x64x64/`
 
-- `manifest.toml` (~536 tok, large) — version = "1"
+- `manifest.toml` (~558 tok, large) — version = "1"
 - `reference_hashes.toml` (~385 tok, medium) — avx2 = "917d353b18fd7f5ea4dab7dd02b786f5ccc4a2d954f695084ca0a88214d699c7"
 ### `tests/cross_substrate_identity/gemm-q16-64x64x64/`
 
@@ -1524,7 +1525,8 @@
 - `xnode_driver.c` (~2833 tok, huge)
 ### `tests/`
 
-- `cross_substrate_reference_consistency.rs` (~3140 tok, huge) — Copyright 2025 STARGA Inc.
+- `cross_substrate_receipts.rs` (~2553 tok, huge) — Copyright 2025 STARGA Inc.
+- `cross_substrate_reference_consistency.rs` (~3141 tok, huge) — Copyright 2025 STARGA Inc.
 - `crypto_vectors_driver.py` (~2653 tok, huge) — # Official-vector driver for std/aes_gcm.mind + std/hkdf.mind (pure-MIND crypto).
 - `determinism_veto_control.rs` (~1490 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics.rs` (~688 tok, large) — Copyright 2025 STARGA Inc.

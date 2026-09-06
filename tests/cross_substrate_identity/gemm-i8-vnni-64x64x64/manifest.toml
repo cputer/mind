@@ -21,6 +21,9 @@ name = "gemm-i8-vnni-64x64x64"
 description = "VNNI (VPDPBUSD) int8 square GEMM C = A.B (det.igemm int-dot rung, MIND_INTDOT=vnni); signed-input bias correction makes it byte-for-byte identical to the AVX2 gemm-i8 hash — the VPDPBUSD rung byte-identity canary (VNNI hardware only)."
 weight = 2.0
 substrates = ["avx2", "neon"]
+evidence_kind = "native-runtime"
+computed_legs = "deferred"
+required_isa = "avx512vnni"
 
 [input]
 generator = "lcg"          # A (m*k i8) generated before B (k*n i8); sample = (x>>16 as i32) as i8

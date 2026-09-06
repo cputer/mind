@@ -48011,6 +48011,10 @@ pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64)
     if tc_shoc_eq(w0, w1, w2, w3, len, 8313473862527180639, 3905018210351738740, 0, 0, 16) == 1 {
         return 1;
     }
+    // "__mind_string_eq"
+    if tc_shoc_eq(w0, w1, w2, w3, len, 8313473862527180639, 8171041996772307572, 0, 0, 16) == 1 {
+        return 1;
+    }
     // "__mind_vec_zeroed"
     if tc_shoc_eq(w0, w1, w2, w3, len, 8529646644640964447, 7309186500415939429, 100, 0, 17) == 1 {
         return 1;

@@ -26,6 +26,7 @@
 //! `CARGO_BIN_EXE_mindc` is available to every integration test in this crate.
 
 pub mod gate;
+pub mod xsi_gate;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

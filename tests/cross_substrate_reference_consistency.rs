@@ -26,14 +26,11 @@
 //! assumption the chain rests on, stated so a green fixture check is never
 //! mistaken for a green machine.
 //!
-//! **Coverage is 24 of 25, not 25.** `gemm-i8-vnni-64x64x64` declares both
-//! substrates, but neither computed leg runs in default CI: the x86 leg is behind
-//! `host_has_vnni() && MIND_INTDOT_VNNI_VERIFY`, and `host_has_vnni()` is false on
-//! aarch64. For that workload this test compares two hand-copies with no measured
-//! leg behind either — exactly the shape it exists to catch — so the transitive
-//! argument above does NOT close for it. It is left in rather than excluded,
-//! because a fixture whose legs do not run is worth seeing consistent; the claim
-//! is simply narrower than the file count suggests.
+//! Runtime coverage is proved separately by case receipts. Of the 25 manifest
+//! cases, 23 execute native code, `bimap-phf` measures compiler construction,
+//! and the VNNI case may defer only when AVX-512-VNNI is unavailable. This file
+//! still checks committed-reference equality; it does not infer execution from
+//! manifest prose.
 //!
 //! Two holes an adversarial review found in the first version of this test, both
 //! now closed and both of the same species — *the expectation was under the same
@@ -61,6 +58,8 @@
 //! very disagreement this exists to find.
 
 use std::path::{Path, PathBuf};
+
+mod common;
 
 fn workload_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -179,6 +178,14 @@ fn committed_reference_hashes_agree_across_substrates() {
         .filter(|p| p.join("manifest.toml").is_file())
         .collect();
     dirs.sort();
+
+    let policies = common::xsi_gate::load_inventory(&root)
+        .unwrap_or_else(|e| panic!("invalid runtime evidence policy: {e}"));
+    assert_eq!(
+        policies.len(),
+        dirs.len(),
+        "runtime evidence policy does not cover every workload manifest"
+    );
 
     // Independent second traversal. A fixture carrying reference hashes but no
     // manifest is skipped by the loop below, which would read as a pass; the two

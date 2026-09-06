@@ -42,10 +42,11 @@
 
 mod common;
 use common::mindc_bin;
+use common::xsi_gate::{self, VnniDecision};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use libloading::{Library, Symbol};
 use sha2::{Digest, Sha256};
@@ -717,6 +718,8 @@ fn emit_bless(id: &str, substrate: &str, computed: &str) {
     println!("BLESS {id} {substrate} {computed}");
     if let Some(path) = std::env::var_os("MIND_BENCH_HASHES_OUT") {
         use std::io::Write;
+        static SINK_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = SINK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -782,6 +785,7 @@ fn run_dot_workload(w: &DotWorkload) {
             w.id
         ),
     }
+    common::xsi_gate::record_measured(w.id);
 }
 
 #[test]
@@ -885,6 +889,7 @@ fn gemv_q16_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- same-process run-to-run determinism -----------------------------------
@@ -1340,6 +1345,7 @@ fn gemm_q16_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- gemm-i8 workload (the "det.igemm" tier) -------------------------------
@@ -1433,6 +1439,7 @@ fn gemm_i8_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- gemm-i8-mt workload (MULTITHREADED int8 GEMM thread-band reduction) ----
@@ -1555,24 +1562,13 @@ fn gemm_i8_mt_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- gemm-i8-vnni workload (VPDPBUSD int-dot rung, VNNI hardware only) -------
-// RANK 3. The VNNI int-dot rung compiles the int8 GEMM with MIND_INTDOT=vnni so
-// the kernel emits the explicit @llvm.x86.avx512.vpdpbusd.256 intrinsic (with
-// the signed-input bias correction Σ aₛ·bₛ = Σ(aₛ+128)·bₛ − 128·Σ bₛ, all exact
-// i32). By that identity the VPDPBUSD rung is byte-for-byte identical to the
-// AVX2 vpmaddwd default, so its output hash MUST equal the committed gemm-i8
-// reference (917d353b…). BUT the compiled kernel needs VNNI HARDWARE (Ice Lake /
-// Sapphire Rapids+, or an AVX-VNNI part) to RUN — on a non-VNNI host it would
-// SIGILL. This canary therefore GATES on runtime VNNI capability and DEFERS
-// LOUDLY (prints a skip reason and returns — never a stub-green) when the host
-// lacks avx512vnni, exactly as the constitution requires for a rung this
-// hardware cannot execute. It must land BEFORE any VNNI auto-select so the wedge
-// is guarded the moment the rung can fire. deferred: this box is Haswell (AVX2,
-// no VNNI) — upgrade path: run on an avx512vnni host (or CI runner) where the
-// gate compiles with MIND_INTDOT=vnni, executes vpdpbusd, and asserts the hash
-// equals 917d353b… byte-for-byte.
+// RANK 3. This uses the explicit AVX-512 VPDPBUSD lowering with exact signed-i8
+// bias correction. A host without AVX-512-VNNI records the one manifest-bound
+// deferral; a capable host must opt in and execute rather than skip.
 
 /// Build SRC with `MIND_INTDOT=vnni` into a DISTINCT `.so`, so the int8 kernel
 /// emits the VPDPBUSD rung (and clang links the VNNI target features). Returns
@@ -1600,57 +1596,28 @@ fn build_dot_so_vnni() -> Option<PathBuf> {
     ))
 }
 
-/// Runtime VNNI capability of the host. AVX-512-VNNI is the rung the build
-/// enables (`-mavx512vnni -mavx512vl`); anything else is a DEFER.
-fn host_has_vnni() -> bool {
-    #[cfg(target_arch = "x86_64")]
-    {
-        std::is_x86_feature_detected!("avx512vnni")
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        false
-    }
-}
-
 #[test]
 fn gemm_i8_vnni_reproducibility_gate() {
     let id = "gemm-i8-vnni-64x64x64";
     let (m, k, n, seed) = (64usize, 64usize, 64usize, 0xDEADBEEFu64);
 
-    // The vpdpbusd rung EXECUTES a lowering whose byte-identity to 917d353b has
-    // so far only been ARGUED (the exact signed-bias identity), never MEASURED on
-    // real VNNI silicon. GitHub's default runners are a mix (Intel Ice Lake HAS
-    // avx512vnni and would execute + hard-assert this; AMD Milan has no AVX-512
-    // and defers), so letting default CI be the first place an unmeasured path
-    // gates the build breaks "verify green before push / no unmeasured assertion".
-    // The rung therefore DEFERS unless BOTH the host has VNNI AND the explicit
-    // opt-in MIND_INTDOT_VNNI_VERIFY=1 is set — the flag we set only on a VNNI
-    // host where we intend to bless it.
-    // deferred: bless on a gcloud Sapphire Rapids / Ice Lake instance with
-    // MIND_INTDOT_VNNI_VERIFY=1, confirm the executed hash == 917d353b byte-for-
-    // byte, then make the assertion unconditional on any VNNI host.
-    if !host_has_vnni() || std::env::var_os("MIND_INTDOT_VNNI_VERIFY").is_none() {
-        let why = if host_has_vnni() {
-            "VNNI present, but executing the vpdpbusd rung is opt-in (set \
-             MIND_INTDOT_VNNI_VERIFY=1 to compile + run + assert it) pending a first \
-             bless on real VNNI hardware"
-        } else {
-            "host lacks AVX-512-VNNI (vpdpbusd) — the rung cannot RUN here"
-        };
-        // DEFER LOUDLY — never a stub-green. OPTIONAL INPUT, not a toolchain
-        // gap: the vpdpbusd rung needs VNNI silicon plus an explicit
-        // MIND_INTDOT_VNNI_VERIFY=1 opt-in, neither of which MIND_BENCH_REQUIRE
-        // asks any runner to supply, so this may not fail closed.
-        crate::common::gate::skipped_optional(
-            "cross_substrate_identity",
-            &format!(
-                "DEFER {id}: {why}. The rung is byte-identical to the committed \
-                 gemm-i8 hash (917d353b…) by the signed-bias identity, but MUST \
-                 NOT be reported as passing until measured on VNNI silicon."
-            ),
-        );
-        return;
+    let policy = xsi_gate::policy_for_id(id).expect("declared VNNI case policy");
+    let has_vnni = xsi_gate::host_has_avx512vnni();
+    let verify = std::env::var(xsi_gate::VNNI_VERIFY_VAR).ok();
+    match xsi_gate::vnni_decision(&policy, has_vnni, verify.as_deref()) {
+        Ok(VnniDecision::Run) => {}
+        Ok(VnniDecision::DeferUnsupported(isa)) => {
+            xsi_gate::record_deferred(id, isa);
+            // OPTIONAL INPUT: AVX-512-VNNI silicon supplied by the runner;
+            // the receipt writer independently verifies its absence above.
+            crate::common::gate::skipped_optional_case(
+                "cross_substrate_identity",
+                id,
+                "host lacks AVX-512-VNNI (vpdpbusd); this rung did not execute",
+            );
+            return;
+        }
+        Err(reason) => panic!("{id}: {reason}"),
     }
 
     // VNNI-capable host: compile the VPDPBUSD rung and prove it is byte-identical.
@@ -1701,6 +1668,7 @@ fn gemm_i8_vnni_reproducibility_gate() {
         ),
         None => panic!("{id}: no reference hash for substrate '{substrate}'. Computed {computed}."),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- gemv-i16 workload (int16 matrix x vector) -----------------------------
@@ -1791,6 +1759,7 @@ fn gemv_i16_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- scalar-f64 workload (deterministic scalar IEEE-754 float) --------------
@@ -1882,6 +1851,7 @@ fn scalar_float_f64_reproducibility_gate() {
             result.to_bits()
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- scalar-cast-conv workload (scalar int↔float `as`-cast conversion) ------
@@ -2000,6 +1970,7 @@ fn scalar_cast_conv_reproducibility_gate() {
              (result={result}); bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 /// Rust saturating float→narrow oracle for `scalar_cast_conv_narrow`. Rust `f as
@@ -2265,6 +2236,7 @@ fn pin_or_bless(id: &str, computed: &str, result: i64) {
              (result_i64={result}); bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- dot-i16 workload (bare int16 dot reduction) ---------------------------
@@ -2383,6 +2355,7 @@ fn gemm_q16_fused_reproducibility_gate() {
              bless with MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // --- q16-arith-chain workload (scalar Q16.16 fixed-point arithmetic) -------
@@ -2701,6 +2674,7 @@ fn pin_strict_fp(id: &str, computed: &str, bits: u32) {
              substrate, never emulated, never self-skipped into green."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 #[test]
@@ -3043,6 +3017,7 @@ fn bimap_phf_construction_identity_gate() {
              MIND_BENCH_BLESS=1 if this host is canonical."
         ),
     }
+    common::xsi_gate::record_measured(id);
 }
 
 // ===========================================================================
