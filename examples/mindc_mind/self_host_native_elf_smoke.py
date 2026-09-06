@@ -52,19 +52,9 @@ _ORACLE_DIR = _HERE / "testdata" / "native_elf_oracle"
 _ORACLE_MANIFEST = _ORACLE_DIR / "MANIFEST.txt"
 
 
-def _load_oracle_manifest() -> dict[str, tuple[int, str, str]]:
-    """Parse testdata/native_elf_oracle/MANIFEST.txt into
-    {name: (size_bytes, sha256_hex, expected_exit_code)}."""
-    manifest: dict[str, tuple[int, str, str]] = {}
-    for line in _ORACLE_MANIFEST.read_text().splitlines():
-        if not line or line.startswith("#"):
-            continue
-        name, size, sha256_hex, expected_exit = line.split("\t")
-        manifest[name] = (int(size), sha256_hex, expected_exit)
-    return manifest
+from _frozen_native_oracle import load_manifest, read_oracle  # noqa: E402
 
-
-_ORACLE_MANIFEST_CACHE = _load_oracle_manifest()
+_ORACLE_MANIFEST_CACHE = load_manifest(_ORACLE_MANIFEST)
 
 # The native-port ladder: each fixture is lowered by the pure-MIND
 # `selftest_native_elf_h` AND by the Rust `mind-native` oracle; the gate requires a
@@ -167,23 +157,7 @@ FIXTURES = [
 
 
 def oracle_elf(name: str) -> bytes:
-    """Return the FROZEN native-ELF oracle reference bytes for fixture `name`
-    (testdata/native_elf_oracle/{name}.elf), verified against the recorded
-    size/sha256 in MANIFEST.txt so a corrupted or stale frozen reference fails
-    LOUD rather than silently poisoning the byte-identity gate."""
-    data = (_ORACLE_DIR / f"{name}.elf").read_bytes()
-    recorded = _ORACLE_MANIFEST_CACHE.get(name)
-    if recorded is not None:
-        exp_size, exp_sha256, _exit = recorded
-        got_sha256 = hashlib.sha256(data).hexdigest()
-        if len(data) != exp_size or got_sha256 != exp_sha256:
-            raise RuntimeError(
-                f"frozen oracle {name}.elf integrity check FAILED: "
-                f"size {len(data)} (expected {exp_size}), "
-                f"sha256 {got_sha256} (expected {exp_sha256})"
-            )
-    return data
-
+    return read_oracle(name, _ORACLE_DIR, _ORACLE_MANIFEST_CACHE)
 
 # ---------------------------------------------------------------------------
 # A9b — TEST-TIME-DERIVED PT_NOTE trace-hashes (compiler-independence proof).

@@ -95,7 +95,7 @@ const SCANNED_EXTENSIONS: &[&str] = &["py", "rs", "sh"];
 const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ("examples/mindc_mind/mic3_primitives_smoke.py", 1665),
     ("examples/mindc_mind/mindfuzz_self_host.py", 1098),
-    ("examples/mindc_mind/self_host_native_elf_smoke.py", 881),
+    ("examples/mindc_mind/self_host_native_elf_smoke.py", 869),
     (
         "examples/mindc_mind/self_host_tc_fn_value_call_smoke.py",
         921,
@@ -106,7 +106,7 @@ const LEGACY_BUDGETS: &[(&str, usize)] = &[
     ),
     (
         "examples/mindc_mind/self_host_tc_unknown_call_smoke.py",
-        1092,
+        1090,
     ),
     (
         "examples/mindc_mind/self_host_tc_unknown_ident_smoke.py",
