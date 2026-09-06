@@ -41,8 +41,9 @@ TIERS=(exec lowering pkg)
 
 # `exec` — the executable-semantics tier. 110 mlir-build-gated files, including the
 # alias-miscompile gate, the array-OOB bounds-trap gate and the array bounds/dtype
-# gate. Dropping ANY of the three features silently erases most of it.
-FEATURES_exec="mlir-build std-surface cross-module-imports"
+# gate. The C-ABI export feature also executes the manifest-cache regressions;
+# without it that entire test target is erased rather than exercised.
+FEATURES_exec="mlir-build std-surface cross-module-imports ffi-c-user"
 FLOOR_TESTS_exec=2152
 FLOOR_HARNESSES_exec=336
 # MIND_BENCH_REQUIRE=1 turns "MLIR toolchain missing -> skip" into a hard failure, so
@@ -116,6 +117,7 @@ CRITICAL_exec=(
   "mindc_artifact_name 7"           # measured 7 under this feature set; the artifact NAME's one owner
   "harness_scratch_isolation 3"     # scratch isolation for every wedge gate's artifacts
   "module_size_ratchet 5"           # the 800-line ceiling and its budget table
+  "mindc_cache_build_inputs 3"      # explicit entry, manifest exports, native sources
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
 # enabled BOTH features for; 26 of the group's 57 tests live in these two files.
