@@ -1084,15 +1084,9 @@ pub fn ast_continue() -> i64 {
 pub fn ast_float_lit() -> i64 {
     24
 }
-// `EXPR as i8/i16/i32` NARROWING cast expression. child0 = operand expr, aux =
-// target bit width (8/16/32). A WIDENING `as i64` cast stays a value passthrough
-// (no node — parse_postfix_rest returns the operand unchanged); only a narrowing
-// target needs a real two's-complement truncation, emitted natively as a movsx
-// (nb_expr's ast_cast arm -> nb_movsx_rax_al/ax / nb_movsxd_rax_eax, the same
-// reg-to-reg wrap the __mind_wrap_iN intrinsics use). main.mind's OWN source uses
-// no cast in code (every `as iN` occurrence is inside a comment the lexer strips),
-// so this node is NEVER produced during self-compile — additive, the integer
-// native-ELF oracle and the mic@3/mic@1 canary paths stay byte-identical.
+// Typed scalar cast expression. child0 = operand; child1/child2 = target source
+// span; aux = target width (or the f64 sentinel). The retained target controls
+// canonical mic@3 conversion naming and native signed/unsigned semantics.
 pub fn ast_cast() -> i64 {
     25
 }
@@ -1455,16 +1449,19 @@ pub fn ast_new_not(span_lo: i64, span_hi: i64, operand: i64) -> i64 {
     n
 }
 
-// `EXPR as i8/i16/i32`: child0 = operand expr, aux (offset 48) = target bit width
-// (8/16/32). child1/child2 are 0 (a unary node — mirrors ast_new_neg's layout).
-pub fn ast_new_cast(span_lo: i64, span_hi: i64, operand: i64, width: i64) -> i64 {
+// A typed `EXPR as TARGET`: child0 = operand; child1/child2 = TARGET source
+// span; aux = target bit width (8/16/32/64, or nb_castw_f64()). Keeping the
+// target span is load-bearing: signed and unsigned casts of the same width have
+// different canonical conversion names in mic@3 (`__mind_conv_i8` vs
+// `__mind_conv_u8`) and different native extension semantics.
+pub fn ast_new_cast(span_lo: i64, span_hi: i64, operand: i64, target_lo: i64, target_hi: i64, width: i64) -> i64 {
     let n: i64 = ast_alloc();
     __mind_store_i64(n + 0, ast_cast());
     __mind_store_i64(n + 8, span_lo);
     __mind_store_i64(n + 16, span_hi);
     __mind_store_i64(n + 24, operand);
-    __mind_store_i64(n + 32, 0);
-    __mind_store_i64(n + 40, 0);
+    __mind_store_i64(n + 32, target_lo);
+    __mind_store_i64(n + 40, target_hi);
     __mind_store_i64(n + 48, width);
     n
 }
@@ -1872,18 +1869,10 @@ pub fn narrow_cast_width(buf: i64, lo: i64, hi: i64) -> i64 {
     0
 }
 
-// UNSIGNED narrowing-cast MASK for `EXPR as u8/u16/u32`. Unsigned narrowing to
-// width w is a ZERO-extended truncation — the low w bits kept, high bits cleared
-// — which for any i64 input (including negatives: `-1 as u8` = 255) is exactly
-// `EXPR & ((1<<w)-1)`. So the parser DESUGARS `EXPR as uN` into the fully-proven
-// bitwise-AND binop (Rule 4b desugar-to-proven-form): no new native-emit / count /
-// dtype / mic@3-flatten arm, and — unlike the signed ast_cast node, which the
-// mic@3 NOTE builder (nb_build_mic3) refuses — the AND binop lowers through BOTH
-// the native-ELF path AND the note builder, so an unsigned cast SELF-HOSTS through
-// the full selftest_native_elf_u path. Returns the AND mask (255 / 65535 /
-// 4294967295) for u8/u16/u32, or 0 for any other target. main.mind's own source
-// has no non-comment `as uN`, so this never fires during self-compile and the
-// integer native-ELF oracle / self-host loop stay byte-identical.
+// UNSIGNED narrowing-cast MASK for the let-annotation path. Cast expressions use
+// unsigned_cast_width and retain their typed ast_cast node so mic@3 can emit the
+// canonical source-kind-dependent `__mind_conv_uN` call instead of an equivalent
+// integer-only mask. Returns 255 / 65535 / 4294967295 for u8/u16/u32, else 0.
 pub fn unsigned_cast_mask(buf: i64, lo: i64, hi: i64) -> i64 {
     // `u8` (2 bytes: u 8)
     if hi - lo == 2 {
@@ -1910,6 +1899,198 @@ pub fn unsigned_cast_mask(buf: i64, lo: i64, hi: i64) -> i64 {
         }
     }
     0
+}
+
+// The fixed-width unsigned cast targets: `u8`->8, `u16`->16, `u32`->32, else 0.
+pub fn unsigned_cast_width(buf: i64, lo: i64, hi: i64) -> i64 {
+    let mask: i64 = unsigned_cast_mask(buf, lo, hi);
+    if mask == 255 {
+        return 8;
+    }
+    if mask == 65535 {
+        return 16;
+    }
+    if mask == 4294967295 {
+        return 32;
+    }
+    0
+}
+
+pub fn ast_cast_is_unsigned(buf: i64, node: i64) -> i64 {
+    let lo: i64 = ast_child1(node);
+    let hi: i64 = ast_child2(node);
+    if hi <= lo {
+        return 0;
+    }
+    if load_byte(buf, lo) == 117 {
+        return 1;
+    }
+    0
+}
+
+pub fn skip_ws_back(buf: i64, pos: i64, lo: i64) -> i64 {
+    if pos < lo {
+        return pos;
+    }
+    let b: i64 = load_byte(buf, pos);
+    if b == 32 {
+        return skip_ws_back(buf, pos - 1, lo);
+    }
+    if b == 9 {
+        return skip_ws_back(buf, pos - 1, lo);
+    }
+    if b == 10 {
+        return skip_ws_back(buf, pos - 1, lo);
+    }
+    if b == 13 {
+        return skip_ws_back(buf, pos - 1, lo);
+    }
+    pos
+}
+
+// Find the opening `//` on the current source line, or -1. MIND's lexer admits
+// line comments as signature trivia; block comments at these positions are a
+// parser error, so this scan deliberately implements only the accepted form.
+pub fn line_comment_start_back(buf: i64, pos: i64, lo: i64) -> i64 {
+    if pos <= lo {
+        return 0 - 1;
+    }
+    let b: i64 = load_byte(buf, pos);
+    if b == 10 {
+        return 0 - 1;
+    }
+    if b == 13 {
+        return 0 - 1;
+    }
+    if b == 47 {
+        if load_byte(buf, pos - 1) == 47 {
+            return pos - 1;
+        }
+    }
+    line_comment_start_back(buf, pos - 1, lo)
+}
+
+// Skip whitespace and any immediately preceding `// ... newline` runs. The
+// scan is bounded by the enclosing function's low span and allocates nothing.
+pub fn skip_signature_trivia_back(buf: i64, pos: i64, lo: i64) -> i64 {
+    let p: i64 = skip_ws_back(buf, pos, lo);
+    let comment: i64 = line_comment_start_back(buf, p, lo);
+    if comment >= lo {
+        return skip_signature_trivia_back(buf, comment - 1, lo);
+    }
+    p
+}
+
+// True only when `start` begins the single return-type token immediately after
+// the function arrow. This keeps names such as `myu8` from suffix-matching u8.
+pub fn is_direct_return_type_start(src: i64, start: i64, flo: i64) -> i64 {
+    let gt: i64 = skip_signature_trivia_back(src, start - 1, flo);
+    if gt <= flo {
+        return 0;
+    }
+    if load_byte(src, gt) != 62 {
+        return 0;
+    }
+    if load_byte(src, gt - 1) == 45 {
+        return 1;
+    }
+    0
+}
+
+// Read the return spelling immediately before the body brace without allocating
+// a per-function lexer: +8/+16 signed, -8/-16 unsigned, otherwise 0.
+pub fn fn_named_narrow_ret_code(src: i64, fn_node: i64) -> i64 {
+    let flo: i64 = ast_span_lo(fn_node);
+    let body: i64 = ast_child2(fn_node);
+    let last: i64 = skip_signature_trivia_back(src, ast_span_lo(body) - 1, flo);
+    let hi: i64 = last + 1;
+    if is_direct_return_type_start(src, hi - 2, flo) == 1 {
+        let sw2: i64 = narrow_cast_width(src, hi - 2, hi);
+        if sw2 == 8 {
+            return 8;
+        }
+        let uw2: i64 = unsigned_cast_width(src, hi - 2, hi);
+        if uw2 == 8 {
+            return 0 - 8;
+        }
+    }
+    if is_direct_return_type_start(src, hi - 3, flo) == 1 {
+        let sw3: i64 = narrow_cast_width(src, hi - 3, hi);
+        if sw3 == 16 {
+            return 16;
+        }
+        let uw3: i64 = unsigned_cast_width(src, hi - 3, hi);
+        if uw3 == 16 {
+            return 0 - 16;
+        }
+    }
+    0
+}
+
+pub fn flatten_named_narrow_return(src: i64, fn_node: i64, root: i64, nodes: i64, cursor: i64) -> i64 {
+    let code: i64 = fn_named_narrow_ret_code(src, fn_node);
+    if code == 0 {
+        return root;
+    }
+    if code < 0 {
+        let w: i64 = 0 - code;
+        let mask: i64 = if w == 8 {
+            255
+        } else {
+            65535
+        };
+        let mslot: i64 = desc_emit_const(nodes, cursor, mask);
+        return desc_emit_binop(nodes, cursor, binop_to_byte(op_bitand()), root, mslot);
+    }
+    let sh: i64 = 64 - code;
+    let shslot: i64 = desc_emit_const(nodes, cursor, sh);
+    let lslot: i64 = desc_emit_binop(nodes, cursor, binop_to_byte(op_shl()), root, shslot);
+    desc_emit_binop(nodes, cursor, binop_to_byte(op_shr()), lslot, shslot)
+}
+
+// Number of MIC@3 instructions needed to canonicalise an i64-slot named narrow
+// return. Unsigned uses CONST mask + AND; signed uses CONST shift + SHL + SHR.
+pub fn named_narrow_ret_extra(code: i64) -> i64 {
+    if code < 0 {
+        return 2;
+    }
+    if code > 0 {
+        return 3;
+    }
+    0
+}
+
+// Result vid after emit_mic3_named_narrow_return writes at first_id.
+pub fn named_narrow_ret_result(raw_vid: i64, first_id: i64, code: i64) -> i64 {
+    if code < 0 {
+        return first_id + 1;
+    }
+    if code > 0 {
+        return first_id + 2;
+    }
+    raw_vid
+}
+
+// Emit the exact Rust mask_narrow_ret instruction sequence for a value whose
+// vid already exists (OP_IF results and explicit returns inside its regions).
+pub fn emit_mic3_named_narrow_return(s: EmitState, raw_vid: i64, first_id: i64, code: i64) -> EmitState {
+    if code == 0 {
+        return s;
+    }
+    if code < 0 {
+        let w: i64 = 0 - code;
+        let mask: i64 = if w == 8 {
+            255
+        } else {
+            65535
+        };
+        let s1: EmitState = emit_mic3_const_i64(s, first_id, mask);
+        return emit_mic3_binop(s1, first_id + 1, binop_to_byte(op_bitand()), raw_vid, first_id);
+    }
+    let sh: i64 = 64 - code;
+    let s1: EmitState = emit_mic3_const_i64(s, first_id, sh);
+    let s2: EmitState = emit_mic3_binop(s1, first_id + 1, binop_to_byte(op_shl()), raw_vid, first_id);
+    emit_mic3_binop(s2, first_id + 2, binop_to_byte(op_shr()), first_id + 1, first_id)
 }
 
 // ===== Pratt precedence table =====
@@ -2531,34 +2712,17 @@ pub fn parse_postfix_rest(toks: Vec, pos: i64, buf: i64, recv: i64) -> ParseResu
                     // source through the SATURATING f64->i64 sequence. main.mind's own
                     // source has no `as i64` outside stripped comments, so its parse —
                     // and every self-compile byte — is unchanged.
-                    let c64: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, 64);
+                    let c64: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, cty_lo, cty_hi, 64);
                     return parse_postfix_rest(toks, pos + 2, buf, c64);
                 }
                 let cw: i64 = narrow_cast_width(buf, cty_lo, cty_hi);
                 if cw > 0 {
-                    // SIGNED narrowing cast `EXPR as i8/i16/i32`: DESUGAR to the proven
-                    // arithmetic-shift pair `(EXPR << (64-w)) >> (64-w)`. MIND's `>>` is a
-                    // SIGNED (arithmetic, SAR) shift, so shifting the low w bits up to the
-                    // sign position and back sign-extends them to i64 — exactly the
-                    // two's-complement wrap the ast_cast movsx arm produced, but through TWO
-                    // fully-proven shift binops that — unlike the signed ast_cast node the
-                    // mic@3 NOTE builder (nb_build_mic3) refuses — lower through BOTH the
-                    // native-ELF path AND the note builder, so a signed narrowing cast
-                    // SELF-HOSTS through the full selftest_native_elf_u path (Rule 4b
-                    // desugar-to-proven-form: no new native-emit / count / mic@3-flatten
-                    // arm). The `<<` is modular so EXPR's high bits above bit w-1 are
-                    // dropped; the SAR then re-fills from bit w-1, so the result is exact
-                    // for any i64 source. A FLOAT source stays FAIL-CLOSED: `f << k` is a
-                    // MIXED (float+int) binop, which nb_expr's binop arm POISONS (0-byte
-                    // refusal) — the same boundary the ast_cast float branch held — never a
-                    // wrong value. main.mind's own source has no non-comment `as iN`
-                    // (it wraps via the __mind_wrap_iN intrinsics), so this never fires
-                    // during self-compile and the integer native-ELF oracle / self-host
-                    // loop stay byte-identical.
-                    let sh: i64 = 64 - cw;
-                    let shl_node: i64 = ast_new_binop(ast_span_lo(recv), cty_hi, recv, mk_syn_intlit(sh), op_shl());
-                    let sar_node: i64 = ast_new_binop(ast_span_lo(recv), cty_hi, shl_node, mk_syn_intlit(sh), op_shr());
-                    return parse_postfix_rest(toks, pos + 2, buf, sar_node);
+                    // Keep the target spelling on a real cast node. Rust lowering emits
+                    // the source-kind-dependent canonical call `__mind_conv_iN`; losing
+                    // this type here changes valid mic@3 even when an integer-only shift
+                    // pair happens to execute to the same value.
+                    let cs: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, cty_lo, cty_hi, cw);
+                    return parse_postfix_rest(toks, pos + 2, buf, cs);
                 }
                 // `EXPR as f64` (int -> f64 WIDENING cast): build a real ast_cast
                 // node carrying the f64 sentinel width. nb_expr's arm lowers it via
@@ -2567,20 +2731,16 @@ pub fn parse_postfix_rest(toks: Vec, pos: i64, buf: i64, recv: i64) -> ParseResu
                 // let routes the SSE2 path. main.mind's own source has no non-comment
                 // `as`, so its parse — and every self-compile byte — is unchanged.
                 if is_ident_f64(buf, cty_lo, cty_hi) == 1 {
-                    let cf64: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, nb_castw_f64());
+                    let cf64: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, cty_lo, cty_hi, nb_castw_f64());
                     return parse_postfix_rest(toks, pos + 2, buf, cf64);
                 }
-                // `EXPR as u8/u16/u32` UNSIGNED narrowing cast: DESUGAR to the
-                // proven `EXPR & mask` binop (unsigned_cast_mask header). A masked
-                // AND is byte-identical to a hand-written `EXPR & 255` in the native
-                // path AND self-hosts through the note builder (which refuses the
-                // signed ast_cast node). Continue postfix from the binop so a
-                // trailing `.field` / index still binds. main.mind uses no
-                // non-comment `as uN`, so its parse is byte-identical.
-                let umask: i64 = unsigned_cast_mask(buf, cty_lo, cty_hi);
-                if umask > 0 {
-                    let umnode: i64 = ast_new_binop(ast_span_lo(recv), cty_hi, recv, mk_syn_intlit(umask), op_bitand());
-                    return parse_postfix_rest(toks, pos + 2, buf, umnode);
+                // Unsigned narrowing uses the same typed cast representation. Its
+                // target span selects `__mind_conv_uN` for mic@3 and zero-extension
+                // for native execution.
+                let uw: i64 = unsigned_cast_width(buf, cty_lo, cty_hi);
+                if uw > 0 {
+                    let cun: i64 = ast_new_cast(ast_span_lo(recv), cty_hi, recv, cty_lo, cty_hi, uw);
+                    return parse_postfix_rest(toks, pos + 2, buf, cun);
                 }
                 // Any OTHER `as TARGET` (f32/u64/usize/...): explicitly
                 // UNSUPPORTED (fail-closed poison node -> 0B refusal). Before the
@@ -5694,10 +5854,12 @@ pub fn skip_unknown_item_d(toks: Vec, pos: i64, depth: i64) -> i64 {
 
 // ===== Top-level item / program =====
 
-// 1 iff the item-level attribute named at `pos` is known to be CODEGEN-INERT --
-// i.e. the oracle records it but emits exactly the fn set the un-attributed
-// program would emit. Today: `test` (RFC 0008 Phase B, sets an is_test flag only),
-// `repr`, `protection`.
+// 1 iff the item-level attribute named at `pos` is known to require neither
+// codegen changes nor semantic validation. The exact admitted spelling lives
+// below. Policy-bearing attributes stay poison until the self-host ports their
+// semantic checks: accepting a valid-looking spelling alone would fail open on
+// a body the oracle rejects (for example invariant(no_float_ops) around float
+// arithmetic).
 //
 // This is an ALLOWLIST, deliberately. The alternative -- denylisting the
 // codegen-driving names -- fails OPEN on the next one added to the oracle: the
@@ -5711,9 +5873,25 @@ pub fn skip_unknown_item_d(toks: Vec, pos: i64, depth: i64) -> i64 {
 // deferred: derive this set from the oracle's own attribute table rather than
 // restating it -- upgrade path: emit the inert-attribute list from
 // src/parser/mod.rs into a generated fixture both sides read.
+pub fn attr_span_is_inline(buf: i64, lo: i64, hi: i64) -> i64 {
+    if hi - lo != 6 { return 0; }
+    if load_byte(buf, lo + 0) != 105 { return 0; }
+    if load_byte(buf, lo + 1) != 110 { return 0; }
+    if load_byte(buf, lo + 2) != 108 { return 0; }
+    if load_byte(buf, lo + 3) != 105 { return 0; }
+    if load_byte(buf, lo + 4) != 110 { return 0; }
+    if load_byte(buf, lo + 5) != 101 { return 0; }
+    1
+}
+
 pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
+    if tok_kind(toks, pos) != tk_ident() { return 0; }
     let lo: i64 = tok_lo(toks, pos);
     let n: i64 = tok_hi(toks, pos) - lo;
+    if attr_span_is_inline(buf, lo, lo + n) == 1 {
+        if tok_kind(toks, pos + 1) == tk_rbracket() { return 1; }
+        return 0;
+    }
     if n == 4 {
         // "test"
         if load_byte(buf, lo) == 116 {
@@ -8758,15 +8936,13 @@ pub fn intern_vec_push_name(strbuf: i64, offs: i64, ccell: i64) -> i64 {
     intern_vec_push_literal(strbuf, offs, ccell)
 }
 
-// ===== mic@3 `EXPR as i64` conv-call synthetic name (slice #309) =====
+// ===== mic@3 typed-cast synthetic names =====
 //
-// The Rust oracle lowers a full-width cast `EXPR as i64` to a CALL to the synthetic
-// intrinsic __mind_conv_i64 (src/eval/lower.rs scalar_int64_cast_signed ->
-// Instr::Call{ name: "__mind_conv_i64", args: [val] }) — IDENTICAL mic@3 bytes for
-// an integer OR a float source (the source kind only picks the MLIR expansion, never
-// the note). Mirror the vec_new/vec_push synthetic-name interns so the conv call needs
-// no source span / desugar pass. "__mind_conv_i64" = 15 bytes.
-pub fn conv_i64_name_byte(j: i64) -> i64 {
+// Rust lowers every supported scalar cast to `__mind_conv_TARGET`, where TARGET is
+// the exact canonical target spelling retained by ast_cast. The conversion remains
+// source-kind-dependent until MLIR lowering, so the bootstrap note must preserve
+// this call instead of substituting an integer-only shift or mask.
+pub fn conv_name_prefix_byte(j: i64) -> i64 {
     if j == 0 {
         return 95;
     }
@@ -8803,76 +8979,71 @@ pub fn conv_i64_name_byte(j: i64) -> i64 {
     if j == 11 {
         return 95;
     }
-    if j == 12 {
-        return 105;
-    }
-    if j == 13 {
-        return 54;
-    }
-    52
+    95
 }
 
-// Write the literal "__mind_conv_i64" (15 bytes) into `strbuf` at the current
-// interning cursor; register its offset/count; return the fresh string index.
-pub fn intern_conv_i64_literal(strbuf: i64, offs: i64, ccell: i64) -> i64 {
+pub fn conv_name_len(node: i64) -> i64 {
+    12 + ast_child2(node) - ast_child1(node)
+}
+
+pub fn conv_name_byte(src: i64, node: i64, j: i64) -> i64 {
+    if j < 12 {
+        return conv_name_prefix_byte(j);
+    }
+    load_byte(src, ast_child1(node) + j - 12)
+}
+
+pub fn conv_name_write(strbuf: i64, start: i64, src: i64, node: i64, j: i64, n: i64) -> i64 {
+    if j >= n {
+        return 0;
+    }
+    __mind_store_i8(strbuf + start + j, conv_name_byte(src, node, j));
+    conv_name_write(strbuf, start, src, node, j + 1, n)
+}
+
+pub fn intern_conv_name_literal(strbuf: i64, offs: i64, ccell: i64, src: i64, node: i64) -> i64 {
     let n: i64 = __mind_load_i64(ccell);
     let start: i64 = __mind_load_i64(offs + n * 8);
-    __mind_store_i8(strbuf + start + 0, 95);
-    __mind_store_i8(strbuf + start + 1, 95);
-    __mind_store_i8(strbuf + start + 2, 109);
-    __mind_store_i8(strbuf + start + 3, 105);
-    __mind_store_i8(strbuf + start + 4, 110);
-    __mind_store_i8(strbuf + start + 5, 100);
-    __mind_store_i8(strbuf + start + 6, 95);
-    __mind_store_i8(strbuf + start + 7, 99);
-    __mind_store_i8(strbuf + start + 8, 111);
-    __mind_store_i8(strbuf + start + 9, 110);
-    __mind_store_i8(strbuf + start + 10, 118);
-    __mind_store_i8(strbuf + start + 11, 95);
-    __mind_store_i8(strbuf + start + 12, 105);
-    __mind_store_i8(strbuf + start + 13, 54);
-    __mind_store_i8(strbuf + start + 14, 52);
-    __mind_store_i64(offs + (n + 1) * 8, start + 15);
+    let name_len: i64 = conv_name_len(node);
+    let _w: i64 = conv_name_write(strbuf, start, src, node, 0, name_len);
+    __mind_store_i64(offs + (n + 1) * 8, start + name_len);
     __mind_store_i64(ccell, n + 1);
     n
 }
 
-// Does the already-interned string at index i equal "__mind_conv_i64"? Raw-byte compare.
-pub fn conv_i64_name_eq_at(strbuf: i64, offs: i64, i: i64, j: i64) -> i64 {
+pub fn conv_name_eq_at(strbuf: i64, offs: i64, src: i64, node: i64, i: i64, j: i64) -> i64 {
     let elo: i64 = __mind_load_i64(offs + i * 8);
     let ehi: i64 = __mind_load_i64(offs + (i + 1) * 8);
-    if ehi - elo != 15 {
+    let name_len: i64 = conv_name_len(node);
+    if ehi - elo != name_len {
         return 0;
     }
-    if j >= 15 {
+    if j >= name_len {
         return 1;
     }
-    if load_byte(strbuf, elo + j) != conv_i64_name_byte(j) {
+    if load_byte(strbuf, elo + j) != conv_name_byte(src, node, j) {
         return 0;
     }
-    conv_i64_name_eq_at(strbuf, offs, i, j + 1)
+    conv_name_eq_at(strbuf, offs, src, node, i, j + 1)
 }
 
-// Find the string index of "__mind_conv_i64" among the n already-interned strings, or -1.
-pub fn conv_i64_name_find(strbuf: i64, offs: i64, n: i64, i: i64) -> i64 {
+pub fn conv_name_find(strbuf: i64, offs: i64, n: i64, src: i64, node: i64, i: i64) -> i64 {
     if i >= n {
         return 0 - 1;
     }
-    if conv_i64_name_eq_at(strbuf, offs, i, 0) == 1 {
+    if conv_name_eq_at(strbuf, offs, src, node, i, 0) == 1 {
         return i;
     }
-    conv_i64_name_find(strbuf, offs, n, i + 1)
+    conv_name_find(strbuf, offs, n, src, node, i + 1)
 }
 
-// Dedup-aware intern of "__mind_conv_i64" (the COLLECTION PASS form): existing index
-// on a hit, else allocate. Matches Rust `Instr::Call { name } => st.intern(name)`.
-pub fn intern_conv_i64_name(strbuf: i64, offs: i64, ccell: i64) -> i64 {
+pub fn intern_conv_name(strbuf: i64, offs: i64, ccell: i64, src: i64, node: i64) -> i64 {
     let n: i64 = __mind_load_i64(ccell);
-    let hit: i64 = conv_i64_name_find(strbuf, offs, n, 0);
+    let hit: i64 = conv_name_find(strbuf, offs, n, src, node, 0);
     if hit >= 0 {
         return hit;
     }
-    intern_conv_i64_literal(strbuf, offs, ccell)
+    intern_conv_name_literal(strbuf, offs, ccell, src, node)
 }
 
 // True (1) iff `elem` is an element the non-const array desugar supports.
@@ -10826,15 +10997,10 @@ pub fn collect_expr_strings(strbuf: i64, offs: i64, ccell: i64, src: i64, node: 
         return collect_expr_strings(strbuf, offs, ccell, src, ast_child2(node), ebuf, en);
     }
     if k == ast_cast() {
-        // `EXPR as i64` -> CALL __mind_conv_i64([operand]) (slice #309): the CALL name
-        // interns AFTER the operand's strings (Instr::Call name is interned post-args).
-        // Only the width-64 cast interns the conv name; other widths desugar/fail-close
-        // and the whole module is discarded, so no intern is needed there.
+        // `EXPR as TARGET` -> CALL __mind_conv_TARGET([operand]). The call name
+        // interns after the operand's strings, matching collect_instr_strings.
         let _cs: i64 = collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
-        if ast_aux(node) == 64 {
-            return intern_conv_i64_name(strbuf, offs, ccell);
-        }
-        return 0;
+        return intern_conv_name(strbuf, offs, ccell, src, node);
     }
     if k == ast_call() {
         // A call `f(a, b)` lowers to [a's instrs, b's instrs, CALL f] — the CALL instr's
@@ -10857,14 +11023,12 @@ pub fn collect_expr_strings(strbuf: i64, offs: i64, ccell: i64, src: i64, node: 
         // never interned: `f(acc + (g(x) << n))` emitted OP_CALL with
         // name_idx = uleb128(-1) (ffffffffffffffff01) against a strtab missing "g"
         // — fail-OPEN WRONG BYTES, not a refusal (Bound by MIND-CONSTITUTION §I).
-        // deferred: the unary wrappers ast_neg/ast_not carry their operand at child0
-        // too and node_has_call already treats them as call-bearing, but no fn in this
-        // source hides a call under one (the whole-source uleb128(-1) scan is now 0 of
-        // 1975), so no fixture would exercise an arm added here. Upgrade path when one
-        // appears: mirror this arm for neg/not, AND make the residual case fail CLOSED
-        // by threading the per-fn `ok_cell` (emit_mic3_module_fndef) — store 0 when a
-        // CALL's callee span is not found by intern_find, so an uninterned callee
-        // refuses the module instead of emitting uleb128(-1).
+        return collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
+    }
+    if k == ast_neg() {
+        return collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
+    }
+    if k == ast_not() {
         return collect_expr_strings(strbuf, offs, ccell, src, ast_child0(node), ebuf, en);
     }
     if k == ast_binop() {
@@ -16568,6 +16732,7 @@ pub fn emit_stmt_seq(s: EmitState, nodes: i64, vidbuf: i64, src: i64, strbuf: i6
 // wall. Byte-exact vs --emit-mic3 (Bound by MIND-CONSTITUTION §I).
 pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i64, pstr: i64, n_params: i64, stmts_addr: i64, stmts_len: i64, nodes: i64, cursor: i64, vidbuf: i64, env: i64, nlets_cell: i64, plan: i64, nplan_cell: i64, strbuf: i64, offs: i64, ncount: i64, ok_cell: i64) -> EmitState {
     let params_addr: i64 = ast_child1(fn_node);
+    let ret_code: i64 = fn_named_narrow_ret_code(src, fn_node);
     __mind_store_i64(cursor, 0);
     __mind_store_i64(nlets_cell, 0);
     __mind_store_i64(nplan_cell, 0);
@@ -16611,11 +16776,7 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
     // A trailing VALUE if-expr (`...; if C {A} else {B}`) is the FN_DEF result: emit it as
     // ONE OP_IF (the last body instr) via emit_if_expr_any_lv, NOT a flattened tree. Its
     // branches resolve sequence lets against the resolved trailing lv-env (resolve_tenv_lvenv).
-    let trail_is_if: i64 = if is_trail_ret == 1 {
-        0
-    } else {
-        is_any_value_if_expr(final_expr)
-    };
+    let trail_is_if: i64 = is_any_value_if_expr(final_expr);
     // #311: a trailing return-terminated diverging if-ELSE chain (`...; if x==0
     // {return A;} else {return B;}` — the scalar-int / fieldless-enum match desugar)
     // is the FN_DEF result: emit as ONE else-nested OP_IF via emit_mic3_ifret_chain_instr_lv.
@@ -16649,7 +16810,7 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
             }
         }
     };
-    let trail_root: i64 = if trail_is_if == 1 {
+    let trail_raw_root: i64 = if trail_is_if == 1 {
         0
     } else {
         if trail_is_chain == 1 {
@@ -16660,12 +16821,24 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
     };
     if trail_is_if == 0 {
         if trail_is_chain == 0 {
-            if trail_root < 0 {
+            if trail_raw_root < 0 {
                 __mind_store_i64(ok_cell, 0);
                 return s;
             }
         }
     }
+    // Rust's named narrow-signature ABI re-materialises an explicit return after
+    // lowering its value. Append the same canonical shift pair (i8/i16) or mask
+    // (u8/u16) before vid assignment; i32/u32 use their physical ABI and add none.
+    let trail_root: i64 = if trail_is_if == 0 {
+        if trail_is_chain == 0 {
+            flatten_named_narrow_return(src, fn_node, trail_raw_root, nodes, cursor)
+        } else {
+            trail_raw_root
+        }
+    } else {
+        trail_raw_root
+    };
     let trail_end: i64 = __mind_load_i64(cursor);
     // Pass B — assign vids across statement segments (lets + OP_IF blocks).
     let trail_base: i64 = seq_assign_vids(nodes, vidbuf, plan, nplan, n_params, 0);
@@ -16698,7 +16871,7 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
         let cp_vidbuf: i64 = __mind_alloc(256 * 8);
         let cp_cell: i64 = __mind_alloc(8);
         __mind_store_i64(cp_cell, 0 - 1);
-        let _cp: EmitState = emit_mic3_ifret_chain_instr_lv(es_new(), final_stmt, src, params_addr, n_params, cp_nodes, cp_cursor, cp_vidbuf, 0, cp_cell, trail_lv, tk);
+        let _cp: EmitState = emit_mic3_ifret_chain_instr_lv(es_new(), final_stmt, src, params_addr, n_params, cp_nodes, cp_cursor, cp_vidbuf, 0, cp_cell, trail_lv, tk, ret_code);
         __mind_load_i64(cp_cell)
     } else {
         0 - 1
@@ -16709,7 +16882,7 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
             return s;
         }
     }
-    let ret_vid: i64 = if trail_is_if == 1 {
+    let raw_ret_vid: i64 = if trail_is_if == 1 {
         trail_base + ie_probe_dst
     } else {
         if trail_is_chain == 1 {
@@ -16719,13 +16892,27 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
             __mind_load_i64(vidbuf + trail_root * 8)
         }
     };
+    let control_extra: i64 = if trail_is_if == 1 {
+        named_narrow_ret_extra(ret_code)
+    } else {
+        if trail_is_chain == 1 {
+            named_narrow_ret_extra(ret_code)
+        } else {
+            0
+        }
+    };
+    let ret_vid: i64 = if control_extra > 0 {
+        named_narrow_ret_result(raw_ret_vid, raw_ret_vid + 1, ret_code)
+    } else {
+        raw_ret_vid
+    };
     // body_len = n_params PARAMs + per-segment non-param body instrs + 1 per OP_IF.
     let seg_instrs: i64 = seq_body_len(nodes, plan, nplan, 0);
     let trail_instrs: i64 = if trail_is_if == 1 {
-        1
+        1 + control_extra
     } else {
         if trail_is_chain == 1 {
-            1
+            1 + control_extra
         } else {
             count_descriptor_nonparam_range(nodes, trail_start, trail_end)
         }
@@ -16761,16 +16948,21 @@ pub fn emit_mic3_module_fndef_seq(s: EmitState, src: i64, fn_node: i64, nidx: i6
             let ce_vidbuf: i64 = __mind_alloc(256 * 8);
             let ce_cell: i64 = __mind_alloc(8);
             __mind_store_i64(ce_cell, 0 - 1);
-            emit_mic3_ifret_chain_instr_lv(s8, final_stmt, src, params_addr, n_params, ce_nodes, ce_cursor, ce_vidbuf, trail_base, ce_cell, trail_lv, tk)
+            emit_mic3_ifret_chain_instr_lv(s8, final_stmt, src, params_addr, n_params, ce_nodes, ce_cursor, ce_vidbuf, trail_base, ce_cell, trail_lv, tk, ret_code)
         } else {
             emit_mic3_tree_body(s8, nodes, trail_end, vidbuf, src, strbuf, offs, ncount, trail_start)
         }
     };
-    // Body-terminal `return E`: append the explicit RETURN <ret_vid>.
-    let s10: EmitState = if is_trail_ret == 1 {
-        emit_mic3_return(s9, 1, ret_vid)
+    let s9m: EmitState = if control_extra > 0 {
+        emit_mic3_named_narrow_return(s9, raw_ret_vid, raw_ret_vid + 1, ret_code)
     } else {
         s9
+    };
+    // Body-terminal `return E`: append the explicit RETURN <ret_vid>.
+    let s10: EmitState = if is_trail_ret == 1 {
+        emit_mic3_return(s9m, 1, ret_vid)
+    } else {
+        s9m
     };
     __mind_store_i64(ok_cell, 1);
     s10
@@ -18382,11 +18574,38 @@ pub fn block_has_call(stmts_addr: i64, n: i64, i: i64) -> i64 {
 // NOT emit the module-level scaffold (the caller appends emit_mic3_scaffold(k)).
 // Writes a 1 into ok_cell on a matched shape, 0 (fail-closed) otherwise; on a
 // miss the returned state is unspecified (the caller discards the whole module).
+pub fn emit_mic3_module_fndef_narrow(s: EmitState, src: i64, fn_node: i64, nidx: i64, strbuf: i64, offs: i64, ncount: i64, ok_cell: i64) -> EmitState {
+    let n_params: i64 = ast_aux(fn_node) / 2;
+    let pstr: i64 = __mind_alloc(n_params * 8 + 8);
+    if module_param_str_idxs(src, fn_node, strbuf, offs, ncount, pstr, 0) == 0 {
+        __mind_store_i64(ok_cell, 0);
+        return s;
+    }
+    let body: i64 = ast_child2(fn_node);
+    let stmts_addr: i64 = ast_child0(body);
+    let stmts_len: i64 = ast_aux(body);
+    if stmts_len < 1 {
+        __mind_store_i64(ok_cell, 0);
+        return s;
+    }
+    let nodes: i64 = __mind_alloc(4096 * 32);
+    let cursor: i64 = __mind_alloc(8);
+    let vidbuf: i64 = __mind_alloc(4096 * 8);
+    let env: i64 = __mind_alloc(512 * 24);
+    let nlets_cell: i64 = __mind_alloc(8);
+    let plan: i64 = __mind_alloc(512 * 64);
+    let nplan_cell: i64 = __mind_alloc(8);
+    emit_mic3_module_fndef_seq(s, src, fn_node, nidx, pstr, n_params, stmts_addr, stmts_len, nodes, cursor, vidbuf, env, nlets_cell, plan, nplan_cell, strbuf, offs, ncount, ok_cell)
+}
+
 pub fn emit_mic3_module_fndef(s: EmitState, src: i64, fn_node: i64, strbuf: i64, offs: i64, ncount: i64, ok_cell: i64) -> EmitState {
     let nidx: i64 = fn_name_idx(src, fn_node, strbuf, offs, ncount);
     if nidx < 0 {
         __mind_store_i64(ok_cell, 0);
         return s;
+    }
+    if fn_named_narrow_ret_code(src, fn_node) != 0 {
+        return emit_mic3_module_fndef_narrow(s, src, fn_node, nidx, strbuf, offs, ncount, ok_cell);
     }
     // (a) zero-arg const-return.
     let cv: i64 = const_fn_value(src, fn_node);
@@ -19469,13 +19688,14 @@ pub fn emit_mic3_tree_body(s: EmitState, nodes: i64, n_nodes: i64, vidbuf: i64, 
         let sl4: EmitState = emit_uleb128(sl3, index_vid);
         return emit_mic3_tree_body(sl4, nodes, n_nodes, vidbuf, src, strbuf, offs, n_strings, i + 1);
     }
-    // kind 11 = `EXPR as i64` conv call (slice #309) -> OP_CALL (0x16): dst ||
-    // name_idx(__mind_conv_i64) || uleb(1) || operand_vid. record[2]=operand slot; the
-    // strtab already interned "__mind_conv_i64" at the cast's first-seen position.
+    // kind 11 = `EXPR as TARGET` conv call -> OP_CALL (0x16): dst ||
+    // name_idx(__mind_conv_TARGET) || uleb(1) || operand_vid. record[1]=cast node,
+    // record[2]=operand slot; the string table already holds the canonical name.
     if kind == 11 {
+        let cv_node: i64 = __mind_load_i64(nodes + i * 32 + 8);
         let cv_oslot: i64 = __mind_load_i64(nodes + i * 32 + 16);
         let cv_ovid: i64 = __mind_load_i64(vidbuf + cv_oslot * 8);
-        let cv_idx: i64 = conv_i64_name_find(strbuf, offs, n_strings, 0);
+        let cv_idx: i64 = conv_name_find(strbuf, offs, n_strings, src, cv_node, 0);
         let cc1: EmitState = es_push(s, 22);
         let cc2: EmitState = emit_uleb128(cc1, dst);
         let cc3: EmitState = emit_uleb128(cc2, cv_idx);
@@ -21273,26 +21493,16 @@ pub fn flatten_expr_env(node: i64, src: i64, params_addr: i64, n_params: i64, no
         return slot;
     }
     if k == ast_cast() {
-        // `EXPR as i64` note-emit (slice #309). The Rust oracle lowers a full-width
-        // i64 cast to CALL __mind_conv_i64([val]) (identical mic@3 bytes for an INT or
-        // FLOAT source; the source kind only picks the MLIR expansion). Flatten the
-        // operand post-order, then a self-contained conv-call descriptor (kind 11,
-        // record[2]=operand slot) — mirroring the vec_new/vec_push synthetic-call kinds
-        // so no source span / desugar pass is needed. ONLY width 64 (`as i64`) is ported
-        // here: i8/i16/i32 desugar to shifts and u8/u16/u32 to an AND in the parser;
-        // `as f64` (nb_castw_f64) and any other width FAIL CLOSED (-1 -> the module
-        // refuses, 0 bytes) — never wrong bytes. main.mind's own `as` are all in stripped
-        // comments (no real cast nodes), so the mic@3 flip stays byte-identical.
-        if ast_aux(node) != 64 {
-            return 0 - 1;
-        }
+        // Every parsed scalar cast lowers to one canonical source-kind-dependent
+        // conversion call. Retain the cast node in record[1] so emission can recover
+        // the exact target spelling (`i32`, `u8`, `f64`, ...).
         let cop: i64 = flatten_expr_env(ast_child0(node), src, params_addr, n_params, nodes, cursor, env, nlets);
         if cop < 0 {
             return 0 - 1;
         }
         let cvslot: i64 = __mind_load_i64(cursor);
         __mind_store_i64(nodes + cvslot * 32 + 0, 11);
-        __mind_store_i64(nodes + cvslot * 32 + 8, 0);
+        __mind_store_i64(nodes + cvslot * 32 + 8, node);
         __mind_store_i64(nodes + cvslot * 32 + 16, cop);
         __mind_store_i64(nodes + cvslot * 32 + 24, 0);
         __mind_store_i64(cursor, cvslot + 1);
@@ -21913,7 +22123,7 @@ pub fn emit_mic3_ifret_chain_instr(s: EmitState, if_node: i64, buf: i64, params_
 // diverging if-ELSE chain (scalar-int / fieldless-enum match desugar) whose
 // cond/branches reference SEQUENCE lets; swaps flatten_branch/count_nonparam
 // to their _lv forms and recurses via _lv.
-pub fn emit_mic3_ifret_chain_instr_lv(s: EmitState, if_node: i64, buf: i64, params_addr: i64, n_params: i64, nodes: i64, cursor: i64, vidbuf: i64, base0: i64, okcell: i64, lvenv: i64, nlv: i64) -> EmitState {
+pub fn emit_mic3_ifret_chain_instr_lv(s: EmitState, if_node: i64, buf: i64, params_addr: i64, n_params: i64, nodes: i64, cursor: i64, vidbuf: i64, base0: i64, okcell: i64, lvenv: i64, nlv: i64, ret_code: i64) -> EmitState {
     let cond_expr: i64 = ast_child0(if_node);
     let then_stmt: i64 = branch_single_expr(ast_child1(if_node));
     let else_stmt: i64 = branch_single_expr(ast_child2(if_node));
@@ -21952,12 +22162,16 @@ pub fn emit_mic3_ifret_chain_instr_lv(s: EmitState, if_node: i64, buf: i64, para
     }
     let then_n: i64 = __mind_load_i64(cursor);
     let then_nonparam: i64 = count_nonparam_nodes_lv(then_val, buf, params_addr, n_params, lvenv, nlv);
-    let s5: EmitState = emit_uleb128(s4, then_nonparam + 2);
+    let ret_extra: i64 = named_narrow_ret_extra(ret_code);
+    let then_first: i64 = after_cond + 1 + then_nonparam;
+    let then_ret: i64 = named_narrow_ret_result(then_root, then_first, ret_code);
+    let s5: EmitState = emit_uleb128(s4, then_nonparam + ret_extra + 2);
     let s6: EmitState = emit_mic3_const_i64(s5, then_synth, 0);
     let s7: EmitState = emit_mic3_tree_body(s6, nodes, then_n, vidbuf, 0, 0, 0, 0, 0);
-    let s7r: EmitState = emit_mic3_return(s7, 1, then_root);
-    let s8: EmitState = emit_uleb128(s7r, then_root);
-    let after_then: i64 = after_cond + 1 + then_nonparam;
+    let s7m: EmitState = emit_mic3_named_narrow_return(s7, then_root, then_first, ret_code);
+    let s7r: EmitState = emit_mic3_return(s7m, 1, then_ret);
+    let s8: EmitState = emit_uleb128(s7r, then_ret);
+    let after_then: i64 = after_cond + 1 + then_nonparam + ret_extra;
     // --- else ---
     let else_synth: i64 = after_then;
     if ast_kind(else_stmt) == ast_if() {
@@ -21966,7 +22180,7 @@ pub fn emit_mic3_ifret_chain_instr_lv(s: EmitState, if_node: i64, buf: i64, para
         let sn10: EmitState = emit_mic3_const_i64(sn9, else_synth, 0);
         let dcell: i64 = __mind_alloc(8);
         __mind_store_i64(dcell, 0 - 1);
-        let sn11: EmitState = emit_mic3_ifret_chain_instr_lv(sn10, else_stmt, buf, params_addr, n_params, nodes, cursor, vidbuf, after_then + 1, dcell, lvenv, nlv);
+        let sn11: EmitState = emit_mic3_ifret_chain_instr_lv(sn10, else_stmt, buf, params_addr, n_params, nodes, cursor, vidbuf, after_then + 1, dcell, lvenv, nlv, ret_code);
         let ndst: i64 = __mind_load_i64(dcell);
         if ndst < 0 {
             __mind_store_i64(okcell, 0 - 1);
@@ -21993,12 +22207,15 @@ pub fn emit_mic3_ifret_chain_instr_lv(s: EmitState, if_node: i64, buf: i64, para
     }
     let else_n: i64 = __mind_load_i64(cursor);
     let else_nonparam: i64 = count_nonparam_nodes_lv(else_val, buf, params_addr, n_params, lvenv, nlv);
-    let s9: EmitState = emit_uleb128(s8, else_nonparam + 2);
+    let else_first: i64 = after_then + 1 + else_nonparam;
+    let else_ret: i64 = named_narrow_ret_result(else_root, else_first, ret_code);
+    let s9: EmitState = emit_uleb128(s8, else_nonparam + ret_extra + 2);
     let s10: EmitState = emit_mic3_const_i64(s9, else_synth, 0);
     let s11: EmitState = emit_mic3_tree_body(s10, nodes, else_n, vidbuf, 0, 0, 0, 0, 0);
-    let s11r: EmitState = emit_mic3_return(s11, 1, else_root);
-    let s12: EmitState = emit_uleb128(s11r, else_root);
-    let after_else: i64 = after_then + 1 + else_nonparam;
+    let s11m: EmitState = emit_mic3_named_narrow_return(s11, else_root, else_first, ret_code);
+    let s11r: EmitState = emit_mic3_return(s11m, 1, else_ret);
+    let s12: EmitState = emit_uleb128(s11r, else_ret);
+    let after_else: i64 = after_then + 1 + else_nonparam + ret_extra;
     let dst: i64 = after_else;
     let s13: EmitState = emit_uleb128(s12, dst);
     let s14: EmitState = emit_uleb128(s13, 0);
@@ -30426,6 +30643,22 @@ pub fn nb_wrap_rax_w(code: String, w: i64) -> String {
     nb_movsxd_rax_eax(code)
 }
 
+// Zero-extend the low w bits in rax for `as u8/u16/u32`: `and eax, imm32`.
+// Any write to eax clears the high half of rax, including the w=32 all-ones mask.
+pub fn nb_mask_rax_w(code: String, w: i64) -> String {
+    let mask: i64 = if w == 8 {
+        255
+    } else {
+        if w == 16 {
+            65535
+        } else {
+            4294967295
+        }
+    };
+    let c1: String = nb_push(code, 37);
+    nb_i32le_signed(c1, mask)
+}
+
 // C2 param/return width driver: wrap rax at the fn's DECLARED return width just
 // before the epilogue load's ret. FAIL-SAFE gating: only an EXACT narrow spelling
 // (8/16/32) wraps — 64, or any other value (e.g. an uninitialized side-channel
@@ -30433,6 +30666,9 @@ pub fn nb_wrap_rax_w(code: String, w: i64) -> String {
 // no-emit default is what keeps every i64/float/unit-returning fn (all of
 // main.mind) byte-identical.
 pub fn nb_wrap_ret_w(code: String, retw: i64) -> String {
+    if retw < 0 {
+        return nb_mask_rax_w(code, 0 - retw);
+    }
     if retw == 8 {
         return nb_movsx_rax_al(code);
     }
@@ -31261,6 +31497,11 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
             return NbState { code: cs1.code, next_id: cid + 1, last_id: cid, ncalls: cs1.ncalls };
         }
         let cl: String = nb_load_rax(cs1.code, nb_slot_disp(cop));
+        if ast_cast_is_unsigned(buf, node) == 1 {
+            let cu: String = nb_mask_rax_w(cl, cw);
+            let cus: String = nb_store_rax(cu, nb_slot_disp(cid));
+            return NbState { code: cus, next_id: cid + 1, last_id: cid, ncalls: cs1.ncalls };
+        }
         if cw == 8 {
             let c8: String = nb_movsx_rax_al(cl);
             let c8s: String = nb_store_rax(c8, nb_slot_disp(cid));
@@ -41360,8 +41601,8 @@ pub fn frt_scan_ret(toks: Vec, buf: i64, pos: i64) -> i64 {
     frt_scan_ret(toks, buf, pos + 1)
 }
 
-// Classify a return-type span (lo, hi) as a declared int bit-width: "i8" -> 8,
-// "i16" -> 16, "i32" -> 32, anything else -> 64 (the full-width default) — the
+// Classify a return-type span (lo, hi) as a declared int bit-width: signed
+// spellings are positive, unsigned spellings negative, anything else -> 64 — the
 // span-keyed twin of nb_width_of_ann (which takes a type-leaf AST node). bytes:
 // i=105, 8=56, 1=49, 6=54, 3=51, 2=50.
 pub fn frt_ret_width(buf: i64, lo: i64, hi: i64) -> i64 {
@@ -41376,6 +41617,10 @@ pub fn frt_ret_width(buf: i64, lo: i64, hi: i64) -> i64 {
     let i32_buf: i64 = make_byte_buf_3(105, 51, 50);
     if bytes_eq(buf, lo, hi, i32_buf, 0, 3) == 1 {
         return 32;
+    }
+    let uw: i64 = unsigned_cast_width(buf, lo, hi);
+    if uw > 0 {
+        return 0 - uw;
     }
     64
 }

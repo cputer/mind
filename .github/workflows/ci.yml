@@ -260,6 +260,13 @@ jobs:
           cargo test --verbose --no-default-features --features mlir-lowering
           cargo test --verbose --no-default-features --features cpu-buffers
 
+      - name: Install GNU timeout on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install coreutils
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+
       - name: Run gated tests — ffi-c (mind_sys_* C-ABI surface)
         # `full` (documented in docs/cli.md + README.md) enables `ffi-c`, but no
         # matrix row above ever built it, so src/ffi/sys.rs was compiled by
@@ -278,8 +285,11 @@ jobs:
           out=$(timeout 300 cargo test --no-default-features --features ffi-c --lib ffi::sys)
           echo "$out"
           n=$(printf '%s\n' "$out" | sed -n 's/^test result: ok\. \([0-9][0-9]*\) passed.*/\1/p' | head -1)
-          if [ "${n:-0}" -lt 4 ]; then
-            echo "FAIL: expected >=4 ffi::sys tests, saw ${n:-0} - module cfg'd out or guards deleted" >&2
+          # Three portable tests plus the Linux-only ptrace-state regression.
+          expected=3
+          if [ "$RUNNER_OS" = "Linux" ]; then expected=4; fi
+          if [ "${n:-0}" -lt "$expected" ]; then
+            echo "FAIL: expected >=$expected ffi::sys tests on $RUNNER_OS, saw ${n:-0} - module cfg'd out or guards deleted" >&2
             exit 1
           fi
           echo "ffi::sys guards executed: $n"

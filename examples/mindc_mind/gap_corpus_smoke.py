@@ -397,7 +397,9 @@ def main():
     # 143 -> 145: the AST-node-kind coverage batch added `use_item_1` (ast_use)
     # and `while_counter_1` (ast_while), both byte-exact. The floor ratchets with
     # them so neither can silently regress to fail-closed.
-    FLOOR = 145
+    # 145 -> 149: canonical typed-cast lowering. 149 -> 150: `#[inline]` is
+    # parsed as an exact, byte-neutral item prefix instead of swallowing `g`.
+    FLOOR = 150
     ok = True
     if wrong:
         print("FAIL: WRONG-BYTES (silent miscompile) — the cardinal invariant is violated:")

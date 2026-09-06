@@ -1,22 +1,10 @@
 """
-Self-host mic@3 note-emit gate for `EXPR as i64` CAST expressions (#309, RI-D
-native-ELF frontier slice, #110/#40).
+Self-host mic@3 and native-ELF gate for typed scalar cast expressions.
 
-Before this port, an `as i64` cast node had no mic@3 note descriptor in the
-pure-MIND whole-module emitter, so a user program containing a widening or
-float->int cast FAILED CLOSED in the note path. This slice adds a self-contained
-`__mind_conv_i64` conv-call descriptor family (kind-11), mirroring the proven
-vec_new/vec_push synthetic-name pattern: `X as i64` is emitted as
-`CALL __mind_conv_i64([X])` — byte-identical to how the Rust `--emit-mic3` oracle
-decodes an i64 cast. main.mind's own source uses `as` only in stripped comments
-(no real cast nodes), so the new arms never fire during self-compile and the
-whole-module mic3_flip stays byte-identical — THIS fixture is the only regression
-coverage for them.
-
-Scope note: `as i64` (width 64) is the slice crux. u8/i8/i16/i32 narrowing
-desugars to shifts/masks in the parser and `as f64` refuses (fail-closed) — both
-out of scope here. The u8-narrow-LET truncation-mask note gap (fixture #2 in the
-dev report) is a SEPARATE pre-existing slice, not a cast defect.
+The bootstrap parser retains each target spelling on ast_cast. Its note path
+must emit the same source-kind-dependent `__mind_conv_TARGET` call as the Rust
+lowerer; an integer-equivalent shift/mask is not canonical MIC@3. Native output
+must still materialise signed and unsigned narrowing with the correct extension.
 
 Two gates per fixture:
   (1) EXECUTION-CORRECTNESS — compile with the live Rust `mindc build --emit=binary`
@@ -142,7 +130,7 @@ def run_native(prog: str, run_timeout: int = 8):
         os.unlink(p)
 
 
-# (name, fn_src, expected_exit mod 256) — each fn returns an `EXPR as i64`.
+# (name, fn_src, expected_exit mod 256).
 FIXTURES = [
     (
         "int_literal_as_i64",
@@ -159,11 +147,107 @@ FIXTURES = [
         "fn compute() -> i64 { let a: f64 = 0.0 - 2.75; return a as i64; }\n",
         254,  # -2 truncated toward zero, mod 256
     ),
+    ("unary_neg_as_i64", "fn compute() -> i64 { return -(5 as i64); }\n", 251),
+    ("signed_i8_wrap", "fn compute() -> i64 { return 300 as i8; }\n", 44),
+    ("signed_i16_wrap", "fn compute() -> i64 { return 70000 as i16; }\n", 112),
+    ("signed_i32_wrap", "fn compute() -> i64 { return 4294967295 as i32; }\n", 255),
+    ("unsigned_u8_wrap", "fn compute() -> i64 { return (0 - 1) as u8; }\n", 255),
+    ("unsigned_u8_narrow_return", "fn compute() -> u8 { return 300 as u8; }\n", 44),
+    ("unsigned_u16_wrap", "fn compute() -> i64 { return 70000 as u16; }\n", 112),
+    ("unsigned_u32_wrap", "fn compute() -> i64 { return 4294967297 as u32; }\n", 1),
 ]
 
 
 def _prog(fn_src):
     return fn_src + "fn main() -> i64 { return compute(); }\n"
+
+
+# These callers inspect bits above the process exit byte. A direct `main -> u8`
+# exit cannot distinguish raw 300 from canonical u8 44 because both exit 44.
+# Division makes a missing callee-side mask/sign extension observable.
+NARROW_RETURN_FIXTURES = [
+    (
+        "explicit_raw_u8_return",
+        "fn compute() -> u8 { return 300; }\n",
+        "fn main() -> i64 { return compute() / 256; }\n",
+        0,
+    ),
+    (
+        "implicit_raw_u8_return",
+        "fn compute() -> u8 { 300 }\n",
+        "fn main() -> i64 { return compute() / 256; }\n",
+        0,
+    ),
+    (
+        "explicit_raw_u16_return",
+        "fn compute() -> u16 { return 70000; }\n",
+        "fn main() -> i64 { return compute() / 65536; }\n",
+        0,
+    ),
+    (
+        "explicit_raw_u32_return",
+        "fn compute() -> u32 { return 4294967297; }\n",
+        "fn main() -> i64 { return compute() / 4294967296; }\n",
+        0,
+    ),
+    (
+        "explicit_value_if_u8_return",
+        "fn compute(x: i64) -> u8 { return if x == 0 { 300 } else { 1 }; }\n",
+        "fn main() -> i64 { return compute(0) / 256; }\n",
+        0,
+    ),
+    (
+        "implicit_value_if_u8_return",
+        "fn compute(x: i64) -> u8 { if x == 0 { 300 } else { 1 } }\n",
+        "fn main() -> i64 { return compute(0) / 256; }\n",
+        0,
+    ),
+    (
+        "both_branches_return_u8",
+        "fn compute(x: i64) -> u8 { if x == 0 { return 300; } else { return 1; } }\n",
+        "fn main() -> i64 { return compute(0) / 256; }\n",
+        0,
+    ),
+    (
+        "implicit_value_if_i8_return",
+        "fn compute(x: i64) -> i8 { if x == 0 { 200 } else { 1 } }\n",
+        "fn main() -> i64 { return compute(0) / 100; }\n",
+        0,
+    ),
+    (
+        "both_branches_return_i8",
+        "fn compute(x: i64) -> i8 { if x == 0 { return 200; } else { return 1; } }\n",
+        "fn main() -> i64 { return compute(0) / 100; }\n",
+        0,
+    ),
+    (
+        "line_comment_after_u8_return",
+        "fn compute() -> u8 // return ABI comment\n{ 300 }\n",
+        "fn main() -> i64 { return compute() / 256; }\n",
+        0,
+    ),
+    (
+        "line_comment_before_u8_return",
+        "fn compute() -> // return ABI comment\nu8 { 300 }\n",
+        "fn main() -> i64 { return compute() / 256; }\n",
+        0,
+    ),
+    (
+        "u8_spelling_only_in_return_comment",
+        "fn compute() -> i64 // u8 is mentioned only in trivia\n{ 300 }\n",
+        "fn main() -> i64 { return compute() / 256; }\n",
+        1,
+    ),
+]
+
+# The source-level classifier must match a complete builtin return token. A
+# longer user type ending in the same bytes must retain the oracle's old path.
+NON_BUILTIN_SUFFIX_FIXTURES = [
+    (
+        "user_type_ending_u8",
+        "type myu8 = u8;\nfn compute() -> myu8 { return 300; }\n",
+    ),
+]
 
 
 def main():
@@ -197,10 +281,48 @@ def main():
                 lo = max(0, di - 6)
                 print(f"       first diff @ {di}  nb={list(m[lo:di+10])}  oracle={list(o[lo:di+10])}")
 
+    for name, fn_src, main_src, want in NARROW_RETURN_FIXTURES:
+        o = oracle_mic3(fn_src)
+        m = nfn_mic3(fn_src)
+        ol = len(o) if o else -1
+        ml = len(m) if m else 0
+        byte_ok = (m == o and o is not None)
+        rc = run_native(fn_src + main_src)
+        exec_ok = (rc == (want & 0xFF))
+        ok = byte_ok and exec_ok
+        status = "PASS" if ok else "FAIL"
+        print(
+            f"  {status}  {name}  mic3 nb_len={ml} oracle_len={ol} byte_id={byte_ok}"
+            f"  exec rc={rc}(want {want})"
+        )
+        if not ok:
+            fails += 1
+            if not byte_ok and o and m:
+                k = min(len(o), len(m))
+                di = next((i for i in range(k) if o[i] != m[i]), k)
+                lo = max(0, di - 6)
+                print(f"       first diff @ {di}  nb={list(m[lo:di+10])}  oracle={list(o[lo:di+10])}")
+
+    for name, src in NON_BUILTIN_SUFFIX_FIXTURES:
+        o = oracle_mic3(src)
+        m = nfn_mic3(src)
+        ol = len(o) if o else -1
+        ml = len(m) if m else 0
+        byte_ok = (m == o and o is not None)
+        status = "PASS" if byte_ok else "FAIL"
+        print(f"  {status}  {name}  mic3 nb_len={ml} oracle_len={ol} byte_id={byte_ok}")
+        if not byte_ok:
+            fails += 1
+            if o and m:
+                k = min(len(o), len(m))
+                di = next((i for i in range(k) if o[i] != m[i]), k)
+                lo = max(0, di - 6)
+                print(f"       first diff @ {di}  nb={list(m[lo:di+10])}  oracle={list(o[lo:di+10])}")
+
     if fails:
-        print(f"FAIL: {fails} as-cast fixture(s) diverged")
+        print(f"FAIL: {fails} typed-cast/narrow-return fixture(s) diverged")
         return 1
-    print("ALL PASS  (EXPR as i64: mic@3 note byte-identical to --emit-mic3 AND native-ELF run-correct via selftest_native_elf_u)")
+    print("ALL PASS  (typed scalar casts and narrow returns: mic@3 byte-identical AND native-ELF run-correct)")
     return 0
 
 

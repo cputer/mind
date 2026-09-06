@@ -85,6 +85,18 @@ def M(body: str) -> str:
     return "fn main()->i64{ %s }" % body
 
 
+_NERVE_FIXTURES = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "tests" / "fixtures" / "nerve_numerics"
+)
+NERVE_POLICY_REFUSALS = [
+    (f"policy attr {case} {kind}",
+     (_NERVE_FIXTURES / f"e_nerve_{case}_{kind}.mind").read_text(), "0B")
+    for case in ("001", "002", "003", "004", "005")
+    for kind in ("good", "bad")
+]
+
+
 # Struct prelude for the NESTED struct-typed-field-read slice: `O` has a
 # struct-typed field `i: I` (an inner struct) and a scalar field `n: i64`, so a
 # chain `o.i.v` reads a field of a struct-typed field, and `o.n.x` reads a field
@@ -94,6 +106,11 @@ NST = "struct I { v: i64 }\nstruct O { i: I, n: i64 }\n"
 
 # (label, source, expected)  — expected "0B" means MUST refuse.
 REFUSED = [
+    # These policy annotations are semantic contracts, not inert decoration.
+    # The Rust compiler accepts every `good` fixture and hard-errors every
+    # `bad` fixture. Until those checks are ported, the self-host must refuse
+    # both sets rather than accept a bad body under a valid-looking spelling.
+    *NERVE_POLICY_REFUSALS,
     # tuples are SUPPORTED (i64 anonymous-positional-struct subset, below) —
     # but the tuple boundary itself stays fail-closed: non-i64 elements, the
     # 1-tuple/trailing-comma spelling, `.N` out of the literal's arity, and a
@@ -249,13 +266,18 @@ REFUSED = [
     (".foo() nested in if", M("let a=[1,2,3]; if a[0]>0 { return a.foo(); } return 0;"), "0B"),
     # unsupported node in a separate function still refuses the whole unit
     ("unsupported method in sep fn", "fn helper()->i64{ let a=[1,2,3]; return a.foo(); }\nfn main()->i64{ return helper(); }", "0B"),
-    # ITEM-LEVEL ATTRIBUTES: `#[...]` on a declaration is out of subset. The
-    # parser's unrecognized-item-start fallback poisons (ast_unsupported) so the
-    # stray `#`/`[`/ident/`]` tokens can NEVER silently drop and emit a running
-    # ELF (B0 fail-OPEN). Previously `#[inline]\nfn main()->i64{7}` emitted a
-    # 397B running ELF byte-identical to the un-attributed program.
-    ("item attr #[inline]", "#[inline]\nfn main()->i64{7}", "0B"),
+    # Only exact no-arg #[inline] is admitted. Policy-bearing annotations stay
+    # poison until their semantic checks are ported; both valid and invalid
+    # annotated bodies must refuse rather than bypass the Rust checker.
     ("item attr #[nonsense]", "#[nonsense]\nfn main()->i64{7}", "0B"),
+    ("item attr valid-name prefix", "#[inline_extra]\nfn main()->i64{7}", "0B"),
+    ("item attr valid-arg prefix", "#[determinism(BitIdenticalExtra)]\nfn main()->i64{7}", "0B"),
+    ("item attr unproved reduction policy", "#[reduction_strategy(parallel)]\nfn main()->i64{7}", "0B"),
+    ("item attr malformed inline args", "#[inline(]\nfn main()->i64{7}", "0B"),
+    ("item attr codegen bimap", "#[bimap]\nfn main()->i64{7}", "0B"),
+    ("item attr determinism deferred", "#[determinism(BitIdentical)]\nfn main()->i64{7}", "0B"),
+    ("item attr reduction deferred", "#[reduction_strategy(sequential)]\nfn main()->i64{7}", "0B"),
+    ("item attr invariant deferred", "#[invariant(no_float_ops)]\nfn main()->i64{7}", "0B"),
     # CHAR LITERALS (#257 item 6): a char literal `'X'` / `'\X'` folds to a
     # synthetic i64 int-lit carrying the character's byte value (parse_char_span,
     # matching parser::parse_char_lit — NO new AST kind). The literal boundary
@@ -302,6 +324,7 @@ SUPPORTED = [
     # (proves the poison is scoped to the unrecognized attribute token, not the
     # bare-tail-expr `fn main()->i64{7}` shape itself)
     ("attr-free control fn", "fn main()->i64{7}", 7),
+    ("inert attr inline", "#[inline]\nfn main()->i64{7}", 7),
     # i64 references (LANDED — read-through + deref; ref_netverify.py locks the
     # write-back battery and the remaining ref fail-closed boundary)
     ("ref + deref", M("let x:i64=5; let r=&x; return *r;"), 5),
