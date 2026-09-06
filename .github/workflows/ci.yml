@@ -422,6 +422,9 @@ jobs:
           MIND_BENCH_BLESS: "1"
           MIND_BENCH_HASHES_OUT: ${{ github.workspace }}/canary_hashes_${{ matrix.substrate }}.txt
         run: |
+          # The asserting run above retains the job-level requirement. Harvest
+          # only records hashes; its BLESS mode must not claim gate evidence.
+          unset MIND_BENCH_REQUIRE
           cargo test --no-default-features \
             --features "mlir-build std-surface cross-module-imports" \
             --test cross_substrate_identity -- --nocapture
