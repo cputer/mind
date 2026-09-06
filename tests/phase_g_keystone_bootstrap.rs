@@ -219,23 +219,22 @@ fn phase_g_02_mindc_build_via_mind_toml_exits_0() {
         .output()
         .expect("failed to spawn mindc");
 
-    // Mirror phase_g_03 / phase_g_04: the keystone tests are deliberately
-    // tolerant of environments without a fully-wired backend toolchain. The
-    // public CI runners cannot ship the proprietary MIND runtime backend
-    // (`libmind_cpu_*`), so `mindc build` legitimately fails there with
-    // "MIND runtime not found for backend" (Linux) or a downstream C-compile
-    // error (macOS). When the build cannot proceed, SKIP rather than fail —
-    // exit-0 is implied by `status.success()` gating the path below, and the
-    // non-empty artifact contract is still hard-asserted on equipped runners
-    // where the build succeeds, preserving real coverage.
-    if !result.status.success() {
-        let detail = format!(
-            "`mindc build --release` did not succeed (backend toolchain \
-             may be incomplete)\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        );
-        gate::skipped("phase_g_keystone_bootstrap", &detail);
+    // WHICH failure this was decides whether it may skip, and the CAUSE CODE
+    // decides that — never the call site. A host that genuinely cannot ship the
+    // backend still skips (`[E5003]` no native backend, `[E5004]` no
+    // `mlir-opt`/`clang` on PATH) and is counted `ran=0`; every other failure
+    // panics with the stderr quoted, on EVERY run and not only under
+    // `MIND_BENCH_REQUIRE=1`.
+    //
+    // The six build sites in this file used to name the absence themselves —
+    // `gate::skipped(.., "backend toolchain may be incomplete")` — which is a
+    // GUESS about a failure whose cause the call site is holding. Measured with
+    // a stray token in the tracked `examples/mindc_mind/main.mind` and
+    // `MIND_BENCH_REQUIRE` unset: `error[parse][E1001]` printed
+    // `ran=0 class=toolchain` here and this test reported `ok`. The rule has one
+    // owner, `common::gate::compiled`, and `tests/fail_open_skip_site_ratchet.rs`
+    // now forbids an exit-status skip that does not reach it.
+    if !gate::compiled("phase_g_keystone_bootstrap", &result) {
         return;
     }
 
@@ -300,15 +299,9 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
         .output()
         .expect("spawn mindc (manifest path)");
 
-    if !r_manifest.status.success() {
-        let detail = String::from_utf8_lossy(&r_manifest.stderr);
-        gate::skipped(
-            "phase_g_keystone_bootstrap",
-            &format!(
-                "Mind.toml build did not succeed (toolchain may be \
-                 incomplete)\nstderr: {detail}"
-            ),
-        );
+    // Cause decides, exactly as in phase_g_02: a capability gap skips and is
+    // counted, a compiler regression panics with the stderr quoted.
+    if !gate::compiled("phase_g_keystone_bootstrap", &r_manifest) {
         return;
     }
 
@@ -325,12 +318,7 @@ fn phase_g_03_byte_identical_mind_toml_vs_direct_path() {
         .output()
         .expect("spawn mindc (direct path)");
 
-    if !r_direct.status.success() {
-        let detail = String::from_utf8_lossy(&r_direct.stderr);
-        gate::skipped(
-            "phase_g_keystone_bootstrap",
-            &format!("direct-path build did not succeed\nstderr: {detail}"),
-        );
+    if !gate::compiled("phase_g_keystone_bootstrap", &r_direct) {
         return;
     }
 
@@ -427,29 +415,14 @@ fn phase_g_04_self_consistent_byte_identity() {
             .expect("spawn mindc")
     };
 
+    // Cause decides for both builds: only `[E5003]`/`[E5004]` may skip here.
     let r_a = build(&out_a);
-    if !r_a.status.success() {
-        let detail = String::from_utf8_lossy(&r_a.stderr);
-        gate::skipped(
-            "phase_g_keystone_bootstrap",
-            &format!(
-                "build A did not succeed (toolchain may be \
-                 incomplete)\nstderr: {detail}"
-            ),
-        );
+    if !gate::compiled("phase_g_keystone_bootstrap", &r_a) {
         return;
     }
 
     let r_b = build(&out_b);
-    if !r_b.status.success() {
-        let detail = String::from_utf8_lossy(&r_b.stderr);
-        gate::skipped(
-            "phase_g_keystone_bootstrap",
-            &format!(
-                "build B did not succeed (toolchain may be \
-                 incomplete)\nstderr: {detail}"
-            ),
-        );
+    if !gate::compiled("phase_g_keystone_bootstrap", &r_b) {
         return;
     }
 
@@ -529,12 +502,9 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
         .output()
         .expect("spawn mindc (first build)");
 
-    if !r1.status.success() {
-        let detail = String::from_utf8_lossy(&r1.stderr);
-        gate::skipped(
-            "phase_g_keystone_bootstrap",
-            &format!("first build did not succeed\nstderr: {detail}"),
-        );
+    // Cause decides: a cache probe over a build that FAILED for any reason
+    // other than a capability gap would be measuring the previous run.
+    if !gate::compiled("phase_g_keystone_bootstrap", &r1) {
         return;
     }
 

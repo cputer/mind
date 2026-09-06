@@ -74,7 +74,19 @@
 //!    `var_os("MIND_BENCH_REQUIRE").is_some()` — which made
 //!    `MIND_BENCH_REQUIRE=0` ENFORCE. They call `gate::skipped`.
 //! 5. A `skipped_optional` call site that does not name what is optional.
+//! 6. A skip decided by a child process's EXIT STATUS that never decides the
+//!    CAUSE. `gate::skipped` names the absence class at the call site and never
+//!    reads the failure, so under `MIND_BENCH_REQUIRE=1` it fails closed but on
+//!    every other run it grades a compiler regression as a capability gap. The
+//!    marker was in `ROUTED_MARKERS`, so the block scan above walked straight
+//!    past it: 6 live sites in `phase_g_keystone_bootstrap.rs`, the WEDGE gate,
+//!    where a `[E1001]` parse error in the tracked self-host source printed
+//!    `ran=0 class=toolchain` and four keystone tests reported `ok`. An
+//!    exit-status head must reach `gate::compiled` or `gate::is_capability_gap`;
+//!    the subtraction that decides which markers count is owned by
+//!    `skip_shape_scan::classifies_text`.
 //!
+//! The shapes below are the ones this scanner still cannot see, each knowingly
 //! deferred. Each was MEASURED escaping the shipped scanner — handed to
 //! `skip_shape_scan::skip_block_sites` beside a control that the same run
 //! reported — rather than guessed; a residual nobody names is the hole the last
@@ -102,13 +114,20 @@
 //!   payload, not an availability answer, and tainting them flagged the SUCCESS
 //!   path of `fmt_stdlib_stability::check_or_skip`. Read failures still count in
 //!   a head scrutinee, which is where every live instance sat.
+//! * An EXIT STATUS bound to a local before it is tested —
+//!   `let ok = out.status.success(); if !ok { gate::skipped(..); return; }`. The
+//!   taint set carries the NAME but not the CLASS, so the head reads as an
+//!   ordinary probe and the sixth rule above never applies to it. No live site
+//!   spells it that way today (pinned as EV5, which is caught as a plain
+//!   fail-open skip only because it routes nowhere). Upgrade path: taint with
+//!   the probe entry that produced the answer, not with a bare name.
 //!
-//! All four share ONE upgrade path, and it is the one worth taking: invert the
-//! rule so an UNROUTED bare early-out anywhere inside a `#[test]` body under
-//! `tests/` is red REGARDLESS of scrutinee, with an explicit `// not-a-skip:`
-//! annotation for the legitimate cases. That fails closed on probe spellings
-//! nobody has thought of yet, which is the only version of this gate whose claim
-//! cannot outrun its detector.
+//! The first four share ONE upgrade path, and it is the one worth taking:
+//! invert the rule so an UNROUTED bare early-out anywhere inside a `#[test]`
+//! body under `tests/` is red REGARDLESS of scrutinee, with an explicit
+//! `// not-a-skip:` annotation for the legitimate cases. That fails closed on
+//! probe spellings nobody has thought of yet, which is the only version of
+//! this gate whose claim cannot outrun its detector.
 //!
 //! # Scope is read out of the thing being checked
 //!
@@ -316,10 +335,14 @@ fn no_test_source_holds_a_fail_open_skip_site() {
     let open = open_skip_sites();
     assert!(
         open.is_empty(),
-        "{} fail-open skip-and-return site(s) do not consult the shared \
-         fail-closed helper. A skip that never reads MIND_BENCH_REQUIRE cannot \
-         be turned into a hard failure, so the tier can pass vacuously. Route \
-         each through common::gate::{{compiled, skipped, skipped_optional}}.\n  {}",
+        "{} skip-and-return site(s) do not consult the shared fail-closed \
+         helper, or consult it without deciding the cause. A skip that never \
+         reads MIND_BENCH_REQUIRE cannot be turned into a hard failure, so the \
+         tier can pass vacuously; a skip decided by an EXIT STATUS that never \
+         classifies the failure grades a compiler regression as a capability \
+         gap on every unenforced run. Route a probe through \
+         common::gate::{{skipped, skipped_optional}} and a compile through \
+         common::gate::compiled.\n  {}",
         open.len(),
         open.join("\n  ")
     );

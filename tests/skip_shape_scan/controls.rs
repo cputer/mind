@@ -268,3 +268,110 @@ fn the_measured_escapes_are_closed() {
         .is_empty()
     );
 }
+
+/// A skip decided by a child's EXIT STATUS must decide the CAUSE too.
+///
+/// Positive control for the SIXTH detector, and the shape it was built from is
+/// quoted verbatim from the six keystone sites that carried it. Measured on the
+/// tip before the sites were routed: `examples/mindc_mind/main.mind` broken with
+/// a stray token, `MIND_BENCH_REQUIRE` unset, `phase_g_02/03/04/05` each printed
+///
+///   SDLC-GATE phase_g_keystone_bootstrap ran=0 fail=0 class=toolchain
+///     (capability skip: ... error[parse][E1001]: unexpected `@` ...)
+///
+/// and reported `ok`. A parse error in the tracked self-host source is a
+/// compiler regression; `class=toolchain` is the one answer it is not.
+#[test]
+fn an_unclassified_exit_status_skip_is_reported() {
+    let src = "if !r_a.status.success() {\n\
+         let detail = String::from_utf8_lossy(&r_a.stderr);\n\
+         gate::skipped(\"t\", &format!(\"build A did not succeed{detail}\"));\n\
+         return;\n\
+         }";
+    let hits = super::skip_block_sites("specimen.rs", src);
+    assert_eq!(
+        hits,
+        vec![format!("specimen.rs:1 ({})", super::EXIT_STATUS_LABEL)],
+        "the routed-but-unclassified exit-status skip was not reported:\n{src}"
+    );
+    // Every sink that records without deciding must be held to the same rule;
+    // choosing a longer spelling of it is not a classification. The names are
+    // ASSEMBLED from the vocabulary rather than typed: read out of the thing
+    // being proven, and out of reach of the raw-text scan that requires every
+    // literal `skipped_optional` call site to document what is optional.
+    for sink in super::UNCLASSIFIED_SINKS {
+        for suffix in ["", "_with", "_optional"] {
+            let call = format!("{sink}{suffix}");
+            let src = format!(
+                "if !out.status.success() {{\n    {call}(\"t\", \"why\");\n    return;\n}}"
+            );
+            assert!(
+                !super::skip_block_sites("specimen.rs", &src).is_empty(),
+                "`{call}` bought an exit-status skip a pass"
+            );
+        }
+    }
+}
+
+/// Deciding the cause CLEARS it — in the head or in the body.
+///
+/// Both live spellings are pinned: `turboquant_kernel_run` classifies in the
+/// head, `collection_ctor_run` classifies in the body before it skips, and
+/// `phase_g_06` hands the whole decision to `gate::compiled`. A rule that landed
+/// red on these would be forbidding the correct shape.
+#[test]
+fn a_classified_exit_status_skip_is_not_reported() {
+    for src in [
+        // Head classification.
+        "if !build.status.success()\n\
+         && !gate::enforce_real_backend()\n\
+         && gate::is_capability_gap(&bstderr)\n\
+         {\n    gate::skipped(\"t\", \"needs the MLIR toolchain\");\n    return;\n}",
+        // Body classification, with the undiagnosed case panicking.
+        "if !out.status.success() {\n\
+         let e = String::from_utf8_lossy(&out.stderr);\n\
+         if gate::is_capability_gap(&e) {\n\
+         gate::skipped(\"t\", \"needs mlir-build\");\n\
+         return;\n\
+         }\n\
+         panic!(\"must compile:{e}\");\n\
+         }",
+        // The whole decision delegated.
+        "if !gate::compiled(\"t\", &r) {\n    return;\n}",
+    ] {
+        assert!(
+            super::skip_block_sites("specimen.rs", src).is_empty(),
+            "a CLASSIFIED exit-status skip was reported:\n{src}"
+        );
+    }
+}
+
+/// The classifying vocabulary is a real SUBTRACTION from the routed one.
+///
+/// Two hand-copied lists that must agree, with nothing asserting they do, is the
+/// drift this directory exists to refuse. If a sink is renamed in
+/// `ROUTED_MARKERS` and not here, the filter silently removes nothing and every
+/// unclassified exit-status skip goes quiet again.
+#[test]
+fn the_unclassified_sinks_are_routed_markers() {
+    for sink in super::UNCLASSIFIED_SINKS {
+        assert!(
+            super::ROUTED_MARKERS.contains(sink),
+            "`{sink}` is subtracted from a vocabulary it is not in, so the \
+             subtraction removes nothing"
+        );
+    }
+    assert!(
+        super::ROUTED_MARKERS
+            .iter()
+            .any(|m| !super::UNCLASSIFIED_SINKS.contains(m)),
+        "subtracting the sinks left NO classifying marker; the rule would \
+         forbid every exit-status skip, including the correct ones"
+    );
+    // The vocabulary entry this rule re-reads is spelled once.
+    assert!(
+        super::AVAILABILITY_PROBES.contains(&super::EXIT_STATUS_PROBE),
+        "EXIT_STATUS_PROBE is not in the probe vocabulary, so a block it \
+         matches would never be scrutinised in the first place"
+    );
+}

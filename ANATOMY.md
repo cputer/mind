@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1516 | **Est. tokens:** ~2,943,297
-**Generated:** 2026-09-06 00:27 UTC
+**Files:** 1516 | **Est. tokens:** ~2,945,449
+**Generated:** 2026-09-06 01:07 UTC
 
 ## Token Budget Guide
 
@@ -125,7 +125,7 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 353 | ~659,291 |
+| `tests/` | 353 | ~659,535 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~6,871 |
@@ -179,7 +179,7 @@
 | `tests/selfhost_gaps/` | 158 | ~10,231 |
 | `tests/selfhost_gaps/never_wrong/` | 17 | ~326 |
 | `tests/shapes/` | 3 | ~260 |
-| `tests/skip_shape_scan/` | 2 | ~8,493 |
+| `tests/skip_shape_scan/` | 2 | ~10,401 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~7,506 |
 | `tools/mindfuzz/` | 7 | ~16,763 |
@@ -1512,7 +1512,7 @@
 - `fail_closed_capability_skip.rs` (~6323 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_capability_skip_stub_exec.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
 - `fail_closed_cli_run.rs` (~1203 tok, large) — Regression tests for the two fail-closed CLI guards that shipped WITHOUT one.
-- `fail_open_skip_site_ratchet.rs` (~8050 tok, huge) — Copyright 2025 STARGA Inc.
+- `fail_open_skip_site_ratchet.rs` (~8472 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 ### `tests/fixtures/`
 
@@ -1795,7 +1795,7 @@
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `parse_try_operator.rs` (~1194 tok, large) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~7642 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~7464 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
 - `reductions_grad.rs` (~390 tok, medium) — Copyright 2025 STARGA Inc.
@@ -2027,8 +2027,8 @@
 - `shapes.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/skip_shape_scan/`
 
-- `controls.rs` (~3065 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~5428 tok, huge) — Copyright 2025 STARGA Inc.
+- `controls.rs` (~4228 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~6173 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
 - `smoke.rs` (~261 tok, medium) — Copyright 2025 STARGA Inc.

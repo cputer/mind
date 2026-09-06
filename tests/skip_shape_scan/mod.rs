@@ -65,6 +65,53 @@ pub const ROUTED_MARKERS: &[&str] = &[
     "gate::is_capability_gap",
 ];
 
+/// The routed sinks that RECORD a skip without deciding WHY the step failed.
+///
+/// `gate::skipped` names the absence class at its call site (`Absent::Toolchain`)
+/// and never reads the failure's cause. That is right for a PROBE — a missing
+/// binary, `which` returning nothing, an absent directory — where the absence IS
+/// the answer. It is wrong for a subprocess EXIT STATUS, where the cause sits in
+/// the stderr the call site is already holding, and where "the toolchain may be
+/// incomplete" is a guess. The prefix covers `gate::skipped_with` and
+/// `gate::skipped_optional`, which record the same undecided answer.
+const UNCLASSIFIED_SINKS: &[&str] = &["gate::skipped"];
+
+/// The exit status of a child process, as a probe spelling.
+///
+/// Named because [`decides_on_exit_status`] asks a SECOND question about this
+/// one [`AVAILABILITY_PROBES`] entry, and a vocabulary entry spelled twice is a
+/// vocabulary that can drift against itself.
+pub const EXIT_STATUS_PROBE: &str = ".success(";
+
+/// How an exit-status site is reported, so the class is legible in the failure
+/// and assertable by [`controls`].
+pub const EXIT_STATUS_LABEL: &str = "exit-status skip: cause not classified";
+
+/// Does `text` decide the CAUSE of a failure, rather than merely record that one
+/// happened?
+///
+/// The classifying vocabulary is [`ROUTED_MARKERS`] MINUS [`UNCLASSIFIED_SINKS`],
+/// subtracted at run time. Writing it as a second list would be the drift this
+/// directory refuses: a marker added to — or renamed in — the routed list would
+/// leave this rule reading a stale copy, silently.
+fn classifies_text(text: &str) -> bool {
+    ROUTED_MARKERS
+        .iter()
+        .filter(|m| !UNCLASSIFIED_SINKS.contains(*m))
+        .any(|m| text.contains(m))
+}
+
+/// Is this head's answer a child process's EXIT STATUS?
+///
+/// One spelling, the one measured live. The residual — an exit status bound to a
+/// local first (`let ok = out.status.success(); if !ok { .. }`), which reaches
+/// the head as a tainted NAME carrying no class — is named in
+/// `tests/fail_open_skip_site_ratchet.rs` beside the other residuals, with its
+/// upgrade path.
+fn decides_on_exit_status(scrutinee: &str) -> bool {
+    calls(scrutinee, EXIT_STATUS_PROBE)
+}
+
 /// The calls whose answer is ABOUT AVAILABILITY: does the prerequisite exist,
 /// is it readable, did the child process run.
 ///
@@ -93,7 +140,7 @@ const AVAILABILITY_PROBES: &[&str] = &[
     "which(",
     "var_os(",
     "var(",
-    ".success(",
+    EXIT_STATUS_PROBE,
     ".output(",
     ".status(",
 ];
@@ -543,10 +590,23 @@ pub fn skip_block_sites(rel: &str, text: &str) -> Vec<String> {
             end = block_end(&code, next);
         }
         let body = text_between(&code, head.open, end);
-        if routed_text(&body) || routed_text(&head.scrutinee) {
+        if !has_bare_exit(&body) {
             continue;
         }
-        if has_bare_exit(&body) {
+        let site = format!("{} {}", head.scrutinee, body);
+        // A skip decided by an EXIT STATUS is held to the stronger rule: it must
+        // decide the CAUSE, not merely record the skip. `gate::skipped` alone
+        // grades a compiler regression as a capability gap on every run that
+        // does not set MIND_BENCH_REQUIRE — measured on six keystone sites,
+        // where a `[E1001]` parse error in the tracked self-host source printed
+        // `ran=0 class=toolchain` and the test reported `ok`.
+        if decides_on_exit_status(&head.scrutinee) {
+            if !classifies_text(&site) {
+                open.push(format!("{}:{} ({})", rel, li + 1, EXIT_STATUS_LABEL));
+            }
+            continue;
+        }
+        if !routed_text(&site) {
             open.push(format!("{}:{} (probe block)", rel, li + 1));
         }
     }
