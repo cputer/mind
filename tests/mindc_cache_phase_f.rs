@@ -32,7 +32,8 @@ use std::path::Path;
 use std::process::Command;
 
 use libmind::build::cache::{
-    BuildManifest, CacheProbe, cache_root, module_cache_key, object_path, probe,
+    BuildManifest, CacheProbe, cache_root, module_cache_key, module_cache_key_material,
+    object_path, probe,
 };
 use libmind::project::{BuildTarget, EmitKind, OptimizeLevel};
 
@@ -82,7 +83,7 @@ fn probe_for_source(
     // The key also fingerprints every source the build compiles, so the probe
     // must hand over the SAME set `run_build` resolved — here the single
     // `src/main.mind` these fixtures contain.
-    let key = libmind::build::compile_cache_key(
+    let material = libmind::build::compile_cache_material(
         source,
         libmind::build::CacheKeyFlags {
             target,
@@ -96,7 +97,7 @@ fn probe_for_source(
     )
     .expect("compiler identity for CARGO_BIN_EXE_mindc");
     let c_root = cache_root(project_root, target, optimize);
-    probe(&c_root, &key)
+    probe(&c_root, &material)
 }
 
 const SIMPLE_MIND: &str = "fn main() -> i64 { 42 }\n";
@@ -434,17 +435,26 @@ fn phase_f_08_clean_cache_preserves_binary() {
 
     // Simulate a populated cache.
     let c_root = cache_root(dir, BuildTarget::Cpu, OptimizeLevel::Debug);
-    let key = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+    let material = module_cache_key_material(
+        b"fixture source",
+        BuildTarget::Cpu,
+        OptimizeLevel::Debug,
+        &[],
+        "0.6.8+/x|1|2|0.6.8",
+        2024,
+    );
+    let key = material.key();
     let meta = ObjectMeta {
         source_path: "src/main.mind".to_string(),
         cache_key: key.to_string(),
-        target: "cpu".to_string(),
-        optimize: "debug".to_string(),
+        target: "Cpu".to_string(),
+        optimize: "Debug".to_string(),
         compiler_version: "0.6.8+/x|1|2|0.6.8".to_string(),
         compiler_fingerprint: "/x|1|2|0.6.8".to_string(),
         dep_hashes: vec![],
+        input_inventory: material.input_inventory().clone(),
     };
-    write_object(&c_root, key, b"\x7fELF stub", &meta).unwrap();
+    write_object(&c_root, &material, b"\x7fELF stub", &meta).unwrap();
     assert!(c_root.exists(), ".cache/ must exist after write");
 
     // Simulate a linked binary sitting next to .cache/.
@@ -665,7 +675,7 @@ fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
         .unwrap();
     drop(f);
 
-    let key_real = libmind::build::compile_cache_key(
+    let material_real = libmind::build::compile_cache_material(
         SIMPLE_MIND.as_bytes(),
         libmind::build::CacheKeyFlags {
             target: BuildTarget::Cpu,
@@ -678,7 +688,7 @@ fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
         &[dir.join("src").join("main.mind")],
     )
     .unwrap();
-    let key_rebuilt = libmind::build::compile_cache_key(
+    let material_rebuilt = libmind::build::compile_cache_material(
         SIMPLE_MIND.as_bytes(),
         libmind::build::CacheKeyFlags {
             target: BuildTarget::Cpu,
@@ -692,17 +702,18 @@ fn phase_f_11_rebuilt_compiler_binary_invalidates_cache() {
     )
     .unwrap();
     assert_ne!(
-        key_real, key_rebuilt,
+        material_real.key(),
+        material_rebuilt.key(),
         "a rebuilt mindc binary (new path/mtime, same version) must key differently"
     );
 
     let c_root = cache_root(dir, BuildTarget::Cpu, OptimizeLevel::Debug);
     assert!(
-        matches!(probe(&c_root, &key_rebuilt), CacheProbe::Miss { .. }),
+        matches!(probe(&c_root, &material_rebuilt), CacheProbe::Miss { .. }),
         "cache populated by the real binary must MISS for the rebuilt binary's key"
     );
     assert!(
-        matches!(probe(&c_root, &key_real), CacheProbe::Hit { .. }),
+        matches!(probe(&c_root, &material_real), CacheProbe::Hit { .. }),
         "the real binary's key must still hit its own cache entry"
     );
 }

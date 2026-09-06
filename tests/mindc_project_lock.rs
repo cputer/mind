@@ -7,7 +7,7 @@ mod common;
 
 use common::require_mindc;
 use libmind::build::cache::{CacheProbe, cache_root, probe};
-use libmind::build::{CacheKeyFlags, compile_cache_key};
+use libmind::build::{CacheKeyFlags, compile_cache_material};
 use libmind::project::{BuildTarget, EmitKind, OptimizeLevel};
 use std::fs;
 use std::path::Path;
@@ -62,7 +62,7 @@ fn same_project_builds_serialize_without_manifest_or_cache_corruption() {
         return;
     }
 
-    let key = compile_cache_key(
+    let material = compile_cache_material(
         SIMPLE_MIND.as_bytes(),
         CacheKeyFlags {
             target: BuildTarget::Cpu,
@@ -76,10 +76,10 @@ fn same_project_builds_serialize_without_manifest_or_cache_corruption() {
     )
     .expect("compiler identity");
     let cache = cache_root(root, BuildTarget::Cpu, OptimizeLevel::Debug);
-    let meta = libmind::build::cache::meta_path(&cache, &key);
+    let meta = libmind::build::cache::meta_path(&cache, material.key());
     let parsed: serde_json::Value = serde_json::from_slice(&fs::read(meta).unwrap()).unwrap();
     assert!(parsed.is_object());
-    assert!(matches!(probe(&cache, &key), CacheProbe::Hit { .. }));
+    assert!(matches!(probe(&cache, &material), CacheProbe::Hit { .. }));
 }
 
 #[test]

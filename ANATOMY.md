@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1545 | **Est. tokens:** ~3011010
-**Generated:** 2026-09-06 13:39 UTC
+**Files:** 1548 | **Est. tokens:** ~3014421
+**Generated:** 2026-09-06 14:13 UTC
 
 ## Token Budget Guide
 
@@ -35,7 +35,7 @@
 | `audits/` | 6 | ~607 |
 | `bench/` | 5 | ~7574 |
 | `bench/fft/` | 8 | ~8060 |
-| `benches/` | 28 | ~84214 |
+| `benches/` | 28 | ~84215 |
 | `benches/common/` | 1 | ~668 |
 | `benchmarks/` | 13 | ~28417 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
@@ -93,7 +93,8 @@
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
-| `src/build/` | 8 | ~24760 |
+| `src/build/` | 8 | ~25068 |
+| `src/build/cache/` | 3 | ~3150 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10417 |
 | `src/deps/` | 1 | ~9388 |
@@ -126,7 +127,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 363 | ~678248 |
+| `tests/` | 363 | ~678200 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -322,7 +323,7 @@
 
 - `compiler.rs` (~3782 tok, huge) — Small program: Simple matrix multiplication
 - `cross_module.rs` (~605 tok, large) — Copyright 2025 STARGA Inc.
-- `det_gemv_q16_mt.rs` (~3294 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `det_gemv_q16_mt.rs` (~3295 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_i16.rs` (~4621 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_i8.rs` (~5094 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `det_matmul_q16.rs` (~4972 tok, huge) — Copyright 2025-2026 STARGA Inc.
@@ -1016,12 +1017,19 @@
 ### `src/build/`
 
 - `artifact.rs` (~1149 tok, large) — Copyright 2025 STARGA Inc.
-- `cache.rs` (~6821 tok, huge) — Copyright 2025 STARGA Inc.
+- `cache.rs` (~6905 tok, huge) — Copyright 2025 STARGA Inc.
+### `src/build/cache/`
+
+- `cache_integrity.rs` (~1160 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `cache_integrity_tests.rs` (~1673 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `compiler_identity.rs` (~317 tok, medium) — Copyright 2025-2026 STARGA Inc.
+### `src/build/`
+
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~9961 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~9924 tok, huge) — Copyright 2025 STARGA Inc.
 - `project_transaction.rs` (~288 tok, medium) — Copyright 2026 STARGA Inc.
-- `source_key.rs` (~2483 tok, huge) — Copyright 2025 STARGA Inc.
+- `source_key.rs` (~2744 tok, huge) — Copyright 2025 STARGA Inc.
 - `source_snapshot_tests.rs` (~1337 tok, large) — Copyright 2025-2026 STARGA Inc.
 ### `src/cache/`
 
@@ -1496,7 +1504,7 @@
 ### `tests/`
 
 - `crypto_vectors_driver.py` (~2653 tok, huge) — # Official-vector driver for std/aes_gcm.mind + std/hkdf.mind (pure-MIND crypto).
-- `determinism_veto_control.rs` (~1489 tok, large) — Copyright 2025 STARGA Inc.
+- `determinism_veto_control.rs` (~1490 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics.rs` (~688 tok, large) — Copyright 2025 STARGA Inc.
 - `diagnostics_parse.rs` (~1112 tok, large) — Copyright 2025 STARGA Inc.
 - `digit_separator_run.rs` (~606 tok, large) — Copyright 2025 STARGA Inc.
@@ -1570,7 +1578,7 @@
 - `for_continue_step_injection.rs` (~1302 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~10847 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~10735 tok, huge) — Copyright 2025 STARGA Inc.
 - `gate_assert_count_contract_test.py` (~6964 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
@@ -1628,7 +1636,7 @@
 - `match_arm_stmt_run.rs` (~800 tok, large) — Copyright 2025 STARGA Inc.
 - `match_fallback_fail_closed.rs` (~1750 tok, huge) — Copyright 2025 STARGA Inc.
 - `match_scrutinee_once.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
-- `merge_kind_order_symmetry.rs` (~994 tok, large) — A merge's signedness must not depend on ARM ORDER.
+- `merge_kind_order_symmetry.rs` (~993 tok, large) — A merge's signedness must not depend on ARM ORDER.
 - `method_call.rs` (~397 tok, medium) — Copyright 2025 STARGA Inc.
 - `mic3_array_store_roundtrip.rs` (~1054 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_break_continue_string_roundtrip.rs` (~1668 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1639,11 +1647,11 @@
 - `mindc.rs` (~2105 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_artifact_name.rs` (~4118 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_build_phase_a.rs` (~5557 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_cache_phase_f.rs` (~6204 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_cache_phase_f.rs` (~6283 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_doc_phase1.rs` (~3004 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
-- `mindc_project_lock.rs` (~1062 tok, large) — Copyright 2026 STARGA Inc.
+- `mindc_project_lock.rs` (~1069 tok, large) — Copyright 2026 STARGA Inc.
 - `mindc_test_evaluator_issues.rs` (~4490 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1792,7 +1800,7 @@
 - `parser_trivia.rs` (~2706 tok, huge) — Copyright 2025 STARGA Inc.
 - `parser_unsigned_i64_literals.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `phase_g_keystone_bootstrap.rs` (~7291 tok, huge) — Copyright 2025 STARGA Inc.
+- `phase_g_keystone_bootstrap.rs` (~7296 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
 - `public_cpu_native_link.rs` (~1528 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `reap_threshold.rs` (~2089 tok, huge) — Copyright 2025 STARGA Inc.
@@ -2062,14 +2070,14 @@
 - `std_surface_logical_ops.rs` (~1207 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_map_module.rs` (~2015 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_method_call.rs` (~2939 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_net_fs_process.rs` (~8353 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_net_fs_process.rs` (~8327 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_c_stdlib_bundle.rs` (~1466 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_phase_d_env_override.rs` (~1597 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_promotion_compose.rs` (~5627 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_reactor.rs` (~1373 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_regex.rs` (~5293 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_ring.rs` (~1314 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_self_emit_shared.rs` (~1807 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_self_emit_shared.rs` (~1808 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_string_itoa.rs` (~934 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_string_module.rs` (~2284 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_string_push_str.rs` (~864 tok, large) — Copyright 2025 STARGA Inc.
@@ -2079,7 +2087,7 @@
 - `std_surface_use_import.rs` (~1757 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_use_import_phase_b.rs` (~2303 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_vec_module.rs` (~1805 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_vec_zeroed.rs` (~1094 tok, large) — Copyright 2025 STARGA Inc.
+- `std_surface_vec_zeroed.rs` (~1092 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_while_statement.rs` (~3224 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib_tensor.rs` (~256 tok, medium) — Copyright 2025 STARGA Inc.
 - `stmt_keyword_recognizer.rs` (~2527 tok, huge) — Copyright 2025 STARGA Inc.

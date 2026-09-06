@@ -31,8 +31,8 @@ mod source_key;
 
 pub use error::BuildError;
 pub use source_key::{
-    CacheKeyFlags, cache_dep_entries, compile_cache_key, source_set_dep_entries,
-    toolchain_dep_entries,
+    CacheKeyFlags, cache_dep_entries, compile_cache_key, compile_cache_material,
+    source_set_dep_entries, toolchain_dep_entries,
 };
 
 use std::fs;
@@ -43,7 +43,7 @@ use anyhow::{Context, Result};
 use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
 use project_transaction::{ManifestEdit, lock_project, single_file_manifest};
-use source_key::compile_cache_key_from_snapshot;
+use source_key::compile_cache_material_from_snapshot;
 
 use crate::project::{
     BuildTarget, EmitKind, OptimizeLevel, build_project_locked_with_snapshot, find_project_root,
@@ -364,8 +364,8 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     let compiler_identity = current_exe
         .as_deref()
         .and_then(cache::compiler_identity_string);
-    let cache_key: Option<String> = current_exe.as_deref().and_then(|exe| {
-        compile_cache_key_from_snapshot(
+    let cache_material = current_exe.as_deref().and_then(|exe| {
+        compile_cache_material_from_snapshot(
             &source_snapshot,
             &entry_path,
             CacheKeyFlags {
@@ -384,17 +384,17 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // Probe the cache (skipped when --no-cache is set, or when the compiler's
     // own binary identity could not be probed — fail-closed: recompile rather
     // than risk serving a stale hit).
-    let decision = match (opts.no_cache, cache_key.as_deref()) {
-        (false, Some(cache_key)) => match probe(&c_root, cache_key) {
+    let decision = match (opts.no_cache, cache_material.as_ref()) {
+        (false, Some(cache_material)) => match probe(&c_root, cache_material) {
             CacheProbe::Hit {
                 ref key,
-                ref object_path,
+                ref object_bytes,
             } => {
                 if opts.verbose {
                     eprintln!("   [CACHE HIT] {} ({})", entry_path.display(), &key[..8]);
                 }
-                // Copy cached object to the requested artifact path.
-                if let Err(e) = copy_or_rename(object_path, &artifact_path) {
+                // Restore the bytes that probe already verified.
+                if let Err(e) = cache::restore_object(&artifact_path, object_bytes) {
                     // Cache read failed; treat as miss and recompile.
                     if opts.verbose {
                         eprintln!("   [CACHE] read failed ({}); recompiling", e);
@@ -402,7 +402,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
                     BuildDecision::CacheMiss
                 } else {
                     // Update manifest.
-                    update_manifest(&c_root, &project_root, &entry_path, cache_key, opts.verbose);
+                    update_manifest(&c_root, &project_root, &entry_path, key, opts.verbose);
 
                     let final_path = match eff_emit {
                         EmitKind::Cdylib => ensure_cdylib_extension(artifact_path),
@@ -524,26 +524,31 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // -------------------------------------------------------------------------
     // Phase F — write compiled artifact to cache (always, even with --no-cache)
     // -------------------------------------------------------------------------
-    if let Some(cache_key) = cache_key.as_deref() {
+    if let Some(cache_material) = cache_material.as_ref() {
         if final_path.exists() {
             if let Ok(artifact_bytes) = fs::read(&final_path) {
-                // `cache_key` is `Some` only when the compiler identity probed
+                // Cache material exists only when the compiler identity probed
                 // successfully, so the fingerprint below is always populated.
                 let identity = compiler_identity.clone().unwrap_or_default();
-                let mut dep_hashes_sorted = cache_dep_entries(eff_emit);
-                dep_hashes_sorted.sort();
                 let meta = ObjectMeta {
                     source_path: entry_rel.clone(),
-                    cache_key: cache_key.to_string(),
-                    target: eff_target.as_str().to_string(),
-                    optimize: eff_optimize.as_str().to_string(),
+                    cache_key: cache_material.key.clone(),
+                    target: cache_material.input_inventory.target.clone(),
+                    optimize: cache_material.input_inventory.optimize.clone(),
                     compiler_version: format!("{}+{}", env!("CARGO_PKG_VERSION"), identity),
                     compiler_fingerprint: identity,
-                    dep_hashes: dep_hashes_sorted,
+                    dep_hashes: cache_material.input_inventory.dependencies.clone(),
+                    input_inventory: cache_material.input_inventory.clone(),
                 };
                 // Best-effort: cache write failure does not fail the build.
-                let _ = write_object(&c_root, cache_key, &artifact_bytes, &meta);
-                update_manifest(&c_root, &project_root, &entry_path, cache_key, opts.verbose);
+                let _ = write_object(&c_root, cache_material, &artifact_bytes, &meta);
+                update_manifest(
+                    &c_root,
+                    &project_root,
+                    &entry_path,
+                    &cache_material.key,
+                    opts.verbose,
+                );
             }
         }
     }
@@ -591,15 +596,6 @@ fn ensure_executable_if_binary(path: &Path, emit: EmitKind) {
     {
         let _ = path;
     }
-}
-
-/// Copy `src` to `dest`, trying rename first (faster, same filesystem).
-fn copy_or_rename(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    // Try a hard-link copy first for zero-copy on same fs, fall back to fs::copy.
-    fs::copy(src, dest).map(|_| ())
 }
 
 /// Update `manifest.json` to record `source_path -> cache_key`.

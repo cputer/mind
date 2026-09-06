@@ -508,7 +508,7 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
     let build_sources =
         libmind::project::collect_sources(&repo_root(), "examples/mindc_mind/main.mind")
             .expect("collect the keystone project sources");
-    let cache_key = libmind::build::compile_cache_key(
+    let cache_material = libmind::build::compile_cache_material(
         &source_bytes,
         libmind::build::CacheKeyFlags {
             target: BuildTarget::Cpu,
@@ -523,7 +523,7 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
     .expect("compiler identity for CARGO_BIN_EXE_mindc");
     let c_root = cache_root(&repo_root(), BuildTarget::Cpu, OptimizeLevel::Release);
 
-    let probe_result = probe(&c_root, &cache_key);
+    let probe_result = probe(&c_root, &cache_material);
     assert!(
         matches!(probe_result, CacheProbe::Hit { .. }),
         "cache must be populated after first `mindc build` via Mind.toml"
@@ -551,7 +551,7 @@ fn phase_g_05_warm_cache_hit_after_mind_toml_build() {
     );
 
     // The cache entry must still be valid.
-    let probe_result2 = probe(&c_root, &cache_key);
+    let probe_result2 = probe(&c_root, &cache_material);
     assert!(
         matches!(probe_result2, CacheProbe::Hit { .. }),
         "cache must remain a hit after warm rebuild"

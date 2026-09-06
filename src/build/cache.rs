@@ -63,12 +63,21 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::project::{BuildTarget, OptimizeLevel};
+
+mod cache_integrity;
+mod compiler_identity;
+
+#[cfg(test)]
+mod cache_integrity_tests;
+
+pub use cache_integrity::{CacheInputInventory, CacheKeyMaterial};
+use cache_integrity::{artifact_matches, encode_sidecar, is_cache_key, parse_sidecar};
+pub use compiler_identity::compiler_identity_string;
 
 // ---------------------------------------------------------------------------
 // Cache key derivation
@@ -94,6 +103,26 @@ pub fn module_cache_key(
     compiler_version: &str,
     edition: u32,
 ) -> String {
+    module_cache_key_material(
+        source_bytes,
+        target,
+        optimize,
+        dep_hashes,
+        compiler_version,
+        edition,
+    )
+    .key
+}
+
+/// Derive a cache key together with the exact canonical input inventory.
+pub fn module_cache_key_material(
+    source_bytes: &[u8],
+    target: BuildTarget,
+    optimize: OptimizeLevel,
+    dep_hashes: &[String],
+    compiler_version: &str,
+    edition: u32,
+) -> CacheKeyMaterial {
     let mut data: Vec<u8> = Vec::with_capacity(256 + source_bytes.len());
 
     // Format version prefix — bump this string to invalidate all caches.
@@ -113,9 +142,9 @@ pub fn module_cache_key(
 
     // Dependency hashes — sorted so order of declaration doesn't matter.
     data.extend_from_slice(b"deps=\n");
-    let mut sorted_deps: Vec<&String> = dep_hashes.iter().collect();
+    let mut sorted_deps = dep_hashes.to_vec();
     sorted_deps.sort();
-    for h in sorted_deps {
+    for h in &sorted_deps {
         data.extend_from_slice(h.as_bytes());
         data.push(b'\n');
     }
@@ -124,68 +153,18 @@ pub fn module_cache_key(
     data.extend_from_slice(b"source=\n");
     data.extend_from_slice(source_bytes);
 
-    sha256_hex(&data)
-}
-
-// ---------------------------------------------------------------------------
-// Compiler binary identity (issue #96)
-// ---------------------------------------------------------------------------
-
-/// Return a stable *binary-identity* string for the `mindc` compiler binary at
-/// `exe`: canonicalised path, file size, mtime (nanos since epoch) and
-/// `CARGO_PKG_VERSION`, joined by `|`. Folded into the module cache key so a
-/// different `mindc` binary — even one reporting an identical
-/// `CARGO_PKG_VERSION` (a dev rebuild at the same version, an in-place
-/// reinstall, or a copy to a new path) — yields a different key and is never
-/// reused from a stale cache. The version string alone is NOT a content hash of
-/// the compiler, so the path+size+mtime triple guards the realistic
-/// same-version-rebuild case (issue #96); a binary deliberately forged to
-/// identical path+size+mtime yet different codegen is an out-of-scope attack,
-/// not a determinism failure mode.
-///
-/// **Fails closed:** returns `None` if `exe` cannot be canonicalised or its
-/// metadata (size / mtime) cannot be read. Callers MUST treat `None` as a cache
-/// MISS and MUST NOT substitute a stable sentinel — a sentinel would
-/// reintroduce exactly the staleness this fingerprint exists to prevent.
-///
-/// The identity of the *running* compiler (`std::env::current_exe()`) is
-/// computed once and memoised; any other `exe` (e.g. a test probing the
-/// identity of a subprocess binary) is computed fresh.
-pub fn compiler_identity_string(exe: &Path) -> Option<String> {
-    static SELF_IDENTITY: OnceLock<Option<String>> = OnceLock::new();
-    let is_self = std::env::current_exe()
-        .ok()
-        .map(|c| c == exe)
-        .unwrap_or(false);
-    if is_self {
-        return SELF_IDENTITY
-            .get_or_init(|| compute_compiler_identity(exe))
-            .clone();
+    CacheKeyMaterial {
+        key: sha256_hex(&data),
+        input_inventory: CacheInputInventory {
+            key_format: "mindc-cache-v2".to_string(),
+            compiler_version: compiler_version.to_string(),
+            edition,
+            target: format!("{target:?}"),
+            optimize: format!("{optimize:?}"),
+            dependencies: sorted_deps,
+            source_sha256: sha256_hex(source_bytes),
+        },
     }
-    compute_compiler_identity(exe)
-}
-
-/// Uncached identity computation shared by [`compiler_identity_string`]. The
-/// `~us` cost is a `canonicalize` + `stat`; deliberately NOT a full hash of the
-/// multi-MB binary — mtime is the realistic staleness signal, not a forged
-/// same-mtime rebuild.
-fn compute_compiler_identity(exe: &Path) -> Option<String> {
-    let resolved = std::fs::canonicalize(exe).ok()?;
-    let meta = std::fs::metadata(&resolved).ok()?;
-    let size = meta.len();
-    let mtime_ns = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_nanos();
-    Some(format!(
-        "{}|{}|{}|{}",
-        resolved.display(),
-        size,
-        mtime_ns,
-        env!("CARGO_PKG_VERSION")
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +205,8 @@ pub fn manifest_path(cache_root: &Path) -> PathBuf {
 ///
 /// Contains enough context to explain a cache hit in `--verbose` mode and to
 /// let `mindc clean --cache` reason about what it is removing.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObjectMeta {
     /// The source file that produced this object (relative to project root).
     pub source_path: String,
@@ -245,6 +225,8 @@ pub struct ObjectMeta {
     pub compiler_fingerprint: String,
     /// Dep hashes that were mixed into the key (sorted).
     pub dep_hashes: Vec<String>,
+    /// Exact canonical inventory produced while deriving `cache_key`.
+    pub input_inventory: CacheInputInventory,
 }
 
 // ---------------------------------------------------------------------------
@@ -289,28 +271,44 @@ impl BuildManifest {
 /// Result of a cache probe for one module.
 #[derive(Debug)]
 pub enum CacheProbe {
-    /// Cache hit: the object file exists and the sidecar is valid.
-    Hit { key: String, object_path: PathBuf },
+    /// Cache hit: these bytes were read once and verified against the sidecar.
+    Hit { key: String, object_bytes: Vec<u8> },
     /// Cache miss: nothing in cache for this key.
     Miss { key: String },
 }
 
 /// Probe the object cache for a module.
 ///
-/// Returns `Hit` iff both `<key>.o` and `<key>.json` exist under `cache_root`.
-pub fn probe(cache_root: &Path, key: &str) -> CacheProbe {
+/// Returns `Hit` only after parsing the sidecar and verifying its key, input
+/// inventory against freshly derived `material`, artifact length, and artifact
+/// digest. The returned bytes are the bytes that were verified, closing a
+/// check-then-reopen race at restore time.
+pub fn probe(cache_root: &Path, material: &CacheKeyMaterial) -> CacheProbe {
+    let key = material.key();
+    let miss = || CacheProbe::Miss {
+        key: key.to_string(),
+    };
+    if !is_cache_key(key) {
+        return miss();
+    }
     let obj = object_path(cache_root, key);
     let meta = meta_path(cache_root, key);
 
-    if obj.exists() && meta.exists() {
-        CacheProbe::Hit {
-            key: key.to_string(),
-            object_path: obj,
-        }
-    } else {
-        CacheProbe::Miss {
-            key: key.to_string(),
-        }
+    let Ok(meta_bytes) = fs::read(meta) else {
+        return miss();
+    };
+    let Some(stored) = parse_sidecar(&meta_bytes, material) else {
+        return miss();
+    };
+    let Ok(object_bytes) = fs::read(obj) else {
+        return miss();
+    };
+    if !artifact_matches(&stored, &object_bytes) {
+        return miss();
+    }
+    CacheProbe::Hit {
+        key: key.to_string(),
+        object_bytes,
     }
 }
 
@@ -319,10 +317,14 @@ pub fn probe(cache_root: &Path, key: &str) -> CacheProbe {
 /// Uses atomic rename to avoid partial writes observed by concurrent processes.
 pub fn write_object(
     cache_root: &Path,
-    key: &str,
+    material: &CacheKeyMaterial,
     object_bytes: &[u8],
     meta: &ObjectMeta,
 ) -> Result<()> {
+    // Validate and serialize before changing the object. An invalid sidecar
+    // cannot clobber a previously valid entry under the same key.
+    let meta_json = encode_sidecar(material, object_bytes, meta)?;
+    let key = material.key();
     // Ensure subdirectories exist.
     let obj_dir = cache_root.join("objects");
     let meta_dir = cache_root.join("meta");
@@ -334,13 +336,21 @@ pub fn write_object(
     atomic_write(&obj_path, object_bytes)
         .with_context(|| format!("write object {}", obj_path.display()))?;
 
-    // Write sidecar metadata via atomic rename.
-    let meta_json = serde_json::to_string_pretty(meta).context("serialise meta")?;
+    // Publish metadata last. Any reader interleaving between these renames sees
+    // a digest mismatch and treats the pair as a miss.
     let meta_p = meta_path(cache_root, key);
-    atomic_write(&meta_p, meta_json.as_bytes())
+    atomic_write(&meta_p, &meta_json)
         .with_context(|| format!("write meta {}", meta_p.display()))?;
 
     Ok(())
+}
+
+/// Restore the exact byte slice returned by [`probe`] without reopening the cache.
+pub(crate) fn restore_object(dest: &Path, object_bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    atomic_write(dest, object_bytes)
 }
 
 // ---------------------------------------------------------------------------
@@ -697,25 +707,45 @@ mod tests {
     #[test]
     fn probe_returns_miss_when_empty() {
         let tmp = tempfile::tempdir().unwrap();
-        let result = probe(tmp.path(), "deadbeef");
+        let material = module_cache_key_material(
+            b"fn main() {}",
+            BuildTarget::Cpu,
+            OptimizeLevel::Debug,
+            &[],
+            "0.6.8+/x|1|2|0.6.8",
+            2024,
+        );
+        let result = probe(tmp.path(), &material);
         assert!(matches!(result, CacheProbe::Miss { .. }));
     }
 
     #[test]
     fn write_then_probe_returns_hit() {
         let tmp = tempfile::tempdir().unwrap();
-        let key = "cafebabe";
+        let material = module_cache_key_material(
+            b"fn main() {}",
+            BuildTarget::Cpu,
+            OptimizeLevel::Debug,
+            &[],
+            "0.6.8+/x|1|2|0.6.8",
+            2024,
+        );
+        let key = &material.key;
         let meta = ObjectMeta {
             source_path: "src/main.mind".to_string(),
             cache_key: key.to_string(),
-            target: "cpu".to_string(),
-            optimize: "debug".to_string(),
+            target: "Cpu".to_string(),
+            optimize: "Debug".to_string(),
             compiler_version: "0.6.8+/x|1|2|0.6.8".to_string(),
             compiler_fingerprint: "/x|1|2|0.6.8".to_string(),
             dep_hashes: vec![],
+            input_inventory: material.input_inventory.clone(),
         };
-        write_object(tmp.path(), key, b"\x7fELF", &meta).unwrap();
-        assert!(matches!(probe(tmp.path(), key), CacheProbe::Hit { .. }));
+        write_object(tmp.path(), &material, b"\x7fELF", &meta).unwrap();
+        assert!(matches!(
+            probe(tmp.path(), &material),
+            CacheProbe::Hit { .. }
+        ));
     }
 
     #[test]
