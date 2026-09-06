@@ -46491,8 +46491,7 @@ pub fn tc_shoc_pack_word(buf: i64, base: i64, width: i64, i: i64, acc: i64, fact
     if i >= width {
         return acc;
     }
-    tc_shoc_pack_word(buf, base, width, i + 1,
-                      acc + load_byte(buf, base + i) * factor, factor * 256)
+    tc_shoc_pack_word(buf, base, width, i + 1, acc + load_byte(buf, base + i) * factor, factor * 256)
 }
 
 pub fn tc_shoc_prefix7_span(buf: i64, len: i64) -> i64 {
@@ -46781,10 +46780,7 @@ pub fn tc_is_std_surface_intrinsic_span(buf: i64, len: i64) -> i64 {
     // The canonical Rust registry currently has one >32-byte row.  Its tail
     // is compared explicitly; a future additional long row must update this
     // generated twin and the smoke's drift guard before it can pass.
-    if tc_shoc_span_eq(buf, len,
-                       7953185892337540959, 7020094081027437157,
-                       7815273074989555571, 8169359791242834783,
-                       38, 57408300725809, 6) == 1 {
+    if tc_shoc_span_eq(buf, len, 7953185892337540959, 7020094081027437157, 7815273074989555571, 8169359791242834783, 38, 57408300725809, 6) == 1 {
         return 1;
     }
     0

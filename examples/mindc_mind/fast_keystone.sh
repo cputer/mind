@@ -25,7 +25,10 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT" || exit 2
 MINDC="${MINDC_BIN:-$ROOT/target/release/mindc}"
 ENTRY="examples/mindc_mind/main.mind"
-DIR_SO="/tmp/fk_direct_$$.so"; MT_SO="/tmp/fk_mt_$$.so"
+# Concurrent worktrees must not overwrite one another's verdict logs.
+FK_TMP="$(mktemp -d "${TMPDIR:-/tmp}/mind-fast-keystone.XXXXXX")" || exit 2
+trap 'rm -rf "$FK_TMP"' EXIT
+DIR_SO="$FK_TMP/direct.so"; MT_SO="$FK_TMP/manifest.so"
 t0=$(date +%s); pass=0; fail=0; skip=0
 # A smoke that cannot find the self-host `.so` prints a column-0 `SKIP`/`BLOCKED`
 # marker and exits 0. Exit status alone therefore cannot tell "the invariant held"
@@ -42,13 +45,13 @@ t0=$(date +%s); pass=0; fail=0; skip=0
 # returns False whenever MINDC_SO/MINDC_BIN is set -- so under CI an indented SKIP
 # can only be an UNguarded one, and CI can afford to be the stricter of the two.
 chk() { local n="$1"; shift
-  if "$@" >/tmp/fk_step.log 2>&1; then
-    if grep -qE '^(SKIP|BLOCKED)' /tmp/fk_step.log; then
+  if "$@" >"$FK_TMP/step.log" 2>&1; then
+    if grep -qE '^(SKIP|BLOCKED)' "$FK_TMP/step.log"; then
       echo "  SKIP  $n  — gate did NOT run (not a pass)"
-      grep -m1 -E '^(SKIP|BLOCKED)' /tmp/fk_step.log | sed 's/^/        /'
+      grep -m1 -E '^(SKIP|BLOCKED)' "$FK_TMP/step.log" | sed 's/^/        /'
       skip=$((skip+1))
     else echo "  PASS  $n"; pass=$((pass+1)); fi
-  else echo "  FAIL  $n"; tail -4 /tmp/fk_step.log | sed 's/^/        /'; fail=$((fail+1)); fi; }
+  else echo "  FAIL  $n"; tail -4 "$FK_TMP/step.log" | sed 's/^/        /'; fail=$((fail+1)); fi; }
 
 if [ "${MINDC_REBUILD:-0}" = "1" ]; then
   echo "[rebuilding mindc release binary]"
@@ -64,7 +67,7 @@ fi
 # as a misleading `mlir_smoke` FAIL ("--emit-mlir requires the mlir-lowering/mlir-build
 # feature"), reading like a front-end regression when it is only a stripped binary.
 # Detect it precisely and fail loud with the fix instead of reporting a false regression.
-_fk_probe="/tmp/fk_probe_$$.mind"
+_fk_probe="$FK_TMP/probe.mind"
 printf 'fn __fk_probe(a: i64) -> i64 {\n    return a;\n}\n' > "$_fk_probe"
 if ! "$MINDC" "$_fk_probe" --emit-mlir >/dev/null 2>&1; then
   rm -f "$_fk_probe"
@@ -83,9 +86,9 @@ echo "== fast front-end keystone =="
 # (it reddens the "Mindcraft check" CI job), and NONE of the byte-identity gates
 # below catch formatting — a self-host edit that leaves a trailing `;` or stray
 # layout passes every smoke here yet fails CI. Catch it before the push.
-if ! "$MINDC" fmt --check "$ENTRY" >/tmp/fk_fmt.log 2>&1; then
+if ! "$MINDC" fmt --check "$ENTRY" >"$FK_TMP/fmt.log" 2>&1; then
   echo "  FAIL  fmt drift in $ENTRY — run: $MINDC fmt --fix $ENTRY"
-  head -8 /tmp/fk_fmt.log | sed 's/^/        /'; exit 1
+  head -8 "$FK_TMP/fmt.log" | sed 's/^/        /'; exit 1
 fi
 echo "  PASS  fmt check ($ENTRY canonical)"
 # 1. deterministic build: Mind.toml-driven vs direct must be byte-identical.
@@ -96,10 +99,10 @@ echo "  PASS  fmt check ($ENTRY canonical)"
 # `cmp` passes trivially — defeating the self-consistency check and hiding a real drift.
 # Fresh compiles make this a true gate (a deterministic compiler still yields identical
 # bytes for the two paths; a non-deterministic one is caught).
-if ! "$MINDC" build "$ENTRY" --release --emit=cdylib --no-cache --out="$DIR_SO" >/tmp/fk_step.log 2>&1; then
-  echo "  FAIL  direct cdylib build"; tail -6 /tmp/fk_step.log | sed 's/^/        /'; exit 1; fi
-if ! "$MINDC" build --release --emit=cdylib --no-cache --out="$MT_SO" >/tmp/fk_step.log 2>&1; then
-  echo "  FAIL  Mind.toml cdylib build"; tail -6 /tmp/fk_step.log | sed 's/^/        /'; exit 1; fi
+if ! "$MINDC" build "$ENTRY" --release --emit=cdylib --no-cache --out="$DIR_SO" >"$FK_TMP/step.log" 2>&1; then
+  echo "  FAIL  direct cdylib build"; tail -6 "$FK_TMP/step.log" | sed 's/^/        /'; exit 1; fi
+if ! "$MINDC" build --release --emit=cdylib --no-cache --out="$MT_SO" >"$FK_TMP/step.log" 2>&1; then
+  echo "  FAIL  Mind.toml cdylib build"; tail -6 "$FK_TMP/step.log" | sed 's/^/        /'; exit 1; fi
 if cmp -s "$DIR_SO" "$MT_SO"; then
   echo "  PASS  byte-identical build ($(stat -c%s "$MT_SO") B, sha=$(sha256sum "$MT_SO" | cut -c1-16))"; pass=$((pass+1))
 else
