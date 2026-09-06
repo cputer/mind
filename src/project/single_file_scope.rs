@@ -178,7 +178,7 @@ pub fn discover_with_source(
             .unwrap_or(&project_root)
             .to_path_buf()
     };
-    Ok(Discovery::Project(capture_scope(
+    Ok(Discovery::Project(capture_scope_from_paths(
         entry,
         entry_source,
         entry_module,
@@ -202,14 +202,54 @@ pub fn capture_project_scope(
 ) -> Result<ProjectScope> {
     let entry_module = crate::parser::parse(entry_source)
         .map_err(|_| anyhow::anyhow!("entry {} does not parse", entry.display()))?;
-    capture_scope(entry, entry_source, entry_module, candidates, source_root)
+    capture_scope_from_paths(entry, entry_source, entry_module, candidates, source_root)
 }
 
-fn capture_scope(
+fn capture_scope_from_paths(
     entry: &Path,
     entry_source: &str,
     entry_module: Module,
     candidates: &[PathBuf],
+    source_root: &Path,
+) -> Result<ProjectScope> {
+    let entry_canonical = entry.canonicalize().unwrap_or_else(|_| entry.to_path_buf());
+    let mut captured = Vec::with_capacity(candidates.len());
+    for path in candidates {
+        if path.canonicalize().unwrap_or_else(|_| path.clone()) == entry_canonical {
+            continue;
+        }
+        let source = fs::read_to_string(path)
+            .with_context(|| format!("cannot read declared project source {}", path.display()))?;
+        captured.push((path.as_path(), source));
+    }
+    capture_scope(
+        entry,
+        entry_source,
+        entry_module,
+        captured
+            .iter()
+            .map(|(path, source)| (*path, source.as_str())),
+        source_root,
+    )
+}
+
+/// Build project scope from source text already captured by the build driver.
+pub(crate) fn capture_project_scope_from_texts<'a>(
+    entry: &Path,
+    entry_source: &str,
+    candidates: impl IntoIterator<Item = (&'a Path, &'a str)>,
+    source_root: &Path,
+) -> Result<ProjectScope> {
+    let entry_module = crate::parser::parse(entry_source)
+        .map_err(|_| anyhow::anyhow!("entry {} does not parse", entry.display()))?;
+    capture_scope(entry, entry_source, entry_module, candidates, source_root)
+}
+
+fn capture_scope<'a>(
+    entry: &Path,
+    entry_source: &str,
+    entry_module: Module,
+    candidates: impl IntoIterator<Item = (&'a Path, &'a str)>,
     source_root: &Path,
 ) -> Result<ProjectScope> {
     struct Candidate {
@@ -222,8 +262,8 @@ fn capture_scope(
     let entry_module_path = super::module_table::module_path_of(entry, source_root);
     let mut by_path = BTreeMap::<String, Candidate>::new();
     let mut stems = BTreeMap::<String, Vec<String>>::new();
-    for path in candidates {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+    for (path, source) in candidates {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         if canonical == entry_canonical {
             continue;
         }
@@ -231,8 +271,7 @@ fn capture_scope(
         if module_path == entry_module_path || by_path.contains_key(&module_path) {
             anyhow::bail!("multiple project sources resolve to module path {module_path}");
         }
-        let source = fs::read_to_string(path)
-            .with_context(|| format!("cannot read declared project source {}", path.display()))?;
+        let source = source.to_string();
         let module = crate::parser::parse(&source).ok();
         if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
             stems
@@ -243,7 +282,7 @@ fn capture_scope(
         by_path.insert(
             module_path.clone(),
             Candidate {
-                path: path.clone(),
+                path: path.to_path_buf(),
                 module_path,
                 source,
                 module,

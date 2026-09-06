@@ -30,9 +30,14 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::project::source_snapshot::SourceSnapshot;
 use crate::project::{BuildTarget, EmitKind, OptimizeLevel};
 
 use super::cache::{self, module_cache_key};
+
+#[cfg(all(test, unix, feature = "mlir-build"))]
+#[path = "source_snapshot_tests.rs"]
+mod source_snapshot_tests;
 
 /// Emit-kind discriminator entries folded into the module cache key. A
 /// `cdylib` shared object, a `binary` PIE, and a relocatable `object` are
@@ -124,6 +129,48 @@ pub fn compile_cache_key(
         &compiler_version,
         flags.edition,
     ))
+}
+
+/// Compute the public cache-key contract from one immutable source capture.
+pub(crate) fn compile_cache_key_from_snapshot(
+    snapshot: &SourceSnapshot,
+    entry: &Path,
+    flags: CacheKeyFlags,
+    mindc_exe: &Path,
+    project_root: &Path,
+) -> Option<String> {
+    let identity = cache::compiler_identity_string(mindc_exe)?;
+    let compiler_version = format!("{}+{}", env!("CARGO_PKG_VERSION"), identity);
+    let mut deps = cache_dep_entries(flags.emit);
+    deps.extend(source_snapshot_dep_entries(project_root, snapshot));
+    Some(module_cache_key(
+        snapshot.source(entry).ok()?.as_bytes(),
+        flags.target,
+        flags.optimize,
+        &deps,
+        &compiler_version,
+        flags.edition,
+    ))
+}
+
+fn source_snapshot_dep_entries(project_root: &Path, snapshot: &SourceSnapshot) -> Vec<String> {
+    snapshot
+        .iter()
+        .enumerate()
+        .map(|(idx, (src, source))| {
+            let rel = src
+                .strip_prefix(project_root)
+                .unwrap_or(src)
+                .to_string_lossy()
+                .replace('\\', "/");
+            format!(
+                "src{:04}={}|{}",
+                idx,
+                rel,
+                cache::sha256_hex(source.as_bytes())
+            )
+        })
+        .collect()
 }
 
 /// The build knobs that select an artifact identity: two compiles that differ in

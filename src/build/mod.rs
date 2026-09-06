@@ -43,9 +43,10 @@ use anyhow::{Context, Result};
 use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
 use project_transaction::{ManifestEdit, lock_project, single_file_manifest};
+use source_key::compile_cache_key_from_snapshot;
 
 use crate::project::{
-    BuildTarget, EmitKind, OptimizeLevel, build_project_locked, find_project_root,
+    BuildTarget, EmitKind, OptimizeLevel, build_project_locked_with_snapshot, find_project_root,
     find_project_root_for_file, load_manifest,
 };
 
@@ -295,10 +296,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
 
     let edition: u32 = 2024;
 
-    let source_bytes = fs::read(&entry_path).map_err(|e| {
-        BuildError::failed(format!("cannot read source {}: {e}", entry_path.display()))
-    })?;
-
     // Cache key = source + build flags + emit-kind discriminator + compiler
     // BINARY IDENTITY + toolchain identity (issue #96 / scan-finding S4).
     //
@@ -360,14 +357,17 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         single_file,
     )
     .map_err(classify_driver_error)?;
+    let source_snapshot = crate::project::source_snapshot::SourceSnapshot::capture(&build_sources)
+        .map_err(classify_driver_error)?;
 
     let current_exe = std::env::current_exe().ok();
     let compiler_identity = current_exe
         .as_deref()
         .and_then(cache::compiler_identity_string);
     let cache_key: Option<String> = current_exe.as_deref().and_then(|exe| {
-        compile_cache_key(
-            &source_bytes,
+        compile_cache_key_from_snapshot(
+            &source_snapshot,
+            &entry_path,
             CacheKeyFlags {
                 target: eff_target,
                 optimize: eff_optimize,
@@ -376,7 +376,6 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
             },
             exe,
             &project_root,
-            &build_sources,
         )
     });
 
@@ -432,6 +431,9 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
 
     let _ = decision; // CacheMiss — fall through to full compile
 
+    #[cfg(test)]
+    crate::project::source_snapshot::run_test_hook();
+
     // -------------------------------------------------------------------------
     // Full compile path (cache miss or --no-cache)
     // -------------------------------------------------------------------------
@@ -484,7 +486,8 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         None
     };
 
-    let build_result = build_project_locked(&legacy_opts, &build_lock);
+    let build_result =
+        build_project_locked_with_snapshot(&legacy_opts, &build_lock, &source_snapshot);
 
     if let Some(edit) = manifest_edit {
         edit.restore()

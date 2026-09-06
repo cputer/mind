@@ -37,6 +37,7 @@ mod link;
 mod runtime_link;
 #[cfg(feature = "cross-module-imports")]
 pub mod single_file_scope;
+pub(crate) mod source_snapshot;
 
 /// Artifact naming and placement — the single owner of the name stem
 /// (`[targets.*] output` > `[build] output` > `[package] name`), the fallback
@@ -885,6 +886,23 @@ pub(crate) fn build_project_locked(
     opts: &BuildOptions,
     lock: &build_lock::ProjectBuildLock,
 ) -> Result<BuildResult> {
+    build_project_locked_inner(opts, lock, None)
+}
+
+/// Compile from source text captured by the command driver before cache lookup.
+pub(crate) fn build_project_locked_with_snapshot(
+    opts: &BuildOptions,
+    lock: &build_lock::ProjectBuildLock,
+    snapshot: &source_snapshot::SourceSnapshot,
+) -> Result<BuildResult> {
+    build_project_locked_inner(opts, lock, Some(snapshot))
+}
+
+fn build_project_locked_inner(
+    opts: &BuildOptions,
+    lock: &build_lock::ProjectBuildLock,
+    supplied_snapshot: Option<&source_snapshot::SourceSnapshot>,
+) -> Result<BuildResult> {
     let project_root = lock.root().to_path_buf();
     let manifest = load_manifest(&project_root)?;
 
@@ -954,6 +972,17 @@ pub(crate) fn build_project_locked(
         target_config.and_then(|cfg| cfg.sources.as_deref()),
         opts.single_file,
     )?;
+    let owned_snapshot;
+    let snapshot = match supplied_snapshot {
+        Some(snapshot) => {
+            snapshot.verify_paths(&sources)?;
+            snapshot
+        }
+        None => {
+            owned_snapshot = source_snapshot::SourceSnapshot::capture(&sources)?;
+            &owned_snapshot
+        }
+    };
 
     if opts.verbose {
         println!(
@@ -1001,7 +1030,7 @@ pub(crate) fn build_project_locked(
         };
         build_cdylib_from_entry(
             &entry_path,
-            &sources,
+            snapshot,
             cdylib_source_root,
             &cdylib_out,
             &backend,
@@ -1034,6 +1063,7 @@ pub(crate) fn build_project_locked(
     } = compile_sources(
         &project_root,
         &sources,
+        snapshot,
         &backend,
         opts,
         explicit_sources,
@@ -1140,7 +1170,7 @@ pub(crate) fn build_project_locked(
 #[cfg(feature = "mlir-build")]
 fn build_cdylib_from_entry(
     entry_path: &Path,
-    sources: &[PathBuf],
+    snapshot: &source_snapshot::SourceSnapshot,
     source_root: &Path,
     output: &Path,
     backend: &str,
@@ -1150,19 +1180,18 @@ fn build_cdylib_from_entry(
     use crate::pipeline::{CompileOptions, compile_source_with_name, lower_to_mlir};
     use crate::runtime::types::BackendTarget;
 
-    // `sources` is consumed only by the cross-module-imports transitive
-    // substrate-link walk further down; without that feature the cdylib is a
-    // single-entry emit and the parameter is legitimately unused (keeps the
-    // signature stable across feature combinations).
     #[cfg(not(feature = "cross-module-imports"))]
-    let _ = (sources, source_root);
+    let _ = source_root;
 
-    let source_code = fs::read_to_string(entry_path)
-        .with_context(|| format!("Failed to read entry source: {}", entry_path.display()))?;
+    let source_code = snapshot.source(entry_path)?;
 
     #[cfg(feature = "cross-module-imports")]
-    let project_scope =
-        single_file_scope::capture_project_scope(entry_path, &source_code, sources, source_root)?;
+    let project_scope = single_file_scope::capture_project_scope_from_texts(
+        entry_path,
+        source_code,
+        snapshot.iter(),
+        source_root,
+    )?;
 
     // Use the same immutable source snapshot for the module table, enum
     // metadata, entry type-check, sibling compilation, and final link. This
@@ -1229,7 +1258,7 @@ fn build_cdylib_from_entry(
     // there is nothing to seed and the call is a no-op, so the link stays
     // byte-identical to the historical single-entry path.
     let compile_result = compile_source_with_name(
-        &source_code,
+        source_code,
         Some(&entry_path.to_string_lossy()),
         &compile_opts,
     );
@@ -1242,7 +1271,7 @@ fn build_cdylib_from_entry(
         let diags = e.into_diagnostics(Some(&src_name));
         let rendered = diags
             .iter()
-            .map(|d| crate::diagnostics::render(&source_code, d))
+            .map(|d| crate::diagnostics::render(source_code, d))
             .collect::<Vec<_>>()
             .join("\n");
         if rendered.trim().is_empty() {
@@ -1260,7 +1289,7 @@ fn build_cdylib_from_entry(
     // blockers here (mirroring the mindc.rs `--emit-shared` gate) before lowering
     // the entry to a shared object, so `mindc build --emit cdylib` never ships a
     // silently-wrong `.so`.
-    reject_runnable_blockers(&products.runnable_blockers, &source_code, entry_path)?;
+    reject_runnable_blockers(&products.runnable_blockers, source_code, entry_path)?;
 
     // Backend compile waterfall (feature `compile-timings`, `MIND_TIMINGS=1`).
     // The frontend phases already printed via `compile_source_with_name`; this
@@ -1344,7 +1373,7 @@ fn build_cdylib_from_entry(
         {
             // No substrate imports are possible without the embedded stdlib,
             // so there is nothing extra to link — keystone-safe (byte-identical).
-            let _ = &source_code;
+            let _ = source_code;
             Vec::<PathBuf>::new()
         }
     };
@@ -1462,7 +1491,7 @@ pub fn compile_project_sibling_objects(
 #[cfg(not(feature = "mlir-build"))]
 fn build_cdylib_from_entry(
     _entry_path: &Path,
-    _sources: &[PathBuf],
+    _snapshot: &source_snapshot::SourceSnapshot,
     _source_root: &Path,
     _output: &Path,
     _backend: &str,
@@ -1492,6 +1521,7 @@ fn build_cdylib_from_entry(
 fn compile_sources(
     project_root: &Path,
     sources: &[PathBuf],
+    snapshot: &source_snapshot::SourceSnapshot,
     backend: &str,
     opts: &BuildOptions,
     explicit_sources: bool,
@@ -1590,14 +1620,12 @@ fn compile_sources(
         // user-crate-wins-over-stdlib for `std::` shadowing.
         let mut parsed: Vec<(String, crate::ast::Module)> =
             crate::project::stdlib::parsed_stdlib_modules();
-        for source in sources.iter() {
-            if let Ok(text) = fs::read_to_string(source) {
-                if let Ok(m) = crate::parser::parse(&text) {
-                    parsed.push((
-                        crate::project::module_table::module_path_of(source, src_root),
-                        m,
-                    ));
-                }
+        for (source, text) in snapshot.iter() {
+            if let Ok(m) = crate::parser::parse(text) {
+                parsed.push((
+                    crate::project::module_table::module_path_of(source, src_root),
+                    m,
+                ));
             }
         }
         let refs: Vec<(String, &crate::ast::Module)> =
@@ -1693,8 +1721,16 @@ fn compile_sources(
         let is_entry = source_canonical == entry_canonical;
 
         // Compile with appropriate mode
-        let outcome =
-            compile_single_source(source, &obj_path, backend, opts, is_entry, cc_target_triple)?;
+        let source_code = snapshot.source(source)?;
+        let outcome = compile_single_source(
+            source,
+            source_code,
+            &obj_path,
+            backend,
+            opts,
+            is_entry,
+            cc_target_triple,
+        )?;
         if let NativeOutcome::Fallback(reason) = outcome {
             if is_entry {
                 entry_native_compiled = false;
@@ -1727,10 +1763,7 @@ fn compile_sources(
         // a non-entry module importing a substrate module (e.g. `src/ir.mind`
         // doing `import std.sha256; sha256.hash(x)`) needs that module's `.o`
         // linked even when the entry itself never imports it.
-        let source_texts: Vec<String> = sources
-            .iter()
-            .map(|s| fs::read_to_string(s).unwrap_or_default())
-            .collect();
+        let source_texts: Vec<String> = snapshot.iter().map(|(_, text)| text.to_string()).collect();
         let mut subs =
             compile_substrate_objects(&source_texts, &obj_dir, backend, opts, cc_target_triple)?;
         objects.append(&mut subs);
@@ -2198,6 +2231,7 @@ fn reject_runnable_blockers(
 #[allow(clippy::needless_return)]
 fn compile_single_source(
     source: &Path,
+    source_code: &str,
     output: &Path,
     backend: &str,
     opts: &BuildOptions,
@@ -2210,10 +2244,6 @@ fn compile_single_source(
 ) -> Result<NativeOutcome> {
     use crate::pipeline::{CompileOptions, compile_source_with_name};
     use crate::runtime::types::BackendTarget;
-
-    // Read source
-    let source_code = fs::read_to_string(source)
-        .with_context(|| format!("Failed to read source: {}", source.display()))?;
 
     // Parse and compile to IR
     let target = match backend {
@@ -2239,63 +2269,61 @@ fn compile_single_source(
     };
 
     // Try to compile - if parser doesn't support all syntax, fall back to embedding
-    let products = match compile_source_with_name(
-        &source_code,
-        Some(&source.to_string_lossy()),
-        &compile_opts,
-    ) {
-        Ok(p) => p,
-        Err(e) => {
-            let src_name = source.to_string_lossy().into_owned();
-            let diags = e.into_diagnostics(Some(&src_name));
-            // Blocker-2b fail-closed: a genuinely-undefined identifier (E2002 =
-            // resolve::UNKNOWN_IDENT_CODE) is a REAL name-resolution error, not a
-            // valid-but-natively-unsupported construct the runtime JIT can execute.
-            // Embedding it as a JIT fallback lowers the module to build its embedded
-            // IR (`compile_embedded_source`), where the undefined name reaches
-            // `lower_expr` and trips the fail-closed `undefined identifier reached
-            // lowering` panic at src/eval/lower.rs — a CRASH instead of a
-            // diagnostic. Fail CLOSED here with the rendered diagnostic (same
-            // discipline as `reject_runnable_blockers`), so an unresolved name is a
-            // clean non-zero build, never a panic. Legitimately-unsupported
-            // constructs (E2024 self-host-only, parse-only forms) still fall through
-            // to the JIT embed below — only a genuine undefined-reference is fatal.
-            if diags.iter().any(|d| d.code == "E2002") {
-                use crate::diagnostics::{ColorChoice, DiagnosticEmitter, DiagnosticFormat};
-                DiagnosticEmitter::new(DiagnosticFormat::Human, ColorChoice::Auto)
-                    .emit_all(&diags, Some(&source_code));
-                return Err(anyhow!(
-                    "{}: unresolved identifier(s) — refusing to embed a module that \
+    let products =
+        match compile_source_with_name(source_code, Some(&source.to_string_lossy()), &compile_opts)
+        {
+            Ok(p) => p,
+            Err(e) => {
+                let src_name = source.to_string_lossy().into_owned();
+                let diags = e.into_diagnostics(Some(&src_name));
+                // Blocker-2b fail-closed: a genuinely-undefined identifier (E2002 =
+                // resolve::UNKNOWN_IDENT_CODE) is a REAL name-resolution error, not a
+                // valid-but-natively-unsupported construct the runtime JIT can execute.
+                // Embedding it as a JIT fallback lowers the module to build its embedded
+                // IR (`compile_embedded_source`), where the undefined name reaches
+                // `lower_expr` and trips the fail-closed `undefined identifier reached
+                // lowering` panic at src/eval/lower.rs — a CRASH instead of a
+                // diagnostic. Fail CLOSED here with the rendered diagnostic (same
+                // discipline as `reject_runnable_blockers`), so an unresolved name is a
+                // clean non-zero build, never a panic. Legitimately-unsupported
+                // constructs (E2024 self-host-only, parse-only forms) still fall through
+                // to the JIT embed below — only a genuine undefined-reference is fatal.
+                if diags.iter().any(|d| d.code == "E2002") {
+                    use crate::diagnostics::{ColorChoice, DiagnosticEmitter, DiagnosticFormat};
+                    DiagnosticEmitter::new(DiagnosticFormat::Human, ColorChoice::Auto)
+                        .emit_all(&diags, Some(source_code));
+                    return Err(anyhow!(
+                        "{}: unresolved identifier(s) — refusing to embed a module that \
                      would crash at lowering; fix the undefined reference(s) above",
-                    source.display()
+                        source.display()
+                    ));
+                }
+                // Fall back to embedding source for runtime JIT. This is NOT silent:
+                // an embedded module is not natively compiled, so it sits outside the
+                // byte-identity guarantee — surfacing the real diagnostic keeps a
+                // "build succeeded" from masking a degraded/unparseable module.
+                warn_embedded_fallback(source, source_code, &diags, opts.verbose);
+                compile_embedded_source(
+                    source,
+                    source_code,
+                    output,
+                    backend,
+                    opts,
+                    is_entry,
+                    FallbackReason::SourceNotNativelyCompilable,
+                )?;
+                // The SOURCE did not compile — never a capability gap, whatever the
+                // host has installed.
+                return Ok(NativeOutcome::Fallback(
+                    FallbackReason::SourceNotNativelyCompilable,
                 ));
             }
-            // Fall back to embedding source for runtime JIT. This is NOT silent:
-            // an embedded module is not natively compiled, so it sits outside the
-            // byte-identity guarantee — surfacing the real diagnostic keeps a
-            // "build succeeded" from masking a degraded/unparseable module.
-            warn_embedded_fallback(source, &source_code, &diags, opts.verbose);
-            compile_embedded_source(
-                source,
-                &source_code,
-                output,
-                backend,
-                opts,
-                is_entry,
-                FallbackReason::SourceNotNativelyCompilable,
-            )?;
-            // The SOURCE did not compile — never a capability gap, whatever the
-            // host has installed.
-            return Ok(NativeOutcome::Fallback(
-                FallbackReason::SourceNotNativelyCompilable,
-            ));
-        }
-    };
+        };
 
     // #54: fail loud on runnable-artifact blockers BEFORE lowering to a native
     // object — the build/run path must never emit a silently-wrong object where
     // the `--emit-shared` single-file path fails loud.
-    reject_runnable_blockers(&products.runnable_blockers, &source_code, source)?;
+    reject_runnable_blockers(&products.runnable_blockers, source_code, source)?;
 
     // Use mlir-build if available
     #[cfg(feature = "mlir-build")]
@@ -2357,7 +2385,7 @@ fn compile_single_source(
                 // `mlir-opt` / `clang` absent from PATH: a HOST capability gap.
                 compile_embedded_source(
                     source,
-                    &source_code,
+                    source_code,
                     output,
                     backend,
                     opts,
@@ -2376,7 +2404,7 @@ fn compile_single_source(
         let _ = &products; // products.ir is only consumed by the mlir-build path
         compile_embedded_source(
             source,
-            &source_code,
+            source_code,
             output,
             backend,
             opts,

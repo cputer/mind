@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1538 | **Est. tokens:** ~3007768
-**Generated:** 2026-09-06 12:56 UTC
+**Files:** 1540 | **Est. tokens:** ~3010453
+**Generated:** 2026-09-06 13:05 UTC
 
 ## Token Budget Guide
 
@@ -93,7 +93,7 @@
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
-| `src/build/` | 7 | ~23017 |
+| `src/build/` | 8 | ~24760 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10417 |
 | `src/deps/` | 1 | ~9388 |
@@ -117,7 +117,7 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 2 | ~20355 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 13 | ~30058 |
+| `src/project/` | 14 | ~31000 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -1019,9 +1019,10 @@
 - `cache.rs` (~6821 tok, huge) — Copyright 2025 STARGA Inc.
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~9918 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~9961 tok, huge) — Copyright 2025 STARGA Inc.
 - `project_transaction.rs` (~288 tok, medium) — Copyright 2026 STARGA Inc.
-- `source_key.rs` (~2120 tok, huge) — Copyright 2025 STARGA Inc.
+- `source_key.rs` (~2483 tok, huge) — Copyright 2025 STARGA Inc.
+- `source_snapshot_tests.rs` (~1337 tok, large) — Copyright 2025-2026 STARGA Inc.
 ### `src/cache/`
 
 - `entry.rs` (~977 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1199,7 +1200,8 @@
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~5905 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~3733 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~4075 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `source_snapshot.rs` (~600 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
 - `substrate_link.rs` (~2330 tok, huge) — Copyright 2025 STARGA Inc.
