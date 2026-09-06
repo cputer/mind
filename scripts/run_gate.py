@@ -79,7 +79,12 @@ are under test while gitignored build artifacts are left behind). If neither can
 be arranged the leg REFUSES with exit 1; it is never reported as passed.
 
 The corpus scope is READ OUT of examples/mindc_mind/SMOKE_WIRING.tsv (the rows
-already classified `gate`) rather than hand-copied into this file, because a
+already classified `gate`) plus concrete Python gates invoked through this
+runner in a workflow. The latter is parsed with the same workflow extraction
+owner used by the wiring lint, so options and shell continuations cannot hide a
+load-bearing gate. A concrete missing workflow path is an error; dynamic loop
+paths remain governed by the manifest. Both sources are derived rather than
+hand-copied into this file, because a
 second hand-maintained list of the same set is the drift this repo keeps paying
 for. Which of those gates the sweep expects to go RED is likewise read out of
 each gate's own SOURCE — a gate is compiler-dependent iff it names a compiler
@@ -102,6 +107,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from gate_runner_wiring_lint import scan as scan_workflow  # noqa: E402
 from gate_assert import (ASSERTED_PREFIX, FORGED_RE, VERDICT_RE,  # noqa: E402
                          is_skip_line)
 
@@ -257,8 +263,49 @@ def run_one(gate: str, args: list[str], *, min_asserted: int = 1,
     return Result(gate, rc, n, skipped, reason, out)
 
 
+def workflow_invoked_gates() -> list[str]:
+    """Return concrete Python gates invoked through this runner by a workflow.
+
+    Use the same run-block, continuation, shell-segment, and argument-position
+    parser as ``gate_runner_wiring_lint.py``.  This recognizes options between
+    ``run_gate.py`` and the path, including across continued lines.  Dynamic
+    loop paths are already represented by the manifest; a concrete missing path
+    is an error rather than a silently shrunk corpus.
+    """
+    found: list[str] = []
+    missing: list[str] = []
+    workflow_dir = ROOT / ".github" / "workflows"
+    if not workflow_dir.is_dir():
+        return found
+    for workflow in sorted(workflow_dir.glob("*.yml")) + sorted(
+        workflow_dir.glob("*.yaml")
+    ):
+        try:
+            invocations, _ = scan_workflow(workflow)
+        except OSError as exc:
+            raise RuntimeError(f"cannot scan workflow {workflow}: {exc}") from exc
+        for invocation in invocations:
+            if not invocation.routed or not invocation.path.endswith(".py"):
+                continue
+            relative = invocation.path
+            # `$s.py` / `${gate}.py` are shell templates. Their concrete members
+            # are governed by SMOKE_WIRING.tsv; there is no single path to add.
+            if "$" in relative or "{" in relative or "}" in relative:
+                continue
+            candidate = ROOT / relative
+            if not candidate.is_file():
+                missing.append(f"{workflow.name}:{relative}")
+            elif relative not in found:
+                found.append(relative)
+    if missing:
+        raise RuntimeError(
+            "workflow invokes missing concrete gate(s): " + ", ".join(sorted(missing))
+        )
+    return found
+
+
 def corpus() -> list[str]:
-    """The gate corpus, read out of the manifest that already classifies it."""
+    """The manifest's gates plus every gate a workflow invokes."""
     gates: list[str] = []
     for line in MANIFEST.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
@@ -275,6 +322,9 @@ def corpus() -> list[str]:
                 continue
             cand = nested[0]
         gates.append(str(cand.relative_to(ROOT)))
+    for extra in workflow_invoked_gates():
+        if extra not in gates:
+            gates.append(extra)
     return gates
 
 

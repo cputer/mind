@@ -1385,16 +1385,12 @@ jobs:
           cargo build --release --no-default-features \
             --features "mlir-build std-surface cross-module-imports" --bin mindc
 
-      - name: Compile the deterministic kernel to a cdylib
+      # The gate owns compilation and uses a unique temporary output.  Keeping
+      # the build and execution in one invocation prevents a stale or caller-
+      # supplied .so from satisfying this release-required check.
+      - name: Compile kernel + run + assert known output (285)
         run: |
-          ./target/release/mindc build examples/native/ci_kernel.mind \
-            --release --emit cdylib --out /tmp/libci_kernel.so
-        working-directory: ${{ github.workspace }}
-
-      - name: Run kernel + assert known output (285)
-        run: |
-          MINDC_SO=/tmp/libci_kernel.so \
-            python3 scripts/run_gate.py examples/native/ci_kernel_smoke.py
+          python3 scripts/run_gate.py examples/native/ci_kernel_smoke.py
         working-directory: ${{ github.workspace }}
 
   executable_semantics_tier:
