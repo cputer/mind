@@ -297,8 +297,9 @@ pub fn run_fetch(project_root: &Path, opts: &FetchOpts) -> Result<(), DepError> 
 
 /// Remove build artifacts and/or cache entries.
 pub fn run_clean(project_root: &Path, opts: &CleanOpts) -> Result<(), DepError> {
+    let _lock = crate::project::build_lock::ProjectBuildLock::acquire(project_root)
+        .map_err(|e| DepError::Io(format!("cannot lock project before cleanup: {e}")))?;
     let mindenv_cache = mindenv_cache_root();
-
     if opts.all {
         let target_dir = project_root.join("target");
         if target_dir.exists() {
@@ -317,7 +318,6 @@ pub fn run_clean(project_root: &Path, opts: &CleanOpts) -> Result<(), DepError> 
         }
         return Ok(());
     }
-
     if opts.cache {
         let lock_path = project_root.join("Mind.lock");
         if lock_path.exists() {

@@ -21,7 +21,8 @@
 //!  7. Compiler version bump (mock) — all misses.
 //!  8. `mindc clean --cache` — removes `.cache/` but leaves binary intact.
 //!  9. Determinism — two cold builds on the same source produce byte-identical artifacts.
-//! 10. Concurrent builds — two parallel invocations don't produce corrupt cache entries.
+//!
+//! Concurrent project transactions have focused coverage in `mindc_project_lock.rs`.
 
 mod common;
 use common::{mindc_bin, reported_artifact, require_mindc, run_build_captured};
@@ -464,6 +465,14 @@ fn phase_f_08_clean_cache_preserves_binary() {
     // Binary still intact.
     assert!(binary.exists(), "linked binary must survive clean --cache");
     assert_eq!(fs::read(&binary).unwrap(), b"ELF binary");
+    assert!(
+        dir.join(".mind-build.lock").is_file(),
+        "the persistent project lock must survive target cleanup"
+    );
+    assert!(
+        !dir.join("target/.mind-build.lock").exists(),
+        "cleanup must not create a replaceable lock inside target"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -549,106 +558,6 @@ fn phase_f_09_deterministic_cache_key() {
         bytes1, bytes2,
         "artifact must be byte-identical across cache-hit rebuild"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Test 10: concurrent builds — no corrupt cache from parallel writes
-// ---------------------------------------------------------------------------
-
-#[test]
-fn phase_f_10_concurrent_builds_no_corruption() {
-    use std::thread;
-
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path();
-    make_project(dir, "concurrent_project", SIMPLE_MIND);
-
-    let mindc = require_mindc();
-
-    // Spawn two threads both running `mindc build` in the same project dir.
-    // Both may write to the same cache key; atomic rename guarantees the reader
-    // always sees a complete file.
-    let dir1 = dir.to_path_buf();
-    let dir2 = dir.to_path_buf();
-    let bin1 = mindc.clone();
-    let bin2 = mindc.clone();
-
-    // `.output()`, not `.status()`: a status-only spawn discards the stderr, so
-    // the failure could only ever be graded by the fail-OPEN rule "neither
-    // thread built -> assume the backend is absent -> pass". Both diagnostics
-    // are captured and classified by the one decision function instead.
-    let t1 = thread::spawn(move || {
-        Command::new(&bin1)
-            .arg("build")
-            .current_dir(&dir1)
-            .output()
-            .expect("spawn t1")
-    });
-
-    let t2 = thread::spawn(move || {
-        Command::new(&bin2)
-            .arg("build")
-            .current_dir(&dir2)
-            .output()
-            .expect("spawn t2")
-    });
-
-    let o1 = t1.join().expect("t1 panicked");
-    let o2 = t2.join().expect("t2 panicked");
-
-    // At least one (ideally both) should succeed.
-    let both_built = o1.status.success() && o2.status.success();
-
-    // Concurrent writers RACE for the same cache key, so a single failure is
-    // not by itself a defect — but "neither built" must be classified, never
-    // assumed environmental. gate::compiled panics unless BOTH diagnostics
-    // carry a real capability cause.
-    if !o1.status.success()
-        && !o2.status.success()
-        && !crate::common::gate::compiled("mindc_cache_phase_f", &o1)
-        && !crate::common::gate::compiled("mindc_cache_phase_f", &o2)
-    {
-        return;
-    }
-
-    // Regardless of which thread "won", the cache entry must be a valid, complete
-    // object (not a half-written temp file).  We verify this by probing and
-    // confirming the sidecar JSON is parseable.
-    // Default emit is `binary`; recompute with the shared helper so the key
-    // carries the emit=binary discriminator AND the compiler/toolchain
-    // fingerprint (issue #96) — same binary the subprocess builds populated.
-    let key = libmind::build::compile_cache_key(
-        SIMPLE_MIND.as_bytes(),
-        libmind::build::CacheKeyFlags {
-            target: BuildTarget::Cpu,
-            optimize: OptimizeLevel::Debug,
-            emit: EmitKind::Binary,
-            edition: 2024,
-        },
-        &mindc,
-        dir,
-        &[dir.join("src").join("main.mind")],
-    )
-    .expect("compiler identity for CARGO_BIN_EXE_mindc");
-    let c_root = cache_root(dir, BuildTarget::Cpu, OptimizeLevel::Debug);
-
-    let meta_p = libmind::build::cache::meta_path(&c_root, &key);
-    if meta_p.exists() {
-        let text = fs::read_to_string(&meta_p).unwrap();
-        // Must be valid JSON — no half-written file.
-        let parsed: serde_json::Value = serde_json::from_str(&text)
-            .expect("meta.json must be valid JSON after concurrent writes");
-        assert!(parsed.is_object(), "meta.json must be a JSON object");
-    }
-
-    if both_built {
-        // Both succeeded; final cache state should reflect a valid hit.
-        let result = probe(&c_root, &key);
-        assert!(
-            matches!(result, CacheProbe::Hit { .. }),
-            "cache must be in hit state after concurrent builds"
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------

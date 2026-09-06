@@ -27,6 +27,7 @@ pub mod module_table;
 
 /// Per-target executable link driver (ELF / PE-COFF / Mach-O dispatch). Only the
 /// host ELF arm is wired today; the others fail loud until their slice lands.
+pub(crate) mod build_lock;
 mod compiled_sources;
 mod embedded_entry;
 mod link;
@@ -868,6 +869,18 @@ pub fn build_project(opts: &BuildOptions) -> Result<BuildResult> {
         Some(root) => root.clone(),
         None => find_project_root()?,
     };
+    let lock = build_lock::ProjectBuildLock::acquire(&project_root)?;
+    build_project_locked(opts, &lock)
+}
+
+/// Compile while the caller holds the project transaction.
+///
+/// The command build path keeps that transaction live through cache publication.
+pub(crate) fn build_project_locked(
+    opts: &BuildOptions,
+    lock: &build_lock::ProjectBuildLock,
+) -> Result<BuildResult> {
+    let project_root = lock.root().to_path_buf();
     let manifest = load_manifest(&project_root)?;
 
     // Determine target
@@ -3070,6 +3083,7 @@ pub struct BenchOptions {
 /// Run project tests (discover test files in tests/, build each, run)
 pub fn test_project(opts: &TestOptions) -> Result<i32> {
     let project_root = find_project_root()?;
+    let initial_lock = build_lock::ProjectBuildLock::acquire(&project_root)?;
     let manifest = load_manifest(&project_root)?;
     let tests_dir = project_root.join("tests");
 
@@ -3097,6 +3111,7 @@ pub fn test_project(opts: &TestOptions) -> Result<i32> {
         println!("No test files found.");
         return Ok(0);
     }
+    drop(initial_lock);
 
     let target = opts.target.clone().unwrap_or_else(|| "cpu".to_string());
     println!(
@@ -3125,6 +3140,7 @@ pub fn test_project(opts: &TestOptions) -> Result<i32> {
 
         // Use the test file as entry point
         let test_manifest_path = project_root.join("Mind.toml");
+        let lock = build_lock::ProjectBuildLock::acquire(&project_root)?;
         let orig_manifest = fs::read_to_string(&test_manifest_path)?;
 
         // Temporarily patch entry to test file
@@ -3148,12 +3164,18 @@ pub fn test_project(opts: &TestOptions) -> Result<i32> {
                 test_entry
             ));
         }
-        fs::write(&test_manifest_path, &patched)?;
+        let manifest_edit = build_lock::ManifestEdit::replace(
+            &test_manifest_path,
+            Some(orig_manifest.into_bytes()),
+            patched.as_bytes(),
+        )?;
 
-        let result = build_project(&build_opts);
+        let result = build_project_locked(&build_opts, &lock);
 
-        // Restore original manifest
-        fs::write(&test_manifest_path, &orig_manifest)?;
+        manifest_edit.restore()?;
+        // User test code may recursively invoke the compiler. Release the
+        // project transaction before executing it.
+        drop(lock);
 
         match result {
             Ok(build_result) if build_result.success => {
@@ -3211,6 +3233,7 @@ pub fn test_project(opts: &TestOptions) -> Result<i32> {
 /// Run project benchmarks (discover bench files in bench/, build each with --release, run)
 pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
     let project_root = find_project_root()?;
+    let initial_lock = build_lock::ProjectBuildLock::acquire(&project_root)?;
     let manifest = load_manifest(&project_root)?;
     let bench_dir = project_root.join("bench");
 
@@ -3250,6 +3273,7 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
         println!("No benchmark files found.");
         return Ok(0);
     }
+    drop(initial_lock);
 
     let target = opts.target.clone().unwrap_or_else(|| "cpu".to_string());
     println!("================================================================================");
@@ -3277,6 +3301,7 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
         };
 
         let test_manifest_path = project_root.join("Mind.toml");
+        let lock = build_lock::ProjectBuildLock::acquire(&project_root)?;
         let orig_manifest = fs::read_to_string(&test_manifest_path)?;
 
         let bench_entry = format!(
@@ -3302,12 +3327,18 @@ pub fn bench_project(opts: &BenchOptions) -> Result<i32> {
                 bench_entry
             ));
         }
-        fs::write(&test_manifest_path, &patched)?;
+        let manifest_edit = build_lock::ManifestEdit::replace(
+            &test_manifest_path,
+            Some(orig_manifest.into_bytes()),
+            patched.as_bytes(),
+        )?;
 
-        let result = build_project(&build_opts);
+        let result = build_project_locked(&build_opts, &lock);
 
-        // Restore
-        fs::write(&test_manifest_path, &orig_manifest)?;
+        manifest_edit.restore()?;
+        // A benchmark may recursively invoke the compiler. Do not hold the
+        // transaction while user code executes.
+        drop(lock);
 
         match result {
             Ok(build_result) if build_result.success => {

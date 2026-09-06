@@ -23,6 +23,7 @@ mod artifact;
 pub mod cache;
 mod driver_error;
 mod error;
+mod project_transaction;
 
 /// Incremental-cache KEY construction — every input that can change the
 /// artifact, fingerprinted in one place and failing closed when it cannot be.
@@ -41,9 +42,10 @@ use anyhow::{Context, Result};
 
 use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
+use project_transaction::{ManifestEdit, lock_project, single_file_manifest};
 
 use crate::project::{
-    BuildTarget, EmitKind, OptimizeLevel, build_project, find_project_root,
+    BuildTarget, EmitKind, OptimizeLevel, build_project_locked, find_project_root,
     find_project_root_for_file, load_manifest,
 };
 
@@ -135,8 +137,6 @@ pub struct BuildOutput {
 /// The caller should call `BuildError::exit_code()` when propagating errors
 /// to `process::exit`.
 pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
-    use crate::project::ProjectManifest;
-
     // 1. Locate the project root and load the manifest.
     //
     // Explicit-file builds (`mindc build <file>`) resolve the root with the
@@ -151,7 +151,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // the entry file's OWN directory. Such a build compiles only the named entry
     // (see `BuildOptions::single_file`), never a whole-directory sibling walk.
     let mut single_file = false;
-    let (project_root, manifest) = if !opts.paths.is_empty() {
+    let (project_root, manifest, build_lock) = if !opts.paths.is_empty() {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let first_path = if opts.paths[0].is_absolute() {
             opts.paths[0].clone()
@@ -164,8 +164,15 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
             .unwrap_or_else(|| cwd.clone());
         match find_project_root_for_file(&entry_dir) {
             Some(root) => {
-                let m = load_manifest(&root)
-                    .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?;
+                let lock = lock_project(&root)?;
+                // A preceding standalone build may have removed its temporary
+                // manifest while we waited for its transaction to finish.
+                let m = if root == entry_dir && !root.join("Mind.toml").exists() {
+                    single_file_manifest(&first_path)?
+                } else {
+                    load_manifest(&root)
+                        .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?
+                };
                 // A file explicitly named on the command line that sits DIRECTLY
                 // next to a *bare* manifest (one declaring no `[targets.*].sources`
                 // list) is a single-file build: the manifest is either a real
@@ -182,41 +189,26 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
                 if !declares_sources && root == entry_dir {
                     single_file = true;
                 }
-                (root, m)
+                (root, m, lock)
             }
             None => {
+                let lock = lock_project(&entry_dir)?;
                 single_file = true;
                 // No governing manifest in-bounds — synthesise a single-file
                 // manifest rooted at the entry file's OWN directory (never cwd
                 // nor a distant ancestor), so source collection stays scoped to
                 // it rather than to whatever tree happens to sit above.
-                let stem = first_path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .replace('-', "_");
-                let pkg_name = if stem
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_alphabetic())
-                    .unwrap_or(false)
-                {
-                    stem
-                } else {
-                    format!("pkg_{}", stem)
-                };
-                let toml_src = format!("[package]\nname = \"{}\"\nversion = \"0.1.0\"\n", pkg_name);
-                let m: ProjectManifest = toml::from_str(&toml_src)
-                    .map_err(|e| BuildError::Invalid(format!("synthetic manifest: {e}")))?;
-                (entry_dir, m)
+                let m = single_file_manifest(&first_path)?;
+                (entry_dir, m, lock)
             }
         }
     } else {
         match find_project_root() {
             Ok(root) => {
+                let lock = lock_project(&root)?;
                 let m = load_manifest(&root)
                     .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?;
-                (root, m)
+                (root, m, lock)
             }
             Err(e) => {
                 return Err(BuildError::Invalid(format!("cannot locate Mind.toml: {e}")));
@@ -473,26 +465,30 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
         None => true,
     };
 
-    if need_write {
+    let manifest_edit = if need_write {
         let toml_to_write = match &orig_manifest_text {
             Some(text) => patch_manifest_entry(text, &entry_rel),
             None => build_synthetic_manifest(&manifest.package.name, &entry_rel),
         };
-        fs::write(&manifest_path, &toml_to_write)
-            .map_err(|e| BuildError::failed(format!("cannot write manifest: {e}")))?;
-    }
+        Some(
+            ManifestEdit::replace(
+                &manifest_path,
+                orig_manifest_text
+                    .as_ref()
+                    .map(|text| text.as_bytes().to_vec()),
+                toml_to_write.as_bytes(),
+            )
+            .map_err(|e| BuildError::failed(format!("cannot write manifest: {e}")))?,
+        )
+    } else {
+        None
+    };
 
-    let build_result = build_project(&legacy_opts);
+    let build_result = build_project_locked(&legacy_opts, &build_lock);
 
-    if need_write {
-        match &orig_manifest_text {
-            Some(text) => {
-                let _ = fs::write(&manifest_path, text);
-            }
-            None => {
-                let _ = fs::remove_file(&manifest_path);
-            }
-        }
+    if let Some(edit) = manifest_edit {
+        edit.restore()
+            .map_err(|e| BuildError::failed(format!("cannot restore manifest after build: {e}")))?;
     }
 
     let build_result = build_result.map_err(classify_driver_error)?;

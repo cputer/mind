@@ -55,12 +55,11 @@
 //!
 //! ## Concurrency
 //!
-//! Object files are written via a write-to-temp-then-rename pattern.
-//! `rename(2)` is atomic on POSIX filesystems, so a partial write from one
-//! process is never observed by another. The manifest.json is written the same
-//! way. No advisory lock file is required for simple single-object writes;
-//! the test for concurrent builds (test 10) verifies that parallel invocations
-//! either both write identical content or one wins cleanly.
+//! The outer project build transaction serializes cache probes and publication
+//! with compilation and linking. Object files and `manifest.json` additionally
+//! use write-to-temp-then-rename, so an interrupted publisher does not expose a
+//! partial file. The concurrent-build test verifies the complete transaction,
+//! including the manifest edits that select an explicit entry.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -370,6 +369,8 @@ pub fn clean_cache(
     target: BuildTarget,
     optimize: OptimizeLevel,
 ) -> Result<()> {
+    let _lock = crate::project::build_lock::ProjectBuildLock::acquire(project_root)
+        .context("lock project before cache cleanup")?;
     let root = cache_root(project_root, target, optimize);
     if root.exists() {
         fs::remove_dir_all(&root).with_context(|| format!("remove {}", root.display()))?;
@@ -382,6 +383,8 @@ pub fn clean_cache(
 ///
 /// Used by `mindc clean --cache` when invoked without a specific target.
 pub fn clean_all_caches(project_root: &Path) -> Result<()> {
+    let _lock = crate::project::build_lock::ProjectBuildLock::acquire(project_root)
+        .context("lock project before cache cleanup")?;
     let target_dir = project_root.join("target");
     if !target_dir.exists() {
         return Ok(());
