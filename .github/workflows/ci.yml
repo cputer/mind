@@ -1543,6 +1543,15 @@ jobs:
         # measured@f2a2d87d: 317 harnesses / 1265 executed.
         run: scripts/exec_semantics_gate.sh pkg
 
+      - name: Upload raw executable-semantics tier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exec-semantics-tier-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/mind-tier-*.log
+          if-no-files-found: warn
+          retention-days: 7
+
   # Gate & merge integrity. These are text-only checks (git + python3 stdlib), so
   # they run in seconds and need no toolchain — there is no reason for them to live
   # only in a developer's preflight. Both exist because of a measured incident: a

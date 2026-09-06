@@ -211,23 +211,95 @@ def run_gate(log_text: str, tier: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as td:
         log = Path(td) / f"mind-tier-{tier}.log"
         log.write_text(log_text, encoding="utf-8")
-        return subprocess.run(
+        before = log.read_bytes()
+        proc = subprocess.run(
             ["bash", str(GATE), "--from-log", str(log), tier],
             cwd=ROOT,
             capture_output=True,
             text=True,
         )
+        if log.read_bytes() != before:
+            raise AssertionError("--from-log changed the raw cargo log")
+        return proc
 
 
-CASES: list[tuple[str, str, str, int]] = []
+CASES: list[tuple[str, str, str, int, tuple[str, ...], tuple[str, ...]]] = []
 
 
-def case(name: str, tier: str, log_text: str, want_nonzero: bool) -> None:
-    CASES.append((name, tier, log_text, 1 if want_nonzero else 0))
+def case(
+    name: str,
+    tier: str,
+    log_text: str,
+    want_nonzero: bool,
+    *,
+    output_has: tuple[str, ...] = (),
+    output_lacks: tuple[str, ...] = (),
+) -> None:
+    CASES.append(
+        (name, tier, log_text, 1 if want_nonzero else 0, output_has, output_lacks)
+    )
+
+
+def cargo_colored(log_text: str) -> str:
+    """Apply the SGR shapes emitted under CARGO_TERM_COLOR=always.
+
+    Colour every parser boundary independently: Cargo's `Running` and rerun
+    hint plus libtest's summary. This makes a passing case prove all counts and
+    critical attributions survive, while a failing case proves the rerun target
+    and per-harness failure attribution survive too.
+    """
+    return (
+        log_text.replace("Running ", "\x1b[1;32mRunning\x1b[0m ")
+        .replace("test result:", "\x1b[1;36mtest result:\x1b[0m")
+        .replace("error:", "\x1b[1;31merror:\x1b[0m")
+    )
 
 
 # --- 0. POSITIVE CONTROL -----------------------------------------------------
 case("baseline exec log is GREEN (fixture sanity)", "exec", tier_log("exec"), False)
+
+# CI sets CARGO_TERM_COLOR=always. Cargo then prefixes `Running` and `error:`
+# with SGR sequences, while libtest may colour the summary. The raw bytes carry
+# the same evidence as the plain fixture and therefore must produce the same
+# verdict without being rewritten.
+case(
+    "an ANSI-coloured Cargo log is equivalent to the plain positive control",
+    "exec",
+    cargo_colored(tier_log("exec")),
+    False,
+)
+
+_colored_failure = cargo_colored(
+    tier_log(
+        "exec",
+        extra_blocks=block(
+            "Running tests/some_gate.rs (target/debug/deps/some_gate-c3)", 4, 2
+        ),
+        error_lines=("error: test failed, to rerun pass `--test some_gate`",),
+        cargo_exit=101,
+    )
+)
+case(
+    "an ANSI-coloured failing target stays named by its rerun selector",
+    "exec",
+    _colored_failure,
+    True,
+    output_has=(
+        "- some_gate   (rerun: cargo test",
+        "some_gate reported 2 failing test(s)",
+    ),
+    output_lacks=("<unattributed> reported 2 failing test(s)",),
+)
+
+# A decoder that sees an incomplete control sequence has incomplete evidence.
+# It must refuse the log rather than parse a convenient prefix and grade it.
+case(
+    "a truncated ANSI sequence fails closed",
+    "exec",
+    tier_log("exec") + "\x1b[",
+    True,
+    output_has=("refusing to grade partial evidence",),
+)
 
 # --- 0b. TOLERANCE SHRINK-RATCHET -------------------------------------------
 # The missing half of the quarantine ratchet. A quarantined target that starts
@@ -512,10 +584,13 @@ def main() -> int:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}: want {want!r}, got {got!r}")
         if not ok:
             bad += 1
-    for name, tier, log_text, want_nonzero in CASES:
+    for name, tier, log_text, want_nonzero, output_has, output_lacks in CASES:
         proc = run_gate(log_text, tier)
         got_nonzero = 1 if proc.returncode != 0 else 0
-        ok = got_nonzero == want_nonzero
+        combined = proc.stdout + proc.stderr
+        missing = tuple(token for token in output_has if token not in combined)
+        present = tuple(token for token in output_lacks if token in combined)
+        ok = got_nonzero == want_nonzero and not missing and not present
         # PASS, not `ok`: scripts/gate_assert.py counts a reported verdict
         # from a fixed token set, and `[ok]` is outside it -- every case here
         # published NO evidence, so the count marker below had nothing to
@@ -525,6 +600,10 @@ def main() -> int:
         print(f"[{verdict}] {name}: want exit {want}, got {proc.returncode}")
         if not ok:
             bad += 1
+            if missing:
+                print(f"  missing output token(s): {missing!r}")
+            if present:
+                print(f"  forbidden output token(s): {present!r}")
             sys.stdout.write(proc.stdout[-2500:])
             sys.stderr.write(proc.stderr[-2000:])
     # The sanctioned marker shape (see scripts/gate_assert.py MARKER_RES); a

@@ -129,25 +129,11 @@ fn bootstrap_source_is_attribute_free() {
     }
 }
 
-/// Return a hex-encoded SHA-256 of `bytes` using the same FIPS 180-4
-/// implementation that `src/build/cache.rs` uses — self-contained, no dep.
+/// Return the lowercase hex-encoded FIPS 180-4 SHA-256 of `bytes`.
 fn sha256_hex(bytes: &[u8]) -> String {
-    use libmind::build::cache::module_cache_key;
-    use libmind::project::{BuildTarget, OptimizeLevel};
-    // We reuse the cache-key function with an empty source section as a
-    // stable proxy for the file hash. For the full-file hash we call the
-    // sha256 helper that cache.rs exposes via module_cache_key with a
-    // deterministic inputs set so the same bytes always hash the same way.
-    // The actual file hash is captured in the assertion below by running
-    // module_cache_key on the file bytes directly.
-    module_cache_key(
-        bytes,
-        BuildTarget::Cpu,
-        OptimizeLevel::Release,
-        &[],
-        env!("CARGO_PKG_VERSION"),
-        2024,
-    )
+    use sha2::{Digest, Sha256};
+
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 // ---------------------------------------------------------------------------

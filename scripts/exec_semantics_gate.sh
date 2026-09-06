@@ -253,6 +253,43 @@ rerun_selector() {
   esac
 }
 
+# Cargo honours CARGO_TERM_COLOR=always even when stdout/stderr are redirected,
+# so the durable raw log can contain ANSI control sequences in front of tokens
+# this gate anchors at column zero (`Running`, `test result:` and `error:`).  Parse
+# a decoded copy and leave the raw log byte-for-byte intact for CI diagnosis.
+#
+# CSI covers Cargo/rustc's SGR colour output. OSC and the remaining single-byte
+# ANSI escape forms are handled too, while a truncated/unknown escape fails
+# closed rather than silently changing the evidence the gate can see.
+normalise_cargo_log() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+data = source.read_bytes()
+
+# OSC: ESC ] ... BEL, or ESC ] ... ESC \
+data = re.sub(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", b"", data)
+# CSI: ESC [ parameter bytes, intermediate bytes, final byte.
+data = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", data)
+# Remaining complete two-byte Fe escapes. `[` and `]` here would be an
+# incomplete CSI/OSC sequence and therefore stay behind for the refusal below.
+data = re.sub(rb"\x1b[@-Z\\^_]", b"", data)
+
+if b"\x1b" in data:
+    print(
+        f"FAIL: unsupported or truncated ANSI escape in raw cargo log: {source}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+destination.write_bytes(data)
+PY
+}
+
 # --- THE TWO ran=0 VERDICTS, and the membership test they share --------------
 # These lived in a sourced scripts/exec_semantics_markers.sh for one landing and
 # are home on purpose. The split bought room the DOCTRINE PROSE was consuming,
@@ -421,48 +458,68 @@ for tier in "${want[@]}"; do
   echo "== tier '$tier':  cargo test --no-default-features --features \"$features\""
   echo "==   MIND_BENCH_REQUIRE=$require_toolchain (1 = a missing MLIR toolchain is a FAILURE, not a skip)"
   echo "=============================================================="
-  # Keep the log at a STABLE path, not a mktemp that is deleted on the way out:
+  # Keep the raw log at a STABLE path, not a mktemp that is deleted on the way out:
   # when this gate fails, the next question is always "which test, and why", and a
-  # 40-line tail of a deleted file cannot answer it. CI uploads nothing, so the path
-  # is printed on failure and the file is left in place for the developer.
-  log="${MIND_TIER_LOG_DIR:-${TMPDIR:-/tmp}}/mind-tier-$tier.log"
-  mkdir -p "$(dirname "$log")"
+  # 40-line tail cannot answer it. CI uploads this path even on failure, and the
+  # file is left in place for the developer.
+  raw_log="${MIND_TIER_LOG_DIR:-${TMPDIR:-/tmp}}/mind-tier-$tier.log"
+  mkdir -p "$(dirname "$raw_log")"
 
   if [ -n "$from_log" ]; then
-    log="$from_log"
+    raw_log="$from_log"
     # cargo's exit status is RECORDED IN THE LOG (see the marker written below), so
     # a replayed log is judged on the same evidence as the run that produced it.
     # Before that, this mode read "n/a" and the status assert below could not run at
     # all — the analysis silently answered a weaker question than the live gate.
     # A log written before the marker existed reports `unknown`: that leg of the
     # verdict is then honestly UNAVAILABLE rather than silently assumed to be 0.
-    cargo_status=$(sed -n 's/^MIND_TIER_CARGO_EXIT=\([0-9]\{1,\}\)$/\1/p' "$log" | tail -1)
-    cargo_status="${cargo_status:-unknown}"
-    echo "ANALYSIS-ONLY: re-reading $log; NO tests were run by this invocation."
-    echo "               recorded cargo exit: $cargo_status"
+    :
   elif [ "$require_toolchain" = 1 ]; then
     MIND_BENCH_REQUIRE=1 cargo test --no-default-features --features "$features" \
-      --no-fail-fast >"$log" 2>&1
+      --no-fail-fast >"$raw_log" 2>&1
     cargo_status=$?
-    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$log"
+    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$raw_log"
   else
     cargo test --no-default-features --features "$features" \
-      --no-fail-fast >"$log" 2>&1
+      --no-fail-fast >"$raw_log" 2>&1
     cargo_status=$?
-    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$log"
+    echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$raw_log"
+  fi
+
+  analysis_log=$(mktemp "${TMPDIR:-/tmp}/mind-tier-analysis.XXXXXX") || {
+    echo "FAIL[$tier]: could not allocate an ANSI-normalised analysis log." >&2
+    exit 1
+  }
+  trap 'rm -f "${analysis_log:-}"' EXIT
+  if ! normalise_cargo_log "$raw_log" "$analysis_log"; then
+    echo "FAIL[$tier]: could not decode the raw cargo log; refusing to grade partial evidence." >&2
+    echo "full raw log: $raw_log" >&2
+    exit 1
+  fi
+
+  if [ -n "$from_log" ]; then
+    cargo_status=$(sed -n 's/^MIND_TIER_CARGO_EXIT=\([0-9]\{1,\}\)$/\1/p' "$analysis_log" | tail -1)
+    cargo_status="${cargo_status:-unknown}"
+    echo "ANALYSIS-ONLY: re-reading $raw_log; NO tests were run by this invocation."
+    echo "               recorded cargo exit: $cargo_status"
   fi
 
   # --- POSITIVE-COUNT ASSERT (the anti-silent-zeroing core) ----------------
-  harnesses=$(grep -c '^test result:' "$log")
+  harnesses=$(grep -c '^test result:' "$analysis_log")
   read -r passed failed ignored <<<"$(
-    grep '^test result:' "$log" | awk '{p+=$4; f+=$6; i+=$8} END {print p+0, f+0, i+0}'
+    grep '^test result:' "$analysis_log" | awk '{p+=$4; f+=$6; i+=$8} END {print p+0, f+0, i+0}'
   )"
   executed=$((passed + failed + ignored))
 
   echo "harnesses      : $harnesses  (floor $floor_h)"
   echo "tests executed : $executed  (floor $floor_t)  [passed=$passed failed=$failed ignored=$ignored]"
 
-  if [ "$print_only" = 1 ]; then continue; fi
+  if [ "$print_only" = 1 ]; then
+    rm -f "$analysis_log"
+    analysis_log=""
+    trap - EXIT
+    continue
+  fi
 
   rc=0
   # A test file that does not COMPILE also yields zero harnesses, and it is a very
@@ -471,7 +528,7 @@ for tier in "${want[@]}"; do
   # (Hit for real while building this gate: an in-flight test file calling a
   # non-existent `TempDir::join` failed the whole build with harnesses=0.)
   mapfile -t build_errs < <(
-    grep -E '^error(\[[A-Z0-9]+\])?: ' "$log" | grep -v '^error: test failed' | sort -u | head -5
+    grep -E '^error(\[[A-Z0-9]+\])?: ' "$analysis_log" | grep -v '^error: test failed' | sort -u | head -5
   )
   # --- CRITICAL HARNESS MINIMUMS (independent of the aggregate floors) ------
   # Parsed per-target from the `Running ...` / `test result:` pairing, so erasing
@@ -491,7 +548,7 @@ for tier in "${want[@]}"; do
         for (i=1;i<=NF;i++)
           if ($i=="passed;" || $i=="failed;" || $i=="ignored;") n += $(i-1)
         print n; exit
-      }' "$log")
+      }' "$analysis_log")
     cran=${cran:-0}
     if [ "$cran" -lt "$cmin" ]; then
       crit_bad+=("$ctarget executed $cran test(s) (need >=$cmin)")
@@ -511,7 +568,7 @@ for tier in "${want[@]}"; do
     echo
     echo "FAIL[$tier]: the tier did not BUILD — this is a compile error, not a cfg problem."
     for e in "${build_errs[@]}"; do echo "  $e"; done
-    echo "  full log: $log"
+    echo "  full raw log: $raw_log"
     rc=1
   elif [ "$executed" -lt "$floor_t" ] || [ "$harnesses" -lt "$floor_h" ]; then
     echo
@@ -528,11 +585,11 @@ for tier in "${want[@]}"; do
   # scope: the failure triage below reads `env_skipped` as the evidence
   # environmental tolerance is granted on, and the ok banner reads the other two
   # so a green tier can never hide that it is green ABOUT LESS than it looks.
-  consume_skip_markers "$log" "$tier" "$require_toolchain" \
+  consume_skip_markers "$analysis_log" "$tier" "$require_toolchain" \
     ${tolerated[@]+"${tolerated[@]}"} || rc=1
 
   # --- TOLERANCE SHRINK-RATCHET (the missing half of the quarantine ratchet) --
-  check_dead_tolerance "$log" "$tier" "$harnesses" "$floor_h" \
+  check_dead_tolerance "$analysis_log" "$tier" "$harnesses" "$floor_h" \
     ${tolerated[@]+"${tolerated[@]}"} || rc=1
 
   # --- FAILURE TRIAGE against the quarantine ratchet -----------------------
@@ -553,7 +610,7 @@ for tier in "${want[@]}"; do
       -e 's/^error: test failed, to rerun pass `--bench \([A-Za-z0-9_-]*\)`.*/@bench:\1/p' \
       -e 's/^error: test failed, to rerun pass `--lib`.*/@lib/p' \
       -e 's/^error: test failed, to rerun pass `--doc`.*/@doc/p' \
-      "$log" | sort -u
+      "$analysis_log" | sort -u
   )
 
   # A CRASH is never tolerable, whatever the target's environmental status.
@@ -578,8 +635,8 @@ for tier in "${want[@]}"; do
   # printed a summary was reported as a crash, a pure divergence with `0 MIND_CRASH`
   # included. Right exit code, wrong cause, and it would send someone hunting a segfault
   # that never happened.
-  if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED|MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$log" 2>/dev/null; then
-    mapfile -t crashed < <(grep -oE "MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$log" | awk '{print $2}' | sort -u)
+  if grep -qE "GATE FAILED: the pure-MIND compiler CRASHED|MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$analysis_log" 2>/dev/null; then
+    mapfile -t crashed < <(grep -oE "MIND_CRASH [A-Za-z0-9_/.-]+[.]mind" "$analysis_log" | awk '{print $2}' | sort -u)
     echo
     echo "FAIL[$tier]: the pure-MIND compiler CRASHED. Tolerance does NOT apply —"
     echo "  an unsupported construct returns a null handle; these terminated abnormally."
@@ -683,7 +740,7 @@ for tier in "${want[@]}"; do
         for (i = 1; i <= NF; i++) if ($i == "failed;") f = $(i - 1) + 0
         if (f > 0) print (key == "" ? "<unattributed>" : key) " " f
         key = ""
-      }' "$log"
+      }' "$analysis_log"
   )
   unaccounted=()
   unaccounted_n=0
@@ -720,7 +777,7 @@ for tier in "${want[@]}"; do
     echo "  hint and no harness reporting failed>0. Something failed OUTSIDE the test"
     echo "  results (a link/build failure, an aborted harness, or a cargo message this"
     echo "  gate does not parse). Fail-closed: read the log, then teach the triage."
-    echo "  full log: $log"
+    echo "  full raw log: $raw_log"
     rc=1
   fi
 
@@ -739,7 +796,7 @@ for tier in "${want[@]}"; do
   else
     echo
     echo "cargo exit was $cargo_status; failing targets: ${failing[*]:-none}"
-    echo "full log: $log"
+    echo "full raw log: $raw_log"
     for t in ${unexpected[@]+"${unexpected[@]}"}; do
       echo "--- tier '$tier' :: $t   (rerun: $(rerun_selector "$t")) ---"
       case "$t" in
@@ -748,14 +805,17 @@ for tier in "${want[@]}"; do
         # Anchor on the harness's own failure list instead, or the reader gets an
         # empty excerpt for exactly the failures this gate was just taught to see.
         @*)
-          awk '/^failures:$/ {on=1} on {print} on && /^test result:/ {exit}' "$log" | head -40 ;;
+          awk '/^failures:$/ {on=1} on {print} on && /^test result:/ {exit}' "$analysis_log" | head -40 ;;
         *)
-          awk -v t="tests/$t.rs" '$0 ~ ("Running " t) {on=1} on {print} on && /^test result:/ {exit}' "$log" \
+          awk -v t="tests/$t.rs" '$0 ~ ("Running " t) {on=1} on {print} on && /^test result:/ {exit}' "$analysis_log" \
             | grep -Ev '^test .* \.\.\. ok$' | head -40 ;;
       esac
     done
     overall=1
   fi
+  rm -f "$analysis_log"
+  analysis_log=""
+  trap - EXIT
 done
 
 echo
