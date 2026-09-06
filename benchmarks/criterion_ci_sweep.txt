@@ -46,49 +46,49 @@ final line is the recorded shell exit status, not cargo output.
 --------------------------------------------------------------------------------
 
     Finished `bench` profile [optimized] target(s) in 0.17s
-     Running benches/bench_aes_gcm.rs (/home/n/.cache/mind-fix-target/release/deps/bench_aes_gcm-4bf973a17dc4ad29)
+     Running benches/bench_aes_gcm.rs ($CARGO_TARGET_DIR/release/deps/bench_aes_gcm-4bf973a17dc4ad29)
 bench_aes_gcm: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_aes_gcm: seal unavailable; no measurements taken.
-     Running benches/bench_ecdsa_p256.rs (/home/n/.cache/mind-fix-target/release/deps/bench_ecdsa_p256-3347845dcaf3ed87)
+     Running benches/bench_ecdsa_p256.rs ($CARGO_TARGET_DIR/release/deps/bench_ecdsa_p256-3347845dcaf3ed87)
 bench_ecdsa_p256: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_ecdsa_p256: verify kernel unavailable; no measurements taken.
-     Running benches/bench_hkdf.rs (/home/n/.cache/mind-fix-target/release/deps/bench_hkdf-3c981dff24807148)
+     Running benches/bench_hkdf.rs ($CARGO_TARGET_DIR/release/deps/bench_hkdf-3c981dff24807148)
 bench_hkdf: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_hkdf: crypto module unavailable; no measurements taken.
-     Running benches/bench_hpack.rs (/home/n/.cache/mind-fix-target/release/deps/bench_hpack-b24cd4905d47598d)
+     Running benches/bench_hpack.rs ($CARGO_TARGET_DIR/release/deps/bench_hpack-b24cd4905d47598d)
 bench_hpack: mindc not built; run `cargo build --features "mlir-build std-surface" --bin mindc`; skipping
 bench_hpack: hpack .so unavailable; no measurements taken.
-     Running benches/bench_http2_frame.rs (/home/n/.cache/mind-fix-target/release/deps/bench_http2_frame-c87fbecba0aa4783)
+     Running benches/bench_http2_frame.rs ($CARGO_TARGET_DIR/release/deps/bench_http2_frame-c87fbecba0aa4783)
 bench_http2_frame: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_http2_frame: framing kernel unavailable; no measurements taken.
-     Running benches/bench_keccak.rs (/home/n/.cache/mind-fix-target/release/deps/bench_keccak-56b5cfecd9eee648)
+     Running benches/bench_keccak.rs ($CARGO_TARGET_DIR/release/deps/bench_keccak-56b5cfecd9eee648)
 bench_keccak: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_keccak: kernel unavailable; no measurements taken.
-     Running benches/bench_mlkem768.rs (/home/n/.cache/mind-fix-target/release/deps/bench_mlkem768-931e11103941fffc)
+     Running benches/bench_mlkem768.rs ($CARGO_TARGET_DIR/release/deps/bench_mlkem768-931e11103941fffc)
 bench_mlkem768: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_mlkem768: kernel unavailable; no measurements taken.
-     Running benches/bench_rsa_pss.rs (/home/n/.cache/mind-fix-target/release/deps/bench_rsa_pss-da79462f5c5b56b2)
+     Running benches/bench_rsa_pss.rs ($CARGO_TARGET_DIR/release/deps/bench_rsa_pss-da79462f5c5b56b2)
 bench_rsa_pss: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_rsa_pss: module unavailable; no measurements taken.
-     Running benches/bench_sha256.rs (/home/n/.cache/mind-fix-target/release/deps/bench_sha256-68dcd877ce865d6e)
+     Running benches/bench_sha256.rs ($CARGO_TARGET_DIR/release/deps/bench_sha256-68dcd877ce865d6e)
 bench_sha256: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_sha256: kernel unavailable; no measurements taken.
-     Running benches/bench_tls13_record.rs (/home/n/.cache/mind-fix-target/release/deps/bench_tls13_record-81ae4acbc2a0f416)
+     Running benches/bench_tls13_record.rs ($CARGO_TARGET_DIR/release/deps/bench_tls13_record-81ae4acbc2a0f416)
 bench_tls13_record: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_tls13_record: record layer unavailable; no measurements taken.
-     Running benches/bench_x25519.rs (/home/n/.cache/mind-fix-target/release/deps/bench_x25519-9ee24aba4a89694d)
+     Running benches/bench_x25519.rs ($CARGO_TARGET_DIR/release/deps/bench_x25519-9ee24aba4a89694d)
 bench_x25519: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_x25519: kernel unavailable; no measurements taken.
-     Running benches/bench_x509.rs (/home/n/.cache/mind-fix-target/release/deps/bench_x509-3087aa30ddbc7154)
+     Running benches/bench_x509.rs ($CARGO_TARGET_DIR/release/deps/bench_x509-3087aa30ddbc7154)
 bench_x509: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 bench_x509: x509 module unavailable; no measurements taken.
-     Running benches/cerebras_stencil.rs (/home/n/.cache/mind-fix-target/release/deps/cerebras_stencil-8d6b85475a748abd)
+     Running benches/cerebras_stencil.rs ($CARGO_TARGET_DIR/release/deps/cerebras_stencil-8d6b85475a748abd)
 test compiler_pipeline/stencil_tile_emit_q16_16/tiny_32x32 ... bench:         249 ns/iter (+/- 10)
 test compiler_pipeline/stencil_tile_emit_q16_16/medium_128x128 ... bench:         235 ns/iter (+/- 4)
 test compiler_pipeline/stencil_tile_emit_q16_16/large_256x256 ... bench:         236 ns/iter (+/- 9)
 test compiler_pipeline/stencil_tile_emit_q16_16/wafer_750x750 ... bench:         242 ns/iter (+/- 11)
 
-     Running benches/compiler.rs (/home/n/.cache/mind-fix-target/release/deps/compiler-1db24db59788b0f9)
+     Running benches/compiler.rs ($CARGO_TARGET_DIR/release/deps/compiler-1db24db59788b0f9)
 test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench:        2753 ns/iter (+/- 90)
 test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench:        5571 ns/iter (+/- 182)
 test compiler_pipeline/parse_typecheck_ir/large_network ... bench:       14375 ns/iter (+/- 823)
@@ -106,31 +106,31 @@ test c_export_lowering/parse_lower/0_exports ... bench:         554 ns/iter (+/-
 test c_export_lowering/parse_lower/1_export ... bench:         354 ns/iter (+/- 16)
 test c_export_lowering/parse_lower/10_exports ... bench:        1280 ns/iter (+/- 71)
 
-     Running benches/det_gemv_q16_mt.rs (/home/n/.cache/mind-fix-target/release/deps/det_gemv_q16_mt-6e4baaf16e69184c)
+     Running benches/det_gemv_q16_mt.rs ($CARGO_TARGET_DIR/release/deps/det_gemv_q16_mt-6e4baaf16e69184c)
 det_gemv_q16_mt: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 det_gemv_q16_mt: kernel unavailable; no measurements taken.
-     Running benches/det_matmul_i16.rs (/home/n/.cache/mind-fix-target/release/deps/det_matmul_i16-6bda0cbba4481b64)
+     Running benches/det_matmul_i16.rs ($CARGO_TARGET_DIR/release/deps/det_matmul_i16-6bda0cbba4481b64)
 det_matmul_i16: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 det_matmul_i16: kernel unavailable; no measurements taken.
-     Running benches/det_matmul_i8.rs (/home/n/.cache/mind-fix-target/release/deps/det_matmul_i8-0d228069ac56ed17)
+     Running benches/det_matmul_i8.rs ($CARGO_TARGET_DIR/release/deps/det_matmul_i8-0d228069ac56ed17)
 det_matmul_i8: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 det_matmul_i8: kernel unavailable; no measurements taken.
-     Running benches/det_matmul_q16.rs (/home/n/.cache/mind-fix-target/release/deps/det_matmul_q16-34a6b157b00e522a)
+     Running benches/det_matmul_q16.rs ($CARGO_TARGET_DIR/release/deps/det_matmul_q16-34a6b157b00e522a)
 det_matmul_q16: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 det_matmul_q16: kernel unavailable; no measurements taken.
-     Running benches/det_matmul_q16_mt.rs (/home/n/.cache/mind-fix-target/release/deps/det_matmul_q16_mt-08d497189fa1547a)
+     Running benches/det_matmul_q16_mt.rs ($CARGO_TARGET_DIR/release/deps/det_matmul_q16_mt-08d497189fa1547a)
 det_matmul_q16_mt: mindc not built; run `cargo build --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 det_matmul_q16_mt: kernel unavailable; no measurements taken.
-     Running benches/fft_q16.rs (/home/n/.cache/mind-fix-target/release/deps/fft_q16-f0bc4b0a320ac51c)
+     Running benches/fft_q16.rs ($CARGO_TARGET_DIR/release/deps/fft_q16-f0bc4b0a320ac51c)
 fft_q16: mindc not built; run `cargo build --release --features "mlir-build std-surface cross-module-imports" --bin mindc`; skipping
 fft_q16: kernel unavailable; no measurements taken.
-     Running benches/mindcraft_fmt.rs (/home/n/.cache/mind-fix-target/release/deps/mindcraft_fmt-ed672d00c2447fda)
+     Running benches/mindcraft_fmt.rs ($CARGO_TARGET_DIR/release/deps/mindcraft_fmt-ed672d00c2447fda)
 test mindcraft_fmt/vec.mind ... bench:       71771 ns/iter (+/- 3004)
 
 mindcraft_fmt: examples/mindc_mind/main.mind not usable in this feature build (ParseError([ParseError { offset: 5105, message: "bitwise operator `&` requires the `std-surface` feature; this build is the low-level-only subset, whose IR has no bitwise instruction to lower it to" }])); skipping
 test mindcraft_fmt/synthetic_1000_loc ... bench:      464400 ns/iter (+/- 51700)
 
-     Running benches/operations.rs (/home/n/.cache/mind-fix-target/release/deps/operations-a84fe7b44f265262)
+     Running benches/operations.rs ($CARGO_TARGET_DIR/release/deps/operations-a84fe7b44f265262)
 operations: chain not usable in this feature build (TypeError([Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 7, column: 14, length: 9 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `mul`", span: Some(Span { file: None, line: 8, column: 15, length: 10 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `div`", span: Some(Span { file: None, line: 9, column: 18, length: 11 }), notes: [], help: None }])); skipping
 operations: deep_nest not usable in this feature build (TypeError([Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 3, column: 14, length: 9 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `mul`", span: Some(Span { file: None, line: 4, column: 14, length: 11 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 5, column: 14, length: 10 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `mul`", span: Some(Span { file: None, line: 7, column: 14, length: 11 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 8, column: 14, length: 11 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `mul`", span: Some(Span { file: None, line: 10, column: 14, length: 10 }), notes: [], help: None }])); skipping
 operations: slice not usable in this feature build (refused: lower_expr: no IR lowering for `ArrayLit` in value position — refusing to emit a const-0 placeholder (that would be a silent miscompile). Add an explicit lowering arm or handle it upstream.); skipping
@@ -139,7 +139,7 @@ operations: dense_layer not usable in this feature build (TypeError([Diagnostic 
 operations: attention not usable in this feature build (refused: lower_expr: no IR lowering for `ArrayLit` in value position — refusing to emit a const-0 placeholder (that would be a silent miscompile). Add an explicit lowering arm or handle it upstream.); skipping
 test operations_neural_patterns/compile/residual_block ... bench:       25064 ns/iter (+/- 1334)
 
-     Running benches/shapes.rs (/home/n/.cache/mind-fix-target/release/deps/shapes-e9cc5007df6de916)
+     Running benches/shapes.rs ($CARGO_TARGET_DIR/release/deps/shapes-e9cc5007df6de916)
 shapes: simple not usable in this feature build (TypeError([Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 3, column: 5, length: 9 }), notes: [], help: None }])); skipping
 shapes: complex not usable in this feature build (TypeError([Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `mul`", span: Some(Span { file: None, line: 7, column: 14, length: 9 }), notes: [], help: None }, Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 8, column: 15, length: 10 }), notes: [], help: None }])); skipping
 shapes: high_rank not usable in this feature build (TypeError([Diagnostic { phase: "type-check", code: "E2003", severity: Error, message: "unsupported call to `add`", span: Some(Span { file: None, line: 6, column: 16, length: 9 }), notes: [], help: None }])); skipping
@@ -152,7 +152,7 @@ test shape_inference_matmul/matmul/1024x2048 ... bench:        6390 ns/iter (+/-
 test shape_inference_conv/conv2d/3x3_stride1 ... bench:        9428 ns/iter (+/- 431)
 test shape_inference_conv/conv2d/5x5_stride2 ... bench:        9421 ns/iter (+/- 2515)
 
-     Running benches/simple_benchmarks.rs (/home/n/.cache/mind-fix-target/release/deps/simple_benchmarks-16d98c6b9346e1fd)
+     Running benches/simple_benchmarks.rs ($CARGO_TARGET_DIR/release/deps/simple_benchmarks-16d98c6b9346e1fd)
 test compile_small/parse_check_lower/scalar_math ... bench:        2026 ns/iter (+/- 203)
 test compile_small/parse_check_lower/small_matmul ... bench:        2546 ns/iter (+/- 103)
 test compile_small/parse_check_lower/medium_matmul ... bench:        2583 ns/iter (+/- 95)

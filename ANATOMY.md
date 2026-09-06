@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1517 | **Est. tokens:** ~2961762
-**Generated:** 2026-09-06 08:01 UTC
+**Files:** 1517 | **Est. tokens:** ~2961684
+**Generated:** 2026-09-06 08:03 UTC
 
 ## Token Budget Guide
 
@@ -37,7 +37,7 @@
 | `bench/fft/` | 8 | ~8060 |
 | `benches/` | 28 | ~84214 |
 | `benches/common/` | 1 | ~668 |
-| `benchmarks/` | 13 | ~28495 |
+| `benchmarks/` | 13 | ~28417 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7733 |
 | `benchmarks/determinism/` | 3 | ~4601 |
@@ -352,7 +352,7 @@
 - `requirements.txt` (~7 tok, tiny) — torch>=1.0.0
 ### `benchmarks/`
 
-- `criterion_ci_sweep.txt` (~4173 tok, huge) — CRITERION CI-EQUIVALENT SWEEP — recorded output
+- `criterion_ci_sweep.txt` (~4095 tok, huge) — CRITERION CI-EQUIVALENT SWEEP — recorded output
 ### `benchmarks/cupy_comparison/`
 
 - `README.md` (~1619 tok, huge) — CuPy Comparison Benchmark
