@@ -235,20 +235,33 @@ fn check_range(addr: i64, size: usize, mem_len: usize) -> Result<usize, String> 
     let off = usize::try_from(addr - MEM_BASE)
         .map_err(|_| format!("memory access out of bounds: invalid address {addr}"))?;
     let end = off.checked_add(size);
-    let extent_ok = ALLOCS.with(|a| {
+    let allocation = ALLOCS.with(|a| {
         a.borrow()
             .range(..=addr)
             .next_back()
-            .and_then(|(&start, &extent)| {
-                let within = usize::try_from(addr - start).ok()?;
-                (within <= extent && size <= extent - within).then_some(())
-            })
-            .is_some()
+            .map(|(&start, &extent)| (start, extent))
+    });
+    let extent_ok = allocation.is_some_and(|(start, extent)| {
+        usize::try_from(addr - start)
+            .ok()
+            .is_some_and(|within| within <= extent && size <= extent - within)
     });
     if end.is_none_or(|v| v > mem_len) || !extent_ok {
+        let extent = allocation.map_or_else(
+            || "every requested allocation".to_string(),
+            |(start, extent)| {
+                i64::try_from(extent)
+                    .ok()
+                    .and_then(|extent| start.checked_add(extent))
+                    .map_or_else(
+                        || format!("requested allocation at {start} with {extent} bytes"),
+                        |end| format!("requested allocation extent [{start}, {end})"),
+                    )
+            },
+        );
         return Err(format!(
-            "memory access out of bounds: [{addr}, {addr}+{size}) outside one \
-             allocated extent (arena top {})",
+            "memory access out of bounds: [{addr}, {addr}+{size}) outside {extent} \
+             (arena top {})",
             MEM_BASE + mem_len as i64
         ));
     }
@@ -314,7 +327,11 @@ mod tests {
         reset();
         let p = alloc(1).unwrap();
         let q = alloc(8).unwrap();
-        assert!(eval_intrinsic("__mind_load_i8", &[p + 1]).is_err());
+        let padding_error = eval_intrinsic("__mind_load_i8", &[p + 1]).unwrap_err();
+        assert!(
+            padding_error.contains("requested allocation extent [8, 9)"),
+            "missing requested extent in: {padding_error}"
+        );
         assert!(eval_intrinsic("__mind_load_i64", &[p]).is_err());
         assert!(eval_intrinsic("__mind_load_i64", &[q - 1]).is_err());
         assert!(eval_intrinsic("__mind_store_i8", &[p + 1, 7]).is_err());

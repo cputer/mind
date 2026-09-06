@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1517 | **Est. tokens:** ~2961684
-**Generated:** 2026-09-06 08:03 UTC
+**Files:** 1517 | **Est. tokens:** ~2962508
+**Generated:** 2026-09-06 08:29 UTC
 
 ## Token Budget Guide
 
@@ -100,7 +100,7 @@
 | `src/diagnostics/` | 3 | ~14137 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~10987 |
-| `src/eval/` | 16 | ~87806 |
+| `src/eval/` | 16 | ~88630 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
@@ -1062,7 +1062,7 @@
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9284 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
-- `interp_mem.rs` (~2993 tok, huge) — Copyright 2025 STARGA Inc.
+- `interp_mem.rs` (~3817 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_interp.rs` (~4212 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_build.rs` (~10897 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_export.rs` (~12220 tok, huge) — Copyright 2025 STARGA Inc.
