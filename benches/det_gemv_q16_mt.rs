@@ -33,6 +33,7 @@
 //!   1. Within-run exactness vs the independent scalar dot oracle (byte-identity).
 //!   2. Concurrency stability: the anchor is recomputed `STABILITY_RUNS` times and
 //!      every run produces the identical hash (a data race would make it flaky).
+//!
 //! It then reports GMAC/s at the real mind-nerve routing shape (M=11922, K=384).
 //!
 //! Self-skips when the MLIR toolchain is shadowed or `mindc` is unbuilt, exactly

@@ -51,7 +51,7 @@
 
 mod common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Absolute path to a bundled `std/<name>.mind` source.
@@ -127,7 +127,7 @@ fn assert_dlopen_symbol(so: &PathBuf, symbol: &str) {
 
 /// Assert the cdylib has zero undefined symbols beyond the allowed libc set —
 /// i.e. it is self-contained (the weak C fallback supplies `__mind_alloc` etc.).
-fn assert_self_contained(so: &PathBuf, module: &str) {
+fn assert_self_contained(so: &Path, module: &str) {
     let nm = Command::new("nm")
         .arg("-D")
         .arg(so.as_os_str())

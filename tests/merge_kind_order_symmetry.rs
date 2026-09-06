@@ -42,7 +42,7 @@ fn signed_sensitive_ops(mlir: &str) -> Vec<String> {
     ];
     let mut found: Vec<String> = OPS
         .iter()
-        .flat_map(|op| std::iter::repeat(op.to_string()).take(mlir.matches(op).count()))
+        .flat_map(|op| std::iter::repeat_n(op.to_string(), mlir.matches(op).count()))
         .collect();
     found.sort_unstable();
     found

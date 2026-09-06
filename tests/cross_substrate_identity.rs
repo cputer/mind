@@ -2250,7 +2250,7 @@ fn array_store_branch_reproducibility_gate() {
 fn pin_or_bless(id: &str, computed: &str, result: i64) {
     let substrate = host_substrate();
     if common::gate::bless_mode() {
-        emit_bless(id, substrate, &computed);
+        emit_bless(id, substrate, computed);
         return;
     }
     match reference_hash(id, substrate) {
@@ -2678,7 +2678,7 @@ fn ref_dot_f32_strict(a: &[f32], b: &[f32]) -> f32 {
 fn pin_strict_fp(id: &str, computed: &str, bits: u32) {
     let substrate = host_substrate();
     if common::gate::bless_mode() {
-        emit_bless(id, substrate, &computed);
+        emit_bless(id, substrate, computed);
         return;
     }
     match reference_hash(id, substrate) {

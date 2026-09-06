@@ -505,13 +505,13 @@ print('ok', canon)
     ///
     /// Three cases, chosen so the two ways this could be silently wrong both fail:
     ///   * a real file        — bytes must come back EXACTLY, so an open that
-    ///                          "succeeds" without a usable fd is caught;
+    ///     "succeeds" without a usable fd is caught;
     ///   * an EMPTY file      — must return 0, not -1: opening succeeded and the
-    ///                          first read hit EOF. Collapsing "empty" into the
-    ///                          error sentinel is the obvious off-by-one here;
+    ///     first read hit EOF. Collapsing "empty" into the
+    ///     error sentinel is the obvious off-by-one here;
     ///   * a MISSING path     — must return -1, so an implementation that returns
-    ///                          a bogus non-negative fd (or ignores the error) is
-    ///                          caught rather than reading from a wrong descriptor.
+    ///     a bogus non-negative fd (or ignores the error) is
+    ///     caught rather than reading from a wrong descriptor.
     #[test]
     fn fs_read_file_native() {
         let src = concat!(include_str!("../std/fs.mind"), "\n");

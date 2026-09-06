@@ -37,7 +37,7 @@
 
 mod common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// `(source under `std/`, intrinsic the diagnostic must name, flag site defended)`
@@ -63,7 +63,7 @@ fn std_source(name: &str) -> PathBuf {
 
 /// Run `mindc <src> --emit-shared <tmp> [--allow-nondeterministic]`.
 /// Returns `(success, stderr)`.
-fn compile(src: &PathBuf, tag: &str, allow: bool) -> (bool, String) {
+fn compile(src: &Path, tag: &str, allow: bool) -> (bool, String) {
     let mindc = common::mindc_bin();
     assert!(
         mindc.exists(),

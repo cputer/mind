@@ -108,9 +108,9 @@ mod mlir_functional {
             }
 
             // A written sentinel survives; its neighbours stay zero.
-            store_i64(base + 1 * 8, 99);
+            store_i64(base + 8, 99);
             assert_eq!(load_i64(base), 0, "slot 0 unchanged");
-            assert_eq!(load_i64(base + 1 * 8), 99, "sentinel written");
+            assert_eq!(load_i64(base + 8), 99, "sentinel written");
             assert_eq!(load_i64(base + 2 * 8), 0, "slot 2 still zero");
             assert_eq!(load_i64(base + 3 * 8), 0, "slot 3 still zero");
 
