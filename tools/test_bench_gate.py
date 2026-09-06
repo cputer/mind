@@ -36,6 +36,21 @@ def run_capture(baseline: Path, current: Path) -> subprocess.CompletedProcess[st
     )
 
 
+def run_args(*argv: str) -> int:
+    return subprocess.run(
+        [sys.executable, str(GATE), *argv], capture_output=True, text=True
+    ).returncode
+
+
+def bencher(small_ns: int, medium_ns: int, large_ns: int, spread: int = 50) -> str:
+    """A bencher-format current run with a spread small enough to be trusted."""
+    return (
+        f"test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench:  {small_ns} ns/iter (+/- {spread})\n"
+        f"test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench:  {medium_ns} ns/iter (+/- {spread})\n"
+        f"test compiler_pipeline/parse_typecheck_ir/large_network ... bench:  {large_ns} ns/iter (+/- {spread})\n"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as td:
@@ -70,6 +85,82 @@ def main() -> int:
             print(f"[{'PASS' if ok else 'FAIL'}] {label}")
             if not ok:
                 failures.append(label)
+        # --- THE ENFORCEMENT PATH ------------------------------------------
+        # Every case above exercises a REFUSAL to measure (exit 4) or the happy
+        # path. Not one drove the gate to its actual FAIL verdict, so the only
+        # branch that can stop a regression from landing had no test at all.
+        # A gate whose enforcement is untested is a gate nobody has watched fail.
+        regressed = d / "regressed.out"
+        regressed.write_text(bencher(3600, 7400, 20200))   # ~+20% on every bench
+        within = d / "within.out"
+        within.write_text(bencher(3120, 6380, 17480))      # ~+4%, under the 10% default
+        faster = d / "faster.out"
+        faster.write_text(bencher(2700, 5500, 15100))      # a win: one-sided, must pass
+        # ALL three above the variance threshold: a uniformly loaded box.
+        all_noisy = d / "all_noisy.out"
+        all_noisy.write_text(
+            "test compiler_pipeline/parse_typecheck_ir/small_matmul ... bench:  3600 ns/iter (+/- 900)\n"
+            "test compiler_pipeline/parse_typecheck_ir/medium_mlp ... bench:  7400 ns/iter (+/- 1850)\n"
+            "test compiler_pipeline/parse_typecheck_ir/large_network ... bench:  20200 ns/iter (+/- 5050)\n"
+        )
+        # MIXED: two benches too noisy to trust, one clean and regressed. The
+        # first draft of this test assumed a single spread made all three noisy;
+        # it did not (900/20200 is 4.5%), the gate gated on the one trustworthy
+        # bench, and the test caught its own wrong expectation rather than the
+        # gate's behaviour. Both shapes are asserted now, because "ignored the
+        # noise, enforced on what it could trust" is the behaviour that matters
+        # on a shared machine.
+        mixed_noisy = d / "mixed_noisy.out"
+        mixed_noisy.write_text(bencher(3600, 7400, 20200, spread=900))
+
+        cases += [
+            ("+20% regression -> exit 1 (THE enforcement path)",
+             run_args("--baseline", str(base), "--current", str(regressed)), 1),
+            ("+4% under threshold -> exit 0",
+             run_args("--baseline", str(base), "--current", str(within)), 0),
+            ("faster than baseline -> exit 0 (gate is one-sided)",
+             run_args("--baseline", str(base), "--current", str(faster)), 0),
+            ("+20% with EVERY bench over the spread limit -> exit 2 (loaded box is "
+             "INCONCLUSIVE, not a regression)",
+             run_args("--baseline", str(base), "--current", str(all_noisy)), 2),
+            ("+20% with 2 noisy and 1 trustworthy -> exit 1 (enforce on what can be trusted)",
+             run_args("--baseline", str(base), "--current", str(mixed_noisy)), 1),
+        ]
+
+        # --- THE CHAMPION RATCHET ------------------------------------------
+        # The champion is the whole point of the tool -- it catches slow drift
+        # that never trips the floor: ten commits at +3% each pass any
+        # stale-floor check and lose 30% together. `--champion` appeared ZERO
+        # times across .github/workflows, so the ratchet the tool advertises had
+        # never run, and nothing here tested it either.
+        #
+        # This case is exactly that shape: current EQUALS the floor (so the floor
+        # is satisfied and would pass) while sitting ~20% above the champion.
+        champ = d / "champion.txt"
+        champ.write_text(
+            "compiler_pipeline/parse_typecheck_ir/small_matmul:   2.508 µs\n"
+            "compiler_pipeline/parse_typecheck_ir/medium_mlp:     5.222 µs\n"
+            "compiler_pipeline/parse_typecheck_ir/large_network: 12.231 µs\n"
+        )
+        champbeat = d / "champbeat.out"
+        champbeat.write_text(bencher(2400, 5000, 11800))
+
+        import importlib.util as _ilu2
+        _s2 = _ilu2.spec_from_file_location("bench_gate_ref", GATE)
+        _bg2 = _ilu2.module_from_spec(_s2)
+        _s2.loader.exec_module(_bg2)
+        champ_keys = len(_bg2.parse_reference(champ))
+
+        ratchet = ["--champion", str(champ), "--floor", str(base),
+                   "--floor-prefix", "compiler_pipeline/parse_typecheck_ir"]
+        cases += [
+            ("champion in full-id prose parses to 3 keys (it parsed to 0 before)",
+             champ_keys, 3),
+            ("at the floor but +20% over champion -> exit 1 (the ratchet, not the floor)",
+             run_args(*ratchet, "--current", str(good)), 1),
+            ("beats the champion -> exit 0 (the ratchet is one-sided too)",
+             run_args(*ratchet, "--current", str(champbeat)), 0),
+        ]
         # --- transition-line parsing (the superseded-number bug) ------------
         # A real baseline file narrates the re-baseline in prose BEFORE stating
         # the frozen numbers:

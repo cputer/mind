@@ -89,8 +89,17 @@ TIME_PATTERN = re.compile(
 # So: reject any line whose value is followed by an arrow (a TRANSITION, i.e. a
 # before->after narration), and accept only a standalone measurement.
 _ARROW = r"(?:->|\u2192|=>)"
+# The name class accepts `/` so a reference may be written as a FULL bench id in
+# the human-readable form, not only as a bencher dump. Before this, a champion
+# file written the obvious way --
+#     compiler_pipeline/parse_typecheck_ir/small_matmul:  2.508 µs
+# -- parsed to NOTHING, while the same file with short names parsed to short
+# keys that no current measurement (which always carries full ids) could match.
+# Either way the gate reported "watched bench produced no measurement", which
+# reads as a broken bench rather than an unreadable reference. The champion was
+# expressible only as a raw bencher dump, and nothing said so at the point of use.
 REF_LINE = re.compile(
-    r"^\s*-?\s*(?P<name>[A-Za-z0-9_]+)\s*[:=]?\s+"
+    r"^\s*-?\s*(?P<name>[A-Za-z0-9_/]+)\s*[:=]?\s+"
     r"(?P<value>[0-9]+\.[0-9]+)\s*(?:µs|us|microseconds)"
     rf"(?!\s*{_ARROW})"
 )
