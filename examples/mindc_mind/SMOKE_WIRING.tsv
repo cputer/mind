@@ -23,6 +23,8 @@
 # failing case so the gap is visible instead of implied; wiring them into CI is
 # blocked on FIXING them (each note names what must change). Do not wire a red
 # gate to make this list look tidy, and do not delete a red gate to make CI green.
+_diagnostic_project	none	helper	Owned project fixtures and unscoped-import refusal control imported by self_host_tc_unknown_call_smoke.
+_frozen_native_oracle	none	helper	Manifest parsing and frozen artifact integrity checks imported by self_host_native_elf_smoke.
 _selfhost_so	none	helper	Shared self-host .so resolver imported by the smokes (resolve_so); not a gate — running it directly is a no-op.
 _stdlib_manifest	none	helper	Shared reader for testdata/stdlib_manifest.txt (seed_modules/bundled_modules/seed_blob), imported by the self-host smokes and the twin of mindc.rs::frozen_std_seed_modules; not a gate — running it directly is a no-op.
 backend_native_bridge_smoke	ci	gate	

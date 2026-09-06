@@ -608,6 +608,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Python for numerical smoke oracles
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install numerical smoke dependencies
+        run: python3 -m pip install numpy
+
       - name: Smoke-corpus wiring contract (smoke_wiring_lint.py)
         # Guards the gate corpus itself. Every examples/mindc_mind/*.py must be
         # classified in SMOKE_WIRING.tsv with the runners that actually execute
