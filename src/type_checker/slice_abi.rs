@@ -11,6 +11,7 @@
 //! lowering panic or a silent zero.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use crate::ast::{Node, Span, TypeAnn};
 use crate::diagnostics::Diagnostic;
@@ -20,17 +21,21 @@ use super::{
 };
 
 mod borrow_flow;
+mod owner_assignment;
 mod provenance;
+pub(super) use borrow_flow::type_contains_collection_owner;
 use borrow_flow::{
     LoopControl, borrowed_kind, check_call, check_loop_flow, check_while, merge_flow,
     reject_borrowed_control, remove_pattern_bindings, stmt_guarantees_return, type_contains_slice,
     value_contains_borrow,
 };
 pub(super) use borrow_flow::{check_fn, check_struct_fields};
+pub(super) use owner_assignment::{StructFieldTypes, struct_field_types};
 use provenance::{compatible_source, expr_kind, expr_type, same_type};
 
 pub(super) const SLICE_ARG_ABI_CODE: &str = "E2032";
 pub(super) const SLICE_CAPABILITY_CODE: &str = "E2033";
+pub(super) const COLLECTION_OWNER_ASSIGN_CODE: &str = "E2034";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum HandleKind {
@@ -58,6 +63,7 @@ struct Env {
     binding_handles: BTreeMap<BindingId, HandleKind>,
     binding_borrows: BTreeSet<BindingId>,
     may_borrow: BTreeSet<String>,
+    struct_fields: Rc<StructFieldTypes>,
 }
 
 fn declared_kind(ty: &TypeAnn) -> Option<HandleKind> {
@@ -182,6 +188,15 @@ fn check_expr(
             value,
             span,
         } => {
+            owner_assignment::check(
+                provenance::indexed_type(receiver, env),
+                value,
+                "an indexed collection-owner slot",
+                env,
+                src,
+                file,
+                errs,
+            );
             if borrowed_kind(receiver, env).is_none() && value_contains_borrow(receiver, env) {
                 report(
                     errs,
@@ -222,6 +237,35 @@ fn check_expr(
             }
             check_expr(receiver, env, expected_return, src, file, errs);
             check_expr(index, env, expected_return, src, file, errs);
+            check_expr(value, env, expected_return, src, file, errs);
+        }
+        Node::FieldAssign {
+            receiver,
+            field,
+            value,
+            span,
+        } => {
+            if value_contains_borrow(receiver, env) || value_contains_borrow(value, env) {
+                report(
+                    errs,
+                    src,
+                    file,
+                    "borrowed slice handle used outside the supported read/alias/call capability surface"
+                        .to_string(),
+                    *span,
+                    SLICE_CAPABILITY_CODE,
+                );
+            }
+            owner_assignment::check(
+                provenance::field_type(receiver, field, env),
+                value,
+                &format!("collection-owner field `{field}`"),
+                env,
+                src,
+                file,
+                errs,
+            );
+            check_expr(receiver, env, expected_return, src, file, errs);
             check_expr(value, env, expected_return, src, file, errs);
         }
         Node::IndexAccess {
@@ -481,6 +525,12 @@ fn check_stmts(
                 let proven = match (ann, inferred) {
                     (Some(ann), Some(inferred)) if same_type(ann, &inferred) => Some(ann.clone()),
                     (Some(ann), _) if declared_kind(ann).is_some() && kind.is_some() => {
+                        Some(ann.clone())
+                    }
+                    (Some(ann), _)
+                        if provenance::is_collection_owner_type(ann)
+                            && provenance::compatible_collection_owner_source(ann, value, env) =>
+                    {
                         Some(ann.clone())
                     }
                     (None, inferred) => inferred,

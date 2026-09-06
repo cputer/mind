@@ -1017,13 +1017,15 @@ pub(crate) fn install_enum_prelude_and_globals(ir: &mut IRModule, module: &ast::
         // sibling-module struct's field (e.g. compile.mind reading
         // `analyzed.determinism` where `AnalyzedFlow` lives in sema.mind). The
         // module's OWN StructDef arm re-inserts via last-write-wins.
-        for (name, (field_names, field_types)) in &g.structs {
-            ir.struct_defs
-                .entry(name.clone())
-                .or_insert_with(|| field_names.clone());
-            ir.struct_field_types
-                .entry(name.clone())
-                .or_insert_with(|| field_types.clone());
+        for (name, (field_names, field_types)) in g.structs.iter().chain(&g.qualified_structs) {
+            for key in std::iter::once(name.as_str()).chain(name.strip_prefix("crate.")) {
+                ir.struct_defs
+                    .entry(key.to_string())
+                    .or_insert_with(|| field_names.clone());
+                ir.struct_field_types
+                    .entry(key.to_string())
+                    .or_insert_with(|| field_types.clone());
+            }
         }
     });
 }
@@ -1147,6 +1149,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                     && g.boxed.is_empty()
                     && g.struct_field_names.is_empty()
                     && g.structs.is_empty()
+                    && g.qualified_structs.is_empty()
                     && g.fn_returns.is_empty()
             })
         {
@@ -1388,8 +1391,9 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
         .items
         .iter()
         .any(|it| matches!(it, ast::Node::StructDef { .. }))
-        || crate::ir::with_global_enums(|g| !g.structs.is_empty())
-    {
+        || crate::ir::with_global_enums(|g| {
+            !g.structs.is_empty() || !g.qualified_structs.is_empty()
+        }) {
         // The builder (readonly `struct_resolver.rs`) returns a std-hashed
         // map; re-collect once into the Fx-hashed table so the many per-node
         // probes below hash fast. Same (key, value) set — no output change.
@@ -6407,11 +6411,13 @@ fn lower_expr(
                             } else {
                                 None
                             };
-                        #[cfg(not(feature = "std-surface"))]
-                        let typed_tail = None;
+                        #[cfg(feature = "std-surface")]
                         let id = typed_tail.unwrap_or_else(|| {
                             lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types)
                         });
+                        #[cfg(not(feature = "std-surface"))]
+                        let id =
+                            lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
                         ret_id = Some(id);
                         // Gap C: if the emitted statement was an `Instr::If`,
                         // thread its outer-binding assignment merges back into

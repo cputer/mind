@@ -156,21 +156,25 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
     // accessor and an `o.f = x` write, ctypes-asserting both.
     #[cfg(feature = "std-surface")]
     crate::ir::with_global_enums(|g| {
-        for name in g.structs.keys() {
-            if !struct_defs.iter().any(|s| s == name) {
-                struct_defs.push(name.clone());
+        for name in g.structs.keys().chain(g.qualified_structs.keys()) {
+            for key in std::iter::once(name.as_str()).chain(name.strip_prefix("crate.")) {
+                if !struct_defs.iter().any(|known| known == key) {
+                    struct_defs.push(key.to_string());
+                }
             }
         }
         // Seed cross-module `(struct, field) -> inner-struct-name` so a CHAINED
         // read `a.b.c` on sibling structs resolves: `infer_struct` walks
         // `a -> S`, `(S, b) -> Inner`, then `.c` resolves against `Inner`. The
         // retain below drops any whose inner name isn't a real struct.
-        for (sname, (fnames, ftypes)) in &g.structs {
-            for (fname, fty) in fnames.iter().zip(ftypes) {
-                if let Some(t) = unwrap_to_named(fty) {
-                    field_types
-                        .entry((sname.clone(), fname.clone()))
-                        .or_insert_with(|| t.to_string());
+        for (sname, (fnames, ftypes)) in g.structs.iter().chain(&g.qualified_structs) {
+            for owner in std::iter::once(sname.as_str()).chain(sname.strip_prefix("crate.")) {
+                for (fname, fty) in fnames.iter().zip(ftypes) {
+                    if let Some(t) = unwrap_to_named(fty) {
+                        field_types
+                            .entry((owner.to_string(), fname.clone()))
+                            .or_insert_with(|| t.to_string());
+                    }
                 }
             }
         }

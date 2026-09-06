@@ -70,6 +70,13 @@ non-slice parameters or returns are refused with `E2033` before emission.
 Slice-containing struct fields are refused with `E2033` as well.
 General lifetime and alias-exclusivity analysis remains outside this implementation.
 
+Fields and indexed slots whose declared type is `array<T>`, `map<K, V>`, or
+`set<T>` retain that exact owner type on replacement. A mutator status, scalar,
+different collection kind, or collection with different type arguments is
+refused with `E2034` before emission. Replacing an owner with a compatible
+field, function result, or literal remains supported, as do scalar element
+writes such as `holder.values[0] = value`.
+
 ## Shape Variables
 
 Shapes use uppercase identifiers (`N`, `M`, `B`) scoped to the function signature. Constraints propagate through expressions via unification.

@@ -616,15 +616,30 @@ fn result_paths_proven(stmts: &[Node], target: &HandleKind, env: &Env) -> bool {
     }
 }
 
+pub(crate) fn type_contains_collection_owner(ty: &TypeAnn) -> bool {
+    super::provenance::is_collection_owner_type(ty)
+        || match ty {
+            TypeAnn::Array { element, .. }
+            | TypeAnn::Slice { element, .. }
+            | TypeAnn::Ref {
+                target: element, ..
+            } => type_contains_collection_owner(element),
+            TypeAnn::Tuple { elements } | TypeAnn::Generic { args: elements, .. } => {
+                elements.iter().any(type_contains_collection_owner)
+            }
+            _ => false,
+        }
+}
+
 fn type_needs_collection_flow(ty: &TypeAnn) -> bool {
-    declared_kind(ty).is_some() || type_contains_slice(ty)
+    type_contains_collection_owner(ty) || declared_kind(ty).is_some() || type_contains_slice(ty)
 }
 
 /// Scalar-only functions cannot create borrowed Vec-layout provenance. Skip
 /// their bodies unless a local annotation or a resolved call signature reaches
 /// the array/slice ABI; this keeps the loop fixed-point pass off the ordinary
 /// scalar compilation path while retaining checks at every collection boundary.
-fn function_needs_collection_flow(fd: &FnDefData) -> bool {
+fn function_needs_collection_flow(fd: &FnDefData, has_collection_owner_field: bool) -> bool {
     if fd
         .params
         .iter()
@@ -640,16 +655,27 @@ fn function_needs_collection_flow(fd: &FnDefData) -> bool {
                 params.iter().any(type_needs_collection_flow)
                     || ret.as_ref().is_some_and(type_needs_collection_flow)
             }),
+            Node::FieldAssign { .. } | Node::IndexAssign { .. } => has_collection_owner_field,
             _ => false,
         })
     })
 }
 
-pub(crate) fn check_fn(fd: &FnDefData, src: &str, file: Option<&str>, errs: &mut Vec<Diagnostic>) {
-    if !function_needs_collection_flow(fd) {
+pub(crate) fn check_fn(
+    fd: &FnDefData,
+    struct_fields: &std::rc::Rc<super::StructFieldTypes>,
+    has_collection_owner_field: bool,
+    src: &str,
+    file: Option<&str>,
+    errs: &mut Vec<Diagnostic>,
+) {
+    if !function_needs_collection_flow(fd, has_collection_owner_field) {
         return;
     }
-    let mut env = Env::default();
+    let mut env = Env {
+        struct_fields: std::rc::Rc::clone(struct_fields),
+        ..Env::default()
+    };
     for param in &fd.params {
         if !matches!(param.ty, TypeAnn::Slice { .. }) && type_contains_slice(&param.ty) {
             report(

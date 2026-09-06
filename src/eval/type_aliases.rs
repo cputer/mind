@@ -22,13 +22,30 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::{Node, TypeAnn};
 use crate::ir::IRModule;
 
+/// Module-local aliases collected once and reused by all signature/type users
+/// in a pass. This is the same alias policy used by lowering's signatures.
+pub(crate) struct LocalTypeAliases {
+    aliases: BTreeMap<String, TypeAnn>,
+}
+
+impl LocalTypeAliases {
+    pub(crate) fn new(items: &[Node]) -> Self {
+        let mut aliases = BTreeMap::new();
+        collect_local_type_aliases(items, &mut aliases);
+        Self { aliases }
+    }
+
+    pub(crate) fn resolve(&self, ty: &TypeAnn) -> TypeAnn {
+        resolve_or_original(ty, &self.aliases)
+    }
+}
+
 /// Populate local function-signature metadata after resolving aliases declared
 /// in the same parsed module. `Node::Block` is transparent here because the
 /// parser represents a source-level `module name { ... }` wrapper as that node;
 /// the project export and local-const collectors use the same rule.
 pub(super) fn collect_local_fn_signatures(items: &[Node], ir: &mut IRModule) {
-    let mut aliases = BTreeMap::new();
-    collect_local_type_aliases(items, &mut aliases);
+    let aliases = LocalTypeAliases::new(items);
     collect_signatures(items, &aliases, ir);
 }
 
@@ -44,19 +61,16 @@ fn collect_local_type_aliases(items: &[Node], aliases: &mut BTreeMap<String, Typ
     }
 }
 
-fn collect_signatures(items: &[Node], aliases: &BTreeMap<String, TypeAnn>, ir: &mut IRModule) {
+fn collect_signatures(items: &[Node], aliases: &LocalTypeAliases, ir: &mut IRModule) {
     for item in items {
         match item {
             Node::FnDef(fd, _) if fd.type_params.is_empty() => {
                 let param_types = fd
                     .params
                     .iter()
-                    .map(|param| resolve_or_original(&param.ty, aliases))
+                    .map(|param| aliases.resolve(&param.ty))
                     .collect();
-                let ret_type = fd
-                    .ret_type
-                    .as_ref()
-                    .map(|ret| resolve_or_original(ret, aliases));
+                let ret_type = fd.ret_type.as_ref().map(|ret| aliases.resolve(ret));
                 ir.fn_signatures
                     .insert(fd.name.clone(), (param_types, ret_type));
             }

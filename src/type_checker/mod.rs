@@ -14,6 +14,7 @@
 
 #[cfg(feature = "std-surface")]
 mod array_lengths;
+mod duplicate_structs;
 #[cfg(feature = "std-surface")]
 pub(crate) mod lowering_refusals;
 pub mod nerve_lint;
@@ -4615,7 +4616,15 @@ pub fn check_module_types_in_file(
 ) -> Vec<Pretty> {
     crate::diagnostics::reset_line_index_cache();
     let mut errors = qualified_enums::validate(module, src, file);
-    errors.extend(check_module_types_in_file_impl(module, src, file, env));
+    duplicate_structs::check(&module.items, src, file, &mut errors);
+    errors.extend(check_module_types_in_file_impl(
+        module,
+        src,
+        file,
+        env,
+        #[cfg(feature = "std-surface")]
+        None,
+    ));
     #[cfg(feature = "std-surface")]
     {
         array_lengths::check(module, src, file, &mut errors);
@@ -4637,6 +4646,9 @@ fn check_module_types_in_file_impl(
     src: &str,
     file: Option<&str>,
     env: &TypeEnv,
+    #[cfg(feature = "std-surface")] inherited_struct_fields: Option<
+        &std::rc::Rc<slice_abi::StructFieldTypes>,
+    >,
 ) -> Vec<Pretty> {
     let mut errs = Vec::new();
     let mut tenv = env.clone();
@@ -4718,6 +4730,12 @@ fn check_module_types_in_file_impl(
     let mut intra_fn_sigs: IntraFnSigs = IntraFnSigs::default();
     let mut has_fn = false;
     let mut has_enum = false;
+    #[cfg(feature = "std-surface")]
+    let struct_field_types = slice_abi::struct_field_types(&module.items, inherited_struct_fields);
+    #[cfg(feature = "std-surface")]
+    let struct_fields_have_owner = struct_field_types
+        .values()
+        .any(slice_abi::type_contains_collection_owner);
 
     for item in &module.items {
         match item {
@@ -4732,7 +4750,9 @@ fn check_module_types_in_file_impl(
                 // additionally feed the extern-ABI check below.
                 struct_names.insert(name.clone());
                 #[cfg(feature = "std-surface")]
-                slice_abi::check_struct_fields(name, fields, src, file, &mut errs);
+                {
+                    slice_abi::check_struct_fields(name, fields, src, file, &mut errs);
+                }
                 if attrs
                     .iter()
                     .any(|a| a.name == "repr" && a.args.iter().any(|arg| arg == "C"))
@@ -5158,6 +5178,8 @@ fn check_module_types_in_file_impl(
                             src,
                             file,
                             env,
+                            #[cfg(feature = "std-surface")]
+                            Some(&struct_field_types),
                         ));
                     }
                 } else {
@@ -5177,8 +5199,14 @@ fn check_module_types_in_file_impl(
                         let inner_module = Module {
                             items: vec![inner.clone()],
                         };
-                        let inner_errs =
-                            check_module_types_in_file_impl(&inner_module, src, file, &inner_env);
+                        let inner_errs = check_module_types_in_file_impl(
+                            &inner_module,
+                            src,
+                            file,
+                            &inner_env,
+                            #[cfg(feature = "std-surface")]
+                            Some(&struct_field_types),
+                        );
                         errs.extend(inner_errs);
                     }
                 }
@@ -5208,7 +5236,14 @@ fn check_module_types_in_file_impl(
                 check_fn_param_shape_conflicts(params, *fn_span, src, file, &mut errs);
 
                 #[cfg(feature = "std-surface")]
-                slice_abi::check_fn(fd, src, file, &mut errs);
+                slice_abi::check_fn(
+                    fd,
+                    &struct_field_types,
+                    struct_fields_have_owner,
+                    src,
+                    file,
+                    &mut errs,
+                );
 
                 // Build a local env that extends the module env with the
                 // function's parameters, mapping each param name to its
@@ -5234,7 +5269,14 @@ fn check_module_types_in_file_impl(
                     collect_fixed_bytes_locals(body, &mut locals);
                     (!locals.is_empty()).then(|| FixedBytesLocalsGuard::install(locals))
                 };
-                let body_errs = check_module_types_in_file_impl(&body_module, src, file, &fn_env);
+                let body_errs = check_module_types_in_file_impl(
+                    &body_module,
+                    src,
+                    file,
+                    &fn_env,
+                    #[cfg(feature = "std-surface")]
+                    Some(&struct_field_types),
+                );
                 // RFC 0012 Phase A is PURELY ADDITIVE: this recursion exists
                 // solely to fire `shape::*` diagnostics on tensor `let`
                 // bindings inside fn bodies. It must NOT contribute generic

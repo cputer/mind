@@ -30,6 +30,14 @@ pub(super) fn expr_kind(node: &Node, env: &Env) -> Option<HandleKind> {
         } if method == "push" && args.len() == 1 => {
             expr_kind(receiver, env).filter(|kind| matches!(kind, HandleKind::Array(_)))
         }
+        Node::FieldAccess {
+            receiver, field, ..
+        } => field_type(receiver, field, env)
+            .as_ref()
+            .and_then(declared_kind),
+        Node::IndexAccess { receiver, .. } => {
+            indexed_type(receiver, env).as_ref().and_then(declared_kind)
+        }
         _ => None,
     }
 }
@@ -60,18 +68,201 @@ pub(super) fn expr_type(node: &Node, env: &Env) -> Option<TypeAnn> {
         Node::StructLit { name, .. } => Some(TypeAnn::Named(name.clone())),
         Node::Paren(inner, _) => expr_type(inner, env),
         Node::Call { callee, .. } => call_signature(callee).and_then(|(_, ret)| ret),
+        Node::FieldAccess {
+            receiver, field, ..
+        } => field_type(receiver, field, env),
+        Node::IndexAccess { receiver, .. } => indexed_type(receiver, env),
+        Node::MethodCall {
+            receiver,
+            method,
+            args,
+            ..
+        } => {
+            let receiver_ty = expr_type(receiver, env)?;
+            match (
+                collection_owner_name(&receiver_ty),
+                method.as_str(),
+                args.len(),
+            ) {
+                (Some("array"), "push", 1)
+                | (Some("map"), "insert", 2)
+                | (Some("set"), "add" | "insert", 1) => Some(receiver_ty),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
 
+pub(super) fn field_type(base: &Node, field: &str, env: &Env) -> Option<TypeAnn> {
+    let base_ty = expr_type(base, env)?;
+    let struct_name = match &base_ty {
+        TypeAnn::Named(name) => name.as_str(),
+        TypeAnn::Ref { target, .. } => match target.as_ref() {
+            TypeAnn::Named(name) => name.as_str(),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let exact = (struct_name.to_string(), field.to_string());
+    if let Some(ty) = env.struct_fields.get(&exact) {
+        return Some(ty.clone());
+    }
+    if struct_name.contains('.') && !struct_name.starts_with("crate.") {
+        return env
+            .struct_fields
+            .get(&(format!("crate.{struct_name}"), field.to_string()))
+            .cloned();
+    }
+    None
+}
+
+pub(super) fn indexed_type(receiver: &Node, env: &Env) -> Option<TypeAnn> {
+    indexed_type_from_ann(&expr_type(receiver, env)?)
+}
+
+pub(super) fn indexed_type_from_ann(receiver: &TypeAnn) -> Option<TypeAnn> {
+    match receiver {
+        TypeAnn::Generic { name, args } if name == "array" => args.first().cloned(),
+        TypeAnn::Array { element, .. } | TypeAnn::Slice { element, .. } => {
+            Some((**element).clone())
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn collection_owner_name(ty: &TypeAnn) -> Option<&str> {
+    match ty {
+        TypeAnn::Generic { name, .. } if matches!(name.as_str(), "array" | "map" | "set") => {
+            Some(name)
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn is_collection_owner_type(ty: &TypeAnn) -> bool {
+    collection_owner_name(ty).is_some()
+}
+
+fn compatible_value(value: &Node, target: &TypeAnn, env: &Env) -> bool {
+    if is_collection_owner_type(target) {
+        return compatible_collection_owner_source(target, value, env);
+    }
+    if let Some(target_class) = scalar_class_of_ann(target) {
+        return confident_scalar_class(value, &env.classes) == Some(target_class);
+    }
+    expr_type(value, env)
+        .as_ref()
+        .is_some_and(|actual| same_type(actual, target))
+}
+
+pub(super) fn compatible_collection_owner_source(
+    target: &TypeAnn,
+    value: &Node,
+    env: &Env,
+) -> bool {
+    if let Node::Paren(inner, _) = value {
+        return compatible_collection_owner_source(target, inner, env);
+    }
+    match (target, value) {
+        (TypeAnn::Generic { name, args }, Node::ArrayLit { elements, .. })
+            if name == "array" && args.len() == 1 =>
+        {
+            elements
+                .iter()
+                .all(|element| compatible_value(element, &args[0], env))
+        }
+        (TypeAnn::Generic { name, args }, Node::MapLit { entries, .. })
+            if name == "map" && args.len() == 2 =>
+        {
+            entries.iter().all(|(key, value)| {
+                compatible_value(key, &args[0], env) && compatible_value(value, &args[1], env)
+            })
+        }
+        (TypeAnn::Generic { name, args }, Node::SetLit { elements, .. })
+            if name == "set" && args.len() == 1 =>
+        {
+            elements
+                .iter()
+                .all(|element| compatible_value(element, &args[0], env))
+        }
+        _ => expr_type(value, env)
+            .as_ref()
+            .is_some_and(|actual| same_type(actual, target)),
+    }
+}
+
 pub(super) fn same_type(left: &TypeAnn, right: &TypeAnn) -> bool {
-    left == right
-        || matches!(
-            (left, right),
-            (TypeAnn::Named(a), TypeAnn::Named(b))
-                if matches!(a.as_str(), "string" | "String")
-                    && matches!(b.as_str(), "string" | "String")
-        )
+    if left == right {
+        return true;
+    }
+    match (left, right) {
+        (TypeAnn::Named(a), TypeAnn::Named(b)) => {
+            matches!(a.as_str(), "string" | "String") && matches!(b.as_str(), "string" | "String")
+        }
+        (
+            TypeAnn::Generic {
+                name: left_name,
+                args: left_args,
+            },
+            TypeAnn::Generic {
+                name: right_name,
+                args: right_args,
+            },
+        ) => {
+            left_name == right_name
+                && left_args.len() == right_args.len()
+                && left_args
+                    .iter()
+                    .zip(right_args)
+                    .all(|(left, right)| same_type(left, right))
+        }
+        (
+            TypeAnn::Array {
+                element: left_element,
+                length: left_length,
+            },
+            TypeAnn::Array {
+                element: right_element,
+                length: right_length,
+            },
+        ) => left_length == right_length && same_type(left_element, right_element),
+        (
+            TypeAnn::Slice {
+                mutable: left_mutable,
+                element: left_element,
+            },
+            TypeAnn::Slice {
+                mutable: right_mutable,
+                element: right_element,
+            },
+        ) => left_mutable == right_mutable && same_type(left_element, right_element),
+        (
+            TypeAnn::Ref {
+                mutable: left_mutable,
+                target: left_target,
+            },
+            TypeAnn::Ref {
+                mutable: right_mutable,
+                target: right_target,
+            },
+        ) => left_mutable == right_mutable && same_type(left_target, right_target),
+        (
+            TypeAnn::Tuple {
+                elements: left_elements,
+            },
+            TypeAnn::Tuple {
+                elements: right_elements,
+            },
+        ) => {
+            left_elements.len() == right_elements.len()
+                && left_elements
+                    .iter()
+                    .zip(right_elements)
+                    .all(|(left, right)| same_type(left, right))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn compatible_source(target: &HandleKind, value: &Node, env: &Env) -> bool {

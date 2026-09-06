@@ -155,7 +155,6 @@ const SHARED_TEMP_BACKLOG: &[(&str, usize)] = &[
     ("set_surface_run.rs", 1),
     ("statement_mutation_run.rs", 1),
     ("std_import_standalone_run.rs", 1),
-    ("std_surface_async.rs", 5),
     ("std_surface_cdylib_link.rs", 2),
     ("std_surface_i32_intrinsics.rs", 1),
     ("std_surface_io_canon.rs", 1),

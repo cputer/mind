@@ -1995,9 +1995,9 @@ pub(crate) fn build_global_enums(
     parsed: &[(String, crate::ast::Module)],
 ) -> crate::ir::GlobalEnums {
     let mut enums = crate::ir::GlobalEnums::default();
-    for (_path, module) in parsed {
+    for (path, module) in parsed {
         for item in &module.items {
-            collect_global_enum_item(item, &mut enums);
+            collect_global_enum_item(path, item, &mut enums);
         }
     }
     crate::qualified_enums::rebuild(parsed, &mut enums);
@@ -2142,7 +2142,11 @@ impl Drop for ProjectResolutionGuard {
 /// same miss the per-module `register_module_wrapped_enum_tags` pre-pass closes
 /// for the single-file path).
 #[cfg(feature = "cross-module-imports")]
-fn collect_global_enum_item(item: &crate::ast::Node, enums: &mut crate::ir::GlobalEnums) {
+fn collect_global_enum_item(
+    module_path: &str,
+    item: &crate::ast::Node,
+    enums: &mut crate::ir::GlobalEnums,
+) {
     if let crate::ast::Node::EnumDef { name, variants, .. } = item {
         if !enums.names.iter().any(|n| n == name) {
             enums.names.push(name.clone());
@@ -2185,7 +2189,10 @@ fn collect_global_enum_item(item: &crate::ast::Node, enums: &mut crate::ir::Glob
         let field_types: Vec<crate::ast::TypeAnn> = fields.iter().map(|f| f.ty.clone()).collect();
         enums
             .structs
-            .insert(name.clone(), (field_names, field_types));
+            .insert(name.clone(), (field_names.clone(), field_types.clone()));
+        enums
+            .qualified_structs
+            .insert(format!("{module_path}.{name}"), (field_names, field_types));
     }
     // Every fn → its declared return type, for `let x = f(...)` RHS type
     // inference (`let raw = decorator_arg_string(d); raw.split(…)`).
@@ -2198,7 +2205,7 @@ fn collect_global_enum_item(item: &crate::ast::Node, enums: &mut crate::ir::Glob
     // Descend into a `module { … }` wrapper (a transparent `Node::Block`).
     if let crate::ast::Node::Block { stmts, .. } = item {
         for inner in stmts {
-            collect_global_enum_item(inner, enums);
+            collect_global_enum_item(module_path, inner, enums);
         }
     }
 }

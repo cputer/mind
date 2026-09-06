@@ -48,7 +48,7 @@ pub(crate) mod slice_abi;
 pub(crate) mod string_equality;
 pub mod traits;
 #[cfg(feature = "std-surface")]
-mod type_aliases;
+pub(crate) mod type_aliases;
 // RFC 0005 P0f Step 2 — pre-pass that builds a span-keyed side-table
 // of `FieldAccess` receiver struct types so lowering can resolve
 // chained access, fn returns, and struct-typed parameters.

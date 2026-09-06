@@ -70,9 +70,15 @@ Slice call validation with `std-surface` reports:
   compatible dynamic-array layout.
 - `E2033`: a borrowed slice capability would be erased, escaped, or used for
   an operation it does not permit.
+- `E2034`: a collection-owner field or indexed owner slot would be replaced by
+  a status, scalar, or different declared collection type.
 
 These are type-checking refusals before artifact emission. See
 [slice calls](type-system.md#slice-calls) for the supported boundary.
+
+`E2035` rejects duplicate struct declarations in one source module. Inline
+`module { ... }` blocks are transparent declaration lists and share that
+namespace. Separate project files may declare structs with the same name.
 
 See [`docs/versioning.md`](versioning.md) for how these classes fit the stability
 contract.

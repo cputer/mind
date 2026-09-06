@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1641 | **Est. tokens:** ~3109683
-**Generated:** 2026-09-06 22:48 UTC
+**Files:** 1646 | **Est. tokens:** ~3120384
+**Generated:** 2026-09-06 23:26 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4828 |
 | `config/` | 2 | ~3329 |
-| `docs/` | 36 | ~101486 |
+| `docs/` | 36 | ~101682 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9315 |
 | `docs/design/` | 4 | ~11498 |
@@ -101,12 +101,12 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 21 | ~99571 |
+| `src/eval/` | 21 | ~99758 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 6 | ~78101 |
+| `src/ir/` | 6 | ~78069 |
 | `src/ir/compact/` | 3 | ~15292 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 10 | ~47991 |
-| `src/type_checker/slice_abi/` | 2 | ~7857 |
+| `src/type_checker/` | 11 | ~50194 |
+| `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 369 | ~708564 |
+| `tests/` | 372 | ~713800 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -455,7 +455,7 @@
 ### `docs/`
 
 - `determinism.md` (~4368 tok, huge) — The Determinism Contract
-- `errors.md` (~802 tok, large) — MIND Core Error Model
+- `errors.md` (~892 tok, large) — MIND Core Error Model
 - `ffi-runtime.md` (~529 tok, large) — FFI & Runtime Integration
 ### `docs/gates/`
 
@@ -530,7 +530,7 @@
 - `v1.0.md` (~953 tok, large) — MIND Language Specification v1.0 (Working Draft)
 ### `docs/`
 
-- `type-system.md` (~1414 tok, large) — Type System
+- `type-system.md` (~1520 tok, huge) — Type System
 - `version-matrix.md` (~1828 tok, huge) — MIND Ecosystem — Version Matrix
 - `versioning.md` (~1018 tok, large) — MIND Core Stability & Versioning
 - `whitepaper.md` (~2788 tok, huge) — MIND: The Native Language for Intelligent Systems
@@ -1097,9 +1097,9 @@
 ### `src/eval/`
 
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
-- `struct_resolver.rs` (~8064 tok, huge) — Copyright 2025 STARGA Inc.
+- `struct_resolver.rs` (~8148 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
-- `type_aliases.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc.
+- `type_aliases.rs` (~1499 tok, large) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/exec/`
 
@@ -1149,7 +1149,7 @@
 - `evidence.rs` (~13353 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17822 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17790 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4413 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21113 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
@@ -1251,18 +1251,20 @@
 - `mod.rs` (~6839 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
-- `array_lengths.rs` (~492 tok, medium) — Copyright 2026 STARGA Inc.
+- `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
+- `duplicate_structs.rs` (~424 tok, medium) — Copyright 2026 STARGA Inc.
 - `lowering_refusals.rs` (~6770 tok, huge) — Copyright 2026 STARGA Inc.
 - `lowering_refusals_tests.rs` (~4372 tok, huge) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
 - `qualified_enums.rs` (~3075 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
-- `slice_abi.rs` (~6956 tok, huge) — Copyright 2025 STARGA Inc.
+- `slice_abi.rs` (~7414 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
 
-- `borrow_flow.rs` (~6878 tok, huge) — Copyright 2025 STARGA Inc.
-- `provenance.rs` (~979 tok, large) — Copyright 2026 STARGA Inc.
+- `borrow_flow.rs` (~7116 tok, huge) — Copyright 2025 STARGA Inc.
+- `owner_assignment.rs` (~1112 tok, large) — Copyright 2026 STARGA Inc.
+- `provenance.rs` (~2540 tok, huge) — Copyright 2026 STARGA Inc.
 ### `src/type_checker/`
 
 - `stdlib_signatures.rs` (~620 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1377,6 +1379,7 @@
 - `closure_i64_capture.rs` (~1679 tok, huge) — Copyright 2025 STARGA Inc.
 - `collection_ctor_run.rs` (~580 tok, large) — Copyright 2025 STARGA Inc.
 - `collection_mutation_expr_position_run.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
+- `collection_owner_assignment_run.rs` (~3737 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/common/`
 
 - `gate.rs` (~4999 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1535,6 +1538,7 @@
 - `digit_separator_run.rs` (~606 tok, large) — Copyright 2025 STARGA Inc.
 - `dot_enum_variant_run.rs` (~756 tok, large) — Copyright 2025 STARGA Inc.
 - `dot_variants.rs` (~284 tok, medium) — Copyright 2025 STARGA Inc.
+- `duplicate_struct_declarations.rs` (~576 tok, large) — Copyright 2026 STARGA Inc.
 - `ecdsa_p256_driver.py` (~2752 tok, huge) — # Ground-truth driver for std/ecdsa_p256.mind (pure-MIND ECDSA P-256/SHA-256
 - `emit_ir_for_loop.rs` (~369 tok, medium) — Regression test for #4: lowering a `for` loop to IR (the path `mindc --emit-ir`
 - `enum_match_collision_run.rs` (~987 tok, large) — Copyright 2025 STARGA Inc.
@@ -1561,6 +1565,7 @@
 - `fail_open_skip_site_ratchet.rs` (~8472 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
+- `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
@@ -1685,7 +1690,7 @@
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.
 - `grad_wrt_resolve.rs` (~730 tok, large) — Copyright 2025 STARGA Inc.
 - `harness_portability.rs` (~1260 tok, large) — Copyright 2025 STARGA Inc.
-- `harness_scratch_isolation.rs` (~3423 tok, huge) — Copyright 2025 STARGA Inc.
+- `harness_scratch_isolation.rs` (~3415 tok, huge) — Copyright 2025 STARGA Inc.
 - `hpack_driver.py` (~3027 tok, huge) — # Official-vector driver for std/hpack.mind (pure-MIND HPACK decoding,
 - `http2_frame_driver.py` (~4195 tok, huge) — # Reference-vector driver for std/http2_frame.mind (pure-MIND HTTP/2 framing,
 - `if_expr.rs` (~429 tok, medium) — Copyright 2025 STARGA Inc.
@@ -2149,8 +2154,8 @@
 - `std_llvm_bindings_smoke.rs` (~2673 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_mlir_bindings_smoke.rs` (~4872 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_arena.rs` (~1346 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_array_literals.rs` (~3189 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_async.rs` (~4323 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_array_literals.rs` (~3359 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_async.rs` (~4337 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bitwise_binops.rs` (~2380 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_break_continue.rs` (~1335 tok, large) — Copyright 2026 STARGA Inc.

@@ -379,6 +379,25 @@ pub fn bad() -> Values {
         let bad_source = dir.path().join(format!("negative_{name}.mind"));
         let bad_artifact = dir.path().join(format!("negative_{name}.so"));
         fs::write(&bad_source, text).expect("write negative source");
+        let checked = Command::new(env!("CARGO_BIN_EXE_mindc"))
+            .args(["check", "--no-fmt", "--no-lint"])
+            .arg(&bad_source)
+            .output()
+            .expect("check negative fixed-array return");
+        assert_eq!(
+            checked.status.code(),
+            Some(1),
+            "negative {name} must fail check"
+        );
+        let checked_text = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&checked.stdout),
+            String::from_utf8_lossy(&checked.stderr)
+        );
+        assert!(
+            checked_text.contains("E2001"),
+            "negative {name} must report its type error: {checked_text}"
+        );
         let bad = Command::new(env!("CARGO_BIN_EXE_mindc"))
             .arg(&bad_source)
             .arg("--emit-shared")

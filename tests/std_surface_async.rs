@@ -26,7 +26,6 @@
 #![cfg(feature = "std-surface")]
 
 mod common;
-use common::mindc_bin;
 
 use libmind::eval::lower::lower_to_ir;
 use libmind::ir::Instr;
@@ -225,11 +224,11 @@ fn sched_kind_accessor_in_ir() {
 
 #[cfg(feature = "mlir-build")]
 mod mlir_tests {
-    use super::mindc_bin;
+    use crate::common::{mindc_bin, scratch_dir};
 
     use std::path::PathBuf;
 
-    // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
+    // The Cargo-selected binary requires an exclusive target throughout tests.
 
     fn tool_on_path(name: &str) -> bool {
         std::process::Command::new("which")
@@ -280,7 +279,7 @@ mod mlir_tests {
 
     #[test]
     fn sync_scheduler_submit_run_returns_work_value() {
-        let dir = std::env::temp_dir().join("mind_async_test_7");
+        let dir = scratch_dir("std_surface_async").join("mind_async_test_7");
         std::fs::create_dir_all(&dir).ok();
         let so = match compile_async_so(&dir) {
             Some(p) => p,
@@ -306,7 +305,7 @@ mod mlir_tests {
 
     #[test]
     fn then_composition_produces_sum_of_stages() {
-        let dir = std::env::temp_dir().join("mind_async_test_8");
+        let dir = scratch_dir("std_surface_async").join("mind_async_test_8");
         std::fs::create_dir_all(&dir).ok();
         let so = match compile_async_so(&dir) {
             Some(p) => p,
@@ -343,7 +342,7 @@ mod mlir_tests {
 
     #[test]
     fn replay_scheduler_trace_hash_determinism() {
-        let dir = std::env::temp_dir().join("mind_async_test_9");
+        let dir = scratch_dir("std_surface_async").join("mind_async_test_9");
         std::fs::create_dir_all(&dir).ok();
         let so = match compile_async_so(&dir) {
             Some(p) => p,
@@ -389,7 +388,7 @@ mod mlir_tests {
 
     #[test]
     fn replay_scheduler_different_pipelines_produce_different_hashes() {
-        let dir = std::env::temp_dir().join("mind_async_test_10");
+        let dir = scratch_dir("std_surface_async").join("mind_async_test_10");
         std::fs::create_dir_all(&dir).ok();
         let so = match compile_async_so(&dir) {
             Some(p) => p,
@@ -433,7 +432,7 @@ mod mlir_tests {
 
     #[test]
     fn sync_scheduler_trace_hash_is_zero() {
-        let dir = std::env::temp_dir().join("mind_async_test_11");
+        let dir = scratch_dir("std_surface_async").join("mind_async_test_11");
         std::fs::create_dir_all(&dir).ok();
         let so = match compile_async_so(&dir) {
             Some(p) => p,
