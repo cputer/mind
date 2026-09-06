@@ -2687,7 +2687,7 @@ impl LoweringContext {
                     )
                 );
                 if !is_narrow_mem {
-                    for a in args {
+                    for (i, a) in args.iter().enumerate() {
                         match self.values.get(a) {
                             Some(ValueKind::ScalarI64) => {}
                             // RFC 0012 §5.1 — a scalar `f64` call argument is a
@@ -2746,20 +2746,16 @@ impl LoweringContext {
                             // `__mind_conv_u64` marker also flows through here.
                             #[cfg(feature = "std-surface")]
                             Some(ValueKind::ScalarU64) => {}
-                            // RH f64-aggregate surface: a fixed `[T; N]` array passed
-                            // BY VALUE to a user fn is a `Tensor` arg. The callee's
-                            // param type recorded in `fn_signatures` is the matching
-                            // `tensor<NxT>` (TypeAnn::Array lowering, c7d48d7f), and
-                            // the generic emission below forwards the tensor SSA
-                            // value unchanged into `func.call @f(%a) : (tensor<NxT>)
-                            // -> ret`; mlir-opt's function-boundary bufferization
-                            // lowers the internal tensor call. A shape/dtype mismatch
-                            // vs the callee stays loud at mlir-opt (the `_ => ""`
-                            // coercion pass-through), never a silent miscompile. This
-                            // is the read-only fixed-array param ABI (array RETURN is
-                            // still out of subset and rejected elsewhere).
+                            // Fixed arrays require a declared tensor parameter; shape/dtype
+                            // mismatches remain subject to the MLIR verifier.
+                            // i64-ABI intrinsics therefore fail closed below.
                             #[cfg(feature = "std-surface")]
-                            Some(ValueKind::Tensor { .. }) => {}
+                            Some(ValueKind::Tensor { .. })
+                                if self
+                                    .fn_signatures
+                                    .get(name)
+                                    .and_then(|(params, _)| params.get(i))
+                                    .is_some_and(|ty| ty.starts_with("tensor<")) => {}
                             _ => {
                                 return Err(MlirLowerError::UnsupportedOp {
                                     instr_index,

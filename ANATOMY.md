@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1641 | **Est. tokens:** ~3106897
-**Generated:** 2026-09-06 21:43 UTC
+**Files:** 1641 | **Est. tokens:** ~3107143
+**Generated:** 2026-09-06 22:00 UTC
 
 ## Token Budget Guide
 
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 10 | ~47954 |
+| `src/type_checker/` | 10 | ~47991 |
 | `src/type_checker/slice_abi/` | 2 | ~7857 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 369 | ~705836 |
+| `tests/` | 369 | ~706045 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12264 |
@@ -1252,7 +1252,7 @@
 ### `src/type_checker/`
 
 - `array_lengths.rs` (~492 tok, medium) — Copyright 2026 STARGA Inc.
-- `lowering_refusals.rs` (~6733 tok, huge) — Copyright 2026 STARGA Inc.
+- `lowering_refusals.rs` (~6770 tok, huge) — Copyright 2026 STARGA Inc.
 - `lowering_refusals_tests.rs` (~4372 tok, huge) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1729,7 +1729,7 @@
 - `lint_infrastructure.rs` (~2540 tok, huge) — Copyright 2025 STARGA Inc.
 - `loop_run.rs` (~705 tok, large) — Copyright 2025 STARGA Inc.
 - `loud_fail_non_i64.rs` (~852 tok, large) — Release-readiness P1.1 — the runnable-artifact ABI gate.
-- `lowering_refusal_diagnostics_run.rs` (~6216 tok, huge) — Copyright 2026 STARGA Inc.
+- `lowering_refusal_diagnostics_run.rs` (~6425 tok, huge) — Copyright 2026 STARGA Inc.
 - `manifest_pin_enforcement.rs` (~3112 tok, huge) — The `[mind]` table (`mindc-min` / `mindc-max` / `ir-format` /
 - `map_get_inference_run.rs` (~668 tok, large) — Copyright 2025 STARGA Inc.
 - `map_runtime_run.rs` (~797 tok, large) — Copyright 2025 STARGA Inc.

@@ -60,7 +60,9 @@ pub(crate) const E_NON_FINAL_VARIANT_BINDING: &str = "E2301";
 /// mutator is refused in an unrebindable position iff it would have been
 /// rebound as a bare statement. The two used to be a `const` and a hand-written
 /// `matches!` kept in sync by a comment.
-pub(crate) const COLLECTION_MUTATORS: &[&str] = &["insert", "push", "set", "add"];
+// `vec_set` mutates existing storage and returns an i64 status, never a new
+// owner. Rebinding that status would replace the collection handle with zero.
+pub(crate) const COLLECTION_MUTATORS: &[&str] = &["insert", "push", "add"];
 
 // ---------------------------------------------------------------------------
 // Refusal sink

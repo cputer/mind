@@ -432,6 +432,39 @@ fn same_binding_update_compiles_and_counts_every_element() {
 }
 
 #[test]
+fn in_place_set_preserves_owned_collection_handles() {
+    let source = r#"
+struct Holder { xs: array<i64> }
+pub fn local(k: i64) -> i64 {
+    let xs: array<i64> = [1, 2]
+    xs.set(0, k)
+    return xs[0] + xs.length
+}
+pub fn looped(k: i64) -> i64 {
+    let xs: array<i64> = [1]
+    for i in 0..3 { xs.set(0, xs[0] + k) }
+    return xs[0]
+}
+pub fn field(k: i64) -> i64 {
+    let h: Holder = Holder { xs: [1] }
+    h.xs.set(0, k)
+    return h.xs[0]
+}
+pub fn status(k: i64) -> i64 {
+    let xs: array<i64> = [1]
+    let rc = xs.set(0, k)
+    return xs[0] + rc
+}
+"#;
+    let Some(so) = assert_builds("in_place_owned_set", source) else {
+        return;
+    };
+    for (function, expected) in [("local", 11), ("looped", 28), ("field", 9), ("status", 9)] {
+        assert_eq!(call1(&so, function, 9), expected, "{function}");
+    }
+}
+
+#[test]
 fn non_collection_add_is_not_refused_by_spelling() {
     // The rule is the receiver's TYPE, never the method name: a user-defined
     // `.add` on a non-collection receiver must still compile and run.

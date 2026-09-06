@@ -4252,7 +4252,7 @@ pub(crate) fn let_declares_collection(ann: &Option<TypeAnn>, value: &ast::Node) 
 
 /// Rewrite STATEMENT-position collection mutations into assignments so the
 /// non-mutating std handle is rebound. `m.insert(k,v)` / `v.push(x)` /
-/// `v.set(i,x)` as a bare statement (result discarded) → `m = m.insert(k,v)`.
+/// `s.add(x)` as a bare statement (result discarded) → `m = m.insert(k,v)`.
 /// std.map's `map_insert` and (on realloc) std.vec's `vec_push` return a FRESH
 /// handle, so without the rebind the change is silently lost. Emitting a real
 /// `Node::Assign` — rather than rebinding the SSA env after lowering — keeps the
@@ -4260,7 +4260,7 @@ pub(crate) fn let_declares_collection(ann: &Option<TypeAnn>, value: &ast::Node) 
 /// the body for `Node::Assign` to find loop-carried vars; an env-only rebind
 /// would be invisible to it). Only applied when the receiver is a local KNOWN to
 /// be a collection (`array<T>` / `map<K,V>` from its let/param annotation), so a
-/// non-collection `.insert`/`.push`/`.set` is untouched and the keystone (no
+/// non-collection `.insert`/`.push`/`.add` is untouched and the keystone (no
 /// collections) is byte-identical.
 #[cfg(feature = "std-surface")]
 fn rewrite_collection_mutations(
