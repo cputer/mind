@@ -368,10 +368,14 @@ and never panic on overflow"* — and then uses a bare `left / right` for `Div`
 (`:2712`) and `left % right` for `Mod` (`:2718`), which is exactly the panic the
 comment exists to prevent.
 
-**Second defect, structural.** `Node::Assert { .. } => Ok(Value::Int(0))`
-(`:1888`) makes asserts a no-op, which is precisely why a *separate* statement
-evaluator has to exist in `src/test/mod.rs:644` (`eval_asserts_in_stmts`, with
-its own env, its own `Let/Assign/If/While` walk, recursing at `:734,738,787,790`).
+**Second defect, structural — CLOSED.** `Node::Assert { .. } => Ok(Value::Int(0))`
+made asserts a no-op, which is precisely why a *separate* statement evaluator
+had to exist in `src/test/mod.rs` (`eval_asserts_in_stmts`, with its own env and
+its own `Let/Assign/If/While` walk). Recommendation 1 below has landed: the
+`Assert` arm evaluates its condition under a private thread-local guard that only
+`mindc test` holds, the runner calls the test fn as ONE ordered interpreter pass,
+and the surplus walker is deleted
+(issues #240 / #241 / #243).
 
 **Reachability blind spots.**
 
@@ -387,9 +391,9 @@ its own env, its own `Let/Assign/If/While` walk, recursing at `:734,738,787,790`
 
 **Recommendation — WIRE, and fix the edge contract at the layer it belongs to.**
 
-1. Give `Node::Assert` a real arm under a test mode and retire
-   `src/test/mod.rs::eval_asserts_in_stmts` — that removes a whole surplus
-   evaluator by *wiring*, the top rung of the ladder.
+1. **Done.** `Node::Assert` has a real arm under a test mode and
+   `src/test/mod.rs::eval_asserts_in_stmts` is retired — a whole surplus
+   evaluator removed by *wiring*, the top rung of the ladder.
 2. Route every interpreter `Div`/`Mod` through one shared helper implementing
    `x/0 = 0` and `INT_MIN/-1 = INT_MIN`, matching both generators, and add a
    conformance cell per edge. This is a capability *gain*: programs on a defined
@@ -619,7 +623,7 @@ Recorded so the unification scope is not undercounted. **Not tasked here.**
 | `src/opt/comptime.rs:52,160` | Two compile-time const evaluators | Wired: `src/opt/scev.rs:518`, `src/opt/collapse.rs:55` | The only tables that get the edges *right*: `wrapping_div`/`wrapping_rem` with an explicit `b == 0` refusal, and a comment saying why. |
 | `src/opt/ir_canonical.rs:253` | IR-level const folder | Wired (backend prep) | Correctly refuses to fold both `r == 0` and `l == i64::MIN && r == -1`. |
 | `src/opt/fold.rs:109` | AST const folder | **Not pipeline-wired.** Sole consumer `tests/const_folding.rs:23`; `src/opt/comptime.rs:19` says so in-source: *"`opt::fold` is leaf-only and not pipeline-wired"* | Refuses `b == 0` but uses a bare `a / b`, so it would panic at `INT_MIN/-1`. An unwired engine is a **question** — why was it built and never connected? — not a deletion candidate. |
-| `src/test/mod.rs:644` | `eval_asserts_in_stmts`, a second statement evaluator | Wired: `mindc test` only | Exists solely because `Node::Assert` is a no-op in engine 6. Retired by *wiring* engine 6 (§6), not by deleting this. |
+| `src/test/mod.rs` (was `eval_asserts_in_stmts`) | a second statement evaluator, now RETIRED | — | Existed solely because `Node::Assert` was a no-op in engine 6. Retired by *wiring* engine 6 (§6): `mindc test` now runs the body as one interpreter call under its scoped assertion-checking mode. |
 
 ## The cross-cutting fact: `x/0` and `INT_MIN/-1` have eight answers
 

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1522 | **Est. tokens:** ~2983588
-**Generated:** 2026-09-06 10:31 UTC
+**Files:** 1524 | **Est. tokens:** ~2987313
+**Generated:** 2026-09-06 10:35 UTC
 
 ## Token Budget Guide
 
@@ -45,8 +45,8 @@
 | `benchmarks/jax_comparison/` | 5 | ~4642 |
 | `benchmarks/mojo/` | 8 | ~4300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4828 |
-| `config/` | 2 | ~3344 |
-| `docs/` | 36 | ~100829 |
+| `config/` | 2 | ~3338 |
+| `docs/` | 36 | ~100907 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9315 |
 | `docs/design/` | 4 | ~11498 |
@@ -100,7 +100,7 @@
 | `src/diagnostics/` | 3 | ~14137 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~10987 |
-| `src/eval/` | 17 | ~90215 |
+| `src/eval/` | 18 | ~91208 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~4592 |
 | `src/ffi/` | 3 | ~5541 |
@@ -121,12 +121,12 @@
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
-| `src/test/` | 1 | ~8662 |
+| `src/test/` | 1 | ~6839 |
 | `src/type_checker/` | 3 | ~25062 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 357 | ~667477 |
+| `tests/` | 358 | ~671960 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -412,12 +412,12 @@
 - `scientific_benchmark_raw.py` (~2485 tok, huge)
 ### `config/`
 
-- `capabilities.toml` (~2372 tok, huge) — [ir]
+- `capabilities.toml` (~2366 tok, huge) — [ir]
 - `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
 - `ARRAY_SEMANTICS.md` (~7509 tok, huge) — MIND array semantics — normative architecture record
-- `ENGINE_CONSUMER_LIST.md` (~9364 tok, huge) — Engine consumer list — the evidence pack for every hand-written semantics engine
+- `ENGINE_CONSUMER_LIST.md` (~9442 tok, huge) — Engine consumer list — the evidence pack for every hand-written semantics engine
 - `INDEPENDENCE_ROADMAP.md` (~18728 tok, huge) — MIND Rust-Independence Roadmap
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
 - `README.md` (~162 tok, small) — MIND Documentation
@@ -1059,6 +1059,7 @@
 ### `src/eval/`
 
 - `abi_gate.rs` (~12154 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
+- `assert_check.rs` (~993 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9335 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1220,7 +1221,7 @@
 - `target.rs` (~5031 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/test/`
 
-- `mod.rs` (~8662 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~6839 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/`
 
 - `nerve_lint.rs` (~7653 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1629,6 +1630,7 @@
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_doc_phase1.rs` (~3004 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
+- `mindc_test_evaluator_issues.rs` (~4490 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindcraft/`
@@ -1748,7 +1750,7 @@
 - `module_decl_run.rs` (~597 tok, large) — Copyright 2025 STARGA Inc.
 - `module_enum_match_run.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
 - `module_non_fn_call_reject.rs` (~1215 tok, large) — Copyright 2025 STARGA Inc.
-- `module_size_ratchet.rs` (~4000 tok, huge) — Copyright 2025 STARGA Inc.
+- `module_size_ratchet.rs` (~3993 tok, huge) — Copyright 2025 STARGA Inc.
 - `multimodule_determinism_run.rs` (~4275 tok, huge) — Copyright 2025 STARGA Inc.
 - `narrow_call_abi.rs` (~1344 tok, large) — Copyright 2025 STARGA Inc.
 - `narrow_local_mask_run.rs` (~879 tok, large) — Copyright 2025 STARGA Inc.

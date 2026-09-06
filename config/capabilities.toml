@@ -136,7 +136,7 @@ surface           = "README.md"
 surface_regex     = '([\d,]+)\+ tests\b'
 surface_mode      = "floor"
 surface_tolerance = 200
-note              = 'floor over #[test] / #[tokio::test] across src/ + tests/ (2293 today, re-measured at landing); README prints "2,217+ tests" and may lag by at most 200.'
+note              = 'floor over #[test] / #[tokio::test] across src/ + tests/ (2293 floor); README prints "2,424+ tests" and may lag by at most 200.'
 
 [counts.pytorch_bridge_tests]
 declared          = 11

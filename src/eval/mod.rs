@@ -38,6 +38,7 @@ use crate::exec;
 use value::Buffer;
 
 pub mod abi_gate;
+mod assert_check;
 pub mod autodiff;
 pub mod closures;
 pub mod conv2d_grad;
@@ -1883,9 +1884,7 @@ pub(crate) fn eval_value_expr_mode(
         | Node::Export { .. }
         | Node::StructDef { .. }
         | Node::EnumDef { .. } => Ok(Value::Int(0)),
-        // Phase 10.5 stretch: assert is a no-op at eval-time in the
-        // preview path; runtime checking is a future-extension item.
-        Node::Assert { .. } => Ok(Value::Int(0)),
+        Node::Assert { cond, msg, .. } => assert_check::eval(cond, msg, env, tensor_env, mode),
         // `expr as type` — evaluate the operand, then apply the SAME narrowing
         // the codegen path (`lower.rs` `Node::As`) emits, so the interpreter and
         // the runnable artifact agree. Without this the cast was a transparent
@@ -3890,6 +3889,7 @@ fn interp_expr_is_u64(node: &Node) -> bool {
     }
 }
 
+pub(crate) use assert_check::{enter as assert_check_guard, take_failure as take_assert_failure};
 thread_local! {
     static GPU_RUNTIME: RefCell<Option<Box<dyn crate::runtime_interface::MindRuntime>>> = RefCell::new(None);
 }

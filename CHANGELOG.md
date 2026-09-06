@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `mindc test` evaluates a body once, in order, and a body that errors cannot pass (#240, #241, #243)
+- The runner evaluated the test body through the interpreter, discarded the result, then
+  walked the AST a second time evaluating only `assert` nodes against its own env. One design,
+  three reported false verdicts: an out-of-bounds read inside a callee was dropped by the
+  second walk's `if let Ok(..)` and a later unrelated `assert n == 1` graded the test `ok`
+  (#243, also a bare OOB load statement, which the walk skipped outright); the walk could
+  not replay memory effects, so `let x = __mind_alloc(8)` re-allocated a fresh zeroed block,
+  the store was skipped, and `assert __mind_load_i8(x) == 1` read `0` (#241, BOTH issue
+  fixtures failed); and `assert(cond, "msg")` — a 2-tuple condition — read as "truthy" and
+  passed whatever `cond` was (#240's message form).
+- Now: the evaluator gives `Node::Assert` a real arm under a private, thread-local
+  assertion-checking guard. With the guard off — every consumer except the test runner —
+  `assert` retains its prior no-op behavior. `src/test/mod.rs` builds the
+  synthetic module from the file's items plus ONE `Node::Call` of the test fn, so the body
+  runs through the same fn-body executor every helper already uses, in source order, with
+  real memory effects and `return` caught at the call boundary. ANY evaluation error fails
+  the test with the interpreter's own diagnostic (`unknown variable: X`, `memory access out
+  of bounds: [a, a+n) outside requested allocation extent [..]`). A non-boolean assert
+  condition is refused with a message naming the value class — and for the tuple form, the
+  spelling that works (`assert cond, "msg"`). The grammar of the parenthesised comma form
+  is reported separately; it no longer passes vacuously.
+- Asserts inside `for`/`while` bodies, `match` arms, `region` blocks and CALLED helper fns
+  are now executed (per iteration, in the live arm) rather than refused; the retired
+  walker's "assertion inside a loop body" refusal is gone with it. A declared `-> bool`
+  test returning `false` still fails with `test returned false (0)`; a returned
+  `Result::Err(..)` fails with its payload (RFC 0008 §5.1).
+- Regression gate `tests/mindc_test_evaluator_issues.rs`: the three issues' own repros
+  verbatim, each negative shape beside a positive control in the same file, plus the
+  helper/loop/`-> bool`/root-cause shapes. `docs/ENGINE_CONSUMER_LIST.md` §6's "wire
+  `Node::Assert`, retire `eval_asserts_in_stmts`" disposition is now the shipped state.
+
 ### Fixed — the capability classifier's "reserved" cause-code namespace was not reserved
 - `src/diagnostics/capability.rs` classifies a refusal by reading every code in the reserved
   `E50xx` namespace off the wire and merging fail-closed, on the stated premise that an

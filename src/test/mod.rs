@@ -471,17 +471,29 @@ fn run_one_test(entry: &TestEntry) -> TestResult {
 ///
 /// Returns `Ok(())` for pass, `Err(message)` for fail.
 ///
-/// Implementation: we synthesise a temporary `Module` whose top-level items
-/// are the body statements of the test function, prefixed by all non-FnDef
-/// items from the original module (so that `const` / `type` / `struct`
-/// declarations remain in scope). We then walk the body with a custom
-/// statement evaluator that properly handles `assert(cond[, "msg"])` nodes —
-/// the main evaluator treats them as no-ops in its Preview mode, but tests
-/// require real assertion checking.
+/// ONE ordered interpreter pass. The synthetic module is the file's own items
+/// (plus the bundled-std fns its imports name) followed by a single
+/// `Node::Call` of the test function, so the body executes through exactly the
+/// fn-body executor every helper it calls already runs on — `let`/`assign`
+/// threading, `if`/`for`/`while` scoping, memory intrinsics, early `return` —
+/// with the interpreter's assertion-checking guard held. Consequences, each of
+/// which was a reported false verdict of the previous run-then-rewalk design:
 ///
-/// This avoids needing a new `eval_fn_body` API in the interpreter. The
-/// approach is correct for zero-argument test functions (which is enforced at
-/// parse time by `parse_fn_def_with_attrs`).
+/// * an `assert` is evaluated AT ITS POINT, after every statement before it
+///   and before every statement after it, memory effects included (#241);
+/// * a `let` of a call result, a struct, or anything else is simply a binding
+///   in the executing env — nothing is re-evaluated or re-allocated (#240);
+/// * ANY evaluation error in the body — an out-of-bounds load, an unresolved
+///   name inside a callee, a non-boolean assert condition — fails the test
+///   with the interpreter's own message, regardless of how a later assertion
+///   would have read (#243, #242);
+/// * asserts inside loop bodies, match arms, `region` blocks and CALLED helper
+///   fns are executed, not refused.
+///
+/// The verdict from the returned value: a declared `-> bool` test returning
+/// `false` fails ("test returned false (0)"), a returned `Result::Err(..)`
+/// fails with its payload, anything else passes. Zero-arity is enforced at
+/// parse time by `parse_fn_def_with_attrs`, so the call binds no params.
 fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
     use crate::ast::Module;
     use crate::eval;
@@ -489,10 +501,7 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
 
     // Fresh, deterministic linear memory for THIS test: every test sees an
     // identical zeroed arena regardless of worker-thread assignment or run
-    // order (the arena is thread-local and worker threads are reused). The
-    // arena must survive across BOTH eval passes below — asserts in the
-    // second pass read memory the first pass wrote — so this is the only
-    // reset point.
+    // order (the arena is thread-local and worker threads are reused).
     eval::interp_mem::reset();
 
     // Re-parse to get a fresh, unaliased AST.
@@ -506,14 +515,15 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
     // Extract the test function name (strip the "file_stem::" prefix).
     let fn_name = entry.name.split("::").last().unwrap_or(&entry.name);
 
-    // Find the test node in the parsed module.
-    let body_items: Vec<Node> = module
+    // Find the test fn in the parsed module: its declared return type decides
+    // how the call's value is graded, and its span labels the synthetic call.
+    let (ret_type, span) = module
         .items
         .iter()
         .find_map(|item| {
-            if let Node::FnDef(fd, _) = item {
+            if let Node::FnDef(fd, span) = item {
                 if fd.is_test && fd.name == fn_name {
-                    return Some(fd.body.clone());
+                    return Some((fd.ret_type.clone(), *span));
                 }
             }
             None
@@ -522,50 +532,77 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
 
     // Build the synthetic module: imported-std fn defs first (so file-local
     // fns shadow them in the fn table — later install wins), then ALL
-    // module-level items, then the test body. `FnDef` items are inert at
-    // module eval level (`Ok(Int(0))`) but are registered by
-    // `fn_table_install`, which is what lets a test body call helper fns in
-    // its own file and `pub fn`s of bundled std modules (e.g. run the
-    // std.sha256 KAT) through the interpreter, with no native runtime.
+    // module-level items, then ONE call of the test fn. `FnDef` items are
+    // inert at module eval level (`Ok(Int(0))`) but are registered by
+    // `fn_table_install`, which is what lets the call — and the helper fns
+    // its body calls, and `pub fn`s of bundled std modules (e.g. the
+    // std.sha256 KAT) — dispatch through the interpreter, with no native
+    // runtime. The call MUST be an item of the same module eval: the fn
+    // table is scoped to that eval and is torn down when it returns.
     let mut synthetic_items: Vec<Node> = Vec::new();
     #[cfg(any(feature = "cross-module-imports", feature = "std-surface"))]
     synthetic_items.extend(resolve_std_import_fns(&module)?);
     synthetic_items.extend(module.items.iter().cloned());
-    synthetic_items.extend(body_items.clone());
-
+    synthetic_items.push(Node::Call {
+        callee: fn_name.to_string(),
+        args: Vec::new(),
+        span,
+    });
     let synthetic_module = Module {
         items: synthetic_items,
     };
 
-    // First pass: evaluate the module through the standard interpreter so that
-    // let bindings and arithmetic are properly resolved.
+    // Assertion checking is ON for exactly this evaluation. The guard drops on
+    // every exit from this function — `?`, `return`, and the unwinding of a
+    // panic that `run_one_test`'s `catch_unwind` will catch — so a reused
+    // worker thread never carries the mode into the next test or, worse, into
+    // a non-test interpreter consumer.
+    let _checking = eval::assert_check_guard();
     let mut env = std::collections::HashMap::new();
-    let first_pass =
+    let outcome =
         eval::eval_module_value_with_env_mode(&synthetic_module, &mut env, None, ExecMode::Preview);
 
-    // Second pass: walk the body looking for `assert` nodes and evaluate them
-    // against the environment that the first pass populated.
-    match eval_asserts_in_stmts(&body_items, &env) {
-        Ok(()) => Ok(()),
-        // The first pass ABORTS at its first unresolved reference, so every
-        // binding after that point never lands in `env` and the second pass then
-        // blames a correctly-bound name in the CALLER — the reported
-        // `unknown variable: rc` for a `let rc = …` one line above the assert
-        // (#242). The error that actually stopped execution was being discarded
-        // into `_result` and never shown, which sent a downstream debugging
-        // session chasing test bugs that did not exist.
-        //
-        // Surface it as the ROOT CAUSE. The second-pass symptom is retained as a
-        // note, and a module whose first pass SUCCEEDED reports exactly the text
-        // it always did — so no currently-passing test changes verdict and no
-        // genuine assertion failure is reworded.
-        Err(symptom) => Err(match first_pass {
-            Err(root) => format!(
-                "{root}\n       note: the test body aborted at the error above, so bindings \
-                 after that point are unset; the resulting symptom was: {symptom}"
-            ),
-            Ok(_) => symptom,
-        }),
+    match (outcome, eval::take_assert_failure()) {
+        (Err(_), Some(message)) => Err(message),
+        (Ok(value), None) => grade_returned_value(ret_type.as_ref(), value),
+        // Any other error is the ROOT CAUSE that stopped the body: the
+        // interpreter names it (`unknown variable: X`, `memory access out of
+        // bounds: [a, a+n) outside requested allocation extent [..]`, ...).
+        // Nothing after that point ran, so nothing after it can vouch for a
+        // pass.
+        (Err(root), None) => Err(root.to_string()),
+        (Ok(_), Some(message)) => Err(format!(
+            "internal: assertion failed without stopping evaluation: {message}"
+        )),
+    }
+}
+
+/// Grade the value a test fn call returned.
+///
+/// * `Result::Err(payload)` → failure carrying the payload (RFC 0008 §5.1);
+/// * a declared `-> bool` test that returned `0` → "test returned false (0)";
+/// * anything else — a unit body's last statement value, `Result::Ok`, a
+///   `-> bool` returning `1` — passes.
+fn grade_returned_value(
+    ret_type: Option<&crate::ast::TypeAnn>,
+    value: crate::eval::Value,
+) -> Result<(), String> {
+    use crate::ast::TypeAnn;
+    use crate::eval::Value;
+
+    match value {
+        Value::Enum { variant, payload } if variant == "Err" || variant.ends_with("::Err") => {
+            let rendered = match payload.as_slice() {
+                [Value::Str(s)] => s.clone(),
+                [Value::Int(n)] => n.to_string(),
+                other => format!("{other:?}"),
+            };
+            Err(format!("test returned Err({rendered})"))
+        }
+        Value::Int(0) if matches!(ret_type, Some(TypeAnn::ScalarBool)) => {
+            Err("test returned false (0)".to_string())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -627,192 +664,6 @@ fn resolve_std_import_fns(module: &crate::ast::Module) -> Result<Vec<Node>, Stri
         }
     }
     Ok(out)
-}
-
-/// Walk a list of statements and evaluate any `assert(cond[, "msg"])` nodes.
-///
-/// Non-assert nodes that hold `let` bindings are evaluated first so that later
-/// asserts can reference the bound names. This mirrors the first-pass env.
-/// True when `stmts` contain an `assert` anywhere beneath them.
-///
-/// Used to decide whether a construct this walker cannot faithfully evaluate -- a loop
-/// body, a match arm -- is hiding an assertion. Finding one there means the test's
-/// verification did not happen, which is a failure to VERIFY, never a pass.
-fn contains_assert(stmts: &[Node]) -> bool {
-    stmts.iter().any(|s| match s {
-        Node::Assert { .. } => true,
-        Node::Block { stmts: inner, .. } => contains_assert(inner),
-        Node::For { body, .. } => contains_assert(body),
-        // `While` and `Region` exist only under std-surface (src/ast/mod.rs:612, :874),
-        // so referencing them unconditionally broke the --no-default-features build.
-        #[cfg(feature = "std-surface")]
-        Node::While { body, .. } | Node::Region { body, .. } => contains_assert(body),
-        Node::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            contains_assert(then_branch) || else_branch.as_ref().is_some_and(|e| contains_assert(e))
-        }
-        Node::Match { arms, .. } => arms
-            .iter()
-            .any(|a| contains_assert(std::slice::from_ref(&a.body))),
-        _ => false,
-    })
-}
-
-fn eval_asserts_in_stmts(
-    stmts: &[Node],
-    parent_env: &std::collections::HashMap<String, i64>,
-) -> Result<(), String> {
-    use crate::eval;
-    use crate::eval::ExecMode;
-
-    // Sequential env: each assert must be evaluated against the state AT ITS POINT.
-    //
-    // This was seeded from `parent_env` -- the bindings left behind AFTER the first pass
-    // had executed the WHOLE body -- and then never updated. So every assert saw FINAL
-    // values, and the runner reported the exact inverse of the truth (#241):
-    //
-    //     fn a() { let mut x = 1; assert x == 1; x = 2 }   reported FAILED
-    //     fn b() { let mut y = 1; assert y == 2         }   reported passed
-    //
-    // Starting empty and applying `Let` / `Assign` in source order is what makes an
-    // assert mean what it says. Test functions take no parameters, so there is nothing
-    // legitimate to inherit from the caller.
-    let mut venv: std::collections::HashMap<String, eval::Value> = std::collections::HashMap::new();
-    let _ = parent_env;
-    let tensor_env = std::collections::HashMap::new();
-
-    for stmt in stmts {
-        match stmt {
-            Node::Assert { cond, msg, .. } => {
-                // Evaluate the condition expression.
-                let val = eval::eval_value_expr_mode(cond, &venv, &tensor_env, ExecMode::Preview);
-                match val {
-                    Ok(eval::Value::Int(0)) => {
-                        // Condition evaluated to 0 (false).
-                        let fail_msg = msg.as_deref().unwrap_or("assertion failed");
-                        return Err(fail_msg.to_string());
-                    }
-                    Ok(eval::Value::Int(_)) => {
-                        // Non-zero int = truthy, assertion passes.
-                    }
-                    Ok(eval::Value::Float(0.0)) => {
-                        let fail_msg = msg.as_deref().unwrap_or("assertion failed (float)");
-                        return Err(fail_msg.to_string());
-                    }
-                    Ok(_) => {
-                        // Any other value (Float, Str, Tensor, …) = truthy, pass.
-                    }
-                    Err(e) => {
-                        return Err(format!("assert condition error: {e}"));
-                    }
-                }
-            }
-            // #240: this arm was `let _ = (name, value);` -- a no-op under a comment
-            // claiming it bound the value, so a `let` of a CALL result was invisible to
-            // every later assert ("unknown identifier"). Bind it for real.
-            Node::Let { name, value, .. } => {
-                if let Ok(v) =
-                    eval::eval_value_expr_mode(value, &venv, &tensor_env, ExecMode::Preview)
-                {
-                    venv.insert(name.clone(), v);
-                }
-            }
-            // #241: a later mutation must not change what an EARLIER assert saw. Applying
-            // assignments in order is the other half of evaluating at the assert's point.
-            Node::Assign { name, value, .. } => {
-                if let Ok(v) =
-                    eval::eval_value_expr_mode(value, &venv, &tensor_env, ExecMode::Preview)
-                {
-                    venv.insert(name.clone(), v);
-                }
-            }
-            Node::Return { value: Some(v), .. } => {
-                // A return with a value: evaluate it.
-                // If it evaluates to Int(0) or fails, treat as failing assertion.
-                match eval::eval_value_expr_mode(v, &venv, &tensor_env, ExecMode::Preview) {
-                    Ok(eval::Value::Int(0)) => {
-                        return Err("test returned false (0)".to_string());
-                    }
-                    Ok(_) => {}
-                    Err(e) => return Err(e.to_string()),
-                }
-            }
-            // For `if`, `for`, `while` blocks: recurse into branches.
-            Node::If {
-                then_branch,
-                else_branch,
-                cond,
-                ..
-            } => {
-                // Evaluate the condition to decide which branch to descend.
-                match eval::eval_value_expr_mode(cond, &venv, &tensor_env, ExecMode::Preview) {
-                    Ok(eval::Value::Int(0)) => {
-                        if let Some(else_stmts) = else_branch {
-                            eval_asserts_in_stmts(else_stmts, parent_env)?;
-                        }
-                    }
-                    Ok(_) => {
-                        eval_asserts_in_stmts(then_branch, parent_env)?;
-                    }
-                    Err(_) => {}
-                }
-            }
-            // A loop body or match arm this walker cannot execute. These had NO arm,
-            // so `_ => {}` skipped the whole body and a test whose assertion fails
-            // inside a `for` reported PASS with that assertion never evaluated.
-            // Descending and evaluating with the loop variable unbound would only move
-            // the silence one level down -- an eval error is ignored below.
-            //
-            // "Cannot verify" must not read as "verified". Refuse, and say why.
-            #[cfg(feature = "std-surface")]
-            Node::While { body, .. } => {
-                if contains_assert(body) {
-                    return Err("assertion inside a loop body: this runner evaluates \
-                                assertions statically and cannot execute loop iterations, \
-                                so the assertion was never checked. Refusing to report a \
-                                pass for a test whose verification did not run."
-                        .to_string());
-                }
-            }
-            Node::For { body, .. } => {
-                if contains_assert(body) {
-                    return Err("assertion inside a loop body: this runner evaluates \
-                                assertions statically and cannot execute loop iterations, \
-                                so the assertion was never checked. Refusing to report a \
-                                pass for a test whose verification did not run."
-                        .to_string());
-                }
-            }
-            Node::Match { arms, .. } => {
-                if arms
-                    .iter()
-                    .any(|a| contains_assert(std::slice::from_ref(&a.body)))
-                {
-                    return Err("assertion inside a match arm: this runner cannot select \
-                                the live arm, so the assertion was never checked. Refusing \
-                                to report a pass for a test whose verification did not run."
-                        .to_string());
-                }
-            }
-            // A `region { .. }` executes ONCE, like a block -- it is not a loop, so its
-            // statements can be walked directly. It had no arm at all, so `_ => {}` skipped
-            // the body and `region { assert 0 == 1 }` reported ok / exit 0. The earlier fix
-            // covered For/While/Match and missed this one; `contains_assert` already knew
-            // about Region, which is what made the omission invisible.
-            #[cfg(feature = "std-surface")]
-            Node::Region { body, .. } => {
-                eval_asserts_in_stmts(body, parent_env)?;
-            }
-            Node::Block { stmts: inner, .. } => {
-                eval_asserts_in_stmts(inner, parent_env)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 /// Extract a human-readable string from a panic payload.
