@@ -90,10 +90,14 @@ _NERVE_FIXTURES = (
     / "tests" / "fixtures" / "nerve_numerics"
 )
 NERVE_POLICY_REFUSALS = [
-    (f"policy attr {case} {kind}",
-     (_NERVE_FIXTURES / f"e_nerve_{case}_{kind}.mind").read_text(), "0B")
+    (f"policy attr {case} bad",
+     (_NERVE_FIXTURES / f"e_nerve_{case}_bad.mind").read_text(), "0B")
     for case in ("001", "002", "003", "004", "005")
-    for kind in ("good", "bad")
+]
+NERVE_POLICY_SUPPORTED = [
+    (f"policy attr {case} good",
+     (_NERVE_FIXTURES / f"e_nerve_{case}_good.mind").read_text(), 0)
+    for case in ("001", "002", "003", "004", "005")
 ]
 
 
@@ -106,10 +110,8 @@ NST = "struct I { v: i64 }\nstruct O { i: I, n: i64 }\n"
 
 # (label, source, expected)  — expected "0B" means MUST refuse.
 REFUSED = [
-    # These policy annotations are semantic contracts, not inert decoration.
-    # The Rust compiler accepts every `good` fixture and hard-errors every
-    # `bad` fixture. Until those checks are ported, the self-host must refuse
-    # both sets rather than accept a bad body under a valid-looking spelling.
+    # Policy violations must still refuse; the supported counterparts below
+    # execute and assert their result, so rejecting every annotation cannot pass.
     *NERVE_POLICY_REFUSALS,
     # tuples are SUPPORTED (i64 anonymous-positional-struct subset, below) —
     # but the tuple boundary itself stays fail-closed: non-i64 elements, the
@@ -275,7 +277,6 @@ REFUSED = [
     ("item attr unproved reduction policy", "#[reduction_strategy(parallel)]\nfn main()->i64{7}", "0B"),
     ("item attr malformed inline args", "#[inline(]\nfn main()->i64{7}", "0B"),
     ("item attr codegen bimap", "#[bimap]\nfn main()->i64{7}", "0B"),
-    ("item attr determinism deferred", "#[determinism(BitIdentical)]\nfn main()->i64{7}", "0B"),
     ("item attr reduction deferred", "#[reduction_strategy(sequential)]\nfn main()->i64{7}", "0B"),
     ("item attr invariant deferred", "#[invariant(no_float_ops)]\nfn main()->i64{7}", "0B"),
     # CHAR LITERALS (#257 item 6): a char literal `'X'` / `'\X'` folds to a
@@ -305,6 +306,8 @@ REFUSED = [
 
 # (label, source, expected exit value) — the supported subset MUST run correct.
 SUPPORTED = [
+    *NERVE_POLICY_SUPPORTED,
+    ("item attr determinism", "#[determinism(BitIdentical)]\nfn main()->i64{7}", 7),
     ("scalar arith", M("return 2+3*4;"), 14),
     # Top-level scalar `const NAME: i64 = <int>;` used as a VALUE (parse-time
     # inline to a synthetic int-lit; uppercase/SCREAMING_CASE names only, this

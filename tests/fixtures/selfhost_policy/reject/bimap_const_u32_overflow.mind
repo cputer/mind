@@ -1,0 +1,2 @@
+#[bimap]
+const HTTP_STATUS = [(4294967296, "Too Large")]

@@ -1,0 +1,7 @@
+#[bimap]
+enum Currency { AUD, JPY, USD }
+
+#[determinism(BitIdentical)]
+fn main() -> i64 {
+    return currency_count();
+}

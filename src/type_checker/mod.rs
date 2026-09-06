@@ -17,6 +17,8 @@ mod array_lengths;
 pub mod nerve_lint;
 mod nerve_walk;
 mod resolve;
+#[cfg(feature = "std-surface")]
+mod slice_abi;
 
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -4751,10 +4753,17 @@ fn check_module_types_in_file_impl(
 
     for item in &module.items {
         match item {
-            Node::StructDef { name, attrs, .. } => {
+            Node::StructDef {
+                name,
+                fields,
+                attrs,
+                ..
+            } => {
                 // Every struct name feeds the E2026 registry; repr(C) names
                 // additionally feed the extern-ABI check below.
                 struct_names.insert(name.clone());
+                #[cfg(feature = "std-surface")]
+                slice_abi::check_struct_fields(name, fields, src, file, &mut errs);
                 if attrs
                     .iter()
                     .any(|a| a.name == "repr" && a.args.iter().any(|arg| arg == "C"))
@@ -5228,6 +5237,9 @@ fn check_module_types_in_file_impl(
                 } = &**fd;
                 // Run the symbolic-conflict scan on the parameter list.
                 check_fn_param_shape_conflicts(params, *fn_span, src, file, &mut errs);
+
+                #[cfg(feature = "std-surface")]
+                slice_abi::check_fn(fd, src, file, &mut errs);
 
                 // Build a local env that extends the module env with the
                 // function's parameters, mapping each param name to its

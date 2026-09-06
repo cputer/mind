@@ -1,0 +1,9 @@
+#[determinism(BitIdentical)]
+#[reduction_strategy(sequential)]
+fn value() -> i64 {
+    let mut a: i64 = 0;
+    while a < 2 {
+        a = a + 1;
+    }
+    return a;
+}

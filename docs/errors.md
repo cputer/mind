@@ -64,6 +64,16 @@ Shape validation for Core v1 operators is also surfaced during type checking:
 - Rank or shape expectation mismatches (including invalid reductions): `E2102`
 - Matmul inner-dimension mismatches: `E2103`
 
+Slice call validation with `std-surface` reports:
+
+- `E2032`: unsupported slice ABI shape or an argument without a proven
+  compatible dynamic-array layout.
+- `E2033`: a borrowed slice capability would be erased, escaped, or used for
+  an operation it does not permit.
+
+These are type-checking refusals before artifact emission. See
+[slice calls](type-system.md#slice-calls) for the supported boundary.
+
 See [`docs/versioning.md`](versioning.md) for how these classes fit the stability
 contract.
 

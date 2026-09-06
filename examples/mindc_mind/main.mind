@@ -959,10 +959,36 @@ pub fn scan(buf: i64, i: i64, buf_len: i64, toks: Vec) -> Vec {
     scan(buf, i + 1, buf_len, next_toks)
 }
 
+// Decode one supported string escape through the same byte table as char
+// literals. Unknown escapes return -1 and remain fail-closed.
+pub fn string_escape_value(e: i64) -> i64 {
+    if e == 110 {
+        return char_escape_value(e);
+    }
+    if e == 116 {
+        return char_escape_value(e);
+    }
+    if e == 114 {
+        return char_escape_value(e);
+    }
+    if e == 48 {
+        return char_escape_value(e);
+    }
+    if e == 92 {
+        return char_escape_value(e);
+    }
+    if e == 39 {
+        return char_escape_value(e);
+    }
+    if e == 34 {
+        return char_escape_value(e);
+    }
+    0 - 1
+}
+
 // String literal scan: from just after the opening `"`, find the closing quote
-// on the same line. Returns close+1, or -1 on backslash (escapes unsupported),
-// newline, or EOF (unterminated) — the caller falls through to tk_unsupported,
-// so a malformed string fail-closes the whole compile rather than mis-lexing.
+// on the same line. A supported escape consumes both source bytes so `\"` does
+// not terminate early. Unknown/trailing escapes, newline, and EOF fail closed.
 pub fn scan_string_end(buf: i64, i: i64, buf_len: i64) -> i64 {
     if i >= buf_len {
         return 0 - 1;
@@ -972,12 +998,28 @@ pub fn scan_string_end(buf: i64, i: i64, buf_len: i64) -> i64 {
         return i + 1;
     }
     if b == 92 {
-        return 0 - 1;
+        if i + 1 >= buf_len {
+            return 0 - 1;
+        }
+        if string_escape_value(load_byte(buf, i + 1)) < 0 {
+            return 0 - 1;
+        }
+        return scan_string_end(buf, i + 2, buf_len);
     }
     if b == 10 {
         return 0 - 1;
     }
     scan_string_end(buf, i + 1, buf_len)
+}
+
+pub fn string_span_has_escape(buf: i64, lo: i64, hi: i64) -> i64 {
+    if lo >= hi {
+        return 0;
+    }
+    if load_byte(buf, lo) == 92 {
+        return 1;
+    }
+    string_span_has_escape(buf, lo + 1, hi)
 }
 
 // ===== Public entry: lex =====
@@ -2261,9 +2303,14 @@ pub fn parse_primary_ns(toks: Vec, pos: i64, buf: i64, no_struct: i64) -> ParseR
         return parse_if(toks, pos, buf);
     }
 
-    // `"..."` string literal: one ast_str_lit leaf carrying the token span. Only
-    // the print-statement desugar consumes it; every other surface fails closed.
+    // `"..."` string literal: one ast_str_lit leaf carrying the token span. The
+    // general native emitter still copies literal source bytes verbatim, so keep
+    // escaped value expressions poisoned until that emitter shares the decoder.
+    // Bimap consumes its table tokens directly and is validated separately.
     if k == tk_str() {
+        if string_span_has_escape(buf, lo + 1, hi - 1) == 1 {
+            return pr_new(pos + 1, ast_new_leaf(ast_unsupported(), lo, hi));
+        }
         return pr_new(pos + 1, ast_new_leaf(ast_str_lit(), lo, hi));
     }
 
@@ -5953,6 +6000,891 @@ pub fn attr_span_is_inline(buf: i64, lo: i64, hi: i64) -> i64 {
     1
 }
 
+// Exact RFC-0012/NERVE attribute subset supported by the self-host front end:
+// 1=determinism(BitIdentical), 2=reduction_strategy(sequential),
+// 4=invariant(no_float_ops). Syntax and arguments are part of the match; an
+// unknown mode remains poison rather than being erased as inert metadata.
+pub fn attr_policy_kind(buf: i64, toks: Vec, pos: i64) -> i64 {
+    if tok_kind(toks, pos) != tk_ident() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 1) != tk_lparen() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 2) != tk_ident() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 3) != tk_rparen() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 4) != tk_rbracket() {
+        return 0;
+    }
+    let nlo: i64 = tok_lo(toks, pos);
+    let nhi: i64 = tok_hi(toks, pos);
+    let alo: i64 = tok_lo(toks, pos + 2);
+    let ahi: i64 = tok_hi(toks, pos + 2);
+    let nw0: i64 = tc_fvc_word(buf, nlo, nhi, 0);
+    let nw1: i64 = tc_fvc_word(buf, nlo, nhi, 1);
+    let aw0: i64 = tc_fvc_word(buf, alo, ahi, 0);
+    let aw1: i64 = tc_fvc_word(buf, alo, ahi, 1);
+    if tc_fvc_eq2(nw0, nw1, nhi - nlo, 7956010554822518116, 7172969, 11) == 1 {
+        if tc_fvc_eq2(aw0, aw1, ahi - alo, 8389754637241313602, 1818321769, 12) == 1 {
+            return 1;
+        }
+    }
+    if nhi - nlo == 18 {
+        if nw0 == 8028075781284717938 {
+            if nw1 == 7310575239337041774 {
+                if tc_fvc_word(buf, nlo, nhi, 2) == 31079 {
+                    if tc_fvc_eq2(aw0, aw1, ahi - alo, 7598819853321987443, 27745, 10) == 1 {
+                        return 2;
+                    }
+                    if ahi - alo == 22 {
+                        if aw0 == 8319099999034372724 {
+                            if aw1 == 7311146993653998447 {
+                                if tc_fvc_word(buf, alo, ahi, 2) == 110386974647903 {
+                                    return 2;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if tc_fvc_eq2(nw0, nw1, nhi - nlo, 7953754356895346281, 116, 9) == 1 {
+        if tc_fvc_eq2(aw0, aw1, ahi - alo, 8386106492505255790, 1936748383, 12) == 1 {
+            return 4;
+        }
+    }
+    0
+}
+
+pub fn attr_span_is_bimap(buf: i64, lo: i64, hi: i64) -> i64 {
+    if tc_fvc_eq2(tc_fvc_word(buf, lo, hi, 0), 0, hi - lo, 482670897506, 0, 5) == 1 {
+        return 1;
+    }
+    0
+}
+
+// Numeric bimap keys have the same closed u32 envelope as expand_bimap.rs.
+// Accumulate with a pre-multiply bound so an overlong decimal cannot wrap i64
+// and re-enter the admitted range.
+pub fn bimap_u32_key_valid(buf: i64, lo: i64, hi: i64, i: i64, acc: i64) -> i64 {
+    if lo + i >= hi {
+        return 1;
+    }
+    let d: i64 = load_byte(buf, lo + i) - 48;
+    if d < 0 {
+        return 0;
+    }
+    if d > 9 {
+        return 0;
+    }
+    if acc > (4294967295 - d) / 10 {
+        return 0;
+    }
+    bimap_u32_key_valid(buf, lo, hi, i + 1, acc * 10 + d)
+}
+
+// Compare two byte spans after decoding supported string escapes. `ae`/`be`
+// select escape decoding; enum default values are identifier spans and pass 0,
+// while explicit/const string contents pass 1. No allocation is needed and the
+// byte mapping is shared with the lexer through string_escape_value.
+pub fn bimap_decoded_span_eq(buf: i64, alo: i64, ahi: i64, ae: i64, blo: i64, bhi: i64, be: i64) -> i64 {
+    if alo >= ahi {
+        if blo >= bhi {
+            return 1;
+        }
+        return 0;
+    }
+    if blo >= bhi {
+        return 0;
+    }
+    let av: i64 = if ae == 1 {
+        if load_byte(buf, alo) == 92 {
+            string_escape_value(load_byte(buf, alo + 1))
+        } else {
+            load_byte(buf, alo)
+        }
+    } else {
+        load_byte(buf, alo)
+    };
+    let bv: i64 = if be == 1 {
+        if load_byte(buf, blo) == 92 {
+            string_escape_value(load_byte(buf, blo + 1))
+        } else {
+            load_byte(buf, blo)
+        }
+    } else {
+        load_byte(buf, blo)
+    };
+    if av < 0 {
+        return 0;
+    }
+    if bv < 0 {
+        return 0;
+    }
+    if av != bv {
+        return 0;
+    }
+    let anext: i64 = if ae == 1 {
+        if load_byte(buf, alo) == 92 {
+            alo + 2
+        } else {
+            alo + 1
+        }
+    } else {
+        alo + 1
+    };
+    let bnext: i64 = if be == 1 {
+        if load_byte(buf, blo) == 92 {
+            blo + 2
+        } else {
+            blo + 1
+        }
+    } else {
+        blo + 1
+    };
+    bimap_decoded_span_eq(buf, anext, ahi, ae, bnext, bhi, be)
+}
+
+pub fn bimap_row_next(toks: Vec, pos: i64) -> i64 {
+    if tok_kind(toks, pos + 5) == tk_comma() {
+        return pos + 6;
+    }
+    if tok_kind(toks, pos + 5) == tk_rbracket() {
+        return pos + 5;
+    }
+    0 - 1
+}
+
+pub fn bimap_row_matches(buf: i64, toks: Vec, prior: i64, cur: i64, kind: i64) -> i64 {
+    let key_same: i64 = if kind == 2 {
+        bimap_decoded_span_eq(buf, tok_lo(toks, prior + 1) + 1, tok_hi(toks, prior + 1) - 1, 1, tok_lo(toks, cur + 1) + 1, tok_hi(toks, cur + 1) - 1, 1)
+    } else {
+        if parse_int_span(buf, tok_lo(toks, prior + 1), tok_hi(toks, prior + 1), 0) == parse_int_span(buf, tok_lo(toks, cur + 1), tok_hi(toks, cur + 1), 0) {
+            1
+        } else {
+            0
+        }
+    };
+    if key_same == 1 {
+        return 1;
+    }
+    bimap_decoded_span_eq(buf, tok_lo(toks, prior + 3) + 1, tok_hi(toks, prior + 3) - 1, 1, tok_lo(toks, cur + 3) + 1, tok_hi(toks, cur + 3) - 1, 1)
+}
+
+pub fn bimap_row_duplicate(buf: i64, toks: Vec, start: i64, cur: i64, kind: i64) -> i64 {
+    if start >= cur {
+        return 0;
+    }
+    if bimap_row_matches(buf, toks, start, cur, kind) == 1 {
+        return 1;
+    }
+    bimap_row_duplicate(buf, toks, bimap_row_next(toks, start), cur, kind)
+}
+
+// Validate a non-empty const pair table. Returns 2 for string->string, 3 for
+// non-negative-number->string, and 0 for malformed/mixed/duplicate tables.
+pub fn bimap_const_rows(buf: i64, toks: Vec, start: i64, pos: i64, kind: i64, n: i64) -> i64 {
+    if tok_kind(toks, pos) == tk_rbracket() {
+        if n > 0 {
+            return kind;
+        }
+        return 0;
+    }
+    if tok_kind(toks, pos) != tk_lparen() {
+        return 0;
+    }
+    let kk: i64 = tok_kind(toks, pos + 1);
+    let row_kind: i64 = if kk == tk_str() {
+        2
+    } else {
+        if kk == tk_int() {
+            3
+        } else {
+            0
+        }
+    };
+    if row_kind == 0 {
+        return 0;
+    }
+    if kind != 0 {
+        if kind != row_kind {
+            return 0;
+        }
+    }
+    if row_kind == 3 {
+        if bimap_u32_key_valid(buf, tok_lo(toks, pos + 1), tok_hi(toks, pos + 1), 0, 0) == 0 {
+            return 0;
+        }
+    }
+    if tok_kind(toks, pos + 2) != tk_comma() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 3) != tk_str() {
+        return 0;
+    }
+    if tok_kind(toks, pos + 4) != tk_rparen() {
+        return 0;
+    }
+    if bimap_row_duplicate(buf, toks, start, pos, row_kind) == 1 {
+        return 0;
+    }
+    let next: i64 = bimap_row_next(toks, pos);
+    if next < 0 {
+        return 0;
+    }
+    bimap_const_rows(buf, toks, start, next, row_kind, n + 1)
+}
+
+pub fn bimap_const_kind(buf: i64, toks: Vec, pos: i64) -> i64 {
+    // The derive consumes its table and therefore forbids `const NAME: T =`.
+    // Require `=` immediately after the name instead of scanning past a type.
+    let eq: i64 = pos + 2;
+    if tok_kind(toks, eq) != tk_eq() {
+        return 0;
+    }
+    if tok_kind(toks, eq + 1) != tk_lbracket() {
+        return 0;
+    }
+    bimap_const_rows(buf, toks, eq + 2, eq + 2, 0, 0)
+}
+
+// Return the exact token after a validated bimap const declaration, consuming
+// one optional semicolon. Anything other than EOF or a new top-level item at
+// that point means the array was only a prefix of the value (`[...] + 1`, a
+// stray bracket, or a top-level statement) and must fail closed.
+pub fn bimap_const_after(buf: i64, toks: Vec, pos: i64) -> i64 {
+    if tok_kind(toks, pos + 2) != tk_eq() {
+        return 0 - 1;
+    }
+    if tok_kind(toks, pos + 3) != tk_lbracket() {
+        return 0 - 1;
+    }
+    let after_bracket: i64 = skip_balanced_bracket(toks, pos + 4, 1);
+    if after_bracket <= pos + 4 {
+        return 0 - 1;
+    }
+    if tok_kind(toks, after_bracket - 1) != tk_rbracket() {
+        return 0 - 1;
+    }
+    let after: i64 = if tok_kind(toks, after_bracket) == tk_semi() {
+        after_bracket + 1
+    } else {
+        after_bracket
+    };
+    if at_eof(toks, after) == 1 {
+        return after;
+    }
+    if load_byte(buf, tok_lo(toks, after)) == 35 {
+        return after;
+    }
+    if tok_is_item_start(toks, after, buf) == 1 {
+        return after;
+    }
+    0 - 1
+}
+
+pub fn bimap_enum_next(toks: Vec, pos: i64) -> i64 {
+    if tok_kind(toks, pos + 1) == tk_eq() {
+        if tok_kind(toks, pos + 2) != tk_str() {
+            return 0 - 1;
+        }
+        if tok_kind(toks, pos + 3) == tk_comma() {
+            return pos + 4;
+        }
+        if tok_kind(toks, pos + 3) == tk_rbrace() {
+            return pos + 3;
+        }
+        return 0 - 1;
+    }
+    if tok_kind(toks, pos + 1) == tk_comma() {
+        return pos + 2;
+    }
+    if tok_kind(toks, pos + 1) == tk_rbrace() {
+        return pos + 1;
+    }
+    0 - 1
+}
+
+pub fn bimap_enum_names_unique(buf: i64, toks: Vec, start: i64, cur: i64) -> i64 {
+    if start >= cur {
+        return 1;
+    }
+    if span_bytes_equal(buf, tok_lo(toks, start), tok_hi(toks, start), tok_lo(toks, cur), tok_hi(toks, cur)) == 1 {
+        return 0;
+    }
+    let next: i64 = bimap_enum_next(toks, start);
+    if next < 0 {
+        return 0;
+    }
+    bimap_enum_names_unique(buf, toks, next, cur)
+}
+
+pub fn bimap_enum_value_matches(buf: i64, toks: Vec, prior: i64, cur: i64) -> i64 {
+    let pe: i64 = if tok_kind(toks, prior + 1) == tk_eq() {
+        1
+    } else {
+        0
+    };
+    let ce: i64 = if tok_kind(toks, cur + 1) == tk_eq() {
+        1
+    } else {
+        0
+    };
+    let plo: i64 = if pe == 1 {
+        tok_lo(toks, prior + 2) + 1
+    } else {
+        tok_lo(toks, prior)
+    };
+    let phi: i64 = if pe == 1 {
+        tok_hi(toks, prior + 2) - 1
+    } else {
+        tok_hi(toks, prior)
+    };
+    let clo: i64 = if ce == 1 {
+        tok_lo(toks, cur + 2) + 1
+    } else {
+        tok_lo(toks, cur)
+    };
+    let chi: i64 = if ce == 1 {
+        tok_hi(toks, cur + 2) - 1
+    } else {
+        tok_hi(toks, cur)
+    };
+    bimap_decoded_span_eq(buf, plo, phi, pe, clo, chi, ce)
+}
+
+pub fn bimap_enum_values_unique(buf: i64, toks: Vec, start: i64, cur: i64) -> i64 {
+    if start >= cur {
+        return 1;
+    }
+    if bimap_enum_value_matches(buf, toks, start, cur) == 1 {
+        return 0;
+    }
+    let next: i64 = bimap_enum_next(toks, start);
+    if next < 0 {
+        return 0;
+    }
+    bimap_enum_values_unique(buf, toks, next, cur)
+}
+
+pub fn bimap_enum_valid(buf: i64, toks: Vec, start: i64, pos: i64, n: i64) -> i64 {
+    if tok_kind(toks, pos) == tk_rbrace() {
+        if n > 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if tok_kind(toks, pos) != tk_ident() {
+        return 0;
+    }
+    if bimap_enum_names_unique(buf, toks, start, pos) == 0 {
+        return 0;
+    }
+    let next: i64 = bimap_enum_next(toks, pos);
+    if next < 0 {
+        return 0;
+    }
+    if bimap_enum_values_unique(buf, toks, start, pos) == 0 {
+        return 0;
+    }
+    bimap_enum_valid(buf, toks, start, next, n + 1)
+}
+
+// Bimap markers deliberately retain ast_unsupported as their kind, so every
+// non-MLIR backend keeps its prior fail-closed behavior. The validated MLIR
+// path recognizes tag 1/2/3 and performs the derive instead of deleting it.
+pub fn ast_new_bimap_marker(lo: i64, hi: i64, decl: i64, tag: i64, nlo: i64, nhi: i64) -> i64 {
+    let n: i64 = ast_new_leaf(ast_unsupported(), lo, hi);
+    __mind_store_i64(n + 24, decl);
+    __mind_store_i64(n + 32, tag);
+    __mind_store_i64(n + 40, nlo);
+    __mind_store_i64(n + 48, nhi);
+    n
+}
+
+pub fn policy_attr_flags_back(buf: i64, toks: Vec, end: i64, flags: i64) -> i64 {
+    if end < 6 {
+        return flags;
+    }
+    if tok_kind(toks, end) != tk_rbracket() {
+        return flags;
+    }
+    let start: i64 = end - 6;
+    if load_byte(buf, tok_lo(toks, start)) != 35 {
+        return flags;
+    }
+    if tok_kind(toks, start + 1) != tk_lbracket() {
+        return flags;
+    }
+    let kind: i64 = attr_policy_kind(buf, toks, start + 2);
+    if kind == 0 {
+        return flags;
+    }
+    policy_attr_flags_back(buf, toks, start - 1, flags | kind)
+}
+
+pub fn policy_body_start(toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 0 - 1;
+    }
+    if tok_kind(toks, i) == tk_semi() {
+        return 0 - 1;
+    }
+    if tok_kind(toks, i) == tk_lbrace() {
+        return i;
+    }
+    policy_body_start(toks, i + 1)
+}
+
+pub fn policy_name_is_q16_mul(buf: i64, toks: Vec, fnpos: i64) -> i64 {
+    let lo: i64 = tok_lo(toks, fnpos + 1);
+    let hi: i64 = tok_hi(toks, fnpos + 1);
+    if tc_fvc_eq2(tc_fvc_word(buf, lo, hi, 0), 0, hi - lo, 30528410094023025, 0, 7) == 1 {
+        return 1;
+    }
+    0
+}
+
+pub fn policy_span_eq(buf: i64, lo: i64, hi: i64, w0: i64, w1: i64, n: i64) -> i64 {
+    tc_fvc_eq2(tc_fvc_word(buf, lo, hi, 0), tc_fvc_word(buf, lo, hi, 1), hi - lo, w0, w1, n)
+}
+
+// Closed name sets from nerve_lint.rs. A source-defined reduction remains
+// governed by its annotated body; float-math spellings are compiler-reserved
+// intrinsics and therefore stay forbidden under no_float_ops.
+pub fn policy_name_is_reduction(buf: i64, lo: i64, hi: i64) -> i64 {
+    if policy_span_eq(buf, lo, hi, 7016438222312203634, 27756, 10) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7016438222312203634, 31086, 10) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7881129350767338866, 30817, 10) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7881129350767338866, 7233893, 11) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7881129350767338866, 28265, 10) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 8097302132881122674, 6582130, 11) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 8313474914994906482, 28021, 10) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 8673762885184546162, 29295, 10) == 1 {
+        return 1;
+    }
+    0
+}
+
+pub fn policy_name_is_float_math(buf: i64, lo: i64, hi: i64) -> i64 {
+    if policy_span_eq(buf, lo, hi, 7565155, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7370853, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 6778732, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 206987292524, 0, 5) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 845639532, 0, 4) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 8387513897336663916, 7889261, 11) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7827312, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 500136244082, 0, 5) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 28263424968845683, 0, 7) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7235955, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 33884119937478515, 0, 7) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 1953657203, 0, 4) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 7233908, 0, 3) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 1752064372, 0, 4) == 1 {
+        return 1;
+    }
+    if policy_span_eq(buf, lo, hi, 427054953076, 0, 5) == 1 {
+        return 1;
+    }
+    0
+}
+
+pub fn policy_fn_defined(buf: i64, toks: Vec, lo: i64, hi: i64, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 0;
+    }
+    if tok_kind(toks, i) == tk_kw_fn() {
+        if tok_kind(toks, i + 1) == tk_ident() {
+            if span_bytes_equal(buf, lo, hi, tok_lo(toks, i + 1), tok_hi(toks, i + 1)) == 1 {
+                return 1;
+            }
+        }
+    }
+    policy_fn_defined(buf, toks, lo, hi, i + 1)
+}
+
+pub fn policy_signature_valid(buf: i64, toks: Vec, i: i64, end: i64, flags: i64) -> i64 {
+    if i >= end {
+        return 1;
+    }
+    if (flags & 4) != 0 {
+        if tok_kind(toks, i) == tk_ident() {
+            let lo: i64 = tok_lo(toks, i);
+            let hi: i64 = tok_hi(toks, i);
+            let w: i64 = tc_sf_word(buf, lo, hi);
+            if hi - lo == 3 {
+                if w == 3421798 {
+                    return 0;
+                }
+                if w == 3289958 {
+                    return 0;
+                }
+            }
+        }
+    }
+    policy_signature_valid(buf, toks, i + 1, end, flags)
+}
+
+pub fn policy_span_seen(buf: i64, toks: Vec, lo: i64, hi: i64, i: i64, end: i64) -> i64 {
+    if i >= end {
+        return 0;
+    }
+    if tok_kind(toks, i) == tk_ident() {
+        if span_bytes_equal(buf, lo, hi, tok_lo(toks, i), tok_hi(toks, i)) == 1 {
+            return 1;
+        }
+    }
+    policy_span_seen(buf, toks, lo, hi, i + 1, end)
+}
+
+pub fn policy_stmt_end(toks: Vec, i: i64, end: i64) -> i64 {
+    if i >= end {
+        return end;
+    }
+    if tok_kind(toks, i) == tk_semi() {
+        return i;
+    }
+    policy_stmt_end(toks, i + 1, end)
+}
+
+pub fn policy_branch_reads_assigned(buf: i64, toks: Vec, clo: i64, chi: i64, i: i64, end: i64) -> i64 {
+    if i >= end {
+        return 0;
+    }
+    if tok_kind(toks, i) == tk_lbrace() {
+        return policy_branch_reads_assigned(buf, toks, clo, chi, skip_balanced_brace(toks, i + 1, 1), end);
+    }
+    if tok_kind(toks, i) == tk_ident() {
+        if tok_kind(toks, i + 1) == tk_eq() {
+            if policy_span_seen(buf, toks, tok_lo(toks, i), tok_hi(toks, i), clo, chi) == 1 {
+                return 1;
+            }
+        }
+    }
+    policy_branch_reads_assigned(buf, toks, clo, chi, i + 1, end)
+}
+
+pub fn policy_if_reduces(buf: i64, toks: Vec, i: i64, end: i64) -> i64 {
+    let open: i64 = policy_body_start(toks, i + 1);
+    if open < 0 {
+        return 0;
+    }
+    if open >= end {
+        return 0;
+    }
+    let after: i64 = skip_balanced_brace(toks, open + 1, 1);
+    if policy_branch_reads_assigned(buf, toks, i + 1, open, open + 1, after - 1) == 1 {
+        return 1;
+    }
+    if tok_kind(toks, after) == tk_kw_else() {
+        if tok_kind(toks, after + 1) == tk_lbrace() {
+            let else_after: i64 = skip_balanced_brace(toks, after + 2, 1);
+            if policy_branch_reads_assigned(buf, toks, i + 1, open, after + 2, else_after - 1) == 1 {
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+// Token-level mirror of the two reduction shapes used by nerve_lint: an
+// assignment that reads its own target, or a direct branch assignment selected
+// by a condition that reads the target. Merely assigning a loop counter from an
+// independent value is not a reduction.
+pub fn policy_loop_reduces(buf: i64, toks: Vec, end: i64, i: i64) -> i64 {
+    if i >= end {
+        return 0;
+    }
+    if tok_kind(toks, i) == tk_ident() {
+        if tok_kind(toks, i + 1) == tk_eq() {
+            let lo: i64 = tok_lo(toks, i);
+            let hi: i64 = tok_hi(toks, i);
+            let rhs_end: i64 = policy_stmt_end(toks, i + 2, end);
+            if policy_span_seen(buf, toks, lo, hi, i + 2, rhs_end) == 1 {
+                return 1;
+            }
+        }
+    }
+    if tok_kind(toks, i) == tk_kw_if() {
+        if policy_if_reduces(buf, toks, i, end) == 1 {
+            return 1;
+        }
+    }
+    policy_loop_reduces(buf, toks, end, i + 1)
+}
+
+// Validate the body-level claims for one admitted deterministic function.
+// The subset is deliberately conservative: every loop needs a sequential tag,
+// fixed-point `*` is confined to q16_mul, and no-float scans both literal and
+// declared-width tokens. Valid policy shapes outside this subset still refuse.
+pub fn policy_body_valid(buf: i64, toks: Vec, i: i64, end: i64, flags: i64, qmul: i64) -> i64 {
+    if i >= end {
+        return 1;
+    }
+    let k: i64 = tok_kind(toks, i);
+    if k == tk_star() {
+        if qmul == 0 {
+            return 0;
+        }
+    }
+    if k == tk_ident() {
+        if tc_sf_is_for(buf, tok_lo(toks, i), tok_hi(toks, i)) == 1 {
+            if (flags & 2) == 0 {
+                return 0;
+            }
+        }
+        if tc_ui_is_while(buf, tok_lo(toks, i), tok_hi(toks, i)) == 1 {
+            if (flags & 2) == 0 {
+                let open: i64 = policy_body_start(toks, i + 1);
+                if open >= 0 {
+                    if open < end {
+                        let after: i64 = skip_balanced_brace(toks, open + 1, 1);
+                        if policy_loop_reduces(buf, toks, after - 1, open + 1) == 1 {
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+        if tok_kind(toks, i + 1) == tk_lparen() {
+            let clo: i64 = tok_lo(toks, i);
+            let chi: i64 = tok_hi(toks, i);
+            if (flags & 4) != 0 {
+                if policy_name_is_float_math(buf, clo, chi) == 1 {
+                    return 0;
+                }
+            }
+            if policy_fn_defined(buf, toks, clo, chi, 0) == 0 {
+                if policy_name_is_reduction(buf, clo, chi) == 1 {
+                    return 0;
+                }
+            }
+        }
+        if (flags & 4) != 0 {
+            let lo: i64 = tok_lo(toks, i);
+            let hi: i64 = tok_hi(toks, i);
+            let w: i64 = tc_sf_word(buf, lo, hi);
+            if hi - lo == 3 {
+                if w == 3421798 {
+                    return 0;
+                }
+                if w == 3289958 {
+                    return 0;
+                }
+            }
+        }
+    }
+    if (flags & 4) != 0 {
+        if k == tk_float() {
+            return 0;
+        }
+    }
+    policy_body_valid(buf, toks, i + 1, end, flags, qmul)
+}
+
+pub fn policy_validate_fns(buf: i64, toks: Vec, i: i64, unit_no_float: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 1;
+    }
+    if tok_kind(toks, i) == tk_kw_fn() {
+        let attr_end: i64 = if i > 0 {
+            if tok_kind(toks, i - 1) == tk_kw_pub() {
+                i - 2
+            } else {
+                i - 1
+            }
+        } else {
+            0 - 1
+        };
+        let flags: i64 = policy_attr_flags_back(buf, toks, attr_end, 0) | unit_no_float;
+        // This supported deterministic subset is closed: every declared fn,
+        // including an extern declaration, must carry its own attestation.
+        if (flags & 1) == 0 {
+            return 0;
+        }
+        let open: i64 = policy_body_start(toks, i + 2);
+        if open < 0 {
+            return 0;
+        }
+        let after: i64 = skip_balanced_brace(toks, open + 1, 1);
+        if policy_signature_valid(buf, toks, i + 2, open, flags) == 0 {
+            return 0;
+        }
+        if policy_body_valid(buf, toks, open + 1, after - 1, flags, policy_name_is_q16_mul(buf, toks, i)) == 0 {
+            return 0;
+        }
+        return policy_validate_fns(buf, toks, after, unit_no_float);
+    }
+    policy_validate_fns(buf, toks, i + 1, unit_no_float)
+}
+
+pub fn policy_fn_no_float_exists(buf: i64, toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 0;
+    }
+    if tok_kind(toks, i) == tk_kw_fn() {
+        let attr_end: i64 = if i > 0 {
+            if tok_kind(toks, i - 1) == tk_kw_pub() {
+                i - 2
+            } else {
+                i - 1
+            }
+        } else {
+            0 - 1
+        };
+        if (policy_attr_flags_back(buf, toks, attr_end, 0) & 4) != 0 {
+            return 1;
+        }
+    }
+    policy_fn_no_float_exists(buf, toks, i + 1)
+}
+
+pub fn policy_after_attrs(buf: i64, toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return i;
+    }
+    if load_byte(buf, tok_lo(toks, i)) == 35 {
+        if tok_kind(toks, i + 1) == tk_lbracket() {
+            return policy_after_attrs(buf, toks, skip_balanced_bracket(toks, i + 2, 1));
+        }
+    }
+    i
+}
+
+pub fn policy_attrs_target_items(buf: i64, toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 1;
+    }
+    if load_byte(buf, tok_lo(toks, i)) == 35 {
+        if tok_kind(toks, i + 1) == tk_lbracket() {
+            if attr_policy_kind(buf, toks, i + 2) > 0 {
+                let after: i64 = policy_after_attrs(buf, toks, skip_balanced_bracket(toks, i + 2, 1));
+                let target: i64 = if tok_kind(toks, after) == tk_kw_pub() {
+                    after + 1
+                } else {
+                    after
+                };
+                if tok_kind(toks, target) != tk_kw_fn() {
+                    if tok_kind(toks, target) != tk_ident() {
+                        return 0;
+                    }
+                    let lo: i64 = tok_lo(toks, target);
+                    let hi: i64 = tok_hi(toks, target);
+                    if is_const_kw(buf, lo, hi) == 0 {
+                        if is_struct_kw(buf, lo, hi) == 0 {
+                            if is_enum_kw(buf, lo, hi) == 0 {
+                                if is_module_kw(buf, lo, hi) == 0 {
+                                    if tc_dn_is_type_kw(buf, lo, hi) == 0 {
+                                        return 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    policy_attrs_target_items(buf, toks, i + 1)
+}
+
+pub fn policy_has_attr(buf: i64, toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 0;
+    }
+    if load_byte(buf, tok_lo(toks, i)) == 35 {
+        if tok_kind(toks, i + 1) == tk_lbracket() {
+            if attr_policy_kind(buf, toks, i + 2) > 0 {
+                return 1;
+            }
+        }
+    }
+    policy_has_attr(buf, toks, i + 1)
+}
+
+// Rust expands every valid #[bimap] declaration before running the NERVE
+// policy pass. The generated functions carry only __bimap_generated: none has
+// a BitIdentical attestation, and every enum/string/numeric form generates an
+// inverse lookup whose reduction has no strategy tag. An armed policy unit
+// containing a bimap therefore refuses in Rust. Detect the declaration rather
+// than enumerating generated names, so count/forward/inverse and hidden index
+// helpers cannot escape this parity boundary.
+pub fn policy_has_bimap_attr(buf: i64, toks: Vec, i: i64) -> i64 {
+    if at_eof(toks, i) == 1 {
+        return 0;
+    }
+    if load_byte(buf, tok_lo(toks, i)) == 35 {
+        if tok_kind(toks, i + 1) == tk_lbracket() {
+            if tok_kind(toks, i + 2) == tk_ident() {
+                if attr_span_is_bimap(buf, tok_lo(toks, i + 2), tok_hi(toks, i + 2)) == 1 {
+                    if tok_kind(toks, i + 3) == tk_rbracket() {
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    policy_has_bimap_attr(buf, toks, i + 1)
+}
+
+pub fn policy_contracts_valid(buf: i64, toks: Vec) -> i64 {
+    if policy_has_attr(buf, toks, 0) == 0 {
+        return 1;
+    }
+    if policy_has_bimap_attr(buf, toks, 0) == 1 {
+        return 0;
+    }
+    if policy_attrs_target_items(buf, toks, 0) == 0 {
+        return 0;
+    }
+    policy_validate_fns(buf, toks, 0, policy_fn_no_float_exists(buf, toks, 0) * 4)
+}
+
 pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
     if tok_kind(toks, pos) != tk_ident() {
         return 0;
@@ -6018,6 +6950,46 @@ pub fn attr_is_known_inert(buf: i64, toks: Vec, pos: i64) -> i64 {
     0
 }
 
+pub fn parse_unknown_item(toks: Vec, pos: i64) -> ParseResult {
+    let end: i64 = skip_unknown_item(toks, pos);
+    let n: i64 = ast_new_leaf(ast_unsupported(), tok_lo(toks, pos), tok_hi(toks, end - 1));
+    pr_new(end, n)
+}
+
+pub fn parse_bimap_attr(toks: Vec, pos: i64, buf: i64) -> ParseResult {
+    if tok_kind(toks, pos + 3) == tk_rbracket() {
+        let item_pos: i64 = pos + 4;
+        if tok_kind(toks, item_pos) == tk_ident() {
+            let ilo: i64 = tok_lo(toks, item_pos);
+            let ihi: i64 = tok_hi(toks, item_pos);
+            if is_enum_kw(buf, ilo, ihi) == 1 {
+                if tok_kind(toks, item_pos + 1) == tk_ident() {
+                    if tok_kind(toks, item_pos + 2) == tk_lbrace() {
+                        if bimap_enum_valid(buf, toks, item_pos + 3, item_pos + 3, 0) == 1 {
+                            let d: ParseResult = parse_struct_def(toks, item_pos, buf);
+                            let marker: i64 = ast_new_bimap_marker(tok_lo(toks, pos), ast_span_hi(pr_node(d)), pr_node(d), 1, tok_lo(toks, item_pos + 1), tok_hi(toks, item_pos + 1));
+                            return pr_new(pr_pos(d), marker);
+                        }
+                    }
+                }
+            }
+            if is_const_kw(buf, ilo, ihi) == 1 {
+                if tok_kind(toks, item_pos + 1) == tk_ident() {
+                    let ckind: i64 = bimap_const_kind(buf, toks, item_pos);
+                    if ckind > 0 {
+                        let afterc: i64 = bimap_const_after(buf, toks, item_pos);
+                        if afterc > 0 {
+                            let marker2: i64 = ast_new_bimap_marker(tok_lo(toks, pos), tok_hi(toks, afterc - 1), 0, ckind, tok_lo(toks, item_pos + 1), tok_hi(toks, item_pos + 1));
+                            return pr_new(afterc, marker2);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    parse_unknown_item(toks, pos)
+}
+
 pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     let k: i64 = tok_kind(toks, pos);
     // Item-level attribute (hash + bracketed list, RFC 0012 §5). The `#` lexes to
@@ -6036,7 +7008,17 @@ pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     // emitted fn set for every attribute it records but does not act on.
     if load_byte(buf, tok_lo(toks, pos)) == 35 {
         if tok_kind(toks, pos + 1) == tk_lbracket() {
+            if tok_kind(toks, pos + 2) == tk_ident() {
+                let alo: i64 = tok_lo(toks, pos + 2);
+                let ahi: i64 = tok_hi(toks, pos + 2);
+                if attr_span_is_bimap(buf, alo, ahi) == 1 {
+                    return parse_bimap_attr(toks, pos, buf);
+                }
+            }
             if attr_is_known_inert(buf, toks, pos + 2) == 1 {
+                return parse_item(toks, skip_balanced_bracket(toks, pos + 2, 1), buf);
+            }
+            if attr_policy_kind(buf, toks, pos + 2) > 0 {
                 return parse_item(toks, skip_balanced_bracket(toks, pos + 2, 1), buf);
             }
         }
@@ -6146,10 +7128,7 @@ pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     // own top-level items (import/pub/fn/struct/enum/extern/module/const) are
     // all recognized above, so this fallback is never reached on the self-host
     // source and the canary fixed point is unchanged.
-    let end: i64 = skip_unknown_item(toks, pos);
-    let hi2: i64 = tok_hi(toks, end - 1);
-    let n: i64 = ast_new_leaf(ast_unsupported(), lo, hi2);
-    pr_new(end, n)
+    parse_unknown_item(toks, pos)
 }
 
 pub fn parse_items_rest(toks: Vec, pos: i64, buf: i64, acc: Vec) -> ParseResult {
@@ -6193,6 +7172,11 @@ pub fn is_bare_expr_program(toks: Vec) -> i64 {
 // ===== Public entry: parse =====
 
 pub fn parse(toks: Vec, buf: i64) -> i64 {
+    if policy_contracts_valid(buf, toks) == 0 {
+        let poison: i64 = ast_new_leaf(ast_unsupported(), 0, 0);
+        let onep: Vec = vec_push(vec_new(), poison);
+        return ast_new_program(0, 0, vec_addr(onep), vec_len(onep));
+    }
     // A bare top-level expression (`1 + 2 * 3`) IS the whole program: parse it as
     // one expression so lower_program const-folds it (emit_bare_expr), matching
     // mindc-Rust. Otherwise parse a sequence of items as usual.
@@ -16277,6 +17261,11 @@ pub fn seq_fix_deltas(src: i64, plan: i64, nplan: i64, env: i64, names_buf: i64,
         let if_node5: i64 = __mind_load_i64(plan + i * 64 + 8);
         let pa5: i64 = __mind_load_i64(plan + i * 64 + 24);
         let np5: i64 = __mind_load_i64(plan + i * 64 + 32);
+        // Everything allocated by this name-only re-probe is temporary. Preserve
+        // escaped records in names_buf, then let the native bump arena reuse the
+        // probe region before allocating the rebind slots retained by the plan.
+        // The malloc-backed .so sees a safe no-op checkpoint/reclaim pair.
+        let p_ckpt: i64 = __mind_alloc(0);
         let p_nodes: i64 = __mind_alloc(256 * 32);
         let p_cursor: i64 = __mind_alloc(8);
         let p_vidbuf: i64 = __mind_alloc(256 * 8);
@@ -16291,13 +17280,15 @@ pub fn seq_fix_deltas(src: i64, plan: i64, nplan: i64, env: i64, names_buf: i64,
             __mind_store_i64(plan + i * 64 + 16, p_dst + 1);
             let nb: i64 = __mind_load_i64(p_nb);
             let _ap: i64 = lvenv_append_escapes(names_buf, nnames, p_bo, nb, 0);
+            let _pr: i64 = nb_arena_reclaim(p_ckpt);
             let p_slots: i64 = __mind_alloc((nb + 1) * 32);
-            let _ps: i64 = synth_rebind_slots(p_bo, nb, nodes, cursor, p_slots, 0);
+            let _ps: i64 = synth_rebind_slots(names_buf + nnames * 24, nb, nodes, cursor, p_slots, 0);
             __mind_store_i64(plan + i * 64 + 48, nb);
             __mind_store_i64(plan + i * 64 + 56, p_slots);
             return seq_fix_deltas(src, plan, nplan, env, names_buf, nnames + nb, env_k, i + 1, nodes, cursor);
         }
         __mind_store_i64(plan + i * 64 + 48, 0);
+        let _pr0: i64 = nb_arena_reclaim(p_ckpt);
         return seq_fix_deltas(src, plan, nplan, env, names_buf, nnames, env_k, i + 1, nodes, cursor);
     }
     if ty == 8 {
@@ -25847,6 +26838,313 @@ pub fn emit_program_items(s: EmitState, buf: i64, items_addr: i64, items_len: i6
     emit_program_items(s1, buf, items_addr, items_len, i + 1)
 }
 
+pub fn emit_packed_ascii(s: EmitState, w: i64, n: i64, i: i64) -> EmitState {
+    if i >= n {
+        return s;
+    }
+    emit_packed_ascii(es_push(s, (w >> (i * 8)) & 255), w, n, i + 1)
+}
+
+// mode 1 is enum snake_case (underscore before every interior uppercase);
+// mode 2 is const_snake_case (underscore only at lower-to-upper boundaries).
+pub fn bimap_base_underscore(buf: i64, lo: i64, i: i64, mode: i64) -> i64 {
+    if i <= 0 {
+        return 0;
+    }
+    let b: i64 = load_byte(buf, lo + i);
+    if b < 65 {
+        return 0;
+    }
+    if b > 90 {
+        return 0;
+    }
+    if mode == 1 {
+        return 1;
+    }
+    let prev: i64 = load_byte(buf, lo + i - 1);
+    if prev >= 97 {
+        if prev <= 122 {
+            return 1;
+        }
+    }
+    0
+}
+
+pub fn emit_bimap_base(s: EmitState, buf: i64, lo: i64, hi: i64, i: i64, mode: i64) -> EmitState {
+    if lo + i >= hi {
+        return s;
+    }
+    let b: i64 = load_byte(buf, lo + i);
+    let s0: EmitState = if bimap_base_underscore(buf, lo, i, mode) == 1 {
+        es_push(s, 95)
+    } else {
+        s
+    };
+    let lowered: i64 = if b >= 65 {
+        if b <= 90 {
+            b + 32
+        } else {
+            b
+        }
+    } else {
+        b
+    };
+    emit_bimap_base(es_push(s0, lowered), buf, lo, hi, i + 1, mode)
+}
+
+pub fn emit_bimap_name(s: EmitState, buf: i64, lo: i64, hi: i64, mode: i64, prefix: i64, sw0: i64, sw1: i64, slen: i64) -> EmitState {
+    let s1: EmitState = if prefix == 1 {
+        emit_packed_ascii(s, 6877103753542131551, 8, 0)
+    } else {
+        s
+    };
+    let s2: EmitState = emit_bimap_base(s1, buf, lo, hi, 0, mode);
+    let first_n: i64 = if slen > 8 {
+        8
+    } else {
+        slen
+    };
+    let s3: EmitState = emit_packed_ascii(s2, sw0, first_n, 0);
+    if slen > 8 {
+        return emit_packed_ascii(s3, sw1, slen - 8, 0);
+    }
+    s3
+}
+
+// Emit one generated bimap function through the same IR stub contract as an
+// ordinary parsed fn. prefix!=0 prepends `__bimap_`; suffix is at most 16
+// bytes split across two packed little-endian words.
+pub fn emit_bimap_stub(s: EmitState, buf: i64, lo: i64, hi: i64, mode: i64, prefix: i64, sw0: i64, sw1: i64, slen: i64) -> EmitState {
+    let s1: EmitState = emit_lit_fn_comment_head(s);
+    let s2: EmitState = emit_bimap_name(s1, buf, lo, hi, mode, prefix, sw0, sw1, slen);
+    let s6: EmitState = es_push(s2, ch_newline());
+    let id: i64 = s6.next_id;
+    let s7: EmitState = emit_lit_const_i64_head(s6, id);
+    let s8: EmitState = es_push(s7, 48);
+    let s9: EmitState = es_push(s8, ch_newline());
+    let s10: EmitState = EmitState { buf: s9.buf, next_id: id + 1, last_id: id, lets: s9.lets };
+    emit_lit_output(s10, id)
+}
+
+pub fn bimap_marker_tag(item: i64) -> i64 {
+    if ast_kind(item) != ast_unsupported() {
+        return 0;
+    }
+    let tag: i64 = ast_child1(item);
+    if tag >= 1 {
+        if tag <= 3 {
+            return tag;
+        }
+    }
+    0
+}
+
+pub fn bimap_generated_matches(buf: i64, marker: i64, prefix: i64, sw0: i64, sw1: i64, slen: i64, fnlo: i64, fnhi: i64) -> i64 {
+    let tag: i64 = bimap_marker_tag(marker);
+    let lo: i64 = ast_child2(marker);
+    let hi: i64 = ast_aux(marker);
+    let mode: i64 = if tag == 1 {
+        1
+    } else {
+        2
+    };
+    let name: EmitState = emit_bimap_name(es_new(), buf, lo, hi, mode, prefix, sw0, sw1, slen);
+    span_bytes_equal2(buf, fnlo, fnhi, string_addr(name.buf), 0, string_len(name.buf))
+}
+
+pub fn bimap_marker_fn_collision(buf: i64, marker: i64, fnlo: i64, fnhi: i64) -> i64 {
+    let tag: i64 = bimap_marker_tag(marker);
+    if bimap_generated_matches(buf, marker, 0, 128017765458783, 0, 6, fnlo, fnhi) == 1 {
+        return 1;
+    }
+    if tag == 1 {
+        if bimap_generated_matches(buf, marker, 0, 32216186216215647, 0, 7, fnlo, fnhi) == 1 {
+            return 1;
+        }
+        if bimap_generated_matches(buf, marker, 0, 8391155454347208287, 114, 9, fnlo, fnhi) == 1 {
+            return 1;
+        }
+    }
+    if tag == 2 {
+        if bimap_generated_matches(buf, marker, 1, 8675174641001917279, 0, 8, fnlo, fnhi) == 1 {
+            return 1;
+        }
+        if bimap_generated_matches(buf, marker, 1, 7592899051773851231, 30820, 10, fnlo, fnhi) == 1 {
+            return 1;
+        }
+        if bimap_generated_matches(buf, marker, 0, 111555003905631, 0, 6, fnlo, fnhi) == 1 {
+            return 1;
+        }
+        if bimap_generated_matches(buf, marker, 0, 2036689759, 0, 4, fnlo, fnhi) == 1 {
+            return 1;
+        }
+    }
+    if tag == 3 {
+        if bimap_generated_matches(buf, marker, 0, 32216186216215647, 0, 7, fnlo, fnhi) == 1 {
+            return 1;
+        }
+        if bimap_generated_matches(buf, marker, 0, 8391155454347208287, 114, 9, fnlo, fnhi) == 1 {
+            return 1;
+        }
+    }
+    0
+}
+
+pub fn bimap_bases_equal(buf: i64, a: i64, b: i64) -> i64 {
+    let at: i64 = bimap_marker_tag(a);
+    let bt: i64 = bimap_marker_tag(b);
+    let am: i64 = if at == 1 {
+        1
+    } else {
+        2
+    };
+    let bm: i64 = if bt == 1 {
+        1
+    } else {
+        2
+    };
+    let alo: i64 = ast_child2(a);
+    let ahi: i64 = ast_aux(a);
+    let blo: i64 = ast_child2(b);
+    let bhi: i64 = ast_aux(b);
+    let an: EmitState = emit_bimap_base(es_new(), buf, alo, ahi, 0, am);
+    let bn: EmitState = emit_bimap_base(es_new(), buf, blo, bhi, 0, bm);
+    span_bytes_equal2(string_addr(an.buf), 0, string_len(an.buf), string_addr(bn.buf), 0, string_len(bn.buf))
+}
+
+pub fn bimap_marker_collides(buf: i64, items: i64, n: i64, idx: i64, j: i64) -> i64 {
+    if j >= n {
+        return 0;
+    }
+    if j == idx {
+        return bimap_marker_collides(buf, items, n, idx, j + 1);
+    }
+    let marker: i64 = __mind_load_i64(items + idx * 8);
+    let other: i64 = __mind_load_i64(items + j * 8);
+    if ast_kind(other) == ast_fn_def() {
+        let name: i64 = ast_child0(other);
+        if bimap_marker_fn_collision(buf, marker, ast_span_lo(name), ast_span_hi(name)) == 1 {
+            return 1;
+        }
+    }
+    if j < idx {
+        if bimap_marker_tag(other) > 0 {
+            if bimap_bases_equal(buf, marker, other) == 1 {
+                return 1;
+            }
+        }
+    }
+    bimap_marker_collides(buf, items, n, idx, j + 1)
+}
+
+pub fn bimap_items_valid(buf: i64, items: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 1;
+    }
+    let item: i64 = __mind_load_i64(items + i * 8);
+    if ast_kind(item) == ast_unsupported() {
+        if bimap_marker_tag(item) == 0 {
+            return 0;
+        }
+        if bimap_marker_collides(buf, items, n, i, 0) == 1 {
+            return 0;
+        }
+    }
+    bimap_items_valid(buf, items, n, i + 1)
+}
+
+pub fn program_has_bimap_marker(items: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    if bimap_marker_tag(__mind_load_i64(items + i * 8)) > 0 {
+        return 1;
+    }
+    program_has_bimap_marker(items, n, i + 1)
+}
+
+pub fn emit_program_items_bimap(s: EmitState, buf: i64, items: i64, n: i64, i: i64) -> EmitState {
+    if i >= n {
+        return s;
+    }
+    let item: i64 = __mind_load_i64(items + i * 8);
+    let tag: i64 = bimap_marker_tag(item);
+    let s1: EmitState = if tag > 0 {
+        if ast_child0(item) != 0 {
+            emit_item_stub(s)
+        } else {
+            s
+        }
+    } else {
+        let k: i64 = ast_kind(item);
+        if k == ast_fn_def() {
+            emit_fn_def(s, buf, item)
+        } else {
+            if k == ast_use() {
+                emit_item_stub(s)
+            } else {
+                if k == ast_struct_def() {
+                    emit_item_stub(s)
+                } else {
+                    if is_bare_expr_kind(k) == 1 {
+                        emit_bare_expr(s, buf, item)
+                    } else {
+                        s
+                    }
+                }
+            }
+        }
+    };
+    emit_program_items_bimap(s1, buf, items, n, i + 1)
+}
+
+pub fn emit_bimap_generated(s: EmitState, buf: i64, items: i64, n: i64, i: i64) -> EmitState {
+    if i >= n {
+        return s;
+    }
+    let item: i64 = __mind_load_i64(items + i * 8);
+    let tag: i64 = bimap_marker_tag(item);
+    let lo: i64 = ast_child2(item);
+    let hi: i64 = ast_aux(item);
+    let s1: EmitState = if tag > 0 {
+        emit_bimap_stub(s, buf, lo, hi, tag, 0, 128017765458783, 0, 6)
+    } else {
+        s
+    };
+    let s2: EmitState = if tag == 1 {
+        let a: EmitState = emit_bimap_stub(s1, buf, lo, hi, tag, 0, 32216186216215647, 0, 7);
+        emit_bimap_stub(a, buf, lo, hi, tag, 0, 8391155454347208287, 114, 9)
+    } else {
+        if tag == 2 {
+            let a2: EmitState = emit_bimap_stub(s1, buf, lo, hi, tag, 1, 8675174641001917279, 0, 8);
+            let b2: EmitState = emit_bimap_stub(a2, buf, lo, hi, tag, 1, 7592899051773851231, 30820, 10);
+            let c2: EmitState = emit_bimap_stub(b2, buf, lo, hi, tag, 0, 111555003905631, 0, 6);
+            emit_bimap_stub(c2, buf, lo, hi, tag, 0, 2036689759, 0, 4)
+        } else {
+            if tag == 3 {
+                let a3: EmitState = emit_bimap_stub(s1, buf, lo, hi, tag, 0, 32216186216215647, 0, 7);
+                emit_bimap_stub(a3, buf, lo, hi, tag, 0, 8391155454347208287, 114, 9)
+            } else {
+                s1
+            }
+        }
+    };
+    emit_bimap_generated(s2, buf, items, n, i + 1)
+}
+
+pub fn lower_program_bimap(ast_addr: i64, buf: i64) -> EmitState {
+    let items: i64 = ast_child0(ast_addr);
+    let n: i64 = ast_aux(ast_addr);
+    if bimap_items_valid(buf, items, n, 0) == 0 {
+        return es_new();
+    }
+    let s0: EmitState = es_new();
+    let s1: EmitState = emit_lit_module_open(s0);
+    let s2: EmitState = emit_program_items_bimap(s1, buf, items, n, 0);
+    let s3: EmitState = emit_bimap_generated(s2, buf, items, n, 0);
+    emit_lit_module_close(s3)
+}
+
 // ===== Public entry: lower_program =====
 
 pub fn lower_program(ast_addr: i64, buf: i64) -> EmitState {
@@ -25929,6 +27227,11 @@ pub fn mindc_compile(src_addr: i64, src_len: i64) -> EmitState {
     let tokens: Vec = lex(src_addr, src_len);
     let ast_root: i64 = parse(tokens, src_addr);
     let _tc: String = typecheck(ast_root, src_addr);
+    let items: i64 = ast_child0(ast_root);
+    let n: i64 = ast_aux(ast_root);
+    if program_has_bimap_marker(items, n, 0) == 1 {
+        return lower_program_bimap(ast_root, src_addr);
+    }
     lower_program(ast_root, src_addr)
 }
 
@@ -38346,34 +39649,35 @@ pub fn nb_sha256_out_loop(h_addr: i64, out_addr: i64, di: i64) -> i64 {
 // writing the 32-byte big-endian digest to `out_addr` (stride-1, H0 high byte
 // first). Mirrors `mini_sha256` / std/sha256.mind's `sha256` byte-for-byte.
 pub fn nb_sha256(in_addr: i64, in_len: i64, out_addr: i64) -> i64 {
-    // Padding length (FIPS §5.1.1): 0x80, zeros to ≡56 (mod 64), 8-byte BE bitlen.
-    // `in_len % 64` == `in_len & 63` for in_len >= 0 (mind_sha256/std.sha256 use
-    // `% 64`; the nfn mic@3 emitter has no `%` arm, and the bitmask is the exact
-    // same value for a non-negative length — and stays self-flip-clean i64-only).
+    // Process complete input blocks in place, then materialize only the final
+    // padded 64/128-byte tail. The old path copied the whole input into a second
+    // padded buffer; for a self-compile trace this retained another ~669 KiB in
+    // the fixed bump arena even though SHA never mutates a complete input block.
+    // Every tail byte consumed below is initialized before compression.
     let tail: i64 = in_len & 63;
-    let pad_zeros: i64 = if tail < 56 {
-        55 - tail
+    let tail_padded: i64 = if tail < 56 {
+        64
     } else {
-        119 - tail
+        128
     };
-    let padded_len: i64 = in_len + 1 + pad_zeros + 8;
-    let buf: i64 = __mind_alloc(padded_len);
-    let _ci: i64 = nb_sha256_copyin_loop(buf, in_addr, in_len, 0);
-    __mind_store_i8(buf + in_len, 128);
-    let _zi: i64 = nb_sha256_zero_loop(buf, in_len + 1, in_len + 1 + pad_zeros);
+    let full_blocks: i64 = in_len / 64;
+    let tail_buf: i64 = __mind_alloc(tail_padded);
+    let _ci: i64 = nb_sha256_copyin_loop(tail_buf, in_addr + full_blocks * 64, tail, 0);
+    __mind_store_i8(tail_buf + tail, 128);
+    let len_off: i64 = tail_padded - 8;
+    let _zi: i64 = nb_sha256_zero_loop(tail_buf, tail + 1, len_off);
     // 64-bit big-endian bit-length.
     let bit_len: i64 = in_len * 8;
-    let len_off: i64 = padded_len - 8;
     let blen_hi: i64 = (bit_len >> 32) & 4294967295;
     let blen_lo: i64 = bit_len & 4294967295;
-    __mind_store_i8(buf + len_off + 0, (blen_hi >> 24) & 255);
-    __mind_store_i8(buf + len_off + 1, (blen_hi >> 16) & 255);
-    __mind_store_i8(buf + len_off + 2, (blen_hi >> 8) & 255);
-    __mind_store_i8(buf + len_off + 3, blen_hi & 255);
-    __mind_store_i8(buf + len_off + 4, (blen_lo >> 24) & 255);
-    __mind_store_i8(buf + len_off + 5, (blen_lo >> 16) & 255);
-    __mind_store_i8(buf + len_off + 6, (blen_lo >> 8) & 255);
-    __mind_store_i8(buf + len_off + 7, blen_lo & 255);
+    __mind_store_i8(tail_buf + len_off + 0, (blen_hi >> 24) & 255);
+    __mind_store_i8(tail_buf + len_off + 1, (blen_hi >> 16) & 255);
+    __mind_store_i8(tail_buf + len_off + 2, (blen_hi >> 8) & 255);
+    __mind_store_i8(tail_buf + len_off + 3, blen_hi & 255);
+    __mind_store_i8(tail_buf + len_off + 4, (blen_lo >> 24) & 255);
+    __mind_store_i8(tail_buf + len_off + 5, (blen_lo >> 16) & 255);
+    __mind_store_i8(tail_buf + len_off + 6, (blen_lo >> 8) & 255);
+    __mind_store_i8(tail_buf + len_off + 7, blen_lo & 255);
     // H state, stride-8.
     let h_addr: i64 = __mind_alloc(64);
     let _hi: i64 = nb_sha256_hinit_loop(h_addr, 0);
@@ -38384,9 +39688,10 @@ pub fn nb_sha256(in_addr: i64, in_len: i64, out_addr: i64) -> i64 {
     // invocations independent while bounding scratch to 592 arena bytes total.
     let w_addr: i64 = __mind_alloc(512);
     let v: i64 = __mind_alloc(64);
-    // Process each 64-byte block, then serialise the digest big-endian.
-    let num_blocks: i64 = padded_len / 64;
-    let _bl: i64 = nb_sha256_blocks_loop(buf, h_addr, w_addr, v, 0, num_blocks);
+    // Complete input blocks are read directly; the final one/two blocks come
+    // from the private initialized tail buffer. Scratch remains invocation-local.
+    let _fb: i64 = nb_sha256_blocks_loop(in_addr, h_addr, w_addr, v, 0, full_blocks);
+    let _tb: i64 = nb_sha256_blocks_loop(tail_buf, h_addr, w_addr, v, 0, tail_padded / 64);
     nb_sha256_out_loop(h_addr, out_addr, 0)
 }
 
@@ -39804,15 +41109,52 @@ pub fn nb_emit_one_item(s: EmitState, src: i64, item: i64, i: i64, strbuf: i64, 
     emit_mic3_output(s1d, i)
 }
 
+// Rebuild the post-item String/EmitState records after an arena reset without a
+// direct `String { .. }` literal.  The standalone nfn flip compiles main.mind
+// without the bundled std/string.mind definition, so that literal cannot be
+// resolved there.  The bytes already written into the pre-checkpoint backing
+// buffer survive a cursor reset; replaying them through es_push overwrites each
+// byte with itself and reconstructs the value records through the existing,
+// source-compatible path.  The caller proves `addr` is the incoming backing
+// allocation and that no growth occurred before using this helper.
+pub fn nb_replay_emit_bytes(s: EmitState, addr: i64, pos: i64, end: i64) -> EmitState {
+    if pos >= end {
+        return s;
+    }
+    let b: i64 = __mind_load_i8(addr + pos);
+    let s1: EmitState = es_push(s, b);
+    nb_replay_emit_bytes(s1, addr, pos + 1, end)
+}
+
 // Walk items in declaration order, emitting each item's instrs; fail closed via ok_cell.
 pub fn nb_emit_items(s: EmitState, src: i64, items_addr: i64, items_len: i64, strbuf: i64, offs: i64, ncount: i64, tconst: i64, kept: i64, n_kept: i64, ok_cell: i64, i: i64) -> EmitState {
     if i >= items_len {
         return s;
     }
     let item: i64 = __mind_load_i64(items_addr + i * 8);
+    // Per-item lowering allocates large tree/vid/env work buffers that are dead as
+    // soon as this item has been emitted.  Reuse them when the String kept its
+    // pre-checkpoint backing store (the common case while spare capacity remains).
+    // If a push grew the String, its new backing store is post-checkpoint and must
+    // stay live, so leave that whole region intact.  The malloc-backed .so gets a
+    // zero checkpoint and therefore takes the unchanged no-reclaim path.
+    let item_ckpt: i64 = __mind_alloc(0);
     let s1: EmitState = nb_emit_one_item(s, src, item, i, strbuf, offs, ncount, tconst, kept, n_kept, ok_cell);
     if __mind_load_i64(ok_cell) == 0 {
         return s1;
+    }
+    let s1_addr: i64 = string_addr(s1.buf);
+    let s1_len: i64 = string_len(s1.buf);
+    if item_ckpt >= nb_arena_addr() + 16 {
+        // Pointer equality proves this item did not replace the backing buffer.
+        // That buffer and the incoming state predate item_ckpt.  A growth points
+        // at a distinct post-checkpoint allocation and takes the no-reclaim arm.
+        if s1_addr == string_addr(s.buf) {
+            let old_len: i64 = string_len(s.buf);
+            let _ri: i64 = nb_arena_reclaim(item_ckpt);
+            let kept_s: EmitState = nb_replay_emit_bytes(s, s1_addr, old_len, s1_len);
+            return nb_emit_items(kept_s, src, items_addr, items_len, strbuf, offs, ncount, tconst, kept, n_kept, ok_cell, i + 1);
+        }
     }
     nb_emit_items(s1, src, items_addr, items_len, strbuf, offs, ncount, tconst, kept, n_kept, ok_cell, i + 1)
 }

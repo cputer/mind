@@ -1,0 +1,7 @@
+#[determinism(BitIdentical)]
+fn first(x: i64) -> i64 {
+    while x > 0 {
+        return x;
+    }
+    return 0;
+}

@@ -45,6 +45,12 @@ use crate::types::DType;
 use crate::types::ShapeDim;
 
 #[cfg(feature = "std-surface")]
+use crate::eval::slice_abi::{
+    ARRAY_VEC_SENTINEL, MUT_SLICE_VEC_SENTINEL, SLICE_VEC_SENTINEL, is_mutable_vec_handle_sentinel,
+    is_vec_handle_sentinel, vec_param_sentinel,
+};
+
+#[cfg(feature = "std-surface")]
 #[path = "fixed_array.rs"]
 mod fixed_array;
 
@@ -1234,15 +1240,15 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
             }
         }
     });
-    // RFC 0005 phase 2 (first slice) — array-param signature pre-pass: record
-    // which param positions of each top-level NON-generic fn are `array<T>`,
+    // RFC 0005 phase 2 — vec-layout parameter signature pre-pass: record
+    // which param positions of each top-level NON-generic fn are `array<T>` or slices,
     // so an `ArrayLit` in argument position routes to the std.vec runtime
-    // (see `ARRAY_PARAM_FNS`). Reset at entry (mirrors the MONO reset above)
+    // (see `VEC_PARAM_FNS`). Reset at entry (mirrors the MONO reset above)
     // so a prior `lower_to_ir` on this thread can never leak entries into
     // this module's lowering. Only array-param fns are registered, so an
     // array-free module (the keystone) populates nothing.
     #[cfg(feature = "std-surface")]
-    ARRAY_PARAM_FNS.with(|cell| {
+    VEC_PARAM_FNS.with(|cell| {
         let mut m = cell.borrow_mut();
         m.clear();
         for item in &module.items {
@@ -1250,12 +1256,16 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                 if !fd.type_params.is_empty() {
                     continue;
                 }
-                if fd.params.iter().any(|p| is_array_surface_ty(&p.ty)) {
+                if fd
+                    .params
+                    .iter()
+                    .any(|p| vec_param_sentinel(&p.ty).is_some())
+                {
                     m.insert(
                         fd.name.clone(),
                         fd.params
                             .iter()
-                            .map(|p| is_array_surface_ty(&p.ty))
+                            .map(|p| vec_param_sentinel(&p.ty).is_some())
                             .collect(),
                     );
                 }
@@ -2320,9 +2330,8 @@ fn enter_ret_type_scope(ret_type: &Option<TypeAnn>) -> RetTypeGuard {
 }
 
 thread_local! {
-    /// RFC 0005 phase 2, first slice — per-module registry of the ARRAY-typed
-    /// parameter positions of every top-level non-generic fn
-    /// (`name -> [is_array<T> per param position]`), so an `ArrayLit` in CALL-
+    /// RFC 0005 phase 2 — per-module registry of Vec-layout parameter positions
+    /// (`array<T>` or `[T]`) of every top-level non-generic fn, so an `ArrayLit` in CALL-
     /// ARGUMENT position (`f([1, 2, 3])`, `mind_type_struct(raw, [])`) can be
     /// routed to `lower_array_surface_lit` (the std.vec heap runtime, an opaque
     /// i64 vec handle) exactly like the annotated-`Let`, return-position
@@ -2340,16 +2349,16 @@ thread_local! {
     /// registered (no global fn-signature registry exists); such a call keeps
     /// the loud phase-2 reject — an honest, visible gap, never a miscompile.
     #[cfg(feature = "std-surface")]
-    static ARRAY_PARAM_FNS: std::cell::RefCell<std::collections::HashMap<String, Vec<bool>>> =
+    static VEC_PARAM_FNS: std::cell::RefCell<std::collections::HashMap<String, Vec<bool>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// Whether `callee`'s parameter at `idx` is declared `array<T>` (per the
-/// [`ARRAY_PARAM_FNS`] pre-pass registry). Misses — unknown callee, generic
+/// [`VEC_PARAM_FNS`] pre-pass registry). Misses — unknown callee, generic
 /// callee, out-of-range position — return `false`, keeping the existing
 /// lowering path byte-identical.
 #[cfg(feature = "std-surface")]
-fn callee_array_lit_param(callee: &str, idx: usize) -> bool {
+fn callee_vec_lit_param(callee: &str, idx: usize) -> bool {
     // The per-module pre-pass registry only records THIS file's fns, so a
     // callee found here is authoritative. `None` means the callee is not a
     // local array-param fn — which includes an IMPORTED callee defined in a
@@ -2358,7 +2367,7 @@ fn callee_array_lit_param(callee: &str, idx: usize) -> bool {
     // fell through to the const-array path and tripped the MLIR "non-i64
     // argument to call" phase-2 reject. Fall back to the whole-project module
     // table's captured signature to close that cross-module gap.
-    if let Some(hit) = ARRAY_PARAM_FNS.with(|m| {
+    if let Some(hit) = VEC_PARAM_FNS.with(|m| {
         m.borrow()
             .get(callee)
             .map(|mask| mask.get(idx).copied().unwrap_or(false))
@@ -2370,7 +2379,7 @@ fn callee_array_lit_param(callee: &str, idx: usize) -> bool {
         if let Some(param_types) = crate::type_checker::cm_imported_fn_param_types(callee) {
             return param_types
                 .get(idx)
-                .map(is_array_surface_ty)
+                .map(|ty| vec_param_sentinel(ty).is_some())
                 .unwrap_or(false);
         }
     }
@@ -3051,16 +3060,6 @@ fn struct_layout(ir: &IRModule, name: &str) -> Option<StructLayout> {
     Some((layout, running, all_i64))
 }
 
-/// Sentinel "struct type name" recorded in `struct_env` for an `array<T>`-typed
-/// binding. It is deliberately the lowercase string `"vec"` so the existing UFCS
-/// method-call desugar (`{lowercase(T)}_{method}`) resolves `arr.push(x)` to the
-/// `vec_push` free function in `std/vec.mind` with no special-case branch. It is
-/// NOT a real struct (`ir.struct_defs` has no `"vec"` entry — the runtime struct
-/// is `Vec`), so the zero-arg field-accessor fast path never matches it and every
-/// `array<T>` method/index falls through to the vec runtime mapping.
-#[cfg(feature = "std-surface")]
-const ARRAY_VEC_SENTINEL: &str = "vec";
-
 /// Sentinel recorded in `struct_env` for a fixed-size `bytes[N]` buffer
 /// binding/param (the parser renders the type `Named("bytes[N]")`). The value
 /// is a raw STRIDE-1 byte buffer behind an i64 address (`bytes[N].zero()` →
@@ -3382,8 +3381,8 @@ fn lower_set_surface_lit(
 /// Collection sentinel for a `TypeAnn` (`array<T>`/`map<K,V>`/`set<T>`), or None.
 #[cfg(feature = "std-surface")]
 fn collection_sentinel_for_ty(ty: &TypeAnn) -> Option<&'static str> {
-    if is_array_surface_ty(ty) {
-        Some(ARRAY_VEC_SENTINEL)
+    if let Some(sentinel) = vec_param_sentinel(ty) {
+        Some(sentinel)
     } else if is_map_surface_ty(ty) {
         Some(map_sentinel_for(ty))
     } else if is_set_surface_ty(ty) {
@@ -3458,13 +3457,13 @@ fn index_element_narrow_ty(
 }
 
 /// Resolve the collection sentinel of a method-call / index RECEIVER, covering
-/// BOTH an Ident bound to a collection (via `struct_env`) AND a struct-FIELD
-/// access whose declared field type is a collection
+/// an Ident bound to a collection (via `struct_env`), a struct-FIELD access
+/// whose declared field type is a collection, and a typed function CALL
 /// (`analyzed.determinism.contains_key(...)`). For the field case the base
 /// struct type comes from the `receiver_types` side-table (the same source the
 /// FieldAccess read path uses), then the field's declared type is looked up in
-/// `struct_field_types`. None for a non-collection receiver (the caller then
-/// falls through to the normal struct / UFCS path).
+/// `struct_field_types`; calls use the pre-registered ABI signature. None for a
+/// non-collection receiver (the caller falls through to normal struct / UFCS).
 #[cfg(feature = "std-surface")]
 fn receiver_collection_sentinel(
     receiver: &ast::Node,
@@ -3475,6 +3474,8 @@ fn receiver_collection_sentinel(
     match receiver {
         ast::Node::Lit(Literal::Ident(v), _) => match struct_env.get(v).map(|s| s.as_str()) {
             Some(ARRAY_VEC_SENTINEL) => Some(ARRAY_VEC_SENTINEL),
+            Some(SLICE_VEC_SENTINEL) => Some(SLICE_VEC_SENTINEL),
+            Some(MUT_SLICE_VEC_SENTINEL) => Some(MUT_SLICE_VEC_SENTINEL),
             Some(MAP_SENTINEL) => Some(MAP_SENTINEL),
             Some(MAP_STR_SENTINEL) => Some(MAP_STR_SENTINEL),
             Some(SET_SENTINEL) => Some(SET_SENTINEL),
@@ -3502,6 +3503,18 @@ fn receiver_collection_sentinel(
             let field_ty = ir.struct_field_types.get(sname)?.get(idx)?;
             collection_sentinel_for_ty(field_ty)
         }
+        ast::Node::Call { callee, .. } => ir
+            .fn_signatures
+            .get(callee)
+            .and_then(|(_, ret)| ret.as_ref())
+            .and_then(collection_sentinel_for_ty)
+            .or_else(|| {
+                crate::ir::with_global_enums(|g| {
+                    g.fn_returns
+                        .get(callee)
+                        .and_then(collection_sentinel_for_ty)
+                })
+            }),
         // `coll[i]` — the sentinel of the ELEMENT type of `coll`. Resolves a
         // struct array FIELD indexed to a nested collection element
         // (`next.scopes[i]` where `scopes: array<map<K,V>>` → the map sentinel),
@@ -3626,7 +3639,7 @@ fn element_type_sentinel(ty: &TypeAnn) -> Option<String> {
         _ if is_growable_bytes_ty(ty) => Some(ARRAY_VEC_SENTINEL.to_string()),
         _ if is_map_surface_ty(ty) => Some(map_sentinel_for(ty).to_string()),
         _ if is_set_surface_ty(ty) => Some(set_sentinel_for(ty).to_string()),
-        _ if is_array_surface_ty(ty) => Some(ARRAY_VEC_SENTINEL.to_string()),
+        _ if vec_param_sentinel(ty).is_some() => Some(vec_param_sentinel(ty)?.to_string()),
         TypeAnn::Named(n) => Some(n.clone()),
         _ => None,
     }
@@ -3637,12 +3650,11 @@ fn element_type_sentinel(ty: &TypeAnn) -> Option<String> {
 /// IDENT array recovers the element type the bare `"vec"` sentinel drops.
 #[cfg(feature = "std-surface")]
 fn array_element_track(ty: &TypeAnn) -> Option<String> {
-    if let TypeAnn::Generic { name, args } = ty {
-        if name == "array" {
-            return element_type_sentinel(args.first()?);
-        }
+    match ty {
+        TypeAnn::Generic { name, args } if name == "array" => element_type_sentinel(args.first()?),
+        TypeAnn::Slice { element, .. } => element_type_sentinel(element),
+        _ => None,
     }
-    None
 }
 
 /// Resolve the struct_env tracking value for a for-each ELEMENT, from the
@@ -5900,12 +5912,11 @@ fn lower_expr(
                 });
                 fn_env.insert(param.name.clone(), param_id);
                 param_pairs.push((param.name.clone(), param_id));
-                // `array<T>` param → vec sentinel so `p.push/get/len/length` and
-                // `p[i]` in the body resolve to the std.vec runtime (e.g.
-                // mind-flow `fn assign_ids(order: array<string>)`).
+                // `array<T>` and slice params share the current Vec record ABI.
+                // Distinct slice sentinels preserve borrowed capabilities.
                 #[cfg(feature = "std-surface")]
-                if is_array_surface_ty(&param.ty) {
-                    fn_struct_env.insert(param.name.clone(), ARRAY_VEC_SENTINEL.to_string());
+                if let Some(sentinel) = vec_param_sentinel(&param.ty) {
+                    fn_struct_env.insert(param.name.clone(), sentinel.to_string());
                     if let Some(__e) = array_element_track(&param.ty) {
                         fn_struct_env.insert(format!("__elem__{}", param.name), __e);
                     }
@@ -6335,7 +6346,7 @@ fn lower_expr(
                             &fn_struct_env,
                             receiver_types,
                         );
-                        if sentinel == Some(ARRAY_VEC_SENTINEL)
+                        if sentinel.is_some_and(is_mutable_vec_handle_sentinel)
                             || sentinel == Some(FIXED_BYTES_SENTINEL)
                         {
                             let id = lower_expr(
@@ -7056,7 +7067,7 @@ fn lower_expr(
                             &then_struct_env,
                             receiver_types,
                         );
-                        if sentinel == Some(ARRAY_VEC_SENTINEL)
+                        if sentinel.is_some_and(is_mutable_vec_handle_sentinel)
                             || sentinel == Some(FIXED_BYTES_SENTINEL)
                         {
                             then_result = lower_expr(
@@ -7443,7 +7454,7 @@ fn lower_expr(
                                 &else_struct_env,
                                 receiver_types,
                             );
-                            if sentinel == Some(ARRAY_VEC_SENTINEL)
+                            if sentinel.is_some_and(is_mutable_vec_handle_sentinel)
                                 || sentinel == Some(FIXED_BYTES_SENTINEL)
                             {
                                 else_result = lower_expr(
@@ -7857,7 +7868,7 @@ fn lower_expr(
                                 return id;
                             }
                         }
-                        if callee_array_lit_param(callee, i) {
+                        if callee_vec_lit_param(callee, i) {
                             return lower_array_surface_lit(
                                 elements,
                                 ir,
@@ -8459,7 +8470,7 @@ fn lower_expr(
                             &body_struct_env,
                             receiver_types,
                         );
-                        if sentinel == Some(ARRAY_VEC_SENTINEL)
+                        if sentinel.is_some_and(is_mutable_vec_handle_sentinel)
                             || sentinel == Some(FIXED_BYTES_SENTINEL)
                         {
                             lower_expr(
@@ -8953,7 +8964,7 @@ fn lower_expr(
                         struct_env,
                         receiver_types,
                     ) {
-                        Some(ARRAY_VEC_SENTINEL) => Some("vec_len"),
+                        Some(s) if is_vec_handle_sentinel(s) => Some("vec_len"),
                         Some(MAP_SENTINEL) | Some(MAP_STR_SENTINEL) => Some("map_len"),
                         Some(SET_SENTINEL) | Some(SET_STR_SENTINEL) => Some("map_len"),
                         _ => None,
@@ -9253,7 +9264,7 @@ fn lower_expr(
             // resolves both. A const-array Ident keeps the `ArrayLoad` path below.
             #[cfg(feature = "std-surface")]
             if receiver_collection_sentinel(receiver, ir, struct_env, receiver_types)
-                == Some(ARRAY_VEC_SENTINEL)
+                .is_some_and(is_vec_handle_sentinel)
             {
                 // Recover the declared element type BEFORE `lower_expr` reborrows
                 // `ir` mutably. `Some(T)` only for a narrow/`u64` element (the
@@ -9326,9 +9337,10 @@ fn lower_expr(
             // `vec_set`. A const array stays read-only (placeholder), preserving
             // the prior IR shape for the non-array path.
             #[cfg(feature = "std-surface")]
-            if receiver_collection_sentinel(receiver, ir, struct_env, receiver_types)
-                == Some(ARRAY_VEC_SENTINEL)
-            {
+            if matches!(
+                receiver_collection_sentinel(receiver, ir, struct_env, receiver_types),
+                Some(ARRAY_VEC_SENTINEL | MUT_SLICE_VEC_SENTINEL)
+            ) {
                 let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
                 let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
                 let val_id = lower_expr(value, ir, env, struct_env, receiver_types);
@@ -9635,6 +9647,38 @@ fn lower_expr(
                             "map_contains_key"
                         }),
                         "len" | "length" => Some("map_len"),
+                        _ => None,
+                    };
+                    if let Some(fname) = fname {
+                        let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                        let mut call_args = vec![recv_id];
+                        for a in args {
+                            call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                        }
+                        let dst = ir.fresh();
+                        ir.instrs.push(Instr::Call {
+                            dst,
+                            name: fname.to_string(),
+                            args: call_args,
+                        });
+                        return dst;
+                    }
+                }
+            }
+            // Borrowed slices use the existing Vec [addr|len|cap] record at the
+            // Option-C ABI, but expose only view operations. Mutable slices may
+            // additionally set an existing element; neither slice may grow or
+            // free the owner. The type checker rejects all other methods before
+            // lowering, so this arm only maps the admitted surface to std.vec.
+            #[cfg(feature = "std-surface")]
+            {
+                let sentinel =
+                    receiver_collection_sentinel(receiver, ir, struct_env, receiver_types);
+                if matches!(sentinel, Some(SLICE_VEC_SENTINEL | MUT_SLICE_VEC_SENTINEL)) {
+                    let fname = match method.as_str() {
+                        "get" => Some("vec_get"),
+                        "len" | "length" if args.is_empty() => Some("vec_len"),
+                        "set" if sentinel == Some(MUT_SLICE_VEC_SENTINEL) => Some("vec_set"),
                         _ => None,
                     };
                     if let Some(fname) = fname {

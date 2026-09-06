@@ -1,0 +1,11 @@
+#[determinism(BitIdentical)]
+fn value(x: i64) -> i64 {
+    let mut y: i64 = 0;
+    while x > 0 {
+        if y == 0 {
+            y = 1;
+        }
+        return y;
+    }
+    return y;
+}

@@ -49,6 +49,8 @@ pub mod lower;
 /// for `infer_narrow_arith_ty` (see narrow_scan.rs for the byte-identity proof).
 #[cfg(feature = "std-surface")]
 pub(crate) mod narrow_scan;
+#[cfg(feature = "std-surface")]
+pub(crate) mod slice_abi;
 pub mod traits;
 #[cfg(feature = "std-surface")]
 mod type_aliases;
@@ -68,7 +70,6 @@ pub mod mlir_run;
 #[cfg(feature = "std-surface")]
 pub mod struct_resolver;
 pub mod value;
-
 /// Top-level evaluation context used by the compiler front-end.
 ///
 /// Carries a handle to the runtime implementation. In the open-core
@@ -77,7 +78,6 @@ pub mod value;
 pub struct Evaluator {
     pub runtime: Box<dyn MindRuntime>,
 }
-
 impl Default for Evaluator {
     fn default() -> Self {
         Self {

@@ -1,0 +1,4 @@
+#[determinism(BitIdentical)]
+struct Value {
+    raw: i64,
+}

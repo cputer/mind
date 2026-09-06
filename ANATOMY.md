@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1553 | **Est. tokens:** ~3031276
-**Generated:** 2026-09-06 16:45 UTC
+**Files:** 1629 | **Est. tokens:** ~3053735
+**Generated:** 2026-09-06 18:52 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4300 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4828 |
 | `config/` | 2 | ~3338 |
-| `docs/` | 36 | ~101053 |
+| `docs/` | 36 | ~101486 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9315 |
 | `docs/design/` | 4 | ~11498 |
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 169 | ~430906 |
+| `examples/mindc_mind/` | 169 | ~430909 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 19 | ~93863 |
+| `src/eval/` | 20 | ~94188 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -123,11 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 4 | ~25570 |
+| `src/type_checker/` | 5 | ~33272 |
+| `src/type_checker/slice_abi/` | 1 | ~6836 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 365 | ~683654 |
+| `tests/` | 366 | ~689110 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 2 | ~7157 |
@@ -162,6 +163,8 @@
 | `tests/fixtures/` | 6 | ~228 |
 | `tests/fixtures/f64_abi_negative/` | 3 | ~192 |
 | `tests/fixtures/nerve_numerics/` | 11 | ~968 |
+| `tests/fixtures/selfhost_policy/` | 13 | ~315 |
+| `tests/fixtures/selfhost_policy/reject/` | 58 | ~616 |
 | `tests/ir_verification/` | 2 | ~108 |
 | `tests/lexical/` | 3 | ~191 |
 | `tests/mindcraft/` | 1 | ~408 |
@@ -182,6 +185,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
+| `tests/support/` | 1 | ~773 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~9447 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -451,7 +455,7 @@
 ### `docs/`
 
 - `determinism.md` (~4368 tok, huge) — The Determinism Contract
-- `errors.md` (~701 tok, large) — MIND Core Error Model
+- `errors.md` (~802 tok, large) — MIND Core Error Model
 - `ffi-runtime.md` (~529 tok, large) — FFI & Runtime Integration
 ### `docs/gates/`
 
@@ -526,7 +530,7 @@
 - `v1.0.md` (~953 tok, large) — MIND Language Specification v1.0 (Working Draft)
 ### `docs/`
 
-- `type-system.md` (~1082 tok, large) — Type System
+- `type-system.md` (~1414 tok, large) — Type System
 - `version-matrix.md` (~1828 tok, huge) — MIND Ecosystem — Version Matrix
 - `versioning.md` (~1018 tok, large) — MIND Core Stability & Versioning
 - `whitepaper.md` (~2788 tok, huge) — MIND: The Native Language for Intelligent Systems
@@ -688,7 +692,7 @@
 - `self_host_continue_smoke.py` (~1384 tok, large) — Regression gate for #308 (closes #286's break/continue fixtures): the pure-MIND
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).
 - `self_host_else_if_smoke.py` (~1715 tok, huge)
-- `self_host_failclosed_smoke.py` (~9641 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
+- `self_host_failclosed_smoke.py` (~9644 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
 - `self_host_float_lit_exact_smoke.py` (~1368 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
 - `self_host_for_smoke.py` (~3191 tok, huge) — Permanent battery for the self-host range-`for` loop.
 - `self_host_if_region_carry_smoke.py` (~4632 tok, huge) — Native-ELF smoke: i64 loop-carry through BRANCHED regions (Sub-step C).
@@ -1085,6 +1089,7 @@
 - `mlir_opt.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
 - `mlir_run.rs` (~1535 tok, huge) — Copyright 2025 STARGA Inc.
 - `narrow_scan.rs` (~3042 tok, huge) — Module-wide narrow-int SURFACE prescan (compile-speed early-skip).
+- `slice_abi.rs` (~325 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/eval/stdlib/`
 
 - `mod.rs` (~169 tok, small) — Copyright 2025 STARGA Inc.
@@ -1248,6 +1253,10 @@
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
 - `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
+- `slice_abi.rs` (~7702 tok, huge) — Copyright 2025 STARGA Inc.
+### `src/type_checker/slice_abi/`
+
+- `borrow_flow.rs` (~6836 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/types/`
 
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1565,6 +1574,81 @@
 - `e_nerve_005_bad.mind` (~109 tok, small) — NEGATIVE fixture for E_NERVE_005 (numerics.md@v1 §2, §6 rule 5).
 - `e_nerve_005_good.mind` (~104 tok, small) — POSITIVE fixture for E_NERVE_005: the fold is pinned in source, so its
 - `unarmed_all_violations.mind` (~175 tok, small) — INERTNESS fixture: every violation above, with the opt-in annotations
+### `tests/fixtures/selfhost_policy/`
+
+- `bimap_const_country_code.mind` (~18 tok, tiny)
+- `bimap_const_distinct_escaped.mind` (~16 tok, tiny)
+- `bimap_const_http_acronym.mind` (~16 tok, tiny)
+- `bimap_enum_explicit_values.mind` (~17 tok, tiny)
+- `bimap_enum_http_acronym.mind` (~13 tok, tiny)
+- `bimap_enum_http_status.mind` (~13 tok, tiny)
+- `nerve_attr_const.mind` (~12 tok, tiny)
+- `nerve_attr_struct.mind` (~15 tok, tiny)
+- `nerve_tree_associative_fixed.mind` (~50 tok, small) — fn tree_sum(x: i64) -> i64 {
+- `nerve_user_defined_reduce_sum.mind` (~40 tok, tiny) — fn reduce_sum(x: i64) -> i64 {
+- `nerve_while_counter_reset.mind` (~34 tok, tiny) — fn clear(x: i64) -> i64 {
+- `nerve_while_nonreduction.mind` (~29 tok, tiny) — fn first(x: i64) -> i64 {
+- `nerve_while_sequential.mind` (~42 tok, tiny) — fn value() -> i64 {
+### `tests/fixtures/selfhost_policy/reject/`
+
+- `bimap_const_duplicate_decoded_key.diagnostic` (~2 tok, tiny) — E2017
+- `bimap_const_duplicate_decoded_key.mind` (~14 tok, tiny)
+- `bimap_const_duplicate_decoded_value.diagnostic` (~2 tok, tiny) — E2018
+- `bimap_const_duplicate_decoded_value.mind` (~14 tok, tiny)
+- `bimap_const_duplicate_key.diagnostic` (~2 tok, tiny) — E2017
+- `bimap_const_duplicate_key.mind` (~12 tok, tiny)
+- `bimap_const_duplicate_value.diagnostic` (~2 tok, tiny) — E2018
+- `bimap_const_duplicate_value.mind` (~13 tok, tiny)
+- `bimap_const_empty.diagnostic` (~2 tok, tiny) — E2019
+- `bimap_const_empty.mind` (~6 tok, tiny)
+- `bimap_const_mixed_key_type.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_mixed_key_type.mind` (~12 tok, tiny)
+- `bimap_const_negative_key.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_negative_key.mind` (~11 tok, tiny)
+- `bimap_const_nonstring_value.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_nonstring_value.mind` (~8 tok, tiny)
+- `bimap_const_numeric_duplicate_key.diagnostic` (~2 tok, tiny) — E2017
+- `bimap_const_numeric_duplicate_key.mind` (~11 tok, tiny)
+- `bimap_const_numeric_duplicate_value.diagnostic` (~2 tok, tiny) — E2018
+- `bimap_const_numeric_duplicate_value.mind` (~13 tok, tiny)
+- `bimap_const_trailing_expr.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_trailing_expr.mind` (~10 tok, tiny)
+- `bimap_const_typed.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_typed.mind` (~15 tok, tiny)
+- `bimap_const_u32_overflow.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_const_u32_overflow.mind` (~15 tok, tiny)
+- `bimap_enum_duplicate_key.diagnostic` (~2 tok, tiny) — E1001
+- `bimap_enum_duplicate_key.mind` (~7 tok, tiny)
+- `bimap_enum_duplicate_value.diagnostic` (~2 tok, tiny) — E2018
+- `bimap_enum_duplicate_value.mind` (~12 tok, tiny)
+- `bimap_enum_nonstring_discriminant.diagnostic` (~2 tok, tiny) — E2020
+- `bimap_enum_nonstring_discriminant.mind` (~10 tok, tiny)
+- `bimap_enum_payload_variant.diagnostic` (~2 tok, tiny) — E2019
+- `bimap_enum_payload_variant.mind` (~10 tok, tiny)
+- `bimap_forged_generated_attr.diagnostic` (~2 tok, tiny) — E2022
+- `bimap_forged_generated_attr.mind` (~28 tok, tiny) — fn currency_count() -> i64 {
+- `bimap_generated_base_collision.diagnostic` (~2 tok, tiny) — E2021
+- `bimap_generated_base_collision.mind` (~18 tok, tiny)
+- `bimap_generated_fn_collision.diagnostic` (~2 tok, tiny) — E2021
+- `bimap_generated_fn_collision.mind` (~19 tok, tiny) — fn code_count() -> i64 {
+- `nerve_attr_on_use.diagnostic` (~2 tok, tiny) — E1001
+- `nerve_attr_on_use.mind` (~11 tok, tiny)
+- `nerve_bimap_generated_callee.diagnostic` (~3 tok, tiny) — E_NERVE_001
+- `nerve_bimap_generated_callee.mind` (~31 tok, tiny) — fn main() -> i64 {
+- `nerve_builtin_reduce_sum.diagnostic` (~3 tok, tiny) — E_NERVE_005
+- `nerve_builtin_reduce_sum.mind` (~30 tok, tiny) — fn total(x: i64) -> i64 {
+- `nerve_global_no_float_signature.diagnostic` (~3 tok, tiny) — E_NERVE_004
+- `nerve_global_no_float_signature.mind` (~44 tok, tiny) — fn integer(x: i64) -> i64 {
+- `nerve_host_libm.diagnostic` (~3 tok, tiny) — E_NERVE_004
+- `nerve_host_libm.mind` (~26 tok, tiny) — fn value(x: i64) -> i64 {
+- `nerve_invalid_reduction_strategy.diagnostic` (~3 tok, tiny) — E_NERVE_002
+- `nerve_invalid_reduction_strategy.mind` (~45 tok, tiny) — fn bad_tag(x: i64) -> i64 {
+- `nerve_signature_float.diagnostic` (~3 tok, tiny) — E_NERVE_004
+- `nerve_signature_float.mind` (~25 tok, tiny) — fn value(a: f64) -> f64 {
+- `nerve_while_branch_reduction.diagnostic` (~3 tok, tiny) — E_NERVE_002
+- `nerve_while_branch_reduction.mind` (~47 tok, tiny) — fn value(x: i64) -> i64 {
+- `nerve_while_reduction.diagnostic` (~3 tok, tiny) — E_NERVE_002
+- `nerve_while_reduction.mind` (~33 tok, tiny) — fn value() -> i64 {
 ### `tests/fixtures/`
 
 - `simple.mind` (~3 tok, tiny)
@@ -2043,6 +2127,7 @@
 - `mod.rs` (~6173 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
+- `slice_call_abi_run.rs` (~5456 tok, huge) — Copyright 2025 STARGA Inc.
 - `smoke.rs` (~261 tok, medium) — Copyright 2025 STARGA Inc.
 - `sparse_tensor_types.rs` (~1997 tok, huge) — Copyright 2025 STARGA Inc.
 - `statement_mutation_run.rs` (~911 tok, large) — Copyright 2025 STARGA Inc.
@@ -2112,6 +2197,11 @@
 - `struct_field_in_loop_run.rs` (~1043 tok, large) — Copyright 2025 STARGA Inc.
 - `struct_narrow_field.rs` (~771 tok, large) — Copyright 2025 STARGA Inc.
 - `substrate_nonentry_import_link.rs` (~1449 tok, large) — Copyright 2025 STARGA Inc.
+### `tests/support/`
+
+- `g2_policy_rejections.rs` (~773 tok, large) — Copyright 2026 STARGA Inc.
+### `tests/`
+
 - `target_cerebras.rs` (~340 tok, medium) — Cerebras backend target — first-class surface tests.
 - `tensor_broadcast.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
 - `tensor_buffers.rs` (~517 tok, large) — Copyright 2025 STARGA Inc.

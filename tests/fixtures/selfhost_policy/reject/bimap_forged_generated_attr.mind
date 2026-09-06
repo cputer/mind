@@ -1,0 +1,7 @@
+#[bimap]
+enum Currency { AUD, JPY, USD }
+
+#[__bimap_generated]
+fn currency_count() -> i64 {
+    return 999;
+}

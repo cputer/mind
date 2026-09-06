@@ -1,0 +1,5 @@
+#[determinism(BitIdentical)]
+#[invariant(no_float_ops)]
+fn value(a: f64) -> f64 {
+    return a;
+}

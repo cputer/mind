@@ -1,0 +1,2 @@
+#[bimap]
+const H = [(404, "same"), (410, "same")]

@@ -31,9 +31,9 @@
 //!     lowers the whole corpus (fn / struct / enum / extern / module / use /
 //!     import / const items + bare const-folded expressions), so a construct
 //!     it cannot handle surfaces as `DIVERGE`, not a silent exclusion.
-//!   * `RUST_ONLY` — only the Rust path succeeds (Rust exit != 0
-//!     means the fixture itself is invalid for some
-//!     language feature the Rust path also lacks).
+//!   * `REJECT_MATCH` — both paths reject a bimap or NERVE policy violation.
+//!   * `RUST_ONLY` — Rust rejected another input; the self-host path was not
+//!     compared. This bucket is not evidence of self-host correctness.
 //!
 //!   * `MIND_CRASH` — the pure-MIND compiler terminated ABNORMALLY on a
 //!     fixture (panic / internal assertion / worker death). A DEFECT, never a
@@ -65,6 +65,8 @@
 //! platforms the test no-ops as a pass.
 
 mod common;
+#[path = "support/g2_policy_rejections.rs"]
+mod policy_rejections;
 use common::require_mindc;
 
 use std::fs;
@@ -184,7 +186,8 @@ fn oracle_so_path(bin: &Path) -> Option<PathBuf> {
         }
 
         // Oracle absent or is a stub — rebuild from source.
-        let out = std::env::temp_dir().join("g2_libmindc_mind_built.so");
+        let out =
+            std::env::temp_dir().join(format!("g2_libmindc_mind_built_{}.so", std::process::id()));
         let r = Command::new(bin)
             .args([
                 "build",
@@ -540,12 +543,10 @@ fn collect_fixtures() -> Vec<PathBuf> {
         collect_mind_files(&full, &mut paths);
     }
 
-    // Negative fixtures: programs DESIGNED to fail compilation (they test that the
-    // compiler correctly REJECTS bad input). They belong to error-path test suites,
-    // not to a self-host PARITY differential — the Rust oracle correctly produces no
-    // IR for them, so they would only ever be reported `RUST_ONLY`. Exclude them so
-    // the differential's RUST_ONLY set reflects only roadmap demos (features pending),
-    // not deliberately-invalid inputs.
+    // These four legacy error fixtures remain covered by their dedicated suites.
+    // Curated selfhost_policy/reject fixtures are included: both compilers must
+    // refuse them, and the Rust diagnostic must match the pinned code. Other
+    // Rust-only inputs remain unpaired and are not evidence of self-host parity.
     const NEGATIVE_FIXTURES: &[&str] = &[
         "tests/fixtures/invalid.mind",              // parse error (intentional)
         "tests/fixtures/invalid_broadcast.mind",    // type-check error (intentional)
@@ -585,6 +586,7 @@ fn collect_mind_files(dir: &Path, out: &mut Vec<PathBuf>) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Outcome {
     Match,
+    RejectMatch,
     Diverge {
         diff_preview: String,
     },
@@ -651,6 +653,11 @@ fn run_fixture(bin: &Path, lib: &Library, fixture: &Path) -> Outcome {
         .output()
         .expect("spawn mindc");
 
+    if let Some(outcome) =
+        policy_rejections::check_rejection(&rust_result, fixture, bin, &src_bytes)
+    {
+        return outcome;
+    }
     if !rust_result.status.success() {
         return Outcome::RustOnly {
             reason: format!(
@@ -715,6 +722,7 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
     buf.push_str("==============================================\n\n");
 
     let mut n_match = 0usize;
+    let mut n_reject_match = 0usize;
     let mut n_diverge = 0usize;
     let mut n_crash = 0usize;
     let mut n_unsupported = 0usize;
@@ -733,6 +741,10 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
             Outcome::Match => {
                 n_match += 1;
                 buf.push_str(&format!("MATCH            {rel}\n"));
+            }
+            Outcome::RejectMatch => {
+                n_reject_match += 1;
+                buf.push_str(&format!("REJECT_MATCH     {rel}\n"));
             }
             Outcome::Diverge { diff_preview } => {
                 n_diverge += 1;
@@ -756,9 +768,9 @@ fn write_coverage_report(rows: &[(PathBuf, Outcome)], report_path: &Path) -> Str
         }
     }
 
-    let total = n_match + n_diverge + n_crash + n_unsupported + n_rust_only;
+    let total = n_match + n_reject_match + n_diverge + n_crash + n_unsupported + n_rust_only;
     let summary = format!(
-        "\nSUMMARY: {n_match} MATCH / {n_diverge} DIVERGE / {n_crash} MIND_CRASH / \
+        "\nSUMMARY: {n_match} MATCH / {n_reject_match} REJECT_MATCH / {n_diverge} DIVERGE / {n_crash} MIND_CRASH / \
          {n_unsupported} MIND_UNSUPPORTED / {n_rust_only} RUST_ONLY \
          out of {total} fixtures\n"
     );
@@ -977,28 +989,9 @@ fn g2_1_differential_coverage() {
         .filter(|(_, o)| matches!(o, Outcome::RustOnly { .. }))
         .count();
 
-    // A run that compared NOTHING has not shown the absence of divergence.
-    //
-    // Without this floor the gate passes on zero comparisons: DIVERGE == 0 and
-    // MIND_CRASH == 0 are both trivially true when every fixture landed in
-    // RUST_ONLY or MIND_UNSUPPORTED. The cheapest way to reach that state is not
-    // exotic — run_fixture marks EVERY fixture RustOnly when `mindc --emit-ir`
-    // exits non-zero, so a renamed flag silently converts the whole suite into a
-    // green run that asserted nothing.
-    //
-    // The sibling harness already does this (mindfuzz_self_host.py, "refusing a
-    // silent green"); this one did not. The floor is deliberately a FLOOR, not an
-    // equality: fixtures may legitimately move between categories, but the number
-    // actually COMPARED must not collapse.
-    // Anti-vacuity floor as a RATCHET, not a token 1.
-    //
-    // A floor of 1 sits ~95x below the measured value (97 MATCH), so a 98.9% collapse
-    // of the comparison -- exactly what happened when libtest swallowed the worker
-    // output and every fixture compared as EMPTY -- would still have satisfied it. A
-    // floor that cannot fire on the incident that motivated it is decoration.
-    //
-    // 90 is below the current 97 (room for fixtures legitimately moving to RUST_ONLY
-    // or MIND_UNSUPPORTED) while still failing loudly on a large-scale collapse.
+    // Require actual positive byte comparisons as well as zero failures.
+    // Keep the existing floor: rejection matches and uncompiled inputs cannot
+    // compensate for a collapse of successful comparisons.
     const MIN_MATCH: usize = 90;
     assert!(
         n_match >= MIN_MATCH,
@@ -1009,8 +1002,12 @@ fn g2_1_differential_coverage() {
         rows.len()
     );
 
+    let n_reject_match = rows
+        .iter()
+        .filter(|(_, o)| matches!(o, Outcome::RejectMatch))
+        .count();
     println!(
-        "g2_differential_mlir PASS: {} MATCH / 0 DIVERGE / 0 MIND_CRASH / {} MIND_UNSUPPORTED / \
+        "g2_differential_mlir PASS: {} MATCH / {n_reject_match} REJECT_MATCH / 0 DIVERGE / 0 MIND_CRASH / {} MIND_UNSUPPORTED / \
          {} RUST_ONLY out of {} fixtures",
         n_match,
         n_unsupported,

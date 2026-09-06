@@ -1,0 +1,5 @@
+#[bimap]
+enum E {
+    A = "X",
+    B = "X",
+}

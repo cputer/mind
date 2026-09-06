@@ -1,0 +1,2 @@
+#[bimap]
+const ESCAPED = [("a\tb", "tab"), ("a\nb", "newline")]

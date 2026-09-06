@@ -1,0 +1,2 @@
+#[bimap]
+const CountryCode = [("US", "United States"), ("JP", "Japan")]

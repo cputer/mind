@@ -1,0 +1,7 @@
+#[bimap]
+enum Country {
+    X,
+}
+
+#[bimap]
+const COUNTRY = [(1, "x")]

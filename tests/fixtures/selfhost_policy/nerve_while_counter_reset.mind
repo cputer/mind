@@ -1,0 +1,8 @@
+#[determinism(BitIdentical)]
+fn clear(x: i64) -> i64 {
+    let mut y: i64 = x;
+    while y > 0 {
+        y = 0;
+    }
+    return y;
+}

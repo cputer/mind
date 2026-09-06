@@ -1,0 +1,2 @@
+#[bimap]
+const C = [("a	b", "one"), ("a\tb", "two")]

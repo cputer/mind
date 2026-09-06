@@ -21,15 +21,15 @@ The MIND type system models tensor programs with explicit ranks, shapes, and dat
 
 Phase 10.5 / 10.6 added the following composite type forms to the
 surface language. They parse, type-check, and lower to the existing
-Core IR v1 shape lattice. Lowering depth varies by form: slice
-lowering is currently stubbed, and generic instantiation is bounded
-(single type parameter, scalar element types).
+Core IR v1 shape lattice. Lowering depth varies by form: slice calls
+support proven dynamic-array handles with `std-surface`, and generic
+instantiation is bounded (single type parameter, scalar element types).
 
 | Form                       | Example                          | Notes                                  |
 | -------------------------- | -------------------------------- | -------------------------------------- |
 | Reference (type)           | `&T`, `&mut T`                   | Single-value borrow; lifetime inferred |
 | Reference (expression)     | `&expr`, `&mut expr`             | Phase 10.7 — symmetric with `&T`/`&mut T` types; no-op in v1 IR |
-| Slice                      | `&[T]`, `&mut [T]`               | Sized contiguous run; length at runtime |
+| Slice                      | `&[T]`, `&mut [T]`               | Borrowed dynamic-array call boundary; see restrictions below |
 | Fixed-size array           | `[T; N]`                         | `N` is a compile-time integer literal  |
 | Tuple                      | `(T, U)`, `(T, U, V)`            | Used in fn returns and destructuring   |
 | Qualified type path        | `module.Type`, `crate.Foo`       | Used in const decls and annotations    |
@@ -38,6 +38,37 @@ lowering is currently stubbed, and generic instantiation is bounded
 The visibility qualifier `pub` is accepted on `fn`, `struct`, `enum`,
 and struct fields. Its semantic effect on the emitted module ABI is
 gated by the `ffi-c-user` Cargo feature (see RFC-0002).
+
+## Slice Calls
+
+With `std-surface`, a compatible `array<T>` value or array literal can be
+passed directly to a slice parameter:
+
+```mind
+fn sum_pair(xs: &[i64]) -> i64 {
+    return xs[0] + xs.get(1)
+}
+
+pub fn answer() -> i64 {
+    return sum_pair([20, 22])
+}
+```
+
+Slices use the existing dynamic-array handle layout. Read-only slices allow
+indexing, `get`, and length queries; mutable slices additionally allow indexed
+assignment and `set`. Ownership operations such as `push` remain unavailable
+through a slice. Inferred aliases preserve these capabilities, including
+across branches, loop iterations, `break`, and `continue`.
+
+The current implementation requires a proven compatible handle at each call.
+Opaque integer handles, maps, incompatible element types, and unproven source
+expressions are refused with `E2032`. Explicit slice local bindings are also
+unsupported. Floating-point, tensor,
+fixed-array, and nested-slice elements are outside the current slice ABI.
+Capability erasure, read-only mutation, and borrowed handles escaping through
+non-slice parameters or returns are refused with `E2033` before emission.
+Slice-containing struct fields are refused with `E2033` as well.
+General lifetime and alias-exclusivity analysis remains outside this implementation.
 
 ## Shape Variables
 

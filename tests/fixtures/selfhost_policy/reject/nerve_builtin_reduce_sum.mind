@@ -1,0 +1,5 @@
+#[determinism(BitIdentical)]
+#[reduction_strategy(sequential)]
+fn total(x: i64) -> i64 {
+    return reduce_sum(x);
+}

@@ -1,0 +1,10 @@
+#[invariant(no_float_ops)]
+#[determinism(BitIdentical)]
+fn integer(x: i64) -> i64 {
+    return x;
+}
+
+#[determinism(BitIdentical)]
+fn decimal(x: f64) -> f64 {
+    return x;
+}

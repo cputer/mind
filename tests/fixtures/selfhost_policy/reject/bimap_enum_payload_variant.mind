@@ -1,0 +1,5 @@
+#[bimap]
+enum E {
+    A,
+    B(i64),
+}

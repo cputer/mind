@@ -1,0 +1,6 @@
+#[bimap]
+const CODE = [(1, "a")]
+
+fn code_count() -> i64 {
+    return 9;
+}

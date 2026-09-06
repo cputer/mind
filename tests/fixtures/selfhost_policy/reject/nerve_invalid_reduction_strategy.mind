@@ -1,0 +1,9 @@
+#[determinism(BitIdentical)]
+#[reduction_strategy(fast)]
+fn bad_tag(x: i64) -> i64 {
+    let mut acc: i64 = x;
+    for i in 0..8 {
+        acc = acc + i;
+    }
+    return acc;
+}

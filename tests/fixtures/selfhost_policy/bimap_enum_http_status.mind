@@ -1,0 +1,5 @@
+#[bimap]
+enum HttpStatus {
+    Ok,
+    NotFound,
+}
