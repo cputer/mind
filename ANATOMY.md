@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1517 | **Est. tokens:** ~2959159
-**Generated:** 2026-09-06 06:59 UTC
+**Files:** 1517 | **Est. tokens:** ~2959169
+**Generated:** 2026-09-06 07:11 UTC
 
 ## Token Budget Guide
 
@@ -27,7 +27,7 @@
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
 | `.githooks/` | 4 | ~1755 |
-| `.github/` | 4 | ~863 |
+| `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
 | `.github/workflows/` | 9 | ~35201 |
 | `agents/` | 1 | ~436 |
@@ -254,7 +254,7 @@
 
 - `PULL_REQUEST_TEMPLATE.md` (~55 tok, small) — Summary
 - `release-drafter.yml` (~85 tok, small) — name-template: 'v$NEXT_PATCH_VERSION'
-- `required-ci-jobs.tsv` (~714 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
+- `required-ci-jobs.tsv` (~724 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
 - `bench-gate.yml` (~2444 tok, huge) — name: Bench gate
