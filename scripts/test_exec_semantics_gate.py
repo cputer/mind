@@ -24,9 +24,8 @@ message cannot silently stop this test from gating.
 
 The first case is a POSITIVE CONTROL: the same fixture with nothing wrong must exit
 0.  Without it a red in every other case could just mean the fixture is malformed.
-Two further cases assert the quarantine ratchet and the env-tolerated `ran=0` path
-still behave exactly as before, so tightening the gate cannot be mistaken for
-relaxing (or hardening) those.
+Further cases assert that a regression in the now-resolved lowering target turns the
+tier red and that the env-tolerated `ran=0` path still behaves exactly as before.
 
 Run: ``python3 scripts/test_exec_semantics_gate.py`` (no third-party deps).
 """
@@ -380,15 +379,26 @@ case(
     True,
 )
 
-# --- 6. the quarantine ratchet is preserved exactly --------------------------
-# lowering's baseline log fails std_surface_intrinsics (a QUARANTINE_lowering
-# entry) with a non-zero cargo exit.  That is the shape the gate is green on
-# today and must stay green on: tightening must not turn the ratchet into a wall.
-case(
-    "a QUARANTINED failing target keeps the tier green",
+# --- 6. a resolved quarantine target is no longer tolerated ------------------
+_resolved_lowering_failure = tier_log(
     "lowering",
-    tier_log("lowering", cargo_exit=101),
-    False,
+    extra_blocks=block(
+        "Running tests/std_surface_intrinsics.rs "
+        "(target/debug/deps/std_surface_intrinsics-d4)",
+        PER_HARNESS - 1,
+        1,
+    ),
+    error_lines=(
+        "error: test failed, to rerun pass `--test std_surface_intrinsics`",
+    ),
+    cargo_exit=101,
+)
+case(
+    "a regression in resolved std_surface_intrinsics reds lowering",
+    "lowering",
+    _resolved_lowering_failure,
+    True,
+    output_has=("std_surface_intrinsics",),
 )
 
 # --- 7. env-tolerated ran=0 is preserved exactly -----------------------------
@@ -614,7 +624,7 @@ def main() -> int:
         print("FAIL: exec_semantics_gate.sh did not grade as required above")
         return 1
     print("OK: a failing lib/doc/bin test, an unattributed cargo exit and a bare")
-    print("    failed>0 count each red the tier; quarantine and env-tolerance intact")
+    print("    failed>0 count each red the tier; resolved targets and env tolerance are pinned")
     return 0
 
 

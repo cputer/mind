@@ -75,7 +75,7 @@ FLOOR_HARNESSES_pkg=330
 REQUIRE_TOOLCHAIN_pkg=0
 
 # ---------------------------------------------------------------------------
-# QUARANTINE — targets RED at f2a2d87d for a reason NAMED here.
+# QUARANTINE — targets RED for a reason NAMED here.
 #
 # A RATCHET, not an excuse. Any failure in a target NOT listed fails the gate, and a
 # listed target that starts PASSING also fails the gate (with an instruction to delete
@@ -83,16 +83,13 @@ REQUIRE_TOOLCHAIN_pkg=0
 #
 # Every entry is a genuine, separately-scoped defect that this tier was HIDING — they
 # are the payload of the finding, not collateral from it.
-# deferred: each needs its own fix; none is closed by this gate.
+# Each entry needs its own fix; none is closed by this gate.
 #
 # An entry is the name the triage reports: an integration target's bare name, or one
 # of the `@`-prefixed pseudo-targets (`@lib`, `@doc`, `@bin:<name>`, `@bench:<name>`)
 # that stand for the harness kinds cargo does not name with `--test`. See
 # rerun_selector() below.
 #
-#   std_surface_intrinsics       — `each_intrinsic_lowers_to_func_call_with_private_decl`
-#       expects `func.call @__mind_load_i64(%`; the intrinsic now lowers inline to
-#       `llvm.inttoptr` + `llvm.load`. Stale shape expectation, not a miscompile.
 # CRITICAL_<tier> — per-harness minimums for the gates each tier NAMES as the reason
 # it exists. An AGGREGATE floor cannot protect a SPECIFIC test: re-erasing exactly the
 # two files this gate was written to defend once produced ALL TIERS OK / exit 0.
@@ -152,7 +149,7 @@ CRITICAL_pkg=(
 
 QUARANTINE_exec=(
 )
-QUARANTINE_lowering=(std_surface_intrinsics)
+QUARANTINE_lowering=()
 QUARANTINE_pkg=()
 
 # ENV_TOLERATED — may fail LOCALLY for a documented environmental reason and pass in

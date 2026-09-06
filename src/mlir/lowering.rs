@@ -2657,114 +2657,88 @@ impl LoweringContext {
             // exactly as before — byte-identical, moat held.
             #[cfg(feature = "std-surface")]
             Instr::Call { dst, name, args } => {
-                // The narrow store/load intrinsics accept a narrow VALUE arg by
-                // design — their handlers below coerce it to/from the access
-                // width. Exempt them from the blanket i64-arg rejection so a
-                // struct field populated from a narrow (i32/u32) SSA value
-                // (`P { x: a }` for `a: i32`) lowers instead of failing here.
-                // `__mind_f64_to_bits` likewise takes an `f64` arg by design
-                // (it bitcasts an enum payload field into the i64 record slot).
-                // ONE classification of the callee against the closed 33-name
-                // intrinsic set, hoisted to the top of the arm so the narrow-mem
-                // exemption here and the intrinsic dispatch further down share a
-                // SINGLE spelling — a future rename routed through
-                // `classify_intrinsic` can no longer silently miss a hardcoded name
-                // list. `classify_intrinsic` fast-rejects on the shared `__mind_`
-                // prefix, so an ordinary user call costs one seven-byte compare.
-                // Pure dispatch: no emitted op changes, so the mic@3 digest is
-                // unmoved.
+                // Intrinsic dispatch and argument validation share one classification.
+                // Narrow memory values and f64 bitcasts are already admitted by
+                // the scalar cases below; neither permits tensors or vectors.
                 let ikind = classify_intrinsic(name);
-                let is_narrow_mem = matches!(
-                    ikind,
-                    Some(
-                        IntrinsicKind::StoreI32
-                            | IntrinsicKind::StoreI16
-                            | IntrinsicKind::StoreI8
-                            | IntrinsicKind::LoadI32
-                            | IntrinsicKind::LoadI16
-                            | IntrinsicKind::LoadI8
-                            | IntrinsicKind::F64ToBits
-                    )
-                );
-                if !is_narrow_mem {
-                    for (i, a) in args.iter().enumerate() {
-                        match self.values.get(a) {
-                            Some(ValueKind::ScalarI64) => {}
-                            // RFC 0012 §5.1 — a scalar `f64` call argument is a
-                            // native MLIR scalar type, NOT an aggregate. The
-                            // generic `func.call` lowering below already threads
-                            // it through as `f64` (the callee param slot is typed
-                            // from `fn_signatures`, the value passes untouched
-                            // since `phys == target`, and the result is tracked
-                            // at the callee's `ScalarF64` return kind). It stays
-                            // on the STRICT float path — no FMA-contraction, no
-                            // reassociation — because a call only forwards the
-                            // value; the f64 arithmetic that produced it already
-                            // lowered to strict `arith.*f`. Tensor / struct /
-                            // aggregate args remain RFC 0005 phase 2+ and still
-                            // fail loud in the catch-all arm below.
-                            Some(ValueKind::ScalarF64) => {}
-                            // Narrow-int (i32/u32) and f32 scalar call args are
-                            // native MLIR scalar types, NOT aggregates. The
-                            // `func.call` emission below ALREADY coerces these
-                            // physical widths (arith.extsi/extui/trunci, or a
-                            // pass-through when phys == target), so the guard was
-                            // over-strict — it rejected forwardable args the
-                            // emission path handles (`inner(a)` for `a: i32`/`f32`).
-                            // A call only forwards the value, so there is no
-                            // reassociation/precision concern: an f32 arg stays on
-                            // the strict float path (its arithmetic already lowered
-                            // to strict arith.*f). Tensor / vector / unregistered
-                            // args still fall to the loud reject below — the
-                            // emission path would silently mistype those as i64.
-                            // deferred: an f32 *literal* passed directly as an arg
-                            // (`f(1.5)`) still fails LOUD at mlir-opt — a separate
-                            // float-literal-typing bug emits `1.5` as f64 in an f32
-                            // slot; f32 *value/param* forwarding works. Upgrade path:
-                            // type float literals from the expected param type.
-                            Some(ValueKind::ScalarF32)
-                            | Some(ValueKind::ScalarI32)
-                            | Some(ValueKind::ScalarU32) => {}
-                            // issue #88: a `bool` call arg is a native scalar, NOT
-                            // an aggregate — the guard was over-strict (it rejected
-                            // `pick(b)` for a `b: bool` param, blocking mind-flow's
-                            // from-source build). Both physical forms are already
-                            // handled by the `func.call` emission below: an
-                            // i1-tracked value (compare / bitwise-bool result, in
-                            // `i1_values`) coerces via `("i1", _) => arith.extui`
-                            // into the callee's i64 bool ABI slot, and an
-                            // i64-backed bool (a bool *param* is `ScalarBool` in an
-                            // i64 slot — see the `i1_values` invariant in the BinOp
-                            // widen path) is phys == target pass-through. Struct /
-                            // enum / String aggregates already flow as Option-C i64
-                            // record addresses; tensor / unregistered args still
-                            // fail loud below (true RFC 0005 phase 2+ territory).
-                            Some(ValueKind::ScalarBool) => {}
-                            // issue #99: a `ScalarU64` arg is i64-physical — the
-                            // `func.call` emission forwards it exactly like
-                            // `ScalarI64` (same MLIR type), and the identity
-                            // `__mind_conv_u64` marker also flows through here.
-                            #[cfg(feature = "std-surface")]
-                            Some(ValueKind::ScalarU64) => {}
-                            // Fixed arrays require a declared tensor parameter; shape/dtype
-                            // mismatches remain subject to the MLIR verifier.
-                            // i64-ABI intrinsics therefore fail closed below.
-                            #[cfg(feature = "std-surface")]
-                            Some(ValueKind::Tensor { .. })
-                                if self
+                for (i, a) in args.iter().enumerate() {
+                    match self.values.get(a) {
+                        Some(ValueKind::ScalarI64) => {}
+                        // RFC 0012 §5.1 — a scalar `f64` call argument is a
+                        // native MLIR scalar type, NOT an aggregate. The
+                        // generic `func.call` lowering below already threads
+                        // it through as `f64` (the callee param slot is typed
+                        // from `fn_signatures`, the value passes untouched
+                        // since `phys == target`, and the result is tracked
+                        // at the callee's `ScalarF64` return kind). It stays
+                        // on the STRICT float path — no FMA-contraction, no
+                        // reassociation — because a call only forwards the
+                        // value; the f64 arithmetic that produced it already
+                        // lowered to strict `arith.*f`. Tensor / struct /
+                        // aggregate args remain RFC 0005 phase 2+ and still
+                        // fail loud in the catch-all arm below.
+                        Some(ValueKind::ScalarF64) => {}
+                        // Narrow-int (i32/u32) and f32 scalar call args are
+                        // native MLIR scalar types, NOT aggregates. The
+                        // `func.call` emission below ALREADY coerces these
+                        // physical widths (arith.extsi/extui/trunci, or a
+                        // pass-through when phys == target), so the guard was
+                        // over-strict — it rejected forwardable args the
+                        // emission path handles (`inner(a)` for `a: i32`/`f32`).
+                        // A call only forwards the value, so there is no
+                        // reassociation/precision concern: an f32 arg stays on
+                        // the strict float path (its arithmetic already lowered
+                        // to strict arith.*f). Tensor / vector / unregistered
+                        // args still fall to the loud reject below — the
+                        // emission path would silently mistype those as i64.
+                        // deferred: an f32 *literal* passed directly as an arg
+                        // (`f(1.5)`) still fails LOUD at mlir-opt — a separate
+                        // float-literal-typing bug emits `1.5` as f64 in an f32
+                        // slot; f32 *value/param* forwarding works. Upgrade path:
+                        // type float literals from the expected param type.
+                        Some(ValueKind::ScalarF32)
+                        | Some(ValueKind::ScalarI32)
+                        | Some(ValueKind::ScalarU32) => {}
+                        // issue #88: a `bool` call arg is a native scalar, NOT
+                        // an aggregate — the guard was over-strict (it rejected
+                        // `pick(b)` for a `b: bool` param, blocking mind-flow's
+                        // from-source build). Both physical forms are already
+                        // handled by the `func.call` emission below: an
+                        // i1-tracked value (compare / bitwise-bool result, in
+                        // `i1_values`) coerces via `("i1", _) => arith.extui`
+                        // into the callee's i64 bool ABI slot, and an
+                        // i64-backed bool (a bool *param* is `ScalarBool` in an
+                        // i64 slot — see the `i1_values` invariant in the BinOp
+                        // widen path) is phys == target pass-through. Struct /
+                        // enum / String aggregates already flow as Option-C i64
+                        // record addresses; tensor / unregistered args still
+                        // fail loud below (true RFC 0005 phase 2+ territory).
+                        Some(ValueKind::ScalarBool) => {}
+                        // issue #99: a `ScalarU64` arg is i64-physical — the
+                        // `func.call` emission forwards it exactly like
+                        // `ScalarI64` (same MLIR type), and the identity
+                        // `__mind_conv_u64` marker also flows through here.
+                        #[cfg(feature = "std-surface")]
+                        Some(ValueKind::ScalarU64) => {}
+                        // Fixed arrays require a declared tensor parameter; shape/dtype
+                        // mismatches remain subject to the MLIR verifier.
+                        // i64-ABI intrinsics therefore fail closed below.
+                        #[cfg(feature = "std-surface")]
+                        Some(ValueKind::Tensor { .. })
+                            if ikind.is_none()
+                                && self
                                     .fn_signatures
                                     .get(name)
                                     .and_then(|(params, _)| params.get(i))
                                     .is_some_and(|ty| ty.starts_with("tensor<")) => {}
-                            _ => {
-                                return Err(MlirLowerError::UnsupportedOp {
-                                    instr_index,
-                                    op: format!(
-                                        "non-i64 argument to call `{name}` \
-                                         (RFC 0005 phase 2+ covers aggregate call ABI)"
-                                    ),
-                                });
-                            }
+                        _ => {
+                            return Err(MlirLowerError::UnsupportedOp {
+                                instr_index,
+                                op: format!(
+                                    "non-i64 argument to call `{name}` \
+                                     (RFC 0005 phase 2+ covers aggregate call ABI)"
+                                ),
+                            });
                         }
                     }
                 }

@@ -3115,17 +3115,15 @@ fn lower_array_surface_lit(
     handle
 }
 
-/// Task #88 facet 4 — return-type-directed array-literal lowering. When the
-/// enclosing fn's declared return type is `array<T>` (recorded in
+/// Return-type-directed array-literal lowering. When the enclosing fn's
+/// declared return type is a dynamic `array<T>` or fixed `[T; N]` (recorded in
 /// `CURRENT_RET_TYPE`) and `value` is an array literal in return position,
-/// lower it onto the std.vec heap runtime (`vec_new` + `vec_push`) — exactly
-/// like the annotated-`Let`, while-body, if/else-branch and struct-field arms.
-/// Otherwise returns `None`, so every non-array return (and every array-typed
-/// return whose value is NOT a literal, e.g. `return out`) lowers byte-
-/// identically through `lower_expr`. Without this, an `ArrayLit` in return
-/// position fell through to the const-array/tensor path and produced a
-/// `tensor<Nxi64>` where the i64 vec-handle ABI is required — the
-/// `'i64' vs 'tensor<1xi64>'` type-collision `mlir-opt` reported.
+/// route it through the representation-specific typed constructor. Dynamic
+/// arrays use the std.vec heap runtime (`vec_new` + `vec_push`); fixed arrays
+/// use `fixed_array::lower_binding`, which retains dense float literals and
+/// uses ordered `ArrayStore`s for computed i64-ABI elements. Otherwise returns
+/// `None`, so every non-array return and every array-typed return whose value
+/// is not a literal lowers identically through `lower_expr`.
 #[cfg(feature = "std-surface")]
 fn lower_return_array_lit(
     value: &ast::Node,
@@ -3134,20 +3132,31 @@ fn lower_return_array_lit(
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
 ) -> Option<ValueId> {
-    let ret_is_array = CURRENT_RET_TYPE.with(|r| is_array_surface_type(&r.borrow()));
-    if !ret_is_array {
-        return None;
+    let mut value = value;
+    while let ast::Node::Paren(inner, _) = value {
+        value = inner;
     }
-    if let ast::Node::ArrayLit { elements, .. } = value {
-        return Some(lower_array_surface_lit(
+    let ast::Node::ArrayLit { elements, .. } = value else {
+        return None;
+    };
+    let ret_type = CURRENT_RET_TYPE.with(|r| r.borrow().clone());
+    match ret_type.as_ref() {
+        Some(TypeAnn::Array { element, length }) => Some(fixed_array::lower_binding(
+            element,
+            *length,
+            value,
+            ir,
+            |node, inner_ir| lower_expr(node, inner_ir, env, struct_env, receiver_types),
+        )),
+        Some(ret) if is_array_surface_ty(ret) => Some(lower_array_surface_lit(
             elements,
             ir,
             env,
             struct_env,
             receiver_types,
-        ));
+        )),
+        _ => None,
     }
-    None
 }
 
 /// Lower a `StructLit` FIELD value. A field declared `array<T>` whose literal is
@@ -6028,7 +6037,13 @@ fn lower_expr(
             // No-op for a non-array return type: `lower_return_array_lit` then
             // returns None and every return lowers byte-identically as before.
             #[cfg(feature = "std-surface")]
-            let _ret_type_guard = enter_ret_type_scope(ret_type);
+            let lowering_ret_type = ir
+                .fn_signatures
+                .get(name)
+                .and_then(|(_, declared)| declared.clone())
+                .or_else(|| ret_type.clone());
+            #[cfg(feature = "std-surface")]
+            let _ret_type_guard = enter_ret_type_scope(&lowering_ret_type);
             // Whether the module declares generic templates (computed once):
             // gates the per-Let binding-type recording below so a non-generic
             // module records nothing on its byte-identity hot path.
@@ -6372,8 +6387,31 @@ fn lower_expr(
                         }
                     }
                     other => {
-                        let id =
-                            lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
+                        // An implicit tail expression is the function's return
+                        // value even though it has no `Node::Return` wrapper.
+                        // Give array literals the same declared-return context
+                        // as explicit returns; every other statement keeps the
+                        // ordinary lowering path.
+                        #[cfg(feature = "std-surface")]
+                        let typed_tail =
+                            if matches!(other, ast::Node::ArrayLit { .. } | ast::Node::Paren(..))
+                                && body.last().is_some_and(|last| std::ptr::eq(last, stmt))
+                            {
+                                lower_return_array_lit(
+                                    other,
+                                    &mut fn_ir,
+                                    &fn_env,
+                                    &fn_struct_env,
+                                    receiver_types,
+                                )
+                            } else {
+                                None
+                            };
+                        #[cfg(not(feature = "std-surface"))]
+                        let typed_tail = None;
+                        let id = typed_tail.unwrap_or_else(|| {
+                            lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types)
+                        });
                         ret_id = Some(id);
                         // Gap C: if the emitted statement was an `Instr::If`,
                         // thread its outer-binding assignment merges back into

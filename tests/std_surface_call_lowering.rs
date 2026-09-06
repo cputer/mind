@@ -108,3 +108,50 @@ fn non_i64_call_arg_is_a_clear_error() {
         "error must name the i64-ABI limitation and point to phase 2+; got: {msg}"
     );
 }
+
+#[test]
+fn inline_intrinsics_reject_tensor_operands_in_every_position() {
+    use libmind::types::{DType, ShapeDim};
+    for (name, arity) in [
+        ("__mind_load_i8", 1),
+        ("__mind_load_i16", 1),
+        ("__mind_load_i32", 1),
+        ("__mind_store_i8", 2),
+        ("__mind_store_i16", 2),
+        ("__mind_store_i32", 2),
+        ("__mind_f64_to_bits", 1),
+    ] {
+        for position in 0..arity {
+            let mut m = IRModule::new();
+            let tensor = m.fresh();
+            m.instrs.push(Instr::ConstTensor(
+                tensor,
+                DType::F32,
+                vec![ShapeDim::Known(2)],
+                Some(0.0),
+            ));
+            let args = (0..arity)
+                .map(|i| {
+                    if i == position {
+                        tensor
+                    } else {
+                        scalar(&mut m, 1)
+                    }
+                })
+                .collect();
+            let dst = m.fresh();
+            m.instrs.push(Instr::Call {
+                dst,
+                name: name.into(),
+                args,
+            });
+            m.instrs.push(Instr::Output(dst));
+            let err = lower_ir_to_mlir(&m)
+                .expect_err("inline scalar intrinsic must reject tensor operands");
+            assert!(
+                err.to_string().contains(name),
+                "{name} argument {position}: {err}"
+            );
+        }
+    }
+}

@@ -18,8 +18,10 @@
 //! variable at *compile time* of the test binary itself, pointing at the
 //! `mindc` binary that was built for the SAME invocation, SAME profile, and
 //! SAME feature set. There is no staleness possible: the path is baked in
-//! during the test binary's own compilation, and `cargo test` always rebuilds
-//! `mindc` before running tests if any source changed.
+//! during the test binary's own compilation. Cargo rebuilds `mindc` before
+//! running tests, but another Cargo invocation sharing that target directory
+//! can replace it while tests execute. Keep the target exclusive for the full
+//! test lifetime or use an isolated target per concurrent invocation.
 //!
 //! Reference: <https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates>
 //! The `[[bin]] name = "mindc"` entry in `Cargo.toml` guarantees
@@ -35,8 +37,9 @@ use std::process::{Command, Output};
 /// feature set.
 ///
 /// Uses `env!("CARGO_BIN_EXE_mindc")` which is set by cargo at test-binary
-/// compile time to the binary built alongside this test run — always correct,
-/// never stale. No filesystem probing is required or performed.
+/// compile time to the binary built alongside this test run. Keep that target
+/// directory exclusive until tests finish; the path does not freeze its bytes.
+/// No filesystem probing is required or performed.
 ///
 /// Callers that tolerate a missing binary (skip semantics) should pair this
 /// with an `.exists()` check; callers that require the binary should

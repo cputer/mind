@@ -12,8 +12,8 @@
 //! address; Phase 1.6 (task #306) added `__mind_load_i8` /
 //! `__mind_store_i8` for proper one-byte access (closing the
 //! 8-byte-store-at-byte-offset heap-OOB landmine). Pure type-checker
-//! tests use the AST directly; the end-to-end smoke runs the Phase-0
-//! path so the contract is checked through to MLIR text.
+//! tests use the AST directly; the end-to-end smokes check both external-call
+//! and inline native-memory paths through to exact MLIR operations.
 //!
 //! Gated: `cargo test --features std-surface,mlir-lowering
 //! --test std_surface_intrinsics`.
@@ -246,19 +246,15 @@ fn unknown_mind_intrinsic_still_errors() {
     );
 }
 
-// ── End-to-end: IR `Instr::Call` for each intrinsic lowers via Phase 0 ──
+// ── End-to-end: external intrinsics retain their private-call ABI ──
 
 #[test]
-fn each_intrinsic_lowers_to_func_call_with_private_decl() {
+fn external_intrinsics_lower_to_func_calls_with_private_decls() {
     for (name, arity) in [
         ("__mind_alloc", 1usize),
         ("__mind_free", 1),
-        ("__mind_load_i64", 1),
-        ("__mind_load_i8", 1),
         ("__mind_read", 4),
         ("__mind_realloc", 2),
-        ("__mind_store_i64", 2),
-        ("__mind_store_i8", 2),
         ("__mind_write", 4),
     ] {
         let mut m = IRModule::new();
@@ -288,6 +284,124 @@ fn each_intrinsic_lowers_to_func_call_with_private_decl() {
         assert!(
             text.contains(&decl_needle),
             "{name}: expected `{decl_needle}` in:\n{text}"
+        );
+    }
+}
+
+// ── End-to-end: native-memory intrinsics retain width and result semantics ──
+
+#[test]
+fn memory_intrinsics_lower_inline_with_exact_width_and_store_zero_status() {
+    for (name, width) in [
+        ("__mind_load_i64", "i64"),
+        ("__mind_load_i32", "i32"),
+        ("__mind_load_i16", "i16"),
+        ("__mind_load_i8", "i8"),
+    ] {
+        let mut m = IRModule::new();
+        let ptr = scalar(&mut m, 1);
+        let dst = m.fresh();
+        m.instrs.push(Instr::Call {
+            dst,
+            name: name.to_string(),
+            args: vec![ptr],
+        });
+        m.instrs.push(Instr::Output(dst));
+
+        let text = lower_ir_to_mlir(&m).expect("lower").text;
+        let ptr_op = format!(
+            "%ldp{} = llvm.inttoptr %{} : i64 to !llvm.ptr",
+            dst.0, ptr.0
+        );
+        let load_op = if width == "i64" {
+            format!(
+                "%{} = llvm.load %ldp{} {{alignment = 1 : i64}} : !llvm.ptr -> i64",
+                dst.0, dst.0
+            )
+        } else {
+            format!(
+                "%ldv{} = llvm.load %ldp{} {{alignment = 1 : i64}} : !llvm.ptr -> {width}",
+                dst.0, dst.0
+            )
+        };
+
+        assert!(
+            text.contains(&ptr_op),
+            "{name}: missing `{ptr_op}` in:\n{text}"
+        );
+        assert!(
+            text.contains(&load_op),
+            "{name}: missing `{load_op}` in:\n{text}"
+        );
+        if width != "i64" {
+            let extend_op = format!("%{} = llvm.zext %ldv{} : {width} to i64", dst.0, dst.0);
+            assert!(
+                text.contains(&extend_op),
+                "{name}: missing zero-extension `{extend_op}` in:\n{text}"
+            );
+        }
+        assert!(
+            !text.contains(&format!("func.call @{name}("))
+                && !text.contains(&format!("func.func private @{name}(")),
+            "{name}: inline load must not retain an external symbol:\n{text}"
+        );
+    }
+
+    for (name, width) in [
+        ("__mind_store_i64", "i64"),
+        ("__mind_store_i32", "i32"),
+        ("__mind_store_i16", "i16"),
+        ("__mind_store_i8", "i8"),
+    ] {
+        let mut m = IRModule::new();
+        let ptr = scalar(&mut m, 1);
+        let value = scalar(&mut m, 2);
+        let dst = m.fresh();
+        m.instrs.push(Instr::Call {
+            dst,
+            name: name.to_string(),
+            args: vec![ptr, value],
+        });
+        m.instrs.push(Instr::Output(dst));
+
+        let text = lower_ir_to_mlir(&m).expect("lower").text;
+        let ptr_op = format!(
+            "%stp{} = llvm.inttoptr %{} : i64 to !llvm.ptr",
+            dst.0, ptr.0
+        );
+        let value_ref = if width == "i64" {
+            format!("%{}", value.0)
+        } else {
+            let truncate_op = format!("%stv{} = llvm.trunc %{} : i64 to {width}", dst.0, value.0);
+            assert!(
+                text.contains(&truncate_op),
+                "{name}: missing width coercion `{truncate_op}` in:\n{text}"
+            );
+            format!("%stv{}", dst.0)
+        };
+        let store_op = format!(
+            "llvm.store {value_ref}, %stp{} {{alignment = 1 : i64}} : {width}, !llvm.ptr",
+            dst.0
+        );
+        let zero_status = format!("%{} = arith.constant 0 : i64", dst.0);
+        let returned_status = format!("return %{} : i64", dst.0);
+
+        assert!(
+            text.contains(&ptr_op),
+            "{name}: missing `{ptr_op}` in:\n{text}"
+        );
+        assert!(
+            text.contains(&store_op),
+            "{name}: missing exact-width store `{store_op}` in:\n{text}"
+        );
+        assert!(
+            text.contains(&zero_status) && text.contains(&returned_status),
+            "{name}: store must materialize and return zero status:\n{text}"
+        );
+        assert!(
+            !text.contains(&format!("func.call @{name}("))
+                && !text.contains(&format!("func.func private @{name}(")),
+            "{name}: inline store must not retain an external symbol:\n{text}"
         );
     }
 }

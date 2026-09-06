@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1641 | **Est. tokens:** ~3107143
-**Generated:** 2026-09-06 22:00 UTC
+**Files:** 1641 | **Est. tokens:** ~3109683
+**Generated:** 2026-09-06 22:48 UTC
 
 ## Token Budget Guide
 
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 29 | ~113603 |
+| `scripts/` | 29 | ~113566 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -128,10 +128,10 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 369 | ~706045 |
+| `tests/` | 369 | ~708564 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 3 | ~12264 |
+| `tests/common/` | 3 | ~12322 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4113 |
@@ -899,7 +899,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~10143 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~10069 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3627 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -926,7 +926,7 @@
 - `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `test_exec_semantics_gate.py` (~6108 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
+- `test_exec_semantics_gate.py` (~6145 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
 - `test_gate_wiring.py` (~7055 tok, huge) — Regression test for scripts/check_gate_wiring.py.
 - `test_no_ai_attribution.py` (~3509 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
 - `test_smoke_wiring_lint.py` (~2257 tok, huge) — Regression test for the CI-coverage and branch-awareness contracts of
@@ -1380,7 +1380,7 @@
 ### `tests/common/`
 
 - `gate.rs` (~4999 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~2581 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2639 tok, huge) — Copyright 2025 STARGA Inc.
 - `xsi_gate.rs` (~4684 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
@@ -2149,12 +2149,12 @@
 - `std_llvm_bindings_smoke.rs` (~2673 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_mlir_bindings_smoke.rs` (~4872 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_arena.rs` (~1346 tok, large) — Copyright 2025 STARGA Inc.
-- `std_surface_array_literals.rs` (~2013 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_array_literals.rs` (~3189 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_async.rs` (~4323 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bitwise_binops.rs` (~2380 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1271 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_break_continue.rs` (~1335 tok, large) — Copyright 2026 STARGA Inc.
-- `std_surface_call_lowering.rs` (~834 tok, large) — Copyright 2025 STARGA Inc.
+- `std_surface_call_lowering.rs` (~1195 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cdylib_link.rs` (~2900 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_cli.rs` (~1007 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cli_equals_form.rs` (~874 tok, large) — Copyright 2025 STARGA Inc.
@@ -2165,7 +2165,7 @@
 - `std_surface_http.rs` (~4055 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_i32_intrinsics.rs` (~824 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_if_statement.rs` (~3422 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_intrinsics.rs` (~2430 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_intrinsics.rs` (~3412 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_ansi.rs` (~793 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_io_canon.rs` (~4907 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_module.rs` (~1540 tok, huge) — Copyright 2025 STARGA Inc.

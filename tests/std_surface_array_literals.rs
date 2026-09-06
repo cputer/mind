@@ -15,6 +15,8 @@
 //!    lowers to a `__mind_array_load_i64` call.
 //! 5. A type-length mismatch `let x: [i64; 3] = [1, 2]` is rejected at
 //!    type-check time with a diagnostic containing "length".
+//! 6. A computed fixed-array return executes through direct, aliased, and
+//!    implicit tail-expression forms and reproduces byte-identically.
 //!
 //! Gated: `cargo test --features std-surface --test std_surface_array_literals`.
 
@@ -238,4 +240,160 @@ fn first(values: Missing) -> i64 {
 "#,
         "unresolved named type",
     );
+}
+
+// ── Test 7: computed fixed-array return executes and is deterministic ───────
+
+#[test]
+#[cfg(all(unix, feature = "mlir-build"))]
+fn computed_fixed_array_return_runs_and_replays_identically() {
+    use std::fs;
+    use std::process::Command;
+
+    let dir = tempfile::tempdir().expect("temporary compiler outputs");
+    let source = dir.path().join("computed_return.mind");
+    fs::write(
+        &source,
+        r#"
+fn make_marker(m: i64) -> [i64; 4] {
+    return [0, 0, 0, m];
+}
+type Marker = [i64; 4]
+fn make_alias(m: i64) -> Marker {
+    return [0, 0, 0, m];
+}
+fn make_implicit(m: i64) -> [i64; 4] {
+    [0, 0, 0, m]
+}
+fn make_parenthesized(m: i64) -> Marker {
+    return (([0, 0, 0, m]));
+}
+fn make_tail_parenthesized(m: i64) -> Marker {
+    (([0, 0, 0, m]))
+}
+pub fn probe(m: i64) -> i64 {
+    let values: [i64; 4] = make_marker(m);
+    return values[3];
+}
+pub fn probe_alias(m: i64) -> i64 {
+    let values: Marker = make_alias(m);
+    return values[3];
+}
+pub fn probe_implicit(m: i64) -> i64 {
+    let values: [i64; 4] = make_implicit(m);
+    return values[3];
+}
+pub fn probe_parenthesized(m: i64) -> i64 {
+    let values: Marker = make_parenthesized(m);
+    return values[3];
+}
+pub fn probe_tail_parenthesized(m: i64) -> i64 {
+    let values: Marker = make_tail_parenthesized(m);
+    return values[3];
+}
+"#,
+    )
+    .expect("write computed return source");
+
+    let compile = |artifact: &std::path::Path| {
+        Command::new(env!("CARGO_BIN_EXE_mindc"))
+            .arg(&source)
+            .arg("--emit-shared")
+            .arg(artifact)
+            .output()
+            .expect("run mindc")
+    };
+    let first = dir.path().join("first.so");
+    let output = compile(&first);
+    assert!(
+        output.status.success(),
+        "computed fixed-array return must compile:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let python = r#"
+import ctypes, sys
+lib = ctypes.CDLL(sys.argv[1])
+names = ("probe", "probe_alias", "probe_implicit", "probe_parenthesized", "probe_tail_parenthesized")
+for name in names:
+    fn = getattr(lib, name)
+    fn.argtypes = [ctypes.c_int64]
+    fn.restype = ctypes.c_int64
+for value in (0, 1, 41, -7, 9223372036854775807):
+    for name in names:
+        got = getattr(lib, name)(value)
+        assert got == value, (name, value, got)
+print("computed fixed-array return values ok")
+"#;
+    let run = Command::new("python3")
+        .arg("-c")
+        .arg(python)
+        .arg(&first)
+        .output()
+        .expect("run native fixed-array return probe");
+    assert!(
+        run.status.success(),
+        "computed fixed-array return produced wrong value:\n{}\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let second = dir.path().join("second.so");
+    let replay = compile(&second);
+    assert!(
+        replay.status.success(),
+        "second deterministic compile must succeed:\n{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    assert_eq!(
+        fs::read(&first).expect("read first artifact"),
+        fs::read(&second).expect("read replay artifact"),
+        "identical source and compiler must produce byte-identical shared artifacts"
+    );
+
+    let negative_cases = [
+        (
+            "cardinality",
+            r#"pub fn bad() -> [i64; 3] {
+    return [1, 2];
+}
+"#,
+        ),
+        (
+            "element type",
+            r#"pub fn bad() -> [i64; 2] {
+    return [1.25, 2.5];
+}
+"#,
+        ),
+        (
+            "alias cardinality",
+            r#"type Values = [i64; 3]
+pub fn bad() -> Values {
+    return [1, 2];
+}
+"#,
+        ),
+    ];
+    for (name, text) in negative_cases {
+        let bad_source = dir.path().join(format!("negative_{name}.mind"));
+        let bad_artifact = dir.path().join(format!("negative_{name}.so"));
+        fs::write(&bad_source, text).expect("write negative source");
+        let bad = Command::new(env!("CARGO_BIN_EXE_mindc"))
+            .arg(&bad_source)
+            .arg("--emit-shared")
+            .arg(&bad_artifact)
+            .output()
+            .expect("run mindc negative control");
+        assert!(!bad.status.success(), "negative {name} case must fail");
+        let diagnostic = String::from_utf8_lossy(&bad.stderr);
+        assert!(
+            !diagnostic.contains("E5003"),
+            "negative {name} must fail for its source, not a missing backend: {diagnostic}"
+        );
+        assert!(
+            !bad_artifact.exists(),
+            "negative {name} case must not leave an artifact"
+        );
+    }
 }
