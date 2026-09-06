@@ -145,12 +145,36 @@ pub fn require_mindc() -> PathBuf {
 /// is how a real compiler regression came to grade as a skip.
 #[allow(dead_code)]
 pub fn run_build_captured(mindc: &Path, dir: &Path, extra_args: &[&str]) -> Output {
-    Command::new(mindc)
-        .arg("build")
-        .args(extra_args)
-        .current_dir(dir)
-        .output()
-        .expect("failed to spawn mindc")
+    run_build_captured_env(mindc, dir, extra_args, &[])
+}
+
+/// As [`run_build_captured`], with environment overrides applied to the child.
+///
+/// The overrides are how a harness DRIVES a host-capability path instead of
+/// waiting for a host that happens to be in it. Both of the ones used today are
+/// documented compiler inputs, not harness back doors: `MLIR_OPT` is the
+/// override `eval::mlir_build::resolve_tools` reads before it searches `PATH`,
+/// and `MIND_LIB_DIR` is the runtime-library override `project::find_runtime_lib`
+/// reads before `~/.mind/lib`. A path that does not resolve therefore produces
+/// the SAME refusal a host genuinely missing the tool produces, by the same code
+/// path, rather than a state only a test can be in.
+///
+/// The child is still spawned in exactly ONE place, so a change to how it is
+/// launched (capture, working directory, argument order) cannot land in one
+/// helper and miss the other.
+#[allow(dead_code)]
+pub fn run_build_captured_env(
+    mindc: &Path,
+    dir: &Path,
+    extra_args: &[&str],
+    env: &[(&str, &Path)],
+) -> Output {
+    let mut cmd = Command::new(mindc);
+    cmd.arg("build").args(extra_args).current_dir(dir);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd.output().expect("failed to spawn mindc")
 }
 
 /// The artifact path the builder ITSELF reported for this run.

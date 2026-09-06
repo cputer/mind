@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1516 | **Est. tokens:** ~2,945,449
-**Generated:** 2026-09-06 01:07 UTC
+**Files:** 1516 | **Est. tokens:** ~2,947,854
+**Generated:** 2026-09-06 01:24 UTC
 
 ## Token Budget Guide
 
@@ -77,7 +77,7 @@
 | `.github/workflows/` | 9 | ~35,201 |
 | `mind/std/cognitive/` | 4 | ~3,529 |
 | `runtime-support/` | 1 | ~21,838 |
-| `scripts/` | 30 | ~101,980 |
+| `scripts/` | 30 | ~102,324 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2,372 |
 | `scripts/sdlc/` | 2 | ~2,756 |
@@ -125,10 +125,10 @@
 | `src/types/` | 4 | ~3,336 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 353 | ~659,535 |
+| `tests/` | 353 | ~661,310 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 2 | ~6,871 |
+| `tests/common/` | 2 | ~7,157 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4,113 |
@@ -889,7 +889,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~9600 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~9944 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `exec_semantics_markers.sh` (~3357 tok, huge) — shellcheck shell=bash
 - `gate_assert.py` (~3529 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
@@ -1334,7 +1334,7 @@
 ### `tests/common/`
 
 - `gate.rs` (~4581 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~2290 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2576 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
 - `compound_assign.rs` (~984 tok, large) — Copyright 2025 STARGA Inc.
@@ -1621,7 +1621,7 @@
 - `mic3_const_dense_tensor_roundtrip.rs` (~866 tok, large) — Copyright 2026 STARGA Inc.
 - `mic3_parser_dos.rs` (~1891 tok, huge) — Copyright 2025 STARGA Inc.
 - `micb_dos_reject.rs` (~2341 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_artifact_name.rs` (~2592 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_artifact_name.rs` (~4367 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_build_phase_a.rs` (~5557 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_cache_phase_f.rs` (~7095 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_deps_phase_de.rs` (~6823 tok, huge) — Copyright 2025 STARGA Inc.

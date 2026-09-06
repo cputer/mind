@@ -207,6 +207,16 @@ REQUIRE_TOOLCHAIN_pkg=0
 # tiers — measured per tier (21, 4, 6 and 2 executed in exec, lowering and pkg alike),
 # never assumed from one of them.
 #
+# The same argument reaches the META-gates: harness_scratch_isolation guards the scratch
+# ISOLATION the wedge gates' artifacts depend on (two test processes on one box writing
+# one fixed temp path is a flake that reads as a compiler regression), and
+# module_size_ratchet guards the 800-line ceiling and its budget table. Both walk the
+# tree from disk and carry no `required-features`, so they run in all three tiers —
+# measured 3 and 5 executed in each, never assumed from one. mindc_artifact_name is
+# listed for `exec` only: its 4 resolver tests build everywhere, but the 3 end-to-end
+# tests that drive `mindc build` are `#[cfg(feature = "mlir-build")]` and only this
+# tier's feature set has it, so 7 is an exec number and 4 is what the others would see.
+#
 # fail_closed_capability_skip_stub_exec is the ONE with a file-level cfg: `#![cfg(unix)]`,
 # because it spawns a POSIX shell stub and `ci.yml`'s build_test matrix also runs
 # windows-latest. Every tier here runs on a unix host, so the row is a real minimum in
@@ -223,6 +233,9 @@ CRITICAL_exec=(
   "fail_open_skip_site_ratchet 12"  # measured 14; the fail-open skip prohibition
   "closed_declaration_wiring 4"     # the ci.yml CLOSED note rests on a live gate
   "harness_portability 2"           # no test file may red a matrix row it cannot run on
+  "mindc_artifact_name 7"           # measured 7 under this feature set; the artifact NAME's one owner
+  "harness_scratch_isolation 3"     # scratch isolation for every wedge gate's artifacts
+  "module_size_ratchet 5"           # the 800-line ceiling and its budget table
 )
 # The two largest members of the std-surface+mlir-lowering group that no CI run
 # enabled BOTH features for; 26 of the group's 57 tests live in these two files.
@@ -237,6 +250,8 @@ CRITICAL_lowering=(
   "fail_open_skip_site_ratchet 12"
   "closed_declaration_wiring 4"
   "harness_portability 2"
+  "harness_scratch_isolation 3"     # scratch isolation for every wedge gate's artifacts
+  "module_size_ratchet 5"           # the 800-line ceiling and its budget table
 )
 # The entire reason the `pkg` tier exists: ci.yml only ever `cargo check`ed pkg.
 CRITICAL_pkg=(
@@ -249,6 +264,8 @@ CRITICAL_pkg=(
   "fail_open_skip_site_ratchet 12"
   "closed_declaration_wiring 4"
   "harness_portability 2"
+  "harness_scratch_isolation 3"     # scratch isolation for every wedge gate's artifacts
+  "module_size_ratchet 5"           # the 800-line ceiling and its budget table
 )
 
 QUARANTINE_exec=(
