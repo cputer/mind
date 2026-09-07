@@ -11,7 +11,6 @@ use crate::ast::{Literal, Module, Node, TypeAnn};
 
 pub(super) fn check(module: &Module, src: &str, file: Option<&str>, errors: &mut Vec<Pretty>) {
     let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&module.items);
-    check_struct_array_fields(&module.items, &aliases, src, file, errors);
     for item in &module.items {
         super::nerve_walk::walk(item, &mut |node| match node {
             Node::Let {
@@ -31,46 +30,6 @@ pub(super) fn check(module: &Module, src: &str, file: Option<&str>, errors: &mut
             Node::FnDef(fd, _) => check_fn_returns(fd, &aliases, src, file, errors),
             _ => {}
         });
-    }
-}
-
-/// The inline scalar-cell ABI has a representation only for fixed-array
-/// fields whose elements are the supported i64/f64 scalar cells. Refuse other
-/// element types at check time so they cannot reach the lowering backstop as
-/// an opaque aggregate and fail with a panic or backend type error.
-fn check_struct_array_fields(
-    items: &[Node],
-    aliases: &crate::eval::type_aliases::LocalTypeAliases,
-    src: &str,
-    file: Option<&str>,
-    errors: &mut Vec<Pretty>,
-) {
-    for item in items {
-        match item {
-            Node::StructDef { name, fields, .. } => {
-                for field in fields {
-                    let TypeAnn::Array { element, .. } = aliases.resolve(&field.ty) else {
-                        continue;
-                    };
-                    if !matches!(element.as_ref(), TypeAnn::ScalarI64 | TypeAnn::ScalarF64) {
-                        errors.push(super::diag_from_span(
-                            src,
-                            file,
-                            format!(
-                                "fixed struct-array field `{name}.{}` has an unsupported element type",
-                                field.name
-                            ),
-                            field.span,
-                            super::TYPE_ERR_CODE,
-                        ));
-                    }
-                }
-            }
-            Node::Block { stmts, .. } => {
-                check_struct_array_fields(stmts, aliases, src, file, errors);
-            }
-            _ => {}
-        }
     }
 }
 

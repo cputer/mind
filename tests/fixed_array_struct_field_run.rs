@@ -238,18 +238,21 @@ fn unsupported_struct_array_cells_are_refused_before_lowering() {
         .output()
         .expect("run mindc check");
     assert!(
-        !check.status.success(),
-        "unsupported fixed-array check unexpectedly passed: {}",
-        String::from_utf8_lossy(&check.stdout)
-    );
-    let check_output = format!(
-        "{}{}",
+        check.status.success(),
+        "valid fixed-array types must pass check:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr)
     );
+    let ir = Command::new(&mindc)
+        .arg("--emit-ir")
+        .arg(&source)
+        .output()
+        .expect("run mindc inspection");
     assert!(
-        check_output.contains("type_check::E2001"),
-        "missing structured check diagnostic: {check_output}"
+        ir.status.success(),
+        "valid fixed-array types must pass IR inspection:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&ir.stdout),
+        String::from_utf8_lossy(&ir.stderr)
     );
     let build = Command::new(&mindc)
         .arg("--emit-shared")
@@ -263,8 +266,8 @@ fn unsupported_struct_array_cells_are_refused_before_lowering() {
     );
     let build_err = String::from_utf8_lossy(&build.stderr);
     assert!(
-        build_err.contains("E2001"),
-        "build did not preserve structured refusal: {build_err}"
+        build_err.contains("lower::fixed_struct_array_cell"),
+        "build did not preserve structured runnable-capability refusal: {build_err}"
     );
     assert!(
         !build_err.contains("panicked at"),

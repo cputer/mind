@@ -87,7 +87,60 @@ pub fn check_runnable_lowerable(module: &Module, src: &str, file: Option<&str>) 
             ));
         }
     }
+    #[cfg(feature = "std-surface")]
+    check_fixed_struct_array_fields(module, src, file, &mut out);
     out
+}
+
+/// Fixed arrays remain valid source-level types and are available through the
+/// inspection/IR surfaces. The inline struct-field ABI currently materializes
+/// only i64/f64 cells, however, so a runnable artifact must refuse any other
+/// fixed-array field before MLIR/code emission. This is deliberately separate
+/// from type checking: an unsupported backend representation is not a type
+/// error and must not make `mindc check` or `--emit-ir` reject valid source.
+#[cfg(feature = "std-surface")]
+fn check_fixed_struct_array_fields(
+    module: &Module,
+    src: &str,
+    file: Option<&str>,
+    out: &mut Vec<Diagnostic>,
+) {
+    let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&module.items);
+    fn walk(
+        items: &[Node],
+        aliases: &crate::eval::type_aliases::LocalTypeAliases,
+        src: &str,
+        file: Option<&str>,
+        out: &mut Vec<Diagnostic>,
+    ) {
+        for item in items {
+            match item {
+                Node::StructDef { name, fields, .. } => {
+                    for field in fields {
+                        let TypeAnn::Array { element, .. } = aliases.resolve(&field.ty) else {
+                            continue;
+                        };
+                        if matches!(element.as_ref(), TypeAnn::ScalarI64 | TypeAnn::ScalarF64) {
+                            continue;
+                        }
+                        out.push(mk(
+                            src,
+                            file,
+                            field.span,
+                            "lower::fixed_struct_array_cell",
+                            format!(
+                                "fixed struct-array field `{name}.{}` is not lowerable to a runnable artifact: only i64/f64 scalar cells are supported",
+                                field.name
+                            ),
+                        ));
+                    }
+                }
+                Node::Block { stmts, .. } => walk(stmts, aliases, src, file, out),
+                _ => {}
+            }
+        }
+    }
+    walk(&module.items, &aliases, src, file, out);
 }
 
 /// Reason a function PARAMETER `TypeAnn` cannot lower in the runnable ABI, or

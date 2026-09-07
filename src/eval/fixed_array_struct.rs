@@ -197,16 +197,18 @@ pub(super) fn lower_struct_field_value(
         .and_then(fixed_array_cell_type)
         .map(|(element, length)| (element.clone(), length))
     {
-        return fixed_array::lower_binding(
-            &element,
-            length,
-            value,
-            ir,
-            |node, inner_ir, context| {
-                lower_expr(node, inner_ir, env, struct_env, receiver_types, context)
-            },
-            context,
-        );
+        if fixed_array_cell_supported_in(&element, ir) {
+            return fixed_array::lower_binding(
+                &element,
+                length,
+                value,
+                ir,
+                |node, inner_ir, context| {
+                    lower_expr(node, inner_ir, env, struct_env, receiver_types, context)
+                },
+                context,
+            );
+        }
     }
     if let ast::Node::ArrayLit { elements, .. } = value {
         let is_arr_field = ir
@@ -244,9 +246,7 @@ pub(super) fn store_fixed_array_field(
         return;
     }
     if !fixed_array_cell_supported_in(element, ir) {
-        panic!(
-            "fixed struct-array field element type is not supported by the inline scalar-cell ABI"
-        );
+        return;
     }
     let f64_bits = matches!(element, TypeAnn::ScalarF64)
         || matches!(element, TypeAnn::Named(name) if name == "f64");
@@ -481,9 +481,7 @@ pub(super) fn lower_fixed_array_field_index_access(
         .and_then(fixed_array_cell_type)
         .map(|(element, length)| (element.clone(), length))?;
     if !fixed_array_cell_supported_in(&element, ir) {
-        panic!(
-            "fixed struct-array field element type is not supported by the inline scalar-cell ABI"
-        );
+        return None;
     }
 
     // Lower the receiver before the index, and never lower either expression

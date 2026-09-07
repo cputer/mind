@@ -9061,11 +9061,13 @@ fn lower_expr(
                     .and_then(fixed_array_cell_type)
                     .map(|(element, length)| (element.clone(), length))
                 {
-                    store_fixed_array_field(&element, length, field_addr, value, ir, context);
-                    if context.failed() {
-                        break;
+                    if fixed_array_struct::fixed_array_cell_supported_in(&element, ir) {
+                        store_fixed_array_field(&element, length, field_addr, value, ir, context);
+                        if context.failed() {
+                            break;
+                        }
+                        continue;
                     }
-                    continue;
                 }
                 let store_ret = ir.fresh();
                 ir.instrs.push(Instr::Call {

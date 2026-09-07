@@ -204,12 +204,8 @@ pub(super) fn lower_field_access(
             if let Some((element, length)) = struct_field_type(ir, &struct_name, idx)
                 .and_then(fixed_array_cell_type)
                 .map(|(element, length)| (element.clone(), length))
+                .filter(|(element, _)| fixed_array_cell_supported_in(element, ir))
             {
-                if !fixed_array_cell_supported_in(&element, ir) {
-                    panic!(
-                        "fixed struct-array field element type is not supported by the inline scalar-cell ABI"
-                    );
-                }
                 if !context.charge_fixed_field_copyout(length, fixed_array_cell_bits_ty(&element)) {
                     return ir.fresh();
                 }
@@ -399,6 +395,7 @@ pub(super) fn lower_field_assign(
             if let Some((element, length)) = struct_field_type(ir, &struct_name, idx)
                 .and_then(fixed_array_cell_type)
                 .map(|(element, length)| (element.clone(), length))
+                .filter(|(element, _)| fixed_array_cell_supported_in(element, ir))
             {
                 let rhs = lower_struct_field_value(
                     &struct_name,
