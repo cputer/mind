@@ -43,7 +43,7 @@
 //! The worker pool is bounded to `opts.threads` (or available parallelism when
 //! zero). Tasks are distributed via a `std::sync::Mutex<VecDeque<TestEntry>>`.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,6 +51,10 @@ use std::time::{Duration, Instant};
 
 use crate::ast::Node;
 use crate::parser;
+
+mod imports;
+mod top_level;
+use imports::{EvalSupport, prepare_eval_support};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -164,6 +168,7 @@ pub fn run_tests(opts: &TestOptions) -> Result<TestRunSummary, TestError> {
     //    that have syntax errors (they might be test fixtures for parser
     //    error-case tests, or simply broken files that are not test sources).
     let mut entries: Vec<TestEntry> = Vec::new();
+    let mut eval_support = BTreeMap::new();
     let mut parse_failures: Vec<(PathBuf, String)> = Vec::new();
     for path in &source_files {
         let text = match fs::read_to_string(path) {
@@ -174,7 +179,12 @@ pub fn run_tests(opts: &TestOptions) -> Result<TestRunSummary, TestError> {
             }
         };
         match discover_tests_in_source(path, &text) {
-            Ok(discovered) => entries.extend(discovered),
+            Ok(discovered) => {
+                if !discovered.is_empty() {
+                    eval_support.insert(path.clone(), prepare_eval_support(path, &text));
+                }
+                entries.extend(discovered);
+            }
             // A file that fails to parse yields no tests — but skipping it
             // SILENTLY turns a real breakage into a misleading green "running 0
             // tests" (exactly what masked a parse error in a downstream repo's
@@ -220,7 +230,7 @@ pub fn run_tests(opts: &TestOptions) -> Result<TestRunSummary, TestError> {
     }
 
     // 6. Execute tests in parallel.
-    let mut summary = execute_tests(entries, opts)?;
+    let mut summary = execute_tests(entries, Arc::new(eval_support), opts)?;
     // Carried from THIS function: `execute_tests` never sees the discovery phase, so
     // the count of files that failed to parse is attached here.
     summary.unparsed_files = unparsed_files;
@@ -307,8 +317,26 @@ pub fn discover_tests_in_source(path: &Path, source: &str) -> Result<Vec<TestEnt
         .to_string_lossy()
         .to_string();
 
+    let items = top_level::refs(&module.items);
+    let mut function_counts = BTreeMap::<&str, (usize, bool)>::new();
+    for item in &items {
+        if let Node::FnDef(function, _) = item {
+            let count = function_counts.entry(&function.name).or_insert((0, false));
+            count.0 += 1;
+            count.1 |= function.is_test;
+        }
+    }
+    if let Some((name, (count, _))) = function_counts
+        .iter()
+        .find(|(_, (count, includes_test))| *includes_test && *count > 1)
+    {
+        return Err(format!(
+            "ambiguous test function `{name}` has {count} module-level definitions"
+        ));
+    }
+
     let mut entries = Vec::new();
-    for item in &module.items {
+    for item in items {
         if let Node::FnDef(fd, span) = item {
             if fd.is_test {
                 let name = &fd.name;
@@ -336,7 +364,11 @@ fn line_number_at(source: &str, offset: usize) -> u32 {
 // ---------------------------------------------------------------------------
 
 /// Execute the test entries in parallel, collecting results.
-fn execute_tests(entries: Vec<TestEntry>, opts: &TestOptions) -> Result<TestRunSummary, TestError> {
+fn execute_tests(
+    entries: Vec<TestEntry>,
+    eval_support: Arc<BTreeMap<PathBuf, EvalSupport>>,
+    opts: &TestOptions,
+) -> Result<TestRunSummary, TestError> {
     let thread_count = if opts.threads == 0 {
         std::thread::available_parallelism()
             .map(|n| n.get())
@@ -356,6 +388,7 @@ fn execute_tests(entries: Vec<TestEntry>, opts: &TestOptions) -> Result<TestRunS
     for _ in 0..thread_count {
         let q = Arc::clone(&queue);
         let r = Arc::clone(&results);
+        let support = Arc::clone(&eval_support);
         let rep = reporter.clone();
 
         let handle = std::thread::spawn(move || {
@@ -369,7 +402,7 @@ fn execute_tests(entries: Vec<TestEntry>, opts: &TestOptions) -> Result<TestRunS
                     None => break,
                 };
 
-                let result = run_one_test(&entry);
+                let result = run_one_test(&entry, support.get(&entry.source_file));
 
                 // Print the test line immediately (matches cargo test UX).
                 match rep {
@@ -440,12 +473,14 @@ fn execute_tests(entries: Vec<TestEntry>, opts: &TestOptions) -> Result<TestRunS
 /// The test body is evaluated via the MIND interpreter. A panic (Rust-level
 /// unwind) is caught and reported as `TestStatus::Failed`. An `eval::Value`
 /// of `Bool(false)` from a `-> bool` test is also a failure.
-fn run_one_test(entry: &TestEntry) -> TestResult {
+fn run_one_test(entry: &TestEntry, support: Option<&EvalSupport>) -> TestResult {
     let start = Instant::now();
 
     // Isolate the test execution: parse + eval inside catch_unwind.
     // We re-parse each time so that no mutable state bleeds between tests.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| eval_test_fn(entry)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eval_test_fn(entry, support)
+    }));
 
     let duration = start.elapsed();
 
@@ -494,7 +529,7 @@ fn run_one_test(entry: &TestEntry) -> TestResult {
 /// `false` fails ("test returned false (0)"), a returned `Result::Err(..)`
 /// fails with its payload, anything else passes. Zero-arity is enforced at
 /// parse time by `parse_fn_def_with_attrs`, so the call binds no params.
-fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
+fn eval_test_fn(entry: &TestEntry, support: Option<&EvalSupport>) -> Result<(), String> {
     use crate::ast::Module;
     use crate::eval;
     use crate::eval::ExecMode;
@@ -504,8 +539,12 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
     // order (the arena is thread-local and worker threads are reused).
     eval::interp_mem::reset();
 
+    if let Some(error) = support.and_then(|support| support.setup_error.as_ref()) {
+        return Err(error.clone());
+    }
+
     // Re-parse to get a fresh, unaliased AST.
-    let module = parser::parse(&entry.source_text).map_err(|errs| {
+    let mut module = parser::parse(&entry.source_text).map_err(|errs| {
         errs.iter()
             .map(|e| e.to_string())
             .collect::<Vec<_>>()
@@ -517,10 +556,9 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
 
     // Find the test fn in the parsed module: its declared return type decides
     // how the call's value is graded, and its span labels the synthetic call.
-    let (ret_type, span) = module
-        .items
-        .iter()
-        .find_map(|item| {
+    let matches = top_level::refs(&module.items)
+        .into_iter()
+        .filter_map(|item| {
             if let Node::FnDef(fd, span) = item {
                 if fd.is_test && fd.name == fn_name {
                     return Some((fd.ret_type.clone(), *span));
@@ -528,7 +566,21 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
             }
             None
         })
-        .ok_or_else(|| format!("test function '{}' not found in module", fn_name))?;
+        .collect::<Vec<_>>();
+    let [(ret_type, span)] = matches.as_slice() else {
+        return Err(format!(
+            "test function `{fn_name}` resolved to {} module-level definitions",
+            matches.len()
+        ));
+    };
+    let (ret_type, span) = (ret_type.clone(), *span);
+
+    let eval_fn_name = if let Some(owner) = support.and_then(|value| value.entry_owner.as_deref()) {
+        imports::qualify_module_declarations(&mut module, owner, false);
+        eval::eval_owned_symbol(owner, fn_name)
+    } else {
+        fn_name.to_string()
+    };
 
     // Build the synthetic module: imported-std fn defs first (so file-local
     // fns shadow them in the fn table — later install wins), then ALL
@@ -542,9 +594,12 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
     let mut synthetic_items: Vec<Node> = Vec::new();
     #[cfg(any(feature = "cross-module-imports", feature = "std-surface"))]
     synthetic_items.extend(resolve_std_import_fns(&module)?);
-    synthetic_items.extend(module.items.iter().cloned());
+    if let Some(support) = support {
+        synthetic_items.extend(support.imported_items.iter().cloned());
+    }
+    synthetic_items.extend(top_level::cloned(&module.items));
     synthetic_items.push(Node::Call {
-        callee: fn_name.to_string(),
+        callee: eval_fn_name,
         args: Vec::new(),
         span,
     });
@@ -558,6 +613,9 @@ fn eval_test_fn(entry: &TestEntry) -> Result<(), String> {
     // worker thread never carries the mode into the next test or, worse, into
     // a non-test interpreter consumer.
     let _checking = eval::assert_check_guard();
+    let _bindings = support.map(|support| {
+        eval::EvalBindingsGuard::install(support.bindings.clone(), support.entry_owner.clone())
+    });
     let mut env = std::collections::HashMap::new();
     let outcome =
         eval::eval_module_value_with_env_mode(&synthetic_module, &mut env, None, ExecMode::Preview);
@@ -634,7 +692,10 @@ fn resolve_std_import_fns(module: &crate::ast::Module) -> Result<Vec<Node>, Stri
 
     let mut out: Vec<Node> = Vec::new();
     let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut queue: VecDeque<String> = module.items.iter().filter_map(import_key).collect();
+    let mut queue: VecDeque<String> = top_level::refs(&module.items)
+        .into_iter()
+        .filter_map(import_key)
+        .collect();
     while let Some(key) = queue.pop_front() {
         if !visited.insert(key.clone()) {
             continue;
@@ -651,7 +712,7 @@ fn resolve_std_import_fns(module: &crate::ast::Module) -> Result<Vec<Node>, Stri
                     .join("; ")
             )
         })?;
-        for item in &imported.items {
+        for item in top_level::refs(&imported.items) {
             match item {
                 Node::FnDef(..) | Node::Const { .. } => out.push(item.clone()),
                 Node::Import { .. } => {

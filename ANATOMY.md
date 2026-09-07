@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1649 | **Est. tokens:** ~3128500
-**Generated:** 2026-09-07 00:48 UTC
+**Files:** 1656 | **Est. tokens:** ~3143107
+**Generated:** 2026-09-07 01:54 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29289 |
+| `./` | 33 | ~29348 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 21 | ~99758 |
+| `src/eval/` | 23 | ~102129 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -116,19 +116,19 @@
 | `src/ops/` | 3 | ~4764 |
 | `src/opt/` | 9 | ~53284 |
 | `src/package/` | 2 | ~1877 |
-| `src/parser/` | 2 | ~20355 |
+| `src/parser/` | 3 | ~20920 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 15 | ~39370 |
+| `src/project/` | 15 | ~39921 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
-| `src/test/` | 1 | ~6839 |
+| `src/test/` | 3 | ~11869 |
 | `src/type_checker/` | 12 | ~51264 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 374 | ~717445 |
+| `tests/` | 376 | ~723476 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -214,7 +214,7 @@
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
 - `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
-- `Cargo.toml` (~3478 tok, huge) — [package]
+- `Cargo.toml` (~3537 tok, huge) — [package]
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
@@ -1088,6 +1088,8 @@
 - `mlir_jit.rs` (~501 tok, large) — Copyright 2025 STARGA Inc.
 - `mlir_opt.rs` (~995 tok, large) — Copyright 2025 STARGA Inc.
 - `mlir_run.rs` (~1535 tok, huge) — Copyright 2025 STARGA Inc.
+- `module_bindings.rs` (~1211 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `module_globals.rs` (~1160 tok, large) — Copyright 2026 STARGA Inc.
 - `narrow_scan.rs` (~3042 tok, huge) — Module-wide narrow-int SURFACE prescan (compile-speed early-skip).
 - `slice_abi.rs` (~325 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/eval/stdlib/`
@@ -1198,6 +1200,7 @@
 - `mod.rs` (~1567 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/parser/`
 
+- `eval_imports.rs` (~565 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `expand_bimap.rs` (~16544 tok, huge) — An `#[bimap]` attribute on an `enum` declares a one-to-one correspondence
 - `trivia.rs` (~3811 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/phf/`
@@ -1217,7 +1220,7 @@
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~6569 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~4318 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~4869 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `source_snapshot.rs` (~608 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~5153 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1248,7 +1251,9 @@
 - `target.rs` (~5031 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/test/`
 
-- `mod.rs` (~6839 tok, huge) — Copyright 2025 STARGA Inc.
+- `imports.rs` (~4153 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `mod.rs` (~7377 tok, huge) — Copyright 2025 STARGA Inc.
+- `top_level.rs` (~339 tok, medium) — Copyright 2025-2026 STARGA Inc.
 ### `src/type_checker/`
 
 - `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1761,6 +1766,8 @@
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
 - `mindc_project_lock.rs` (~1069 tok, large) — Copyright 2026 STARGA Inc.
 - `mindc_test_evaluator_issues.rs` (~4490 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_test_imports.rs` (~4130 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `mindc_test_nested_modules.rs` (~1901 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindcraft/`

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — project imports and lexical scope in `mindc test`
+- Tests inside transparent module blocks are discovered in source order.
+  Duplicate module-level test names are refused, and function-local test
+  declarations do not enter the test inventory.
+- Imported functions and constants use the exact module selected by project
+  discovery, including qualified types and explicit export boundaries.
+  Dependency imports of bundled standard-library modules execute with their
+  defining module identity; regression tests compare the complete SHA-256
+  empty-message digest through a project dependency.
+- Functions read initialized globals from their defining module without
+  capturing caller-local variables. Module-level loop updates remain visible
+  to called helpers, and scalar parameters clear stale tensor metadata.
+
 ### Fixed — aggregate constants preserve struct values (#247)
 - Struct-valued constants and fixed arrays of structs now lower their real
   record handles instead of substituting zero, including indexed/nested field

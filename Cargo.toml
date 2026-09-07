@@ -147,6 +147,12 @@ required-features = ["mlir-build"]
 name = "issue_235_single_file_import"
 required-features = ["mlir-build", "cross-module-imports"]
 
+# `mindc test` import execution needs the manifest-bounded module resolver.
+# Keep the gate structurally absent when that language surface is not built.
+[[test]]
+name = "mindc_test_imports"
+required-features = ["cross-module-imports"]
+
 [[test]]
 name = "source_confinement"
 required-features = ["cross-module-imports"]

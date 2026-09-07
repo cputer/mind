@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
-use crate::ast::{BinOp, Literal, Module, Node, TensorElemOp, TypeAnn};
+use crate::ast::{BinOp, Literal, Module, Node, Span, TensorElemOp, TypeAnn};
 use crate::runtime_interface::{MindRuntime, NoOpRuntime};
 
 use crate::eval::autodiff::TensorEnvEntry;
@@ -38,6 +38,15 @@ pub mod conv2d_grad;
 pub mod interp_mem;
 pub mod ir_interp;
 pub mod lower;
+mod module_bindings;
+mod module_globals;
+use module_bindings::symbol_owner;
+pub(crate) use module_bindings::{
+    BindingKind as EvalBindingKind, Bindings as EvalBindings, BindingsGuard as EvalBindingsGuard,
+    owned_symbol as eval_owned_symbol,
+};
+use module_bindings::{OwnerGuard as EvalOwnerGuard, bound_symbol as eval_bound_symbol};
+use module_bindings::{current_owner as current_eval_owner, symbol_display_name};
 /// Module-wide narrow-int surface prescan — the compile-speed early-skip gate
 /// for `infer_narrow_arith_ty` (see narrow_scan.rs for the byte-identity proof).
 #[cfg(feature = "std-surface")]
@@ -445,6 +454,8 @@ pub fn eval_module_value_with_env_mode(
         .map(|(name, value)| (name.clone(), Value::Int(*value)))
         .collect();
     let mut tensor_env: HashMap<String, TensorEnvEntry> = HashMap::new();
+    let _module_globals =
+        module_globals::install(current_eval_owner().as_deref(), &venv, &tensor_env);
 
     // Register all top-level functions so calls can dispatch to them (generic or
     // not). Restored after the module finishes so nested module evals don't leak.
@@ -463,7 +474,13 @@ pub fn eval_module_value_with_env_mode(
             Node::Let {
                 name, ann, value, ..
             } => {
-                let rhs = eval_value_expr_mode(value, &venv, &tensor_env, mode.clone())?;
+                let owner = symbol_owner(name)
+                    .map(str::to_string)
+                    .or_else(current_eval_owner);
+                let (lexical_env, lexical_tensors) = module_globals::environment(owner.as_deref());
+                let _owner = EvalOwnerGuard::enter(owner.as_deref());
+                let rhs =
+                    eval_value_expr_mode(value, &lexical_env, &lexical_tensors, mode.clone())?;
                 let stored = match ann {
                     Some(TypeAnn::Tensor { dtype, dims, .. })
                     | Some(TypeAnn::DiffTensor { dtype, dims }) => {
@@ -522,6 +539,12 @@ pub fn eval_module_value_with_env_mode(
                         tensor_env.remove(name);
                     }
                 }
+                module_globals::set(
+                    owner.as_deref(),
+                    symbol_display_name(name),
+                    venv[name].clone(),
+                    tensor_env.get(name).cloned(),
+                );
             }
             Node::Assign { name, value, .. } => {
                 let rhs = eval_value_expr_mode(value, &venv, &tensor_env, mode.clone())?;
@@ -547,6 +570,7 @@ pub fn eval_module_value_with_env_mode(
                         tensor_env.remove(name);
                     }
                 }
+                module_globals::sync(current_eval_owner().as_deref(), &venv, &tensor_env);
             }
             // Phase 10.6: `arr[i] = v` for an array variable. The interpreter is
             // immutable-value, so we rebuild the tuple with the element replaced and
@@ -582,6 +606,7 @@ pub fn eval_module_value_with_env_mode(
                     }
                 }
                 last = val;
+                module_globals::sync(current_eval_owner().as_deref(), &venv, &tensor_env);
             }
             Node::For {
                 var,
@@ -590,16 +615,8 @@ pub fn eval_module_value_with_env_mode(
                 body,
                 ..
             } => {
-                // Module-level `for`: route the body through the SAME uniform
-                // threaded executor the fn-level `For` arm uses — each
-                // iteration a block scope, the loop var restored at loop exit
-                // — so a mutation nested inside an `if` in the body survives
-                // (the old hand-rolled Assign/Let/IndexAssign-only match
-                // routed nested `if` to expression eval, which cloned the env
-                // and silently discarded the mutation). The final integer
-                // bindings are then reflected back into `env`, mirroring the
-                // module-level `While` arm, so a later assert or consumer
-                // reads the post-loop values.
+                // Use the same threaded executor as function loops so nested
+                // mutations survive, then reflect integer results into `env`.
                 let s = match eval_value_expr_mode(start, &venv, &tensor_env, mode.clone())? {
                     Value::Int(n) => n,
                     _ => {
@@ -630,6 +647,7 @@ pub fn eval_module_value_with_env_mode(
                         env.insert(k.clone(), *n);
                     }
                 }
+                module_globals::sync(current_eval_owner().as_deref(), &venv, &tensor_env);
             }
             // Top-level `while`: thread the loop so body mutations of outer
             // variables survive (`while i < n { sum = sum + i; i = i + 1 }`),
@@ -645,6 +663,7 @@ pub fn eval_module_value_with_env_mode(
                         env.insert(k.clone(), *n);
                     }
                 }
+                module_globals::sync(current_eval_owner().as_deref(), &venv, &tensor_env);
             }
             _ => {
                 last = eval_value_expr_mode(item, &venv, &tensor_env, mode.clone())?;
@@ -779,21 +798,26 @@ fn is_enum_variant_ctor(callee: &str) -> bool {
     callee.contains("::") || callee == "Some"
 }
 
-/// Resolve a call callee against the installed user-fn table: the full name
-/// first, then — for a qualified `Module::fn` path — its final `::` segment
-/// (imported std fns are registered under their BARE name by
-/// `fn_table_install`, so `sha256::sha256(...)` must find `sha256`). The fn
-/// table is the arbiter between a qualified CALL and an enum-variant
-/// CONSTRUCTOR, which parse identically: `Result::Ok(x)` only resolves here
-/// if a fn named `Result::Ok` or `Ok` is genuinely registered; otherwise the
-/// caller falls through to the enum-ctor path. Deterministic — a pure table
-/// lookup keyed on the callee string.
-fn resolve_user_fn(callee: &str) -> Option<UserFn> {
-    fn_table_lookup(callee).or_else(|| {
+/// Resolve evaluator-bound project calls first, then the current module, then
+/// the established bare/`Module::fn` lookup used by bundled std functions.
+fn resolve_user_fn(callee: &str, span: Span) -> Result<Option<UserFn>, EvalError> {
+    if let Some(bound) = eval_bound_symbol(span, EvalBindingKind::Call) {
+        return fn_table_lookup(&bound).map(Some).ok_or_else(|| {
+            EvalError::UnsupportedMsg(format!(
+                "imported function `{callee}` has no evaluator definition"
+            ))
+        });
+    }
+    if let Some(owner) = current_eval_owner() {
+        if let Some(local) = fn_table_lookup(&eval_owned_symbol(&owner, callee)) {
+            return Ok(Some(local));
+        }
+    }
+    Ok(fn_table_lookup(callee).or_else(|| {
         callee
             .rsplit_once("::")
             .and_then(|(_, last)| fn_table_lookup(last))
-    })
+    }))
 }
 
 /// Phase 10.7: does this bare identifier denote a payload-less (unit) variant?
@@ -1124,7 +1148,16 @@ pub(crate) fn eval_value_expr_mode(
         Node::Lit(Literal::Int(n), _) => Ok(Value::Int(*n)),
         Node::Lit(Literal::Float(f), _) => Ok(Value::Float(*f)),
         Node::Lit(Literal::Str(s), _) => Ok(Value::Str(s.clone())),
-        Node::Lit(Literal::Ident(name), _) => {
+        Node::Lit(Literal::Ident(name), span) => {
+            // Resolve a qualified value's owner/span binding before caller
+            // locals; ordinary unqualified names retain local-first shadowing.
+            if eval_bound_symbol(*span, EvalBindingKind::Value).is_some() {
+                return const_table_lookup(name, *span)?.ok_or_else(|| {
+                    EvalError::UnsupportedMsg(format!(
+                        "imported constant `{name}` has no evaluator definition"
+                    ))
+                });
+            }
             if let Some(v) = env.get(name) {
                 return Ok(v.clone());
             }
@@ -1132,7 +1165,7 @@ pub(crate) fn eval_value_expr_mode(
             // (params / `let`s) shadows first; the per-module-eval const
             // table resolves next, so a CALLED fn body sees module consts
             // (std/json.mind's `MAX_DEPTH`) without any env plumbing.
-            if let Some(v) = const_table_lookup(name) {
+            if let Some(v) = const_table_lookup(name, *span)? {
                 return Ok(v);
             }
             // Phase 10.7: a bare unit enum/`Option` variant (`Mode::On`, `None`)
@@ -1154,21 +1187,10 @@ pub(crate) fn eval_value_expr_mode(
             }
             Ok(Value::Tuple(items))
         }
-        Node::Call { callee, args, .. } => {
-            // Phase 10.7: enum/`Option`/`Result` variant construction. A callee
-            // written as a `Type::Variant` path (e.g. `Result::Ok(x)`,
-            // `Mode::On(v)`) or the bare `Option` constructors `Some`/`None`
-            // builds a `Value::Enum` carrying the evaluated positional payload.
-            // This is detected before the tensor-stdlib dispatch because those
-            // callees never use `::` and are never named `Some`/`None`.
-            //
-            // A qualified CROSS-MODULE call (`sha256::sha256(...)`) parses the
-            // same `A::B` shape, so the installed fn table is consulted FIRST
-            // (`resolve_user_fn`: full path, then final segment — imported std
-            // fns register under their bare name). Only a callee that resolves
-            // to NO registered fn constructs an enum, so `Result::Ok` /
-            // `Mode::On` still build variants.
-            let user_fn = resolve_user_fn(callee);
+        Node::Call { callee, args, span } => {
+            // Function lookup precedes enum construction because qualified
+            // imported calls and enum constructors share the same AST shape.
+            let user_fn = resolve_user_fn(callee, *span)?;
             if user_fn.is_none() && is_enum_variant_ctor(callee) {
                 let mut payload = Vec::with_capacity(args.len());
                 for arg in args {
@@ -1179,12 +1201,7 @@ pub(crate) fn eval_value_expr_mode(
                     payload,
                 });
             }
-            // User-defined function call: look up the installed function table,
-            // bind args to params in a fresh scope, evaluate the body (last
-            // statement's value wins). Generic fns work for free — the dynamically
-            // typed interpreter binds the concrete arg Values; type params are
-            // only recorded on the FnDef. Checked before the tensor stdlib so a
-            // user fn shadowing a stdlib name resolves to the user fn.
+            // Bind user-function arguments in a fresh dynamic scope.
             if let Some(func) = user_fn {
                 if func.params.len() != args.len() {
                     return Err(EvalError::UnsupportedMsg(format!(
@@ -1193,7 +1210,13 @@ pub(crate) fn eval_value_expr_mode(
                         args.len()
                     )));
                 }
-                let mut call_env = env.clone();
+                let caller_owner = current_eval_owner();
+                let (mut call_env, mut call_tensor_env) = module_globals::function_environment(
+                    func.owner.as_deref(),
+                    caller_owner.as_deref(),
+                    env,
+                    tensor_env,
+                );
                 for ((p, is_string), a) in func
                     .params
                     .iter()
@@ -1201,15 +1224,8 @@ pub(crate) fn eval_value_expr_mode(
                     .zip(args.iter())
                 {
                     let mut v = eval_value_expr_mode(a, env, tensor_env, mode.clone())?;
-                    // Native-string boundary: a `Value::Str` bound to a param
-                    // DECLARED `string` is materialized in the interp_mem
-                    // arena as the compiled `[addr|len|cap]` record, so
-                    // byte-level std code (std/json.mind's
-                    // `jv_string_value_from_native`) can address it. A
-                    // record handle already in flight (`Value::Int`) passes
-                    // through untouched; non-`string` params keep `Str`
-                    // values Rust-side (e.g. the `.len` arm). Fail-loud on
-                    // arena errors.
+                    // Materialize declared native strings into interp_mem;
+                    // existing handles and Rust-side non-string values pass.
                     if *is_string {
                         if let Value::Str(s) = &v {
                             let rec = interp_mem::materialize_str(s)
@@ -1217,27 +1233,13 @@ pub(crate) fn eval_value_expr_mode(
                             v = Value::Int(rec);
                         }
                     }
-                    call_env.insert(p.clone(), v);
+                    module_globals::bind_parameter(&mut call_env, &mut call_tensor_env, p, v);
                 }
-                // Salov C3 (#179): the function-body boundary is where an early
-                // `return` is caught. A `ReturnFlow` signal raised anywhere in the
-                // body (directly, or bubbled up through `?` from a nested
-                // `if`/`for`/`while`) short-circuits here and yields its value;
-                // otherwise the last statement's value wins (implicit return).
-                //
-                // `let`/`assign` statements at the body's top level are threaded
-                // into `call_env` so a later statement (e.g. a `while` condition
-                // reading a loop counter declared just above it) sees the update —
-                // the same binding-propagation the module / `For` / `While` body
-                // loops already perform. Without it a body with a top-level
-                // counter could not be const-evaluated at all.
-                // Execute the body through the uniform threaded executor so
-                // let/assign AND any mutation nested inside a top-level
-                // `if`/`for`/`while` survive to a later statement — the same
-                // binding-propagation the module / loop bodies perform (e.g.
-                // std.sha256's compression `while` and its hex-encode
-                // `if`-in-`while`, whose working state is read after the loop).
-                // An early `return` surfaces as `ReturnFlow` and yields here.
+                // Arguments were evaluated above in the caller. The body uses
+                // the callee's lexical module without consumer/sibling capture.
+                let _function_scope = module_globals::enter_function();
+                let _owner = EvalOwnerGuard::enter(func.owner.as_deref());
+                // Thread body mutations; ReturnFlow catches early returns here.
                 let mut result = Value::Int(0);
                 let mut fn_local_saves: Vec<(String, Option<Value>)> = Vec::new();
                 let mut fn_local_names: std::collections::HashSet<String> =
@@ -1246,7 +1248,7 @@ pub(crate) fn eval_value_expr_mode(
                     match exec_threaded_stmt(
                         stmt,
                         &mut call_env,
-                        tensor_env,
+                        &call_tensor_env,
                         mode.clone(),
                         &mut fn_local_saves,
                         &mut fn_local_names,
@@ -3705,30 +3707,13 @@ mod tests {
 // GPU runtime dispatch — set by the runtime before eval
 use std::cell::RefCell;
 
-// ── User-defined function table (interpreter) ────────────────────────
-//
-// The immutable value-interpreter previously had no way to *call* a
-// user-defined `fn`: `Node::Call` fell through to the tensor stdlib,
-// which returns `EvalError::Unsupported` for an unknown callee. This
-// table is populated from the module's `FnDef` items before the
-// statement loop runs and cleared afterward, so a call like `id(5)`
-// resolves to the function body bound against the concrete argument
-// `Value`s.
-//
-// Generics are free here: the interpreter is dynamically typed over
-// `Value`, so a generic `fn id<T>(x: T) -> T { x }` is evaluated with
-// the concrete argument value — no monomorphization is needed at this
-// level. `type_params` is recorded on the AST node for later codegen
-// monomorphization; the interpreter simply ignores it.
+// User functions execute dynamically over concrete `Value`s; generic type
+// parameters therefore require no evaluator monomorphization.
 #[derive(Clone)]
 struct UserFn {
+    owner: Option<String>,
     params: Vec<String>,
-    /// Per-param: is the DECLARED type the native `string`? A `Value::Str`
-    /// argument bound to such a param is marshalled into the interp_mem arena
-    /// as a native `[addr|len|cap]` string record (the layout compiled code
-    /// passes — std/string.mind), so byte-level std code
-    /// (`jv_string_value_from_native` et al.) reads real memory, not a
-    /// Rust-side `Str` it cannot address.
+    /// Whether each parameter uses the native string record ABI.
     string_params: Vec<bool>,
     body: Vec<Node>,
 }
@@ -3737,10 +3722,7 @@ thread_local! {
     static FN_TABLE: RefCell<HashMap<String, UserFn>> = RefCell::new(HashMap::new());
 }
 
-/// Register every top-level `FnDef` (generic or not) so `Node::Call`
-/// can resolve a user-defined callee. Returns the previous table so the
-/// caller can restore it (nested module evals are not expected, but this
-/// keeps the thread-local re-entrant and leak-free).
+/// Register top-level functions and return the previous scoped table.
 fn fn_table_install(m: &Module) -> HashMap<String, UserFn> {
     let mut table: HashMap<String, UserFn> = HashMap::new();
     for item in &m.items {
@@ -3756,6 +3738,7 @@ fn fn_table_install(m: &Module) -> HashMap<String, UserFn> {
             table.insert(
                 name.clone(),
                 UserFn {
+                    owner: symbol_owner(name).map(str::to_string),
                     params: params.iter().map(|p| p.name.clone()).collect(),
                     string_params: params
                         .iter()
@@ -3784,12 +3767,8 @@ fn fn_table_lookup(name: &str) -> Option<UserFn> {
     FN_TABLE.with(|t| t.borrow().get(name).cloned())
 }
 
-// Module-level `const NAME: T = expr` bindings, mirrored from `FN_TABLE`:
-// installed once per module eval, consulted by `eval_value_expr_mode`'s Ident
-// arm as a fallback AFTER the local env (so a fn param or body `let` of the
-// same name still shadows the const) and BEFORE the enum-unit-ctor fallback.
-// This is what puts module consts (e.g. std/json.mind's `MAX_DEPTH`) in scope
-// inside CALLED fn bodies, whose fresh call envs never see module bindings.
+// Module constants are the fallback after local params/lets and before enum
+// constructors, so called bodies see their defining module's constants.
 thread_local! {
     static CONST_TABLE: RefCell<HashMap<String, Value>> = RefCell::new(HashMap::new());
 }
@@ -3807,12 +3786,14 @@ fn const_table_install(m: &Module, mode: ExecMode) -> Result<HashMap<String, Val
     let empty_tensors: HashMap<String, TensorEnvEntry> = HashMap::new();
     for item in &m.items {
         if let Node::Const { name, value, .. } = item {
+            let _owner = EvalOwnerGuard::enter(symbol_owner(name));
+            let display_name = symbol_display_name(name);
             // Earlier consts resolve through the Ident arm's CONST_TABLE
             // fallback (the table is populated incrementally, in order).
             let v = eval_value_expr_mode(value, &empty_env, &empty_tensors, mode.clone()).map_err(
                 |e| {
                     EvalError::UnsupportedMsg(format!(
-                        "const `{name}` initializer is not const-evaluable \
+                        "const `{display_name}` initializer is not const-evaluable \
                          in the interpreter: {e}"
                     ))
                 },
@@ -3824,8 +3805,32 @@ fn const_table_install(m: &Module, mode: ExecMode) -> Result<HashMap<String, Val
 }
 
 /// Look up a module-level `const` by name (Ident-arm fallback).
-fn const_table_lookup(name: &str) -> Option<Value> {
-    CONST_TABLE.with(|t| t.borrow().get(name).cloned())
+fn const_table_lookup(name: &str, span: Span) -> Result<Option<Value>, EvalError> {
+    if let Some(bound) = eval_bound_symbol(span, EvalBindingKind::Value) {
+        return CONST_TABLE.with(|table| {
+            table
+                .borrow()
+                .get(&bound)
+                .cloned()
+                .map(Some)
+                .ok_or_else(|| {
+                    EvalError::UnsupportedMsg(format!(
+                        "imported constant `{name}` has no evaluator definition"
+                    ))
+                })
+        });
+    }
+    if let Some(owner) = current_eval_owner() {
+        if let Some(value) = CONST_TABLE.with(|table| {
+            table
+                .borrow()
+                .get(&eval_owned_symbol(&owner, name))
+                .cloned()
+        }) {
+            return Ok(Some(value));
+        }
+    }
+    Ok(CONST_TABLE.with(|t| t.borrow().get(name).cloned()))
 }
 
 // issue #99: names of top-level bindings declared `u64`. The const-fold

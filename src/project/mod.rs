@@ -792,10 +792,23 @@ pub fn find_project_root() -> Result<PathBuf> {
 /// upgrade path: add a `[workspace]`/manifest-root sentinel so a non-git project
 /// declares its own boundary without a stray ancestor being adoptable.
 pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
+    // CLI entry paths are commonly relative (`mindc check src/x.mind`). Keep
+    // every probe rooted at the caller's actual cwd. Letting a relative path
+    // ascend to the empty `PathBuf` made `Mind.toml` appear to resolve at `""`,
+    // but the subsequent default source walk treated `""` as a non-directory
+    // and captured zero siblings. Explicit `sources = [...]` happened to work,
+    // masking the broken default project closure.
+    let entry_dir = if entry_dir.is_absolute() {
+        entry_dir.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(entry_dir)
+    };
+    let entry_dir = entry_dir.canonicalize().unwrap_or(entry_dir);
+
     // 1. Locate the enclosing git repository, if any (`.git` may be a dir for a
     //    normal repo or a file for a worktree/submodule — `exists()` covers both).
     let mut git_root: Option<PathBuf> = None;
-    let mut probe = entry_dir.to_path_buf();
+    let mut probe = entry_dir.clone();
     loop {
         if probe.join(".git").exists() {
             git_root = Some(probe.clone());
@@ -810,7 +823,7 @@ pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
         // 2. Inside a repo: adopt the nearest `Mind.toml` from the file's dir up
         //    to (and including) the repo root. Never look above the repo root.
         Some(root) => {
-            let mut current = entry_dir.to_path_buf();
+            let mut current = entry_dir.clone();
             loop {
                 if current.join("Mind.toml").exists() {
                     return Some(current);
@@ -826,7 +839,7 @@ pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
         // 3. Not in any repo: only a co-located manifest governs the file.
         None => {
             if entry_dir.join("Mind.toml").exists() {
-                Some(entry_dir.to_path_buf())
+                Some(entry_dir)
             } else {
                 None
             }
@@ -3461,6 +3474,20 @@ mod root_bound_tests {
         fs::create_dir_all(&entry_dir).unwrap();
         let got = find_project_root_for_file(&entry_dir).expect("repo-root manifest");
         assert_eq!(canon(&got), canon(root));
+    }
+
+    /// A CLI-relative entry directory resolves to an absolute project root, so
+    /// the default source walker receives a real directory rather than `""`.
+    #[test]
+    fn relative_entry_dir_keeps_the_default_project_source_root() {
+        let cwd = std::env::current_dir().expect("read cargo test cwd");
+        assert_eq!(
+            canon(&cwd),
+            canon(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+        );
+        let got = find_project_root_for_file(std::path::Path::new("src"))
+            .expect("repository manifest from relative src path");
+        assert_eq!(canon(&got), canon(&cwd));
     }
 
     /// THE hijack case: a stray ancestor manifest with NO enclosing git repo is

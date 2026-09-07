@@ -26,8 +26,10 @@ use crate::ast::{
 use crate::diagnostics::{Diagnostic as PrettyDiagnostic, Span as DiagnosticSpan};
 use crate::types::ConvPadding;
 
+mod eval_imports;
 pub(crate) mod expand_bimap;
 mod trivia;
+pub(crate) use eval_imports::{EvalImportRef, EvalImportRefKind, EvalParsedModule};
 pub use trivia::{Trivia, TriviaKind, TriviaStream};
 use trivia::{TriviaCollector, strip_comments_with_trivia};
 
@@ -81,25 +83,10 @@ impl std::fmt::Display for ParseError {
 struct P<'a> {
     b: &'a [u8],
     pos: usize,
-    /// Module names brought into scope by `import X` / `use X` (the last path
-    /// segment). A method call whose receiver is one of these is a MODULE-
-    /// QUALIFIED call `mod.fn(args)` — desugared to the bare cross-module call
-    /// `fn(args)` (all module functions share one global link unit), not a UFCS
-    /// method on a value. Imports precede fn bodies, so the set is complete by
-    /// the time a body parses. A `Vec` (not a `HashSet`) avoids per-parse
-    /// `RandomState` hasher init — import lists are tiny, so linear `contains`
-    /// is faster and keeps `compile_small` at its nanosecond floor.
+    /// Last segments imported as module qualifiers. Kept linear because import
+    /// lists are tiny and this avoids a hasher on the parser hot path.
     imports: Vec<String>,
-    /// FULL dotted paths of multi-segment imports (`import bridge.mcp` →
-    /// `"bridge.mcp"`). `imports` above records only the LAST segment (the
-    /// qualifier), so a call spelled through the full path
-    /// (`bridge.mcp.call(x)`) parses its receiver into a FieldAccess chain the
-    /// single-segment rewrite cannot see — it then reaches lowering as a UFCS
-    /// MethodCall with no resolvable receiver type and trips the #306
-    /// fail-closed guard. A call trailer whose receiver chain spells one of
-    /// these paths is the SAME namespace access, desugared to the same bare
-    /// cross-module call. Empty unless a multi-segment import exists (the
-    /// keystone and all of std), so those parses stay byte-identical.
+    /// Full dotted paths used to recognize multi-segment namespace access.
     import_paths: Vec<String>,
     /// Invariant block names declared in this module (`invariant NAME { … }`).
     /// A dotted call `NAME.pred(args)` whose receiver is one of these is a
@@ -118,16 +105,11 @@ struct P<'a> {
     /// Immutable enum metadata captured when this parser is created. Qualified
     /// lookup is additionally constrained by `import_paths` below.
     enum_scope: crate::qualified_enums::ParseScope,
-    /// The DECLARED return type of the fn body currently being parsed (`None`
-    /// at module level, and for a fn with no `-> T`). Set by
-    /// `parse_fn_def_with_attrs` around the body and restored on exit (nested
-    /// fns save/restore the parent's value). Read ONLY by the postfix `?`
-    /// desugar (W1.5f) to pick the Result (`Ok`/`Err`) vs Option
-    /// (`Some`/`None`) match family and to reject `?` outside a
-    /// Result/Option-returning fn. A single `Option<TypeAnn>` swap per fn — no
-    /// effect on any non-`?` program, so all existing parses stay
-    /// byte-identical.
+    /// Declared return type of the current function. The postfix `?` desugar
+    /// uses it to select Result versus Option and reject `?` outside either.
     current_fn_ret: Option<TypeAnn>,
+    /// `None` on the ordinary parser path; populated only for test evaluation.
+    eval_import_refs: Option<Vec<EvalImportRef>>,
 }
 
 /// Operator-token kind used by the Pratt expression parser
@@ -316,6 +298,24 @@ impl<'a> P<'a> {
             enum_names: Vec::new(),
             enum_scope: crate::qualified_enums::ParseScope::capture(),
             current_fn_ret: None,
+            eval_import_refs: None,
+        }
+    }
+
+    fn record_eval_import_ref(
+        &mut self,
+        span: Span,
+        qualifier: Vec<String>,
+        symbol: &str,
+        kind: EvalImportRefKind,
+    ) {
+        if let Some(refs) = &mut self.eval_import_refs {
+            refs.push(EvalImportRef {
+                span,
+                qualifier,
+                symbol: symbol.to_string(),
+                kind,
+            });
         }
     }
 
@@ -4066,17 +4066,17 @@ impl<'a> P<'a> {
                             };
                             continue;
                         }
-                        // Module-qualified call `mod.fn(args)` → bare cross-module
-                        // call `fn(args)`: when the receiver is a bare identifier
-                        // naming an imported MODULE, the `.fn(...)` is a namespace
-                        // access, not a UFCS method on a value. All module
-                        // functions share one global link unit, so the bare call
-                        // resolves (the import injects `fn`) and lowers directly.
-                        // A receiver that is NOT an imported module (a local
-                        // value, a field access like `p.lexer`) keeps the
-                        // MethodCall path untouched.
+                        // Imported `mod.fn(args)` is namespace access.
                         if let Node::Lit(Literal::Ident(recv_name), _) = &node {
                             if self.imports.iter().any(|s| s == recv_name) {
+                                if self.eval_import_refs.is_some() {
+                                    self.record_eval_import_ref(
+                                        span,
+                                        vec![recv_name.clone()],
+                                        &method,
+                                        EvalImportRefKind::Call,
+                                    );
+                                }
                                 node = Node::Call {
                                     callee: method,
                                     args,
@@ -4097,29 +4097,19 @@ impl<'a> P<'a> {
                                 continue;
                             }
                         }
-                        // Multi-segment module-qualified call
-                        // `bridge.mcp.call(args)` → bare cross-module call
-                        // `call(args)`: the receiver is a pure Ident/FieldAccess
-                        // CHAIN spelling the FULL dotted path of an imported
-                        // module (`import bridge.mcp`). Only the last segment is
-                        // a registered qualifier, so the single-segment rewrite
-                        // above cannot see the fully-qualified spelling — it
-                        // would fall through to a UFCS MethodCall whose receiver
-                        // has no struct type and trip the #306 fail-closed
-                        // lowering guard. Matching the WHOLE dotted path against
-                        // the recorded multi-segment imports keeps a real value
-                        // chain (`p.lexer.pos(x)`) on the MethodCall path — it
-                        // can only misfire if a local shadows a full import
-                        // path, the same inherent namespace/value ambiguity the
-                        // single-segment rewrite already accepts. Empty
-                        // `import_paths` (no multi-segment imports — the
-                        // keystone and all of std) short-circuits before any
-                        // allocation, so those parses stay byte-identical.
                         if !self.import_paths.is_empty()
                             && matches!(&node, Node::FieldAccess { .. })
                         {
                             if let Some(dotted) = ident_chain_dotted(&node) {
                                 if self.import_paths.iter().any(|s| s == &dotted) {
+                                    if self.eval_import_refs.is_some() {
+                                        self.record_eval_import_ref(
+                                            span,
+                                            dotted.split('.').map(str::to_string).collect(),
+                                            &method,
+                                            EvalImportRefKind::Call,
+                                        );
+                                    }
                                     node = Node::Call {
                                         callee: method,
                                         args,
@@ -4149,19 +4139,18 @@ impl<'a> P<'a> {
                         };
                         continue;
                     } else {
-                        // Module-qualified value `mod.CONST` → bare cross-module
-                        // reference `CONST`: the namespace-access twin of the
-                        // `mod.fn(args)` → `fn(args)` normalisation above. When the
-                        // receiver is a bare identifier naming an imported MODULE,
-                        // `.CONST` selects a module-level export (a `const`, not a
-                        // value's field), and all module symbols share one global
-                        // link unit — so the bare reference resolves (the import
-                        // surface carries the name) and lowers directly, exactly as
-                        // the qualified-call form already does. A receiver that is
-                        // NOT an imported module keeps the normal FieldAccess path.
+                        // Imported `mod.CONST` is namespace access.
                         if let Node::Lit(Literal::Ident(recv_name), _) = &node {
                             if self.imports.iter().any(|s| s == recv_name) {
                                 let span = Span::new(node.span_start(), self.pos);
+                                if self.eval_import_refs.is_some() {
+                                    self.record_eval_import_ref(
+                                        span,
+                                        vec![recv_name.clone()],
+                                        &method,
+                                        EvalImportRefKind::Value,
+                                    );
+                                }
                                 node = Node::Lit(Literal::Ident(method), span);
                                 continue;
                             }
@@ -6048,7 +6037,10 @@ fn extract_is_test(attrs: &[crate::ast::Attribute]) -> bool {
     attrs.iter().any(|a| a.name == "test")
 }
 
-pub fn parse(input: &str) -> Result<Module, Vec<ParseError>> {
+fn parse_internal(
+    input: &str,
+    capture_eval_refs: bool,
+) -> Result<EvalParsedModule, Vec<ParseError>> {
     let stripped_owned: String;
     let src: &str = if input.contains("//") {
         stripped_owned = strip_comments_with_trivia(input, &mut None).0;
@@ -6057,23 +6049,19 @@ pub fn parse(input: &str) -> Result<Module, Vec<ParseError>> {
         input
     };
     let mut p = P::new(src);
+    if capture_eval_refs {
+        p.eval_import_refs = Some(Vec::new());
+    }
     match p.parse_module() {
-        // Single expansion chokepoint (raw-error adapter). Every
-        // module-CONSUMING front-end that takes raw `ParseError`s — the project
-        // module loaders, the stdlib loader, the `mindc test` runner, and the
-        // `mindc check` type-check + cross-module-table paths — parses here, so
-        // `#[bimap]` derives land uniformly. The pretty-diagnostic adapter
-        // `parse_with_diagnostics_in_file` shares the SAME `expand_bimap`
-        // implementation; `parse_with_trivia` deliberately opts OUT so
-        // `fmt`/`doc`/`lint` see the raw (un-expanded) attribute, never
-        // synthesised fns re-emitted into user source (the excluded
-        // source-mutation hazard). Rejected alternative — wiring each front-end
-        // (build/run_eval_once/REPL/check/lower_to_ir) individually — is the
-        // two-sources-of-truth smell one level up.
-        Ok(mut m) => {
-            let diags = expand_bimap::expand_bimap(&mut m, src, None);
+        // Shared raw-error expansion chokepoint; trivia parsing opts out so
+        // generated bimap functions are never emitted back into user source.
+        Ok(mut module) => {
+            let diags = expand_bimap::expand_bimap(&mut module, src, None);
             if diags.is_empty() {
-                Ok(m)
+                Ok(EvalParsedModule {
+                    module,
+                    import_refs: p.eval_import_refs.take().unwrap_or_default(),
+                })
             } else {
                 Err(diags
                     .into_iter()
@@ -6085,8 +6073,21 @@ pub fn parse(input: &str) -> Result<Module, Vec<ParseError>> {
                     .collect())
             }
         }
-        Err(e) => Err(vec![e]),
+        Err(error) => Err(vec![error]),
     }
+}
+
+pub fn parse(input: &str) -> Result<Module, Vec<ParseError>> {
+    parse_internal(input, false).map(|parsed| parsed.module)
+}
+
+/// Parse for the tree evaluator while retaining the lexical import provenance
+/// that the compiler AST normally erases when it normalises `module.symbol`.
+/// This is intentionally crate-private: native compilation continues to use
+/// [`parse`] and sees byte-for-byte identical ASTs.
+#[allow(dead_code)]
+pub(crate) fn parse_for_eval(input: &str) -> Result<EvalParsedModule, Vec<ParseError>> {
+    parse_internal(input, true)
 }
 
 /// Parse with pretty diagnostics instead of raw parse errors.

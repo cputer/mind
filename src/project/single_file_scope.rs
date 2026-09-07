@@ -61,6 +61,10 @@ pub struct ProjectScope {
     /// Canonical module paths whose native bodies the entry imports
     /// transitively. The entry itself is always present.
     linked: BTreeSet<String>,
+    /// Exact project-discovery result for each importing module and written
+    /// import path. This retains the unique-stem resolution performed during
+    /// discovery so later consumers never have to reconstruct it by name.
+    resolved_imports: BTreeMap<(String, Vec<String>), String>,
     table: super::module_table::ModuleTable,
     enums: Box<crate::ir::GlobalEnums>,
 }
@@ -79,6 +83,30 @@ impl ProjectScope {
     }
     pub fn has_linked_siblings(&self) -> bool {
         self.linked.len() > 1
+    }
+    /// Resolve a source-level import through the same canonical module table
+    /// used by project checking and native compilation.
+    pub(crate) fn resolve_import_path(&self, owner: &str, path: &[String]) -> Option<&str> {
+        self.resolved_imports
+            .get(&(owner.to_string(), path.to_vec()))
+            .map(String::as_str)
+            .or_else(|| {
+                self.table
+                    .get_import(path)
+                    .map(|module| module.module_path.as_str())
+            })
+    }
+    /// Check a qualified symbol against the exact module selected during
+    /// captured project discovery, including that module's export boundary.
+    pub(crate) fn resolves_imported_symbol(
+        &self,
+        owner: &str,
+        path: &[String],
+        symbol: &str,
+    ) -> bool {
+        self.resolve_import_path(owner, path)
+            .and_then(|target| self.table.get(target))
+            .is_some_and(|module| module.exported.iter().any(|name| name == symbol))
     }
     pub fn install(&self) -> ProjectTableGuard {
         ProjectTableGuard::install_with_enums(self.table.clone(), (*self.enums).clone())
@@ -370,6 +398,22 @@ fn capture_scope<'a>(
         linked.insert(key);
     }
 
+    let mut resolved_imports = BTreeMap::new();
+    for path in local_import_paths(&entry_module) {
+        if let Some(target) = resolve_import(&path, &by_path, &stems) {
+            resolved_imports.insert((entry_module_path.clone(), path), target);
+        }
+    }
+    for (owner, candidate) in &by_path {
+        if let Some(module) = &candidate.module {
+            for path in local_import_paths(module) {
+                if let Some(target) = resolve_import(&path, &by_path, &stems) {
+                    resolved_imports.insert((owner.clone(), path), target);
+                }
+            }
+        }
+    }
+
     let mut sources = vec![CapturedSource {
         path: entry.to_path_buf(),
         module_path: entry_module_path,
@@ -400,22 +444,30 @@ fn capture_scope<'a>(
         entry: entry.to_path_buf(),
         sources,
         linked,
+        resolved_imports,
         table,
         enums: Box::new(enums),
     })
 }
 
 fn local_import_paths(module: &Module) -> BTreeSet<Vec<String>> {
-    module
-        .items
-        .iter()
-        .filter_map(|item| {
+    fn collect(items: &[Node], out: &mut BTreeSet<Vec<String>>) {
+        for item in items {
+            if let Node::Block { stmts, .. } = item {
+                collect(stmts, out);
+                continue;
+            }
             let Node::Import { path, .. } = item else {
-                return None;
+                continue;
             };
-            (!matches!(path.first().map(String::as_str), Some("std"))).then(|| path.clone())
-        })
-        .collect()
+            if !matches!(path.first().map(String::as_str), Some("std")) {
+                out.insert(path.clone());
+            }
+        }
+    }
+    let mut paths = BTreeSet::new();
+    collect(&module.items, &mut paths);
+    paths
 }
 
 fn common_ancestor_dir(files: &[PathBuf]) -> PathBuf {
