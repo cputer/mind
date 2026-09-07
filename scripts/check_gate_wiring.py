@@ -104,19 +104,16 @@ GATED_EVENTS = ("push", "pull_request")
 # mutation proof at all but a GATE in its own right: it is the only thing asserting
 # that _selfhost_so.resolve_so() still refuses an oracle it cannot prove fresh, and
 # that no sibling smoke opts out of that contract unnamed.
-# 250 -> 251 -> 250. scripts/exec_semantics_markers.sh was split out of
-# scripts/exec_semantics_gate.sh when that gate crossed the 800-line house ceiling
-# (729 -> 843), and this ceiling was raised to admit it. That trade was wrong and is
-# REVERSED: the lines that pushed the gate over were predominantly DOCTRINE PROSE --
-# the tier-table measurement history, the marker-capture finding, the `class=`
-# fatality rationale -- and prose that has outgrown a comment block belongs in a
-# document, not in a second shell file. The prose moved to
-# docs/gates/exec-semantics-tiers.md, `consume_skip_markers` / `check_dead_tolerance`
-# / `in_list` came home byte-for-byte, and the gate is 773 lines: under BOTH
-# ratchets, with no second surface (declare -F source guards, un-`local` interface
-# arrays) to keep coherent. Paying one ratchet with the other was never a saving.
-# Two import-only extractions shrink oversized native-oracle/diagnostic smokes.
-HARNESS_CEILING = 252
+# 250 -> 251 -> 250: the exec_semantics_markers.sh extraction was reversed.
+# Historical rationale moved to docs/gates/exec-semantics-tiers.md; the shell
+# functions remain together in exec_semantics_gate.sh, below its source ceiling.
+# 252 -> 257 includes the new advance runner and its focused LOOP harness split:
+# the stable runner delegates its 35 controls to one shared fixture module
+# and two cohesive case modules, while the loop smoke's legacy Rust-seeded
+# publication path lives in its own helper. These are reviewed support/test
+# modules for existing gates, not new product surfaces; each remains below the
+# 800-line source ceiling and the stable runner commands stay unchanged.
+HARNESS_CEILING = 257
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

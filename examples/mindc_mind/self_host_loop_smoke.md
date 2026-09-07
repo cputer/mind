@@ -1,0 +1,89 @@
+# Self-host LOOP gate contract
+
+
+Self-host LOOP gate (Rust-independence #14, roadmap A7 + RI-E1) — the PERMANENT proof
+that MIND reproduces its own compiler with Rust+LLVM out of the loop, for the scalar-i64
+subset that the pure-MIND compiler (main.mind) is written in.
+
+RI-E1 — reproduction-independence via a checked-in pure-MIND bootstrap stage0
+-----------------------------------------------------------------------------
+This is the standard GCC/rustc "checked-in stage0" bootstrap model: the frozen
+`testdata/selfhost_loop/stage1.elf` IS the bootstrap compiler, and the Rust `.so`
+is DEMOTED from seed to a re-freeze / drift oracle.
+
+  * PRIMARY (always, no Rust in the chain): seed stage1 by RUNNING the frozen
+    pure-MIND ELF on the seeded stdin — `stage1 = run_elf(FROZEN, stdin)` — then
+    stage2 = run_elf(stage1), stage3 = run_elf(stage2). Assert
+    stage1 == stage2 == stage3 == frozen. The ONLY syscalls in this chain are
+    execve(self)/read/write/exit — zero rustc, zero LLVM, zero clang, zero .so.
+  * ORACLE (drift check, when the Rust `.so` is present): assert the FRESH `.so`
+    output stage0_emit(combined, user_lo) == frozen. This catches std/*.mind or
+    main.mind SOURCE drift where the frozen ELF was not re-blessed. The primary
+    reproduction path never depends on the `.so` being buildable, but an
+    UNBUILDABLE `.so` is not a pass: the leg announces a `SKIP` line and exits
+    non-zero (see oracle_unavailable), because a green gate with its drift half
+    silently dropped is the vacuous pass this corpus exists to refuse.
+  * ADVANCE (--advance / MIND_SELFHOST_ADVANCE=1): the deliberate path for a
+    source change. Seeds stage1 by running the EXISTING frozen pure-MIND ELF on
+    the CURRENT combined source, derives stage2/stage3 from it, and requires
+    stage1 == stage2 == stage3 — a NEW fixed point, which unlike ordinary
+    verification is ALLOWED to differ from the old frozen ELF. It additionally
+    requires a present, FRESH, current-source Rust `.so` oracle emitting those
+    same bytes. Only when every one of those checks passes does it publish
+    testdata/selfhost_loop/{stage1.elf,MANIFEST.txt}. The old compiler is what
+    compiles the new source, so the trust chain is continuous.
+  * RESEED (--reseed / MIND_SELFHOST_RESEED=1) — LEGACY, Rust-seeded: the ONLY
+    mode that uses the `.so` as the SEED. It mints the frozen bootstrap from
+    Rust output rather than from the previous pure-MIND compiler, so it breaks
+    the pure-MIND seed chain for that hop. Prefer --advance for ordinary source
+    drift; keep --reseed only for a bootstrap that genuinely cannot be advanced
+    (e.g. the old seed cannot compile the new source at all).
+  * --advance and --reseed are MUTUALLY EXCLUSIVE, in flag and environment form
+    alike, and the conflict is refused before anything is read, run or written.
+
+HONEST FRAMING (no overclaim):
+  This proves REPRODUCTION-independence — the seed chain is now Rust-free and the
+  `.so` is only an oracle. It does NOT claim "mindc builds from scratch with zero
+  Rust" nor "LLVM dropped". Two residuals remain, orthogonal and stated plainly:
+    (i)  the FIRST frozen stage1.elf was originally minted by the Rust `.so`
+         (chicken-and-egg; residual trusting-trust, universal to every bootstrapped
+         toolchain — gcc/rustc included);
+    (ii) a HARNESS-FREE standalone mindc (its own file-IO/argv/CLI, no Python
+         driver) is NOT delivered here — that is the separate C8 + argv/CLI track.
+
+The seeded source is  [8B user_lo LE][8B src_len LE][ 21 std/*.mind ++ main.mind ++
+selfhost_driver.mind ]  on stdin (fd 0); the ELF is written to stdout (fd 1). main.mind
+is NOT modified — the driver is a separate appended shim, so the mic@1 fixed-point and
+mic@3-flip gates are untouched.
+
+FAIL-CLOSED (never skips when asked to run):
+  * frozen bootstrap fixture missing                 -> BLOCKED exit 2  (it is the seed/oracle now)
+  * running the frozen ELF exits non-zero / emits nothing -> FAIL exit 1
+  * stage1 != stage2 or stage2 != stage3             -> FAIL exit 1
+  * stage1 (from frozen) != frozen fixture           -> FAIL exit 1  (should be impossible;
+        run_elf(frozen) reproduces frozen by construction)
+  * .so present AND fresh .so output != frozen        -> FAIL exit 1  (source drifted;
+        re-freeze with --reseed in the same change)
+  * .so unavailable (drift oracle cannot run)        -> SKIP line + exit 1, unless
+        MIND_SELFHOST_LOOP_ORACLE_DEFERRED=1 records a deliberate one-leg run
+        (which still reports asserted=1, so a --min-asserted 2 caller refuses it)
+  --advance and --reseed requested together     -> BLOCKED exit 2  (before any read/run/write)
+  --advance only:
+  * frozen bootstrap seed missing                     -> BLOCKED exit 2  (nothing to advance FROM)
+  * old seed refuses the current source               -> FAIL exit 1     (nothing written)
+  * stage1 != stage2 or stage2 != stage3              -> FAIL exit 1     (nothing written)
+  * a stage is not a static ELF                       -> FAIL exit 1     (nothing written)
+  * oracle .so missing / not a fresh build            -> BLOCKED exit 2  (nothing written)
+  * oracle output != the new fixed point              -> FAIL exit 1     (nothing written)
+  * publication fails part-way                        -> FAIL exit 1     (old files rolled back)
+  The oracle leg of --advance is NOT deferrable: MIND_SELFHOST_LOOP_ORACLE_DEFERRED
+  records a deliberate one-leg VERIFICATION run and has no effect on publication.
+  --reseed only (LEGACY):
+  * MINDC_SO unset/missing                            -> BLOCKED exit 2  (needs the seed .so)
+  * .so emits an empty / non-ELF image                -> FAIL exit 1
+
+Run:
+  python3 examples/mindc_mind/self_host_loop_smoke.py                       # PRIMARY + oracle(if .so)
+  MINDC_SO=/path/to/libmindc_mind.so python3 .../self_host_loop_smoke.py    # + .so drift oracle
+  MINDC_SO=/path/to/libmindc_mind.so python3 .../self_host_loop_smoke.py --advance  # advance the seed
+  MINDC_SO=/path/to/libmindc_mind.so python3 .../self_host_loop_smoke.py --reseed   # LEGACY re-mint
