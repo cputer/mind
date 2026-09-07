@@ -11,11 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Module-local type-alias resolution for AST-to-IR signature metadata.
+//! Module-local type-alias resolution for checker and AST-to-IR signature metadata.
 //!
-//! Source type spellings stay in the AST. MLIR ABI lowering consumes the
-//! structural `TypeAnn` target through `IRModule::fn_signatures`, so this pass
-//! resolves aliases only while that lowering-only side table is captured.
+//! Source type spellings stay in the AST. The type checker and MLIR ABI lowering
+//! consume the structural `TypeAnn` target through their shared pass metadata,
+//! so this pass resolves aliases once and reuses the result across both users.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,7 +23,8 @@ use crate::ast::{Node, TypeAnn};
 use crate::ir::IRModule;
 
 /// Module-local aliases collected once and reused by all signature/type users
-/// in a pass. This is the same alias policy used by lowering's signatures.
+/// in a pass. This is the same alias policy used by checker and lowering
+/// signatures.
 pub(crate) struct LocalTypeAliases {
     aliases: BTreeMap<String, TypeAnn>,
 }

@@ -577,6 +577,49 @@ pub fn parse_const_decl(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     pr_new(after, n)
 }
 
+// A type alias has no runtime value and Rust's top-level lowering drops this
+// declaration entirely. Keep it as a dropped parser item so native's
+// unsupported-item gate does not reject a valid alias fixture.
+pub fn parse_type_alias_stub(toks: Vec, pos: i64, buf: i64) -> ParseResult {
+    // Rust accepts the scalar `type NAME = TARGET` form with or without a
+    // trailing semicolon. Consume exactly that form so an immediately
+    // following function is not swallowed by the generic unknown-item scan.
+    let scalar: i64 = if tok_kind(toks, pos + 1) == tk_ident() {
+        if tok_kind(toks, pos + 2) == tk_eq() {
+            if tok_kind(toks, pos + 3) == tk_ident() {
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    let after_scalar: i64 = pos + 4;
+    let after: i64 = if scalar == 1 {
+        if tok_kind(toks, after_scalar) == tk_semi() {
+            after_scalar + 1
+        } else {
+            after_scalar
+        }
+    } else {
+        skip_unknown_item(toks, pos)
+    };
+    // The alias has no runtime value, but Rust's MIC3 lowering retains one
+    // declaration placeholder. Keep the node so string/instruction IDs stay
+    // byte-identical while native lowering ignores the declaration.
+    let lo: i64 = tok_lo(toks, pos);
+    let hi: i64 = if after > pos {
+        tok_hi(toks, after - 1)
+    } else {
+        tok_hi(toks, pos)
+    };
+    let n: i64 = ast_new_leaf(ast_struct_def(), lo, hi);
+    pr_new(after, n)
+}
+
 // Parse `extern "C" { ... }` as ONE stub item. Scan from the `extern` token to the
 // block's closing `}` (the inner fn declarations are body-less, no nested braces),
 // and emit a single ast_struct_def leaf so emit_program_items emits exactly one
@@ -1328,10 +1371,11 @@ pub fn at_eof(toks: Vec, pos: i64) -> i64 {
 // ===== AST node layout (7×i64 heap record, 56 bytes) =====
 
 pub fn ast_alloc() -> i64 {
-    // 64 (not 56): the trailing slot at +56 is a spare used to ANNOTATE an ast_struct_lit
-    // node with its resolved [alloc/store spans + def-ordered field values] during the
-    // nfn struct-lit prefold, so flatten_ast_lv can lower a struct-lit EXPRESSION without
-    // threading srt/spans. Over-allocation is inert for every other node (offsets 0..48).
+    // 64 (not 56): the trailing slot at +56 is reserved for per-kind annotations.
+    // Struct literals use it for their resolved alloc/store spans and field values;
+    // FnDef nodes reserve the slot but current self-host lowering keeps return ABI
+    // metadata in the token-derived native table. Readers use the slot only for
+    // their own node kind.
     __mind_alloc(64)
 }
 
@@ -1380,6 +1424,7 @@ pub fn ast_new_fn_def(span_lo: i64, span_hi: i64, name: i64, params_addr: i64, b
     __mind_store_i64(n + 32, params_addr);
     __mind_store_i64(n + 40, body);
     __mind_store_i64(n + 48, params_len * 2 + is_pub);
+    __mind_store_i64(n + 56, 0);
     n
 }
 
@@ -2048,9 +2093,338 @@ pub fn is_direct_return_type_start(src: i64, start: i64, flo: i64) -> i64 {
     0
 }
 
+// ===== One-pass local scalar alias metadata =================================
+//
+// The self-host parser intentionally keeps `type NAME = TARGET;` as a single
+// unsupported item because aliases have no runtime instruction. ABI metadata
+// still needs the same module-local view as Rust's LocalTypeAliases. Build that
+// view from the caller's existing token stream exactly once. A slot is
+// name_lo,name_hi,target_lo,target_hi,state,width; state 1 means resolving,
+// 2 resolved narrow, and 3 opaque (wide, unsupported, or cyclic).
+pub fn is_ident_type(buf: i64, lo: i64, hi: i64) -> i64 {
+    if hi - lo != 4 {
+        return 0;
+    }
+    if load_byte(buf, lo + 0) == 116 {
+        if load_byte(buf, lo + 1) == 121 {
+            if load_byte(buf, lo + 2) == 112 {
+                if load_byte(buf, lo + 3) == 101 {
+                    return 1;
+                }
+            }
+        }
+    }
+    0
+}
+
+pub fn alias_cap() -> i64 {
+    4096
+}
+pub fn alias_slot_words() -> i64 {
+    7
+}
+pub fn alias_alloc() -> i64 {
+    let t: i64 = __mind_alloc((1 + alias_cap() * alias_slot_words()) * 8);
+    __mind_store_i64(t, 0);
+    t
+}
+pub fn alias_count(t: i64) -> i64 {
+    __mind_load_i64(t)
+}
+pub fn alias_base(k: i64) -> i64 {
+    1 + k * alias_slot_words()
+}
+pub fn alias_name_lo(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 0) * 8)
+}
+pub fn alias_name_hi(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 1) * 8)
+}
+pub fn alias_target_lo(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 2) * 8)
+}
+pub fn alias_target_hi(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 3) * 8)
+}
+pub fn alias_state(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 4) * 8)
+}
+pub fn alias_width(t: i64, k: i64) -> i64 {
+    __mind_load_i64(t + (alias_base(k) + 5) * 8)
+}
+pub fn alias_set_state(t: i64, k: i64, v: i64) -> i64 {
+    __mind_store_i64(t + (alias_base(k) + 4) * 8, v);
+    v
+}
+pub fn alias_set_width(t: i64, k: i64, v: i64) -> i64 {
+    __mind_store_i64(t + (alias_base(k) + 5) * 8, v);
+    v
+}
+
+pub fn alias_is_float_type(src: i64, lo: i64, hi: i64) -> i64 {
+    if hi - lo == 3 {
+        if load_byte(src, lo) == 102 {
+            if load_byte(src, lo + 1) == 51 {
+                if load_byte(src, lo + 2) == 50 {
+                    return 1;
+                }
+            }
+        }
+    }
+    if hi - lo == 3 {
+        if load_byte(src, lo) == 102 {
+            if load_byte(src, lo + 1) == 54 {
+                if load_byte(src, lo + 2) == 52 {
+                    return 1;
+                }
+            }
+        }
+    }
+    0
+}
+
+pub fn alias_push(t: i64, nlo: i64, nhi: i64, tlo: i64, thi: i64) -> i64 {
+    let n: i64 = alias_count(t);
+    if n >= alias_cap() {
+        // A bounded table must refuse the module rather than silently dropping
+        // a later alias and changing its ABI width to opaque.
+        __mind_store_i64(t, 0 - 1);
+        return n;
+    }
+    __mind_store_i64(t + (alias_base(n) + 0) * 8, nlo);
+    __mind_store_i64(t + (alias_base(n) + 1) * 8, nhi);
+    __mind_store_i64(t + (alias_base(n) + 2) * 8, tlo);
+    __mind_store_i64(t + (alias_base(n) + 3) * 8, thi);
+    __mind_store_i64(t + (alias_base(n) + 4) * 8, 0);
+    __mind_store_i64(t + (alias_base(n) + 5) * 8, 0);
+    __mind_store_i64(t, n + 1);
+    n
+}
+
+// Rust accepts an optional trailing semicolon on a type alias. A scalar alias
+// therefore ends at EOF or at the next top-level item token when no semicolon
+// is present; punctuation/continuation tokens remain malformed and opaque.
+pub fn alias_scalar_target_boundary(toks: Vec, src: i64, pos: i64) -> i64 {
+    if at_eof(toks, pos) == 1 {
+        return 1;
+    }
+    if tok_kind(toks, pos) == tk_semi() {
+        return 1;
+    }
+    if tok_kind(toks, pos) == tk_kw_fn() || tok_kind(toks, pos) == tk_kw_pub() || tok_kind(toks, pos) == tk_kw_use() {
+        return 1;
+    }
+    if tok_kind(toks, pos) == tk_ident() {
+        let lo: i64 = tok_lo(toks, pos);
+        let hi: i64 = tok_hi(toks, pos);
+        if is_ident_type(src, lo, hi) == 1 || is_const_kw(src, lo, hi) == 1 {
+            return 1;
+        }
+        if is_struct_kw(src, lo, hi) == 1 || is_enum_kw(src, lo, hi) == 1 {
+            return 1;
+        }
+        if is_extern_kw(src, lo, hi) == 1 || is_module_kw(src, lo, hi) == 1 {
+            return 1;
+        }
+        if is_export_kw(src, lo, hi) == 1 || is_trait_kw(src, lo, hi) == 1 {
+            return 1;
+        }
+    }
+    0
+}
+
+// Last definition wins, matching BTreeMap::insert during Rust's declaration
+// order walk. Exact byte spans prevent suffix collisions such as myu8/u8.
+pub fn alias_find(t: i64, src: i64, lo: i64, hi: i64, k: i64) -> i64 {
+    if k < 0 {
+        return 0 - 1;
+    }
+    if span_bytes_equal(src, lo, hi, alias_name_lo(t, k), alias_name_hi(t, k)) == 1 {
+        return k;
+    }
+    alias_find(t, src, lo, hi, k - 1)
+}
+
+pub fn alias_find_latest(t: i64, src: i64, lo: i64, hi: i64) -> i64 {
+    alias_find(t, src, lo, hi, alias_count(t) - 1)
+}
+
+// Find the first brace/semi after an item header. Function/struct/extern
+// bodies are opaque to alias collection; transparent module braces are entered
+// by alias_collect_scan itself.
+pub fn alias_skip_header(toks: Vec, pos: i64) -> i64 {
+    if at_eof(toks, pos) == 1 {
+        return pos;
+    }
+    let k: i64 = tok_kind(toks, pos);
+    if k == tk_lbrace() {
+        return skip_balanced_brace(toks, pos + 1, 1);
+    }
+    if k == tk_semi() {
+        return pos + 1;
+    }
+    alias_skip_header(toks, pos + 1)
+}
+
+pub fn alias_collect_scan(toks: Vec, src: i64, pos: i64, transparent: i64, tab: i64) -> i64 {
+    if alias_count(tab) < 0 {
+        return tab;
+    }
+    if at_eof(toks, pos) == 1 {
+        return tab;
+    }
+    let k: i64 = tok_kind(toks, pos);
+    if k == tk_ident() {
+        let lo: i64 = tok_lo(toks, pos);
+        let hi: i64 = tok_hi(toks, pos);
+        if is_ident_type(src, lo, hi) == 1 {
+            // Only the exact scalar-alias grammar enters the table. Compound,
+            // qualified, malformed, and fixed-array aliases remain opaque.
+            if tok_kind(toks, pos + 1) == tk_ident() {
+                if tok_kind(toks, pos + 2) == tk_eq() {
+                    if tok_kind(toks, pos + 3) == tk_ident() {
+                        if alias_scalar_target_boundary(toks, src, pos + 4) == 1 {
+                            let _p: i64 = alias_push(tab, tok_lo(toks, pos + 1), tok_hi(toks, pos + 1), tok_lo(toks, pos + 3), tok_hi(toks, pos + 3));
+                            let after: i64 = if tok_kind(toks, pos + 4) == tk_semi() {
+                                pos + 5
+                            } else {
+                                pos + 4
+                            };
+                            return alias_collect_scan(toks, src, after, transparent, tab);
+                        }
+                    }
+                }
+            }
+        }
+        if is_module_kw(src, lo, hi) == 1 {
+            if tok_kind(toks, pos + 2) == tk_lbrace() {
+                return alias_collect_scan(toks, src, pos + 3, transparent + 1, tab);
+            }
+        }
+        if is_struct_kw(src, lo, hi) == 1 {
+            return alias_collect_scan(toks, src, alias_skip_header(toks, pos + 1), transparent, tab);
+        }
+        if is_enum_kw(src, lo, hi) == 1 {
+            return alias_collect_scan(toks, src, alias_skip_header(toks, pos + 1), transparent, tab);
+        }
+        if is_extern_kw(src, lo, hi) == 1 {
+            return alias_collect_scan(toks, src, alias_skip_header(toks, pos + 1), transparent, tab);
+        }
+    }
+    if k == tk_kw_fn() {
+        return alias_collect_scan(toks, src, alias_skip_header(toks, pos + 1), transparent, tab);
+    }
+    if k == tk_lbrace() {
+        if transparent == 0 {
+            return alias_collect_scan(toks, src, skip_balanced_brace(toks, pos + 1, 1), transparent, tab);
+        }
+        return alias_collect_scan(toks, src, pos + 1, transparent, tab);
+    }
+    if k == tk_rbrace() {
+        let next_transparent: i64 = if transparent > 0 {
+            transparent - 1
+        } else {
+            0
+        };
+        return alias_collect_scan(toks, src, pos + 1, next_transparent, tab);
+    }
+    alias_collect_scan(toks, src, pos + 1, transparent, tab)
+}
+
+pub fn alias_build_from_tokens(toks: Vec, src: i64) -> i64 {
+    alias_collect_scan(toks, src, 0, 0, alias_alloc())
+}
+
+pub fn alias_resolve_idx(t: i64, src: i64, k: i64, depth: i64) -> i64 {
+    if k < 0 {
+        return 0;
+    }
+    if depth >= alias_cap() {
+        // This is a resource refusal, not an opaque type: make the complete
+        // native module fail closed so a long valid chain cannot widen silently.
+        __mind_store_i64(t, 0 - 1);
+        return 0;
+    }
+    let st: i64 = alias_state(t, k);
+    if st == 2 {
+        return alias_width(t, k);
+    }
+    if st == 3 {
+        return 0;
+    }
+    if st == 1 {
+        let _s2: i64 = alias_set_state(t, k, 3);
+        return 0;
+    }
+    let _s3: i64 = alias_set_state(t, k, 1);
+    let lo: i64 = alias_target_lo(t, k);
+    let hi: i64 = alias_target_hi(t, k);
+    if alias_is_float_type(src, lo, hi) == 1 {
+        // Named float aliases are outside the native integer ABI contract;
+        // refuse the whole module rather than admitting an integer call lane.
+        let _sfloat: i64 = alias_set_state(t, k, 4);
+        __mind_store_i64(t, 0 - 1);
+        return 0;
+    }
+    let sw: i64 = narrow_cast_width(src, lo, hi);
+    if sw > 0 {
+        let _s4: i64 = alias_set_width(t, k, sw);
+        let _s5: i64 = alias_set_state(t, k, 2);
+        return sw;
+    }
+    let uw: i64 = unsigned_cast_width(src, lo, hi);
+    if uw > 0 {
+        let _s6: i64 = alias_set_width(t, k, 0 - uw);
+        let _s7: i64 = alias_set_state(t, k, 2);
+        return 0 - uw;
+    }
+    let next: i64 = alias_find_latest(t, src, lo, hi);
+    if next < 0 || next == k {
+        let _s8: i64 = alias_set_state(t, k, 3);
+        return 0;
+    }
+    let resolved: i64 = alias_resolve_idx(t, src, next, depth + 1);
+    if resolved != 0 {
+        let _s9: i64 = alias_set_width(t, k, resolved);
+        let _s10: i64 = alias_set_state(t, k, 2);
+        return resolved;
+    }
+    let _s11: i64 = alias_set_state(t, k, 3);
+    0
+}
+
+pub fn alias_resolve_span(t: i64, src: i64, lo: i64, hi: i64) -> i64 {
+    let sw: i64 = narrow_cast_width(src, lo, hi);
+    if sw > 0 {
+        return sw;
+    }
+    let uw: i64 = unsigned_cast_width(src, lo, hi);
+    if uw > 0 {
+        return 0 - uw;
+    }
+    let k: i64 = alias_find_latest(t, src, lo, hi);
+    if k < 0 {
+        return 0;
+    }
+    alias_resolve_idx(t, src, k, 0)
+}
+
+pub fn alias_resolve_all(t: i64, src: i64, k: i64) -> i64 {
+    if alias_count(t) < 0 {
+        return t;
+    }
+    if k >= alias_count(t) {
+        return t;
+    }
+    let _w: i64 = alias_resolve_idx(t, src, k, 0);
+    alias_resolve_all(t, src, k + 1)
+}
+
 // Read the return spelling immediately before the body brace without allocating
 // a per-function lexer: +8/+16 signed, -8/-16 unsigned, otherwise 0.
 pub fn fn_named_narrow_ret_code(src: i64, fn_node: i64) -> i64 {
+    // Keep this low-level fallback limited to direct spellings. Module-level
+    // native ABI aliases are resolved through the token-derived frt table.
     let flo: i64 = ast_span_lo(fn_node);
     let body: i64 = ast_child2(fn_node);
     let last: i64 = skip_signature_trivia_back(src, ast_span_lo(body) - 1, flo);
@@ -5907,8 +6281,8 @@ pub fn skip_balanced_brace(toks: Vec, pos: i64, depth: i64) -> i64 {
 }
 
 // Skip an UNRECOGNIZED top-level item as ONE node: through the first `;` at
-// paren/bracket depth 0 (semicolon items like `type Foo = i64;`, including
-// `[i64; N]` array syntax), or through a balanced `{ .. }` body (brace items),
+// paren/bracket depth 0 (semicolon items such as unsupported declarations,
+// including `[i64; N]` array syntax), or through a balanced `{ .. }` body (brace items),
 // whichever shape appears first; EOF terminates. The oracle lowers each
 // `;`-terminated unrecognized item to ONE scaffold placeholder pair, so
 // per-token poisoning was a wrong-bytes miscompile (N stub pairs instead of
@@ -7075,6 +7449,9 @@ pub fn parse_item(toks: Vec, pos: i64, buf: i64) -> ParseResult {
         }
         if is_const_kw(buf, lo, hi) == 1 {
             return parse_const_decl(toks, pos, buf);
+        }
+        if is_ident_type(buf, lo, hi) == 1 {
+            return parse_type_alias_stub(toks, pos, buf);
         }
         if is_export_kw(buf, lo, hi) == 1 {
             // `export { a, b }` is a VISIBILITY declaration: it names already-defined
@@ -20177,7 +20554,7 @@ pub fn selftest_mic3_module_nfn(src_addr: i64, src_len: i64, strbuf: i64, offs: 
     // Multi-struct registry (declaration order with per-struct field spans). N==0
     // for struct-less modules, in which case the registry/strtab tail stays empty
     // and the bytes are unchanged from the original fns-only path.
-    let srt: i64 = srt_build(src_addr, src_len);
+    let srt: i64 = srt_build_from_tokens(tokens, src_addr);
     let n_structs: i64 = srt_count(srt);
     // STRUCT-LIT CONSTRUCTION DESUGAR: rewrite `T{..}` ctors into the
     // alloc+stores+ret let-chain BEFORE the strtab pass (so __mind_alloc /
@@ -41613,6 +41990,10 @@ pub fn selftest_native_elf_hb_from_tokens(tokens: Vec, src_addr: i64, hash_addr:
     // right register file (xmm0 for a float-returning callee) and classified by its
     // callee's return dtype. Every fn in main.mind's float-free source registers INT.
     let frt: i64 = frt_build_from_tokens(tokens, src_addr);
+    let alias_status: i64 = alias_prepare_native_module(tokens, src_addr, frt);
+    if alias_status < 0 {
+        return es_new();
+    }
     // RI-C: does any REACHABLE (pruned) fn reference argv? Gates the entry argc/argv
     // capture so an argv-free program is byte-identical EVEN when std.cli (whose
     // args_from_os mentions the intrinsic) is seeded ahead of it — the scan is scoped
@@ -42944,7 +43325,16 @@ pub fn selftest_native_elf_fp_field(src_addr: i64, src_len: i64) -> EmitState {
     __mind_store_i64(lcell + 72, 64);
     __mind_store_i64(lcell + 8, nb_dtype_table_new(128));
     let srt: i64 = srt_build(src_addr, src_len);
-    let frt: i64 = frt_build(src_addr, src_len);
+    let frt: i64 = frt_build_from_tokens(toks, src_addr);
+    let aliases: i64 = alias_build_from_tokens(toks, src_addr);
+    if alias_count(aliases) < 0 {
+        return es_new();
+    }
+    let _ar: i64 = alias_resolve_all(aliases, src_addr, 0);
+    if alias_count(aliases) < 0 {
+        return es_new();
+    }
+    let _fa: i64 = frt_apply_aliases(frt, src_addr, aliases, 0);
     let loops: i64 = __mind_alloc(256 * 3 * 8);
     let lpcell: i64 = __mind_alloc(8);
     __mind_store_i64(lpcell, 0);
@@ -43371,6 +43761,42 @@ pub fn frt_build_from_tokens(tokens: Vec, src_addr: i64) -> i64 {
     frt_collect(tokens, src_addr, 0, t)
 }
 
+// Apply the already-collected module-local alias table to return spans in the
+// existing frt records. This is a second linear metadata pass over the token-
+// derived registry, not a source re-lex. Direct narrow spellings retain their
+// original width; only a single-token named return is resolved through aliases.
+pub fn frt_apply_aliases(t: i64, src: i64, aliases: i64, k: i64) -> i64 {
+    if k >= frt_count(t) {
+        return t;
+    }
+    if frt_retw(t, k) == 64 {
+        let lo: i64 = frt_retty_lo(t, k);
+        let hi: i64 = frt_retty_hi(t, k);
+        if hi > lo {
+            let aw: i64 = alias_resolve_span(aliases, src, lo, hi);
+            if aw != 0 {
+                __mind_store_i64(t + (frt_slot_base(k) + 3) * 8, aw)
+            }
+        }
+    }
+    frt_apply_aliases(t, src, aliases, k + 1)
+}
+
+// MIC3's current Rust contract intentionally leaves named return aliases
+// opaque; native lowering is the consumer that uses resolved ABI widths.
+pub fn alias_prepare_native_module(tokens: Vec, src: i64, frt: i64) -> i64 {
+    let aliases: i64 = alias_build_from_tokens(tokens, src);
+    if alias_count(aliases) < 0 {
+        return 0 - 1;
+    }
+    let _all: i64 = alias_resolve_all(aliases, src, 0);
+    if alias_count(aliases) < 0 {
+        return 0 - 1;
+    }
+    let _fa: i64 = frt_apply_aliases(frt, src, aliases, 0);
+    aliases
+}
+
 // Find the fn whose NAME span equals src[lo..hi), or -1. Tail-recursive.
 pub fn frt_find(t: i64, src: i64, lo: i64, hi: i64, k: i64) -> i64 {
     if k >= frt_count(t) {
@@ -43432,9 +43858,20 @@ pub fn selftest_native_elf_fp_call(src_addr: i64, src_len: i64) -> EmitState {
     let ordered: i64 = __mind_alloc((items_len + 1) * 8);
     let n_fns: i64 = nb_collect_fns(items_addr, items_len, 0, ordered, 0);
 
-    // Whole-module registries (struct-field + return-type).
-    let srt: i64 = srt_build(src_addr, src_len);
-    let frt: i64 = frt_build(src_addr, src_len);
+    // Whole-module registries (struct-field + return-type). Native lowering
+    // consumes the local alias metadata to apply resolved ABI widths before
+    // the shared lowering pass.
+    let srt: i64 = srt_build_from_tokens(tokens, src_addr);
+    let frt: i64 = frt_build_from_tokens(tokens, src_addr);
+    let aliases: i64 = alias_build_from_tokens(tokens, src_addr);
+    if alias_count(aliases) < 0 {
+        return es_new();
+    }
+    let _ar: i64 = alias_resolve_all(aliases, src_addr, 0);
+    if alias_count(aliases) < 0 {
+        return es_new();
+    }
+    let _fa: i64 = frt_apply_aliases(frt, src_addr, aliases, 0);
 
     // calls scratch table (one 3-i64 record per call site; +2 slack for our entry call).
     let ccell: i64 = __mind_alloc(8);
