@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 
 use crate::ast::{Module, Node};
 
+use super::sources::{canonical_project_root, resolve_project_entry};
 use super::{DEFAULT_TARGET_BLOCK, find_project_root_for_file, load_manifest, resolve_sources};
 
 pub enum Discovery {
@@ -174,6 +175,7 @@ pub fn discover_with_source(
             direct.iter().map(|path| path.join(".")).collect(),
         ));
     };
+    let project_root = canonical_project_root(&project_root)?;
     let manifest = load_manifest(&project_root)?;
     let selected = manifest
         .targets
@@ -185,17 +187,20 @@ pub fn discover_with_source(
         selected.and_then(|target| target.sources.as_deref()),
         false,
     )?;
+    let resolved_entry = resolve_project_entry(&project_root, &manifest.build.entry)?;
     let source_root = if explicit_sources {
         project_root.clone()
     } else {
-        project_root
-            .join(&manifest.build.entry)
+        resolved_entry
             .parent()
             .unwrap_or(&project_root)
             .to_path_buf()
     };
+    let entry = entry
+        .canonicalize()
+        .with_context(|| format!("cannot resolve single-file entry {}", entry.display()))?;
     Ok(Discovery::Project(capture_scope_from_paths(
-        entry,
+        &entry,
         entry_source,
         entry_module,
         &candidates,
