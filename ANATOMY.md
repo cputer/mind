@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1665 | **Est. tokens:** ~3170820
-**Generated:** 2026-09-07 05:52 UTC
+**Files:** 1665 | **Est. tokens:** ~3171299
+**Generated:** 2026-09-07 05:54 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 171 | ~438498 |
+| `examples/mindc_mind/` | 171 | ~438977 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -688,7 +688,7 @@
 - `self_host_arridx_mic3_smoke.py` (~1864 tok, huge)
 - `self_host_body_smoke.py` (~3055 tok, huge)
 - `self_host_carry_cap_smoke.py` (~1169 tok, large) — Cap-guard smoke for the self-host loop-carry / loop-frame scratch tables.
-- `self_host_cast_mic3_smoke.py` (~3679 tok, huge)
+- `self_host_cast_mic3_smoke.py` (~4158 tok, huge)
 - `self_host_check_driver_smoke.py` (~2879 tok, huge)
 - `self_host_continue_smoke.py` (~1384 tok, large) — Regression gate for #308 (closes #286's break/continue fixtures): the pure-MIND
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).

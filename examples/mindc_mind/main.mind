@@ -577,9 +577,9 @@ pub fn parse_const_decl(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     pr_new(after, n)
 }
 
-// A type alias has no runtime value and Rust's top-level lowering drops this
-// declaration entirely. Keep it as a dropped parser item so native's
-// unsupported-item gate does not reject a valid alias fixture.
+// A supported scalar type alias has no runtime value, but Rust retains one MIC3
+// declaration placeholder. Unsupported alias shapes stay poisoned so native's
+// admission gate cannot silently accept an unimplemented ABI.
 pub fn parse_type_alias_stub(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     // Rust accepts the scalar `type NAME = TARGET` form with or without a
     // trailing semicolon. Consume exactly that form so an immediately
@@ -598,7 +598,12 @@ pub fn parse_type_alias_stub(toks: Vec, pos: i64, buf: i64) -> ParseResult {
         0
     };
     let after_scalar: i64 = pos + 4;
-    let after: i64 = if scalar == 1 {
+    let supported: i64 = if scalar == 1 {
+        alias_scalar_target_boundary(toks, buf, after_scalar)
+    } else {
+        0
+    };
+    let after: i64 = if supported == 1 {
         if tok_kind(toks, after_scalar) == tk_semi() {
             after_scalar + 1
         } else {
@@ -616,7 +621,12 @@ pub fn parse_type_alias_stub(toks: Vec, pos: i64, buf: i64) -> ParseResult {
     } else {
         tok_hi(toks, pos)
     };
-    let n: i64 = ast_new_leaf(ast_struct_def(), lo, hi);
+    let kind: i64 = if supported == 1 {
+        ast_struct_def()
+    } else {
+        ast_unsupported()
+    };
+    let n: i64 = ast_new_leaf(kind, lo, hi);
     pr_new(after, n)
 }
 
@@ -1388,6 +1398,7 @@ pub fn ast_new_leaf(kind: i64, span_lo: i64, span_hi: i64) -> i64 {
     __mind_store_i64(n + 32, 0);
     __mind_store_i64(n + 40, 0);
     __mind_store_i64(n + 48, 0);
+    __mind_store_i64(n + 56, 0);
     n
 }
 
@@ -2361,9 +2372,8 @@ pub fn alias_resolve_idx(t: i64, src: i64, k: i64, depth: i64) -> i64 {
     let hi: i64 = alias_target_hi(t, k);
     if alias_is_float_type(src, lo, hi) == 1 {
         // Named float aliases are outside the native integer ABI contract;
-        // refuse the whole module rather than admitting an integer call lane.
+        // mark them unsupported rather than admitting an integer call lane.
         let _sfloat: i64 = alias_set_state(t, k, 4);
-        __mind_store_i64(t, 0 - 1);
         return 0;
     }
     let sw: i64 = narrow_cast_width(src, lo, hi);
@@ -2420,11 +2430,25 @@ pub fn alias_resolve_all(t: i64, src: i64, k: i64) -> i64 {
     alias_resolve_all(t, src, k + 1)
 }
 
+pub fn alias_has_unsupported(t: i64, k: i64) -> i64 {
+    if k >= alias_count(t) {
+        return 0;
+    }
+    if alias_state(t, k) == 4 {
+        return 1;
+    }
+    alias_has_unsupported(t, k + 1)
+}
+
 // Read the return spelling immediately before the body brace without allocating
 // a per-function lexer: +8/+16 signed, -8/-16 unsigned, otherwise 0.
 pub fn fn_named_narrow_ret_code(src: i64, fn_node: i64) -> i64 {
     // Keep this low-level fallback limited to direct spellings. Module-level
     // native ABI aliases are resolved through the token-derived frt table.
+    let cached: i64 = __mind_load_i64(fn_node + 56);
+    if cached == 8 || cached == 16 || cached == 32 || cached == 0 - 8 || cached == 0 - 16 || cached == 0 - 32 {
+        return cached;
+    }
     let flo: i64 = ast_span_lo(fn_node);
     let body: i64 = ast_child2(fn_node);
     let last: i64 = skip_signature_trivia_back(src, ast_span_lo(body) - 1, flo);
@@ -2464,6 +2488,51 @@ pub fn flatten_named_narrow_return(src: i64, fn_node: i64, root: i64, nodes: i64
         } else {
             65535
         };
+        let mslot: i64 = desc_emit_const(nodes, cursor, mask);
+        return desc_emit_binop(nodes, cursor, binop_to_byte(op_bitand()), root, mslot);
+    }
+    let sh: i64 = 64 - code;
+    let shslot: i64 = desc_emit_const(nodes, cursor, sh);
+    let lslot: i64 = desc_emit_binop(nodes, cursor, binop_to_byte(op_shl()), root, shslot);
+    desc_emit_binop(nodes, cursor, binop_to_byte(op_shr()), lslot, shslot)
+}
+
+// Return a cached narrow ABI code for the immediate expression forms whose
+// static type can affect an arithmetic result. The call cache is populated by
+// alias_annotate_call_module before flattening; transparent parentheses preserve
+// the same type. Unknown identifiers remain neutral here, matching the bounded
+// MIC3 slice rather than inventing an alias width for them.
+pub fn cached_narrow_expr_code(node: i64) -> i64 {
+    if node == 0 {
+        return 0;
+    }
+    let k: i64 = ast_kind(node);
+    if k == ast_call() {
+        let w: i64 = __mind_load_i64(node + 56);
+        if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+            return w;
+        }
+        return 0;
+    }
+    if k == ast_paren() {
+        return cached_narrow_expr_code(ast_child0(node));
+    }
+    0
+}
+
+pub fn flatten_narrow_binop_result(op: i64, left: i64, right: i64, root: i64, nodes: i64, cursor: i64) -> i64 {
+    if op != op_add() && op != op_sub() && op != op_mul() && op != op_div() && op != op_mod() {
+        return root;
+    }
+    let lw: i64 = cached_narrow_expr_code(left);
+    let rw: i64 = cached_narrow_expr_code(right);
+    let code: i64 = if lw != 0 { lw } else { rw };
+    if code == 0 {
+        return root;
+    }
+    if code < 0 {
+        let w: i64 = 0 - code;
+        let mask: i64 = if w == 8 { 255 } else { if w == 16 { 65535 } else { 4294967295 } };
         let mslot: i64 = desc_emit_const(nodes, cursor, mask);
         return desc_emit_binop(nodes, cursor, binop_to_byte(op_bitand()), root, mslot);
     }
@@ -20551,6 +20620,17 @@ pub fn selftest_mic3_module_nfn(src_addr: i64, src_len: i64, strbuf: i64, offs: 
     let ast_root: i64 = parse(tokens, src_addr);
     let items_addr: i64 = ast_child0(ast_root);
     let items_len: i64 = ast_aux(ast_root);
+    let alias_fns: i64 = __mind_alloc((items_len + 1) * 8);
+    let alias_n: i64 = nb_collect_fns(items_addr, items_len, 0, alias_fns, 0);
+    let alias_frt: i64 = frt_build_from_tokens(tokens, src_addr);
+    let alias_tab: i64 = alias_build_from_tokens(tokens, src_addr);
+    if alias_count(alias_tab) >= 0 {
+        let _ar: i64 = alias_resolve_all(alias_tab, src_addr, 0);
+        if alias_count(alias_tab) >= 0 {
+            let _rr: i64 = alias_annotate_returns(src_addr, alias_tab, alias_frt, alias_fns, alias_n, 0);
+            let _rc: i64 = alias_annotate_call_module(src_addr, alias_tab, alias_frt, items_addr, items_len, 0);
+        }
+    }
     // Multi-struct registry (declaration order with per-struct field spans). N==0
     // for struct-less modules, in which case the registry/strtab tail stays empty
     // and the bytes are unchanged from the original fns-only path.
@@ -23155,7 +23235,7 @@ pub fn flatten_expr_env(node: i64, src: i64, params_addr: i64, n_params: i64, no
         __mind_store_i64(nodes + slot * 32 + 16, lslot);
         __mind_store_i64(nodes + slot * 32 + 24, rslot);
         __mind_store_i64(cursor, slot + 1);
-        return slot;
+        return flatten_narrow_binop_result(ast_aux(node), ast_child0(node), ast_child1(node), slot, nodes, cursor);
     }
     if k == ast_cast() {
         // Every parsed scalar cast lowers to one canonical source-kind-dependent
@@ -32591,6 +32671,13 @@ pub fn nb_width_of_ann(buf: i64, type_leaf: i64) -> i64 {
     if type_leaf == 0 {
         return 64;
     }
+    let cached: i64 = __mind_load_i64(type_leaf + 56);
+    if cached == 8 || cached == 16 || cached == 32 {
+        return cached;
+    }
+    if cached == 0 - 8 || cached == 0 - 16 || cached == 0 - 32 {
+        return cached;
+    }
     let lo: i64 = ast_span_lo(type_leaf);
     let hi: i64 = ast_span_hi(type_leaf);
     let i8_buf: i64 = make_byte_buf_3(105, 56, 0);
@@ -32676,7 +32763,11 @@ pub fn nb_wrap_params_w(code: String, buf: i64, params_addr: i64, n_params: i64,
     let w: i64 = nb_width_of_ann(buf, ast_child1(pnode));
     if w < 64 {
         let c1: String = nb_load_rax(code, nb_slot_disp(i));
-        let c2: String = nb_wrap_rax_w(c1, w);
+        let c2: String = if w < 0 {
+            nb_mask_rax_w(c1, 0 - w)
+        } else {
+            nb_wrap_rax_w(c1, w)
+        };
         let c3: String = nb_store_rax(c2, nb_slot_disp(i));
         return nb_wrap_params_w(c3, buf, params_addr, n_params, i + 1);
     }
@@ -41994,6 +42085,7 @@ pub fn selftest_native_elf_hb_from_tokens(tokens: Vec, src_addr: i64, hash_addr:
     if alias_status < 0 {
         return es_new();
     }
+    let _ap: i64 = alias_annotate_params(src_addr, alias_status, ordered, n_fns, 0);
     // RI-C: does any REACHABLE (pruned) fn reference argv? Gates the entry argc/argv
     // capture so an argv-free program is byte-identical EVEN when std.cli (whose
     // args_from_os mentions the intrinsic) is seeded ahead of it — the scan is scoped
@@ -43334,6 +43426,9 @@ pub fn selftest_native_elf_fp_field(src_addr: i64, src_len: i64) -> EmitState {
     if alias_count(aliases) < 0 {
         return es_new();
     }
+    if alias_has_unsupported(aliases, 0) == 1 {
+        return es_new();
+    }
     let _fa: i64 = frt_apply_aliases(frt, src_addr, aliases, 0);
     let loops: i64 = __mind_alloc(256 * 3 * 8);
     let lpcell: i64 = __mind_alloc(8);
@@ -43793,8 +43888,179 @@ pub fn alias_prepare_native_module(tokens: Vec, src: i64, frt: i64) -> i64 {
     if alias_count(aliases) < 0 {
         return 0 - 1;
     }
+    if alias_has_unsupported(aliases, 0) == 1 {
+        return 0 - 1;
+    }
     let _fa: i64 = frt_apply_aliases(frt, src, aliases, 0);
     aliases
+}
+
+// Cache local alias widths on parameter type leaves before lowering. The cache
+// uses the same signed/unsigned width convention as the FRT table; zero keeps
+// direct spellings on the existing nb_width_of_ann path.
+pub fn alias_annotate_fn_params(src: i64, aliases: i64, fn_node: i64, i: i64) -> i64 {
+    let n: i64 = fn_def_params_len(fn_node);
+    if i >= n {
+        return 0;
+    }
+    let pnode: i64 = __mind_load_i64(ast_child1(fn_node) + i * 8);
+    let ty: i64 = ast_child1(pnode);
+    let ty_lo: i64 = ast_span_lo(ty);
+    let ty_hi: i64 = ast_span_hi(ty);
+    let ak: i64 = alias_find_latest(aliases, src, ty_lo, ty_hi);
+    let w: i64 = if ak < 0 {
+        0
+    } else {
+        alias_resolve_idx(aliases, src, ak, 0)
+    };
+    if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+        __mind_store_i64(ty + 56, w)
+    }
+    alias_annotate_fn_params(src, aliases, fn_node, i + 1)
+}
+
+pub fn alias_annotate_params(src: i64, aliases: i64, fns: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let _p: i64 = alias_annotate_fn_params(src, aliases, __mind_load_i64(fns + i * 8), 0);
+    alias_annotate_params(src, aliases, fns, n, i + 1)
+}
+
+pub fn alias_annotate_fn_return(src: i64, aliases: i64, frt: i64, fn_node: i64) -> i64 {
+    let name: i64 = ast_child0(fn_node);
+    let k: i64 = frt_find(frt, src, ast_span_lo(name), ast_span_hi(name), 0);
+    if k >= 0 {
+        let lo: i64 = frt_retty_lo(frt, k);
+        let hi: i64 = frt_retty_hi(frt, k);
+        let ak: i64 = alias_find_latest(aliases, src, lo, hi);
+        let w: i64 = if ak < 0 {
+            0
+        } else {
+            alias_resolve_idx(aliases, src, ak, 0)
+        };
+        if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+            __mind_store_i64(fn_node + 56, w)
+        }
+    }
+    0
+}
+
+pub fn alias_annotate_returns(src: i64, aliases: i64, frt: i64, fns: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let _p: i64 = alias_annotate_fn_return(src, aliases, frt, __mind_load_i64(fns + i * 8));
+    alias_annotate_returns(src, aliases, frt, fns, n, i + 1)
+}
+
+// Cache the resolved ABI width of a user-function call on the call node. Rust's
+// narrow arithmetic inference treats a call returning a local alias exactly like
+// a direct `u8`/`i8` signature, so the MIC3 flattener needs this metadata when the
+// call is an operand of a binop. This is one AST walk over the already-parsed
+// module; it does not re-lex source or resolve an imported signature through the
+// consumer's aliases.
+pub fn alias_call_return_code(src: i64, aliases: i64, frt: i64, node: i64) -> i64 {
+    if node == 0 {
+        return 0;
+    }
+    if ast_kind(node) != ast_call() {
+        return 0;
+    }
+    let callee: i64 = ast_child0(node);
+    let k: i64 = frt_find(frt, src, ast_span_lo(callee), ast_span_hi(callee), 0);
+    if k < 0 {
+        return 0;
+    }
+    let lo: i64 = frt_retty_lo(frt, k);
+    let hi: i64 = frt_retty_hi(frt, k);
+    let ak: i64 = alias_find_latest(aliases, src, lo, hi);
+    if ak < 0 {
+        return 0;
+    }
+    let w: i64 = alias_resolve_idx(aliases, src, ak, 0);
+    if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+        return w;
+    }
+    0
+}
+
+pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, node: i64) -> i64 {
+    if node == 0 {
+        return 0;
+    }
+    let k: i64 = ast_kind(node);
+    if k == ast_call() {
+        let w: i64 = alias_call_return_code(src, aliases, frt, node);
+        if w != 0 {
+            __mind_store_i64(node + 56, w)
+        }
+        let args: i64 = ast_child1(node);
+        let n: i64 = ast_aux(node);
+        return alias_annotate_call_args(src, aliases, frt, args, n, 0);
+    }
+    if k == ast_binop() {
+        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(node));
+        return alias_annotate_call_expr(src, aliases, frt, ast_child1(node));
+    }
+    if k == ast_paren() || k == ast_neg() || k == ast_not() {
+        return alias_annotate_call_expr(src, aliases, frt, ast_child0(node));
+    }
+    0
+}
+
+pub fn alias_annotate_call_args(src: i64, aliases: i64, frt: i64, args: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let _a: i64 = alias_annotate_call_expr(src, aliases, frt, __mind_load_i64(args + i * 8));
+    alias_annotate_call_args(src, aliases, frt, args, n, i + 1)
+}
+
+pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, stmts: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let stmt: i64 = __mind_load_i64(stmts + i * 8);
+    let k: i64 = ast_kind(stmt);
+    if k == ast_let() {
+        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child2(stmt));
+    } else {
+        if k == ast_return() {
+            let _r: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(stmt));
+        } else {
+            if k == ast_if() {
+                let _c: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(stmt));
+                let tb: i64 = ast_child1(stmt);
+                if ast_kind(tb) == ast_block() {
+                    let _t: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(tb), ast_aux(tb), 0);
+                }
+                let eb: i64 = ast_child2(stmt);
+                if eb != 0 {
+                    if ast_kind(eb) == ast_block() {
+                        let _e: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(eb), ast_aux(eb), 0);
+                    }
+                }
+            } else {
+                let _e: i64 = alias_annotate_call_expr(src, aliases, frt, stmt);
+            }
+        }
+    }
+    alias_annotate_call_stmts(src, aliases, frt, stmts, n, i + 1)
+}
+
+pub fn alias_annotate_call_module(src: i64, aliases: i64, frt: i64, items: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let item: i64 = __mind_load_i64(items + i * 8);
+    if ast_kind(item) == ast_fn_def() {
+        let body: i64 = ast_child2(item);
+        if ast_kind(body) == ast_block() {
+            let _b: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(body), ast_aux(body), 0);
+        }
+    }
+    alias_annotate_call_module(src, aliases, frt, items, n, i + 1)
 }
 
 // Find the fn whose NAME span equals src[lo..hi), or -1. Tail-recursive.
@@ -43802,10 +44068,14 @@ pub fn frt_find(t: i64, src: i64, lo: i64, hi: i64, k: i64) -> i64 {
     if k >= frt_count(t) {
         return 0 - 1;
     }
+    let later: i64 = frt_find(t, src, lo, hi, k + 1);
+    if later >= 0 {
+        return later;
+    }
     if span_bytes_equal(src, lo, hi, frt_name_lo(t, k), frt_name_hi(t, k)) == 1 {
         return k;
     }
-    frt_find(t, src, lo, hi, k + 1)
+    0 - 1
 }
 
 // The callee's declared return dtype for the name span src[lo..hi): FLOAT iff the fn is
@@ -43871,7 +44141,11 @@ pub fn selftest_native_elf_fp_call(src_addr: i64, src_len: i64) -> EmitState {
     if alias_count(aliases) < 0 {
         return es_new();
     }
+    if alias_has_unsupported(aliases, 0) == 1 {
+        return es_new();
+    }
     let _fa: i64 = frt_apply_aliases(frt, src_addr, aliases, 0);
+    let _ap: i64 = alias_annotate_params(src_addr, aliases, ordered, n_fns, 0);
 
     // calls scratch table (one 3-i64 record per call site; +2 slack for our entry call).
     let ccell: i64 = __mind_alloc(8);

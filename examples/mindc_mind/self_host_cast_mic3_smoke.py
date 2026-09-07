@@ -281,8 +281,8 @@ LOCAL_ALIAS_RETURN_FIXTURES = [
 ]
 
 
-def alias_chain_fixture(reverse):
-    names = [f"Alias{i}" for i in range(65)]
+def alias_chain_fixture(depth, reverse):
+    names = [f"Alias{i}" for i in range(depth)]
     lines = [f"type {names[0]} = u8;"]
     lines += [f"type {names[i]} = {names[i - 1]};" for i in range(1, len(names))]
     if reverse:
@@ -295,8 +295,12 @@ def alias_chain_fixture(reverse):
 
 
 LOCAL_ALIAS_LONG_CHAIN_FIXTURES = [
-    ("local_alias_chain_65_forward", *alias_chain_fixture(False), 0),
-    ("local_alias_chain_65_reverse", *alias_chain_fixture(True), 0),
+    ("local_alias_chain_65_forward", *alias_chain_fixture(65, False), 0),
+    ("local_alias_chain_65_reverse", *alias_chain_fixture(65, True), 0),
+    ("local_alias_chain_4095_forward", *alias_chain_fixture(4095, False), 0),
+    ("local_alias_chain_4095_reverse", *alias_chain_fixture(4095, True), 0),
+    ("local_alias_chain_4096_forward", *alias_chain_fixture(4096, False), 0),
+    ("local_alias_chain_4096_reverse", *alias_chain_fixture(4096, True), 0),
 ]
 
 
@@ -310,6 +314,36 @@ FLOAT_ALIAS_UNSUPPORTED = (
     "fn compute() -> Real { return 1.5; }\n"
     "fn main() -> i64 { return compute(); }\n"
 )
+
+LOCAL_ALIAS_PARAM_FIXTURES = [
+    (
+        "local_signed_param_alias",
+        "type ParamByte = i8;\n"
+        "fn compute(x: ParamByte) -> i64 { return x / 2; }\n"
+        "fn main() -> i64 { return compute(200); }\n",
+        228,
+    ),
+    (
+        "local_unsigned_param_alias",
+        "type ParamByte = u8;\n"
+        "fn compute(x: ParamByte) -> i64 { return x / 2; }\n"
+        "fn main() -> i64 { return compute(300); }\n",
+        22,
+    ),
+]
+
+UNSUPPORTED_ALIAS_FIXTURES = [
+    ("local_fixed_array_alias_refusal", "type Bytes = [i64; 2];\nfn main() -> i64 { return 0; }\n", None),
+    ("local_malformed_alias_refusal", "type Broken = [i64;\nfn main() -> i64 { return 0; }\n", None),
+    ("local_wide_integer_alias", "type Wide = i64;\nfn main() -> Wide { return 7; }\n", 7),
+    (
+        "local_duplicate_last_return_abi",
+        "fn compute() -> f64 { return 1.5; }\n"
+        "fn compute() -> i64 { return 7; }\n"
+        "fn main() -> i64 { return compute(); }\n",
+        7,
+    ),
+]
 
 
 def main():
@@ -416,6 +450,21 @@ def main():
     print(f"  {'PASS' if float_ok else 'FAIL'}  local_float_alias_refusal  native rc={float_rc}(want empty)")
     if not float_ok:
         fails += 1
+
+    for name, src, want in LOCAL_ALIAS_PARAM_FIXTURES:
+        rc = run_native(src)
+        ok = rc == (want & 0xFF)
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}  native rc={rc}(want {want})")
+        if not ok:
+            fails += 1
+
+    for name, src, want in UNSUPPORTED_ALIAS_FIXTURES:
+        rc = run_native(src)
+        ok = rc is None if want is None else rc == (want & 0xFF)
+        expected = "empty" if want is None else str(want)
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}  native rc={rc}(want {expected})")
+        if not ok:
+            fails += 1
 
     if fails:
         print(f"FAIL: {fails} typed-cast/narrow-return fixture(s) diverged")
