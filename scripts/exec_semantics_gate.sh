@@ -11,20 +11,27 @@
 # Usage: [exec|lowering|pkg] | --print-count | --from-log <log> <tier>
 set -uo pipefail
 cd "$(dirname "$0")/.."
-source scripts/lib/exec_semantics_run.sh
+
+run_tier_cargo() {
+  local tier=$1 features=$2 require_toolchain=$3
+  local -a tier_env=()
+  # Eligible VNNI hosts must execute the manifest-bound native workload.
+  # Missing opt-in is a verification failure, so every exec caller sets it.
+  if [ "$tier" = exec ]; then
+    tier_env+=(MIND_INTDOT_VNNI_VERIFY=1)
+  fi
+  if [ "$require_toolchain" = 1 ]; then
+    tier_env+=(MIND_BENCH_REQUIRE=1)
+  fi
+  env "${tier_env[@]}" cargo test --no-default-features --features "$features" \
+    --no-fail-fast
+}
 
 # ---------------------------------------------------------------------------
-# TIER DEFINITIONS.  RE-MEASURED at the wave that added the fail-closed capability
-# gates (`scripts/exec_semantics_gate.sh --print-count`, one run per tier).
-# Floors sit a hair under the measured value: a feature-gating accident erases whole
-# FILES (dozens to hundreds of tests at once), so a ~0.8% margin costs the gate
-# nothing while keeping a one-test environmental difference from redding main.
-# Re-derive after intentionally adding or removing tests: --print-count.
-#
-# A floor is a RATCHET, not a historical note. Left at its first-measured value it
-# accrues slack — and slack is deletable test coverage: at 1900 the exec tier carried
-# 202 tests of headroom, enough to delete EVERY test in the largest gate file in the
-# tree and still print `ok[exec]`. Re-measure at landing, every landing.
+# TIER DEFINITIONS. Floors protect both aggregate execution and critical harnesses.
+# Re-measure with --print-count at every landing; do not infer counts from previous
+# runs. The floors and unchanged capability checks are explained in
+# docs/gates/exec-semantics-tiers.md.
 #
 #   tier      features                                   harnesses  executed  floor
 #   exec      mlir-build std-surface cross-module-imports      340      2170   2152
