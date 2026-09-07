@@ -60,6 +60,50 @@ fn build_fails_closed_on_source_check_rejects() {
     );
 }
 
+/// #244 — a warning-only self-host intrinsic must not become a successful
+/// runtime-JIT fallback artifact. The checker owns E2024 as a warning; the
+/// build layer owns the structured E5005 refusal.
+#[test]
+fn build_fails_closed_on_unregistered_mind_intrinsic() {
+    let dir = write_case(
+        "build244_nerve_route",
+        &[(
+            "a4.mind",
+            "fn main() -> i32 {\n    let h: i64 = __mind_nerve_route(1);\n    return h;\n}\n",
+        )],
+    );
+    let src = dir.join("a4.mind");
+    let artifact = dir.join("a4");
+
+    let build = mindc()
+        .args(["build", "--out"])
+        .arg(&artifact)
+        .arg(&src)
+        .output()
+        .expect("spawn build");
+    let stderr = String::from_utf8_lossy(&build.stderr);
+
+    assert_eq!(
+        build.status.code(),
+        Some(1),
+        "an unsupported __mind intrinsic must fail the build: {stderr}"
+    );
+    assert!(
+        stderr.contains("[E2024]") && stderr.contains("__mind_nerve_route"),
+        "the checker warning must identify the actual unsupported intrinsic: {stderr}"
+    );
+    assert!(
+        stderr.contains("error[build][E5005]")
+            && stderr.contains("refusing to link a runtime-JIT fallback object"),
+        "the build must report the structured source-fallback refusal: {stderr}"
+    );
+    assert!(
+        !artifact.exists(),
+        "a refused fallback build must leave no final artifact at {}",
+        artifact.display()
+    );
+}
+
 /// A valid program must still build -- the guard must not be a blanket refusal.
 #[test]
 fn build_still_succeeds_on_valid_source() {
