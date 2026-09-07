@@ -12,21 +12,19 @@ import os
 import pathlib
 import stat
 import subprocess
+import sys
 import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+import _stdlib_manifest  # noqa: E402
+
 SO = pathlib.Path(os.environ["MINDC_SO"])
 SEED = pathlib.Path(os.environ.get(
     "MINDC_NATIVE_ELF",
     str(HERE / "testdata" / "selfhost_loop" / "stage1.elf"),
 ))
-MINDC = pathlib.Path(os.environ["MINDC_BIN"])
-MODULES = [
-    "arena", "async", "blas", "cli", "fs", "io", "io_canon", "iouring",
-    "json", "map", "net", "process", "reactor", "regex", "ring", "sha256",
-    "string", "time", "toml", "tui", "vec",
-]
 P = ctypes.POINTER(ctypes.c_int64)
 
 
@@ -122,10 +120,10 @@ CASES = [
 
 
 def main():
-    if not SO.is_file() or not MINDC.is_file() or not SEED.is_file():
-        print("BLOCKED: missing explicit MINDC_SO/MINDC_BIN/MINDC_NATIVE_ELF")
+    if not SO.is_file() or not SEED.is_file():
+        print("BLOCKED: missing explicit MINDC_SO/MINDC_NATIVE_ELF")
         return 2
-    std = b"\n".join((REPO / "std" / f"{m}.mind").read_bytes() for m in MODULES) + b"\n"
+    std = _stdlib_manifest.seed_blob()
     lib = ctypes.CDLL(str(SO))
     lib.selftest_native_elf_u.restype = ctypes.c_int64
     lib.selftest_native_elf_u.argtypes = [ctypes.c_int64] * 3
