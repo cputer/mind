@@ -521,5 +521,35 @@ fn copyout(s: Pair) -> i64 {
                 limit: 15,
             })
         ));
+
+        // A later direct fixed-field mutation must not be reached after the
+        // first refusal.  This exercises the public pipeline path rather than
+        // only the top-level item guard above.
+        let later_mutation = r#"
+struct Pair { xs: [i64; 2] }
+fn run(p: Pair) -> i64 {
+    let over: [i64; 2] = [1, 2]
+    p.xs[0] = 9
+    return 0
+}
+"#;
+        let result = crate::pipeline::compile_source_with_limits(
+            later_mutation,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 15,
+                ir_items: 100,
+                temp_slots: 100,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(crate::pipeline::CompileError::Materialization(
+                MaterializationRefusal::PayloadLimit {
+                    attempted: 16,
+                    limit: 15,
+                }
+            ))
+        ));
     }
 }

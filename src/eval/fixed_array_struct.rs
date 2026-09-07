@@ -240,6 +240,9 @@ pub(super) fn store_fixed_array_field(
     ir: &mut IRModule,
     context: &mut super::LoweringContext,
 ) {
+    if context.failed() {
+        return;
+    }
     if !fixed_array_cell_supported_in(element, ir) {
         panic!(
             "fixed struct-array field element type is not supported by the inline scalar-cell ABI"
@@ -315,6 +318,9 @@ pub(super) fn lower_fixed_array_field_index_assign(
     receiver_types: &HashMap<crate::ast::Span, String>,
     context: &mut super::LoweringContext,
 ) -> Option<ValueId> {
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let ast::Node::FieldAccess {
         receiver: owner,
         field,
@@ -340,6 +346,9 @@ pub(super) fn lower_fixed_array_field_index_assign(
         return None;
     }
     let owner_id = lower_expr(owner, ir, env, struct_env, receiver_types, context);
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let (offset, _, _) = struct_layout(ir, &struct_key)
         .and_then(|(layout, _, _)| layout.get(idx).copied())
         .unwrap_or(((idx as i64) * 8, 8, true));
@@ -358,7 +367,13 @@ pub(super) fn lower_fixed_array_field_index_assign(
         sum
     };
     let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let value_id = lower_expr(value, ir, env, struct_env, receiver_types, context);
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let length_id = ir.fresh();
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));
@@ -423,6 +438,9 @@ pub(super) fn lower_fixed_array_field_index_access(
     receiver_types: &HashMap<crate::ast::Span, String>,
     context: &mut super::LoweringContext,
 ) -> Option<ValueId> {
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let ast::Node::FieldAccess {
         receiver: owner,
         field,
@@ -479,6 +497,9 @@ pub(super) fn lower_fixed_array_field_index_access(
         }),
         None => lower_expr(owner, ir, env, struct_env, receiver_types, context),
     };
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let (offset, _, _) = struct_layout(ir, &struct_name)
         .and_then(|(layout, _, _)| layout.get(idx).copied())
         .unwrap_or(((idx as i64) * 8, 8, true));
@@ -497,6 +518,9 @@ pub(super) fn lower_fixed_array_field_index_access(
         addr
     };
     let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
+    if context.failed() {
+        return Some(ir.fresh());
+    }
     let length_id = ir.fresh();
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));

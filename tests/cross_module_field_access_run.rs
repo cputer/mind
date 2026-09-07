@@ -49,6 +49,9 @@ use std::process::Command;
 // Sibling module: defines the struct. The consumer declares no struct of its own.
 const TYPES_SRC: &str = r#"
 struct Point { x: i64, y: i64 }
+type Elem = i64
+type Words = [Elem; 2]
+struct ArrayHolder { xs: Words }
 "#;
 
 // Consumer module (the cdylib entry): reads a field of the SIBLING struct via
@@ -66,6 +69,13 @@ fn val_param_read(p: Point) -> i64 {
     let r = p.x
     return r
 }
+
+// The field's fixed-array type is expressed through aliases owned by the
+// defining module.  The consumer has no local alias declarations; lowering
+// must receive the resolved shared metadata rather than guessing from names.
+fn imported_array_alias_read(p: ArrayHolder) -> i64 {
+    return p.xs[1]
+}
 "#;
 
 const MANIFEST: &str = r#"[package]
@@ -80,7 +90,7 @@ output = "g41xmod"
 backend = "cpu"
 
 [exports]
-c_abi = ["ref_param_read", "val_param_read"]
+c_abi = ["ref_param_read", "val_param_read", "imported_array_alias_read"]
 "#;
 
 // mindc_bin() provided by tests/common (CARGO_BIN_EXE_mindc — staleness-free)
@@ -149,6 +159,30 @@ fn cross_module_field_access_runs() {
     assert!(
         out.status.success(),
         "cross-module-field-access-run check failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let py = format!(
+        "import ctypes\n\
+         lib = ctypes.CDLL(r'{}')\n\
+         class ArrayHolder(ctypes.Structure):\n\
+         \x20   _fields_ = [('xs0', ctypes.c_int64), ('xs1', ctypes.c_int64)]\n\
+         f = lib.imported_array_alias_read\n\
+         f.restype = ctypes.c_int64\n\
+         f.argtypes = [ctypes.POINTER(ArrayHolder)]\n\
+         p = ArrayHolder(11, 42)\n\
+         assert f(ctypes.byref(p)) == 42\n\
+         print('ok')\n",
+        so.to_string_lossy()
+    );
+    let out = Command::new("python3")
+        .args(["-c", &py])
+        .output()
+        .expect("python3");
+    assert!(
+        out.status.success(),
+        "cross-module-array-alias-run check failed:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );

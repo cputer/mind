@@ -134,6 +134,9 @@ pub(crate) fn lower_runtime_construction(
     });
     for (position, item) in elements.iter().enumerate() {
         let item_id = lower_element(item, ir, context);
+        if context.failed() {
+            return None;
+        }
         let index = ir.fresh();
         ir.instrs.push(Instr::ConstI64(index, position as i64));
         let next = ir.fresh();

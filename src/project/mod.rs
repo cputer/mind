@@ -1930,8 +1930,9 @@ pub(crate) fn build_global_enums(
 ) -> crate::ir::GlobalEnums {
     let mut enums = crate::ir::GlobalEnums::default();
     for (path, module) in parsed {
+        let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&module.items);
         for item in &module.items {
-            collect_global_enum_item(path, item, &mut enums);
+            collect_global_enum_item(path, item, &aliases, &mut enums);
         }
     }
     crate::qualified_enums::rebuild(parsed, &mut enums);
@@ -2079,6 +2080,7 @@ impl Drop for ProjectResolutionGuard {
 fn collect_global_enum_item(
     module_path: &str,
     item: &crate::ast::Node,
+    aliases: &crate::eval::type_aliases::LocalTypeAliases,
     enums: &mut crate::ir::GlobalEnums,
 ) {
     if let crate::ast::Node::EnumDef { name, variants, .. } = item {
@@ -2120,7 +2122,8 @@ fn collect_global_enum_item(
     #[cfg(feature = "std-surface")]
     if let crate::ast::Node::StructDef { name, fields, .. } = item {
         let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
-        let field_types: Vec<crate::ast::TypeAnn> = fields.iter().map(|f| f.ty.clone()).collect();
+        let field_types: Vec<crate::ast::TypeAnn> =
+            fields.iter().map(|f| aliases.resolve(&f.ty)).collect();
         enums
             .structs
             .insert(name.clone(), (field_names.clone(), field_types.clone()));
@@ -2139,7 +2142,7 @@ fn collect_global_enum_item(
     // Descend into a `module { … }` wrapper (a transparent `Node::Block`).
     if let crate::ast::Node::Block { stmts, .. } = item {
         for inner in stmts {
-            collect_global_enum_item(module_path, inner, enums);
+            collect_global_enum_item(module_path, inner, aliases, enums);
         }
     }
 }

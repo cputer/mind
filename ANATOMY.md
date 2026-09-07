@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1668 | **Est. tokens:** ~3182528
-**Generated:** 2026-09-07 05:19 UTC
+**Files:** 1669 | **Est. tokens:** ~3188030
+**Generated:** 2026-09-07 05:20 UTC
 
 ## Token Budget Guide
 
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 25 | ~111374 |
+| `src/eval/` | 26 | ~116568 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 382 | ~741565 |
+| `tests/` | 382 | ~741873 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1082,11 +1082,12 @@
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9338 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
-- `fixed_array.rs` (~1462 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct.rs` (~4992 tok, huge) — Copyright 2026 STARGA Inc.
+- `field_access.rs` (~4816 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array.rs` (~1478 tok, large) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct.rs` (~5118 tok, huge) — Copyright 2026 STARGA Inc.
 - `interp_mem.rs` (~3817 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_interp.rs` (~4212 tok, huge) — Copyright 2025 STARGA Inc.
-- `materialization.rs` (~4150 tok, huge) — Copyright 2026 STARGA Inc.
+- `materialization.rs` (~4386 tok, huge) — Copyright 2026 STARGA Inc.
 - `mlir_build.rs` (~10897 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_export.rs` (~12220 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_gpu.rs` (~301 tok, medium) — Copyright 2025 STARGA Inc.
@@ -1433,7 +1434,7 @@
 - `cross_module.rs` (~1332 tok, large) — Copyright 2025 STARGA Inc.
 - `cross_module_cdylib_compose.rs` (~4092 tok, huge) — Copyright 2025 STARGA Inc.
 - `cross_module_enum_run.rs` (~1089 tok, large) — Copyright 2025 STARGA Inc.
-- `cross_module_field_access_run.rs` (~1437 tok, large) — Copyright 2025 STARGA Inc.
+- `cross_module_field_access_run.rs` (~1745 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/cross_substrate_identity/`
 
 - `README.md` (~1280 tok, large) — cross_substrate_identity — the internal mind-bench reproducibility gate
