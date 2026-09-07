@@ -1,6 +1,21 @@
 # Frozen self-host bootstrap ELF (A6/RI-E1): the checked-in pure-MIND stage0
 # compiler that reproduces itself byte-identically (stage1==stage2==stage3)
-# and seeds the PRIMARY reproduction-independence loop. Regenerate via
-# self_host_loop_smoke.py --reseed with MINDC_SO set. NOT skippable in CI.
+# and seeds the PRIMARY reproduction-independence loop. NOT skippable in CI.
+# published-by	self_host_loop_smoke.py --advance
+#
+# PROVENANCE RECEIPT — every value below is derived from this run's inputs
+# and outputs and is reproducible by re-running the same mode on the same
+# tree. No timestamp is recorded: it could not be re-derived and would only
+# make this file differ from itself.
+# advanced_from_seed_sha256	45d49d4aee2c707fd6606019aedec0f3ddbf12aaf1667222263936135ee149d9
+# combined_source_sha256	9039e5ca94796f9ac30531b1312881cce7604cf62572214d091b42443566af65
+# combined_source_bytes	2999996
+# user_lo	381050
+# stage1_sha256	548722a0a13a45b7c0b09003e68b5720fe7c274e0b55aa00138e351d3d0a75f0
+# stage2_sha256	548722a0a13a45b7c0b09003e68b5720fe7c274e0b55aa00138e351d3d0a75f0
+# stage3_sha256	548722a0a13a45b7c0b09003e68b5720fe7c274e0b55aa00138e351d3d0a75f0
+# oracle_sha256	548722a0a13a45b7c0b09003e68b5720fe7c274e0b55aa00138e351d3d0a75f0
+# oracle_provenance	env-verified
+#
 # name	size_bytes	sha256
-stage1.elf	2324086	45d49d4aee2c707fd6606019aedec0f3ddbf12aaf1667222263936135ee149d9
+stage1.elf	2376097	548722a0a13a45b7c0b09003e68b5720fe7c274e0b55aa00138e351d3d0a75f0
