@@ -64,6 +64,17 @@ use crate::eval::slice_abi::{
 #[path = "fixed_array.rs"]
 mod fixed_array;
 
+#[cfg(feature = "std-surface")]
+#[path = "fixed_array_struct.rs"]
+mod fixed_array_struct;
+#[cfg(feature = "std-surface")]
+use fixed_array_struct::{
+    fixed_array_cell_bits_ty, fixed_array_cell_supported_in, fixed_array_cell_type,
+    load_helper_for_width, lower_fixed_array_field_index_access,
+    lower_fixed_array_field_index_assign, lower_struct_field_value, store_fixed_array_field,
+    store_helper_for_width, struct_field_type, struct_layout,
+};
+
 // ---------------------------------------------------------------------------
 // Small-object PRIMARY allocator (iter 1613) — replaced the iter-81
 // single-class burst-bin magazine (see the iter-78/iter-81 note above).
@@ -2843,87 +2854,6 @@ fn mask_narrow_binop_result(
     dst
 }
 
-/// The byte width and signedness of a struct field type for the canonical
-/// width-aware struct ABI. Returns `(width_bytes, signed)`:
-///   * `i64`/`u64`/struct-handle (`Named` non-narrow)/pointer  → 8, signed
-///   * `i32`/`u32`                                             → 4
-///   * `i16`/`u16`                                             → 2
-///   * `i8`/`u8`/`bool`                                        → 1
-///
-/// `signed` is true only for the signed integer scalars (`i64`/`i32`/`i16`/`i8`);
-/// `u*`/`bool`/handles are unsigned (zero-extended on load). Any field that is
-/// not a recognised scalar (a nested struct handle, a `Vec`/`String`/`Map`
-/// handle, etc.) is an i64-wide handle.
-#[cfg(feature = "std-surface")]
-fn struct_field_width(ty: &TypeAnn) -> (i64, bool) {
-    match ty {
-        TypeAnn::ScalarI64 => (8, true),
-        TypeAnn::ScalarI32 => (4, true),
-        TypeAnn::ScalarU32 => (4, false),
-        TypeAnn::ScalarBool => (1, false),
-        TypeAnn::Named(n) => match n.as_str() {
-            "i8" => (1, true),
-            "u8" => (1, false),
-            "i16" => (2, true),
-            "u16" => (2, false),
-            "i32" => (4, true),
-            "u32" => (4, false),
-            "i64" => (8, true),
-            // u64 and every other Named type (nested struct / Vec / String /
-            // Map handle, type alias) is an i64-wide value.
-            _ => (8, false),
-        },
-        // Floats are handled by the existing loud lowering error, not here;
-        // anything else is treated as an i64-wide handle (8 bytes).
-        _ => (8, false),
-    }
-}
-
-/// The `__mind_store_i{N}` intrinsic name for a field byte width.
-#[cfg(feature = "std-surface")]
-fn store_helper_for_width(width: i64) -> &'static str {
-    match width {
-        1 => "__mind_store_i8",
-        2 => "__mind_store_i16",
-        4 => "__mind_store_i32",
-        _ => "__mind_store_i64",
-    }
-}
-
-/// The `__mind_load_i{N}` intrinsic name for a field byte width.
-#[cfg(feature = "std-surface")]
-fn load_helper_for_width(width: i64) -> &'static str {
-    match width {
-        1 => "__mind_load_i8",
-        2 => "__mind_load_i16",
-        4 => "__mind_load_i32",
-        _ => "__mind_load_i64",
-    }
-}
-
-/// Canonical per-field layout for a struct: `(offset, width_bytes, signed)` in
-/// declaration order, plus the total allocation size. Offsets are a pure
-/// function of the declared field widths (self-aligned: each field starts at the
-/// next multiple of its own width), so the layout is identical on every
-/// substrate — no host `sizeof`/`alignof`, no target-dependent padding. Returns
-/// `None` when the field-type side-table has no entry for `name` (an unknown /
-/// forward-referenced struct), so callers fall back to the legacy 8-byte-stride
-/// path. `all_i64` is true when every field is 8 bytes wide AND tightly packed
-/// at `8*i` — the case where the legacy `__mind_alloc(8*n)` + `store_i64` IR is
-/// byte-identical and must be preserved verbatim.
-/// One field's resolved placement within a struct: `(byte_offset, width_bytes,
-/// signed)`. Offsets are self-aligned and substrate-independent (see
-/// `struct_layout`).
-#[cfg(feature = "std-surface")]
-type FieldPlacement = (i64, i64, bool);
-
-/// A struct's fully-resolved layout: each field's placement in declaration
-/// order, the total allocation size in bytes, and `all_i64` (every field is an
-/// 8-byte tightly-packed slot — the legacy byte-identical `__mind_alloc(8*n)`
-/// path).
-#[cfg(feature = "std-surface")]
-type StructLayout = (Vec<FieldPlacement>, i64, bool);
-
 /// Resolve a (possibly module-qualified) struct-literal / receiver type name to
 /// the key under which its schema is actually registered in
 /// `struct_defs`/`struct_field_types`. Those tables are keyed by the bare
@@ -3001,25 +2931,6 @@ fn static_type_receiver_key<'a>(
         return Some(terminal);
     }
     None
-}
-
-#[cfg(feature = "std-surface")]
-fn struct_layout(ir: &IRModule, name: &str) -> Option<StructLayout> {
-    let field_types = ir.struct_field_types.get(name)?;
-    let mut layout = Vec::with_capacity(field_types.len());
-    let mut running: i64 = 0;
-    let mut all_i64 = true;
-    for ty in field_types {
-        let (w, signed) = struct_field_width(ty);
-        // Self-aligned offset: round `running` up to a multiple of `w`.
-        let offset = (running + (w - 1)) / w * w;
-        if w != 8 || offset != (layout.len() as i64) * 8 {
-            all_i64 = false;
-        }
-        layout.push((offset, w, signed));
-        running = offset + w;
-    }
-    Some((layout, running, all_i64))
 }
 
 /// Sentinel recorded in `struct_env` for a fixed-size `bytes[N]` buffer
@@ -3161,41 +3072,6 @@ fn lower_return_array_lit(
         )),
         _ => None,
     }
-}
-
-/// Lower a `StructLit` FIELD value. A field declared `array<T>` whose literal is
-/// `[..]` must lower onto the std.vec heap runtime (a registered i64 handle), not
-/// the generic `ArrayLit` const-array/tensor path — whose result is a non-i64
-/// aggregate the field's `__mind_store_i64` cannot accept (it surfaces as the
-/// "non-i64 argument to call" aggregate-ABI error). Every other field value
-/// lowers normally.
-#[cfg(feature = "std-surface")]
-fn lower_struct_field_value(
-    struct_name: &str,
-    field_name: &str,
-    value: &ast::Node,
-    ir: &mut IRModule,
-    env: &HashMap<String, ValueId>,
-    struct_env: &HashMap<String, String>,
-    receiver_types: &HashMap<crate::ast::Span, String>,
-) -> ValueId {
-    if let ast::Node::ArrayLit { elements, .. } = value {
-        let is_arr_field = ir
-            .struct_defs
-            .get(struct_name)
-            .and_then(|names| names.iter().position(|n| n == field_name))
-            .and_then(|idx| {
-                ir.struct_field_types
-                    .get(struct_name)
-                    .and_then(|ts| ts.get(idx))
-            })
-            .map(is_array_surface_ty)
-            .unwrap_or(false);
-        if is_arr_field {
-            return lower_array_surface_lit(elements, ir, env, struct_env, receiver_types);
-        }
-    }
-    lower_expr(value, ir, env, struct_env, receiver_types)
 }
 
 // `map<K, V>` surface over the std.map heap runtime (i64 handles). Two
