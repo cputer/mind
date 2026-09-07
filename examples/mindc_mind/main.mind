@@ -20793,6 +20793,9 @@ pub fn selftest_mic3_module_nfn(src_addr: i64, src_len: i64, strbuf: i64, offs: 
     }
     let _rr: i64 = alias_annotate_returns(src_addr, alias_tab, alias_frt, alias_fns, alias_n, 0);
     let _rc: i64 = alias_annotate_call_module(src_addr, alias_tab, alias_frt, items_addr, items_len, 0);
+    if _rc == alias_env_refusal() {
+        return es_new();
+    }
     // Multi-struct registry (declaration order with per-struct field spans). N==0
     // for struct-less modules, in which case the registry/strtab tail stays empty
     // and the bytes are unchanged from the original fns-only path.
@@ -44179,14 +44182,19 @@ pub fn alias_env_lookup(env: i64, src: i64, lo: i64, hi: i64) -> i64 {
     alias_env_lookup_rest(env, src, lo, hi, 0)
 }
 
+// A depth overflow is a structured alias-analysis refusal, not a width. The
+// caller propagates this sentinel to the module emitter, which returns an empty
+// ELF instead of silently widening the oldest binding.
+pub fn alias_env_refusal() -> i64 {
+    0 - 64
+}
+
 pub fn alias_env_lookup_rest(env: i64, src: i64, lo: i64, hi: i64, depth: i64) -> i64 {
     if env == 0 {
         return 0;
     }
     if depth >= alias_cap() {
-        // Keep an unexpectedly deep lexical chain conservative: unknown/wide
-        // is the safe lattice result and avoids unbounded recursive descent.
-        return 64;
+        return alias_env_refusal();
     }
     if span_bytes_equal(src, lo, hi, alias_env_name_lo(env), alias_env_name_hi(env)) == 1 {
         return alias_env_width(env);
@@ -44232,7 +44240,10 @@ pub fn alias_annotate_struct_values(src: i64, aliases: i64, frt: i64, env: i64, 
     if i >= n {
         return 0;
     }
-    let _v: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(fields + i * 24 + 16));
+    let v: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(fields + i * 24 + 16));
+    if v == alias_env_refusal() {
+        return alias_env_refusal();
+    }
     alias_annotate_struct_values(src, aliases, frt, env, fields, n, i + 1)
 }
 
@@ -44243,6 +44254,9 @@ pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, env: i64, node
     let k: i64 = ast_kind(node);
     if k == ast_ident() {
         let w: i64 = alias_env_lookup(env, src, ast_span_lo(node), ast_span_hi(node));
+        if w == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let result: i64 = if alias_is_narrow_code(w) == 1 {
             w
         } else {
@@ -44256,25 +44270,40 @@ pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, env: i64, node
         // receive their own cached widths in source evaluation order.
         let args: i64 = ast_child1(node);
         let n: i64 = ast_aux(node);
-        let _a: i64 = alias_annotate_call_args(src, aliases, frt, env, args, n, 0);
+        let a: i64 = alias_annotate_call_args(src, aliases, frt, env, args, n, 0);
+        if a == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let w: i64 = alias_call_return_code(src, aliases, frt, node);
         __mind_store_i64(node + 56, w);
         return w;
     }
     if k == ast_binop() {
         let lw: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if lw == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let rw: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child1(node));
+        if rw == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let w: i64 = alias_join_narrow_code(lw, rw, ast_aux(node));
         __mind_store_i64(node + 56, w);
         return w;
     }
     if k == ast_paren() {
         let w: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if w == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, w);
         return w;
     }
     if k == ast_cast() {
-        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if inner == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let cw: i64 = ast_aux(node);
         let w: i64 = if alias_is_positive_narrow_code(cw) == 1 {
             if ast_cast_is_unsigned(src, node) == 1 { 0 - cw } else { cw }
@@ -44285,47 +44314,77 @@ pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, env: i64, node
         return w;
     }
     if k == ast_neg() {
-        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if inner == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_not() {
-        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if inner == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         // Rust's narrow lattice treats Neg/Not as neutral in this path.
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_field() {
-        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if inner == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_index() {
-        let _base: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
-        let _idx: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child1(node));
+        let base: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if base == alias_env_refusal() {
+            return alias_env_refusal();
+        }
+        let idx: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child1(node));
+        if idx == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_array_lit() {
-        let _elems: i64 = alias_annotate_call_args(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        let elems: i64 = alias_annotate_call_args(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        if elems == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_struct_lit() {
-        let _fields: i64 = alias_annotate_struct_values(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        let fields: i64 = alias_annotate_struct_values(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        if fields == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         __mind_store_i64(node + 56, 0);
         return 0;
     }
     if k == ast_if() {
-        let _cond: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let cond: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        if cond == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let then_blk: i64 = ast_child1(node);
         if ast_kind(then_blk) == ast_block() {
-            let _then: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(then_blk), ast_aux(then_blk), 0);
+            let then_result: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(then_blk), ast_aux(then_blk), 0);
+            if then_result == alias_env_refusal() {
+                return alias_env_refusal();
+            }
         }
         let else_blk: i64 = ast_child2(node);
         if else_blk != 0 {
             if ast_kind(else_blk) == ast_block() {
-                let _else: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(else_blk), ast_aux(else_blk), 0);
+                let else_result: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(else_blk), ast_aux(else_blk), 0);
+                if else_result == alias_env_refusal() {
+                    return alias_env_refusal();
+                }
             }
         }
         __mind_store_i64(node + 56, 0);
@@ -44338,7 +44397,10 @@ pub fn alias_annotate_call_args(src: i64, aliases: i64, frt: i64, env: i64, args
     if i >= n {
         return 0;
     }
-    let _a: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(args + i * 8));
+    let a: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(args + i * 8));
+    if a == alias_env_refusal() {
+        return alias_env_refusal();
+    }
     alias_annotate_call_args(src, aliases, frt, env, args, n, i + 1)
 }
 
@@ -44349,7 +44411,10 @@ pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: i64, stm
     let stmt: i64 = __mind_load_i64(stmts + i * 8);
     let k: i64 = ast_kind(stmt);
     if k == ast_let() {
-        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+        let l: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+        if l == alias_env_refusal() {
+            return alias_env_refusal();
+        }
         let name: i64 = ast_child0(stmt);
         let ty: i64 = ast_child1(stmt);
         let code: i64 = if ty == 0 {
@@ -44361,35 +44426,62 @@ pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: i64, stm
         return alias_annotate_call_stmts(src, aliases, frt, next_env, stmts, n, i + 1);
     }
     if k == ast_return() {
-        let _r: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+        let r: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+        if r == alias_env_refusal() {
+            return alias_env_refusal();
+        }
     } else {
         if k == ast_if() {
-            let _c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+            let c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+            if c == alias_env_refusal() {
+                return alias_env_refusal();
+            }
             let tb: i64 = ast_child1(stmt);
             if ast_kind(tb) == ast_block() {
-                let _t: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(tb), ast_aux(tb), 0);
+                let t: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(tb), ast_aux(tb), 0);
+                if t == alias_env_refusal() {
+                    return alias_env_refusal();
+                }
             }
             let eb: i64 = ast_child2(stmt);
             if eb != 0 {
                 if ast_kind(eb) == ast_block() {
-                    let _e: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(eb), ast_aux(eb), 0);
+                    let e: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(eb), ast_aux(eb), 0);
+                    if e == alias_env_refusal() {
+                        return alias_env_refusal();
+                    }
                 }
             }
         } else {
             if k == ast_while() {
-                let _c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+                let c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+                if c == alias_env_refusal() {
+                    return alias_env_refusal();
+                }
                 let wb: i64 = ast_child1(stmt);
                 if ast_kind(wb) == ast_block() {
-                    let _w: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(wb), ast_aux(wb), 0);
+                    let w: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(wb), ast_aux(wb), 0);
+                    if w == alias_env_refusal() {
+                        return alias_env_refusal();
+                    }
                 }
             } else {
                 if k == ast_assign() {
-                    let _a: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+                    let a: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+                    if a == alias_env_refusal() {
+                        return alias_env_refusal();
+                    }
                 } else {
                     if k == ast_block() {
-                        let _b: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(stmt), ast_aux(stmt), 0);
+                        let b: i64 = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(stmt), ast_aux(stmt), 0);
+                        if b == alias_env_refusal() {
+                            return alias_env_refusal();
+                        }
                     } else {
-                        let _e: i64 = alias_annotate_call_expr(src, aliases, frt, env, stmt);
+                        let e: i64 = alias_annotate_call_expr(src, aliases, frt, env, stmt);
+                        if e == alias_env_refusal() {
+                            return alias_env_refusal();
+                        }
                     }
                 }
             }
@@ -44420,7 +44512,10 @@ pub fn alias_annotate_call_module(src: i64, aliases: i64, frt: i64, items: i64, 
         let body: i64 = ast_child2(item);
         if ast_kind(body) == ast_block() {
             let params: i64 = alias_annotate_fn_param_env(src, aliases, item, 0, 0);
-            let _b: i64 = alias_annotate_call_stmts(src, aliases, frt, params, ast_child0(body), ast_aux(body), 0);
+            let b: i64 = alias_annotate_call_stmts(src, aliases, frt, params, ast_child0(body), ast_aux(body), 0);
+            if b == alias_env_refusal() {
+                return alias_env_refusal();
+            }
         }
     }
     alias_annotate_call_module(src, aliases, frt, items, n, i + 1)
