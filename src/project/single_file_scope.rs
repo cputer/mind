@@ -20,7 +20,9 @@ use anyhow::{Context, Result};
 use crate::ast::{Module, Node};
 
 use super::sources::{canonical_project_root, resolve_project_entry};
-use super::{DEFAULT_TARGET_BLOCK, find_project_root_for_file, load_manifest, resolve_sources};
+use super::{
+    DEFAULT_TARGET_BLOCK, find_project_root_for_file_checked, load_manifest, resolve_sources,
+};
 
 pub enum Discovery {
     SingleTranslationUnit,
@@ -198,7 +200,7 @@ pub fn discover_with_source(
         return Ok(Discovery::SingleTranslationUnit);
     }
     let entry_dir = entry.parent().unwrap_or_else(|| Path::new("."));
-    let Some(project_root) = find_project_root_for_file(entry_dir) else {
+    let Some(project_root) = find_project_root_for_file_checked(entry_dir)? else {
         return Ok(Discovery::MissingProject(
             direct.iter().map(|path| path.join(".")).collect(),
         ));

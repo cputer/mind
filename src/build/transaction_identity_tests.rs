@@ -3,7 +3,7 @@
 
 //! Project identity and temporary-manifest race controls.
 
-use super::{canonical_explicit_entry, open_explicit};
+use super::{canonical_explicit_entry, entry_relative_to_root, open_explicit};
 use crate::project::build_lock::ProjectBuildLock;
 use crate::project::{find_project_root_for_file, resolve_sources};
 use std::fs;
@@ -50,22 +50,43 @@ fn cwd() -> PathBuf {
     std::env::current_dir().expect("cwd")
 }
 
+#[test]
+fn entry_relative_path_is_stable() {
+    assert_eq!(
+        entry_relative_to_root(
+            Path::new("/tmp/project/src/main.mind"),
+            Path::new("/tmp/project")
+        )
+        .expect("entry is under root"),
+        "src/main.mind"
+    );
+}
+
+#[test]
+fn entry_relative_path_refuses_escape_without_absolute_fallback() {
+    let error = entry_relative_to_root(Path::new("/tmp/outside.mind"), Path::new("/tmp/project"))
+        .expect_err("entry outside root must fail closed");
+    assert_eq!(
+        error.to_string(),
+        "entry path /tmp/outside.mind is outside project root /tmp/project"
+    );
+}
+
 /// Both spellings resolve to one directory identity, under which the entry
 /// is project-root-relative.
 ///
 /// The relative spelling is load-bearing: `run_build` derives the manifest
-/// `entry` key by stripping the root prefix off the entry path. A lexical
-/// `link/alpha.mind` does not start with the canonical root, so the strip
-/// falls through to an absolute path that source confinement then correctly
-/// refuses — `manifest entry "…" must be project-root-relative`.
+/// `entry` key by stripping the root prefix off the entry path. Canonicalising
+/// the directory makes both spellings produce the same checked relative key.
 #[test]
 fn symlink_and_canonical_spellings_open_one_directory_identity() {
     let d = aliased_dir();
     fs::write(d.real.join("Mind.toml"), BARE_MANIFEST).expect("manifest");
 
     let (canonical_dir, canonical_entry) =
-        canonical_explicit_entry(&d.real.join("alpha.mind"), &cwd());
-    let (alias_dir, alias_entry) = canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd());
+        canonical_explicit_entry(&d.real.join("alpha.mind"), &cwd()).expect("canonical entry");
+    let (alias_dir, alias_entry) =
+        canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd()).expect("alias entry");
 
     assert_eq!(canonical_dir, alias_dir, "one directory, two spellings");
     assert_eq!(canonical_entry, alias_entry);
@@ -92,7 +113,8 @@ fn adjacent_bare_manifest_scopes_to_the_entry_through_either_spelling() {
 
     for spelling in [&d.real, &d.link] {
         let (entry_dir, entry_path) =
-            canonical_explicit_entry(&spelling.join("alpha.mind"), &cwd());
+            canonical_explicit_entry(&spelling.join("alpha.mind"), &cwd())
+                .expect("canonical entry");
         let opened = open_explicit(
             find_project_root_for_file(&entry_dir),
             &entry_dir,
@@ -142,7 +164,8 @@ fn vanished_temporary_manifest_under_the_lock_is_not_a_manifest_error() {
     let d = aliased_dir();
     let manifest_path = d.real.join("Mind.toml");
     fs::write(&manifest_path, BARE_MANIFEST).expect("temporary manifest");
-    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd());
+    let (entry_dir, entry_path) =
+        canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd()).expect("canonical entry");
 
     let gate = Arc::new(Barrier::new(2));
     let preceding = {
@@ -195,7 +218,8 @@ fn a_vanished_ancestor_project_manifest_is_still_an_error() {
     fs::write(d.real.join(".git"), "gitdir: elsewhere\n").expect("repo boundary");
     fs::write(d.real.join("Mind.toml"), BARE_MANIFEST).expect("manifest");
 
-    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd());
+    let (entry_dir, entry_path) =
+        canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd()).expect("canonical entry");
     let probed = find_project_root_for_file(&entry_dir);
     assert_eq!(probed.as_deref(), Some(d.real.as_path()));
     assert_ne!(probed.as_deref(), Some(entry_dir.as_path()));
@@ -230,7 +254,8 @@ fn a_real_project_keeps_its_whole_directory_scope_through_the_symlink() {
     )
     .expect("manifest");
 
-    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd());
+    let (entry_dir, entry_path) =
+        canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd()).expect("canonical entry");
     let opened = open_explicit(
         find_project_root_for_file(&entry_dir),
         &entry_dir,

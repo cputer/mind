@@ -29,6 +29,12 @@ pub(crate) mod active_module_table;
 pub mod module_table;
 
 pub(crate) mod build_input_snapshot;
+mod identity;
+
+#[cfg(test)]
+use identity::canonicalize_dir_with_missing_fallback;
+pub use identity::find_project_root_for_file;
+pub(crate) use identity::{canonical_dir, find_project_root_for_file_checked};
 
 /// Per-target executable link driver (ELF / PE-COFF / Mach-O dispatch). Only the
 /// host ELF arm is wired today; the others fail loud until their slice lands.
@@ -758,107 +764,6 @@ pub fn find_project_root() -> Result<PathBuf> {
             return Err(anyhow!(
                 "Could not find Mind.toml in current directory or any parent"
             ));
-        }
-    }
-}
-
-/// The one directory identity used at a build-transaction boundary.
-///
-/// Invariant: the project root, an explicit entry's directory, and the locked
-/// directory are all produced by this function, so comparing them tests
-/// directory identity instead of path spelling. A lexical spelling and a
-/// canonical one differ whenever any component is a symlink; on macOS the
-/// per-user temporary directory (`/var/folders/...` against
-/// `/private/var/folders/...`) makes that the normal case rather than an edge.
-///
-/// A relative path is anchored at the caller's cwd first — an unanchored one
-/// ascends to the empty `PathBuf`, where `Mind.toml` appears to resolve at `""`
-/// and the default source walk then captures nothing. `None` only when that cwd
-/// is unreadable. A directory that cannot be canonicalised (it does not exist
-/// yet) falls back to its absolute lexical form, the same fallback at every
-/// call site, so the boundary spellings still agree with each other.
-pub(crate) fn canonical_dir(dir: &Path) -> Option<PathBuf> {
-    let absolute = if dir.is_absolute() {
-        dir.to_path_buf()
-    } else {
-        std::env::current_dir().ok()?.join(dir)
-    };
-    Some(absolute.canonicalize().unwrap_or(absolute))
-}
-
-/// Resolve the project root that GOVERNS an explicit source file, bounded so a
-/// stray ancestor `Mind.toml` can never hijack a one-off `mindc build <file>`.
-///
-/// The plain [`find_project_root`] ascends from the current directory to the
-/// *first* `Mind.toml` in **any** ancestor. For a one-off single-file build that
-/// is a latency landmine: a leftover `/tmp/Mind.toml` (e.g. a killed build that
-/// never cleaned up its synthetic manifest) makes every `mindc build x.mind`
-/// beneath `/tmp` adopt `/tmp` as the root and walk the entire `/tmp` tree
-/// (observed: 233k `getdents64`, ~2.3s vs ~60ms — a >30× regression).
-///
-/// The bound is the enclosing **git repository**, which is the natural project
-/// boundary:
-///  - If the file is inside a git repo, adopt the nearest `Mind.toml` at or
-///    above the file's directory but never above the repo root — a manifest
-///    *outside* the repo does not govern files inside it.
-///  - If the file is **not** inside any repo (a scratch file under `/tmp`), only
-///    a `Mind.toml` sitting directly next to it governs it; never ascend, so a
-///    stray distant manifest is inert.
-///
-/// Returns `None` when no governing manifest exists in-bounds; the caller then
-/// synthesises a single-file manifest rooted at the file's own directory.
-///
-/// deferred: a non-git project laid out as `<proj>/Mind.toml` + `<proj>/src/x.mind`
-/// and built via an explicit `mindc build src/x.mind` will synthesise (losing the
-/// manifest's `[exports]`) instead of adopting `<proj>/Mind.toml`, because there
-/// is no repo boundary to bound the ascent — `git init` or `mindc build` (no
-/// explicit path, which still uses [`find_project_root`]) both resolve it.
-/// upgrade path: add a `[workspace]`/manifest-root sentinel so a non-git project
-/// declares its own boundary without a stray ancestor being adoptable.
-pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
-    // The root below is derived from the canonical spelling, so a caller that
-    // later relates its own entry directory to it must use [`canonical_dir`]
-    // too — otherwise the two agree only when no component is a symlink.
-    let entry_dir = canonical_dir(entry_dir)?;
-
-    // 1. Locate the enclosing git repository, if any (`.git` may be a dir for a
-    //    normal repo or a file for a worktree/submodule — `exists()` covers both).
-    let mut git_root: Option<PathBuf> = None;
-    let mut probe = entry_dir.clone();
-    loop {
-        if probe.join(".git").exists() {
-            git_root = Some(probe.clone());
-            break;
-        }
-        if !probe.pop() {
-            break;
-        }
-    }
-
-    match git_root {
-        // 2. Inside a repo: adopt the nearest `Mind.toml` from the file's dir up
-        //    to (and including) the repo root. Never look above the repo root.
-        Some(root) => {
-            let mut current = entry_dir.clone();
-            loop {
-                if current.join("Mind.toml").exists() {
-                    return Some(current);
-                }
-                if current == root {
-                    return None;
-                }
-                if !current.pop() {
-                    return None;
-                }
-            }
-        }
-        // 3. Not in any repo: only a co-located manifest governs the file.
-        None => {
-            if entry_dir.join("Mind.toml").exists() {
-                Some(entry_dir)
-            } else {
-                None
-            }
         }
     }
 }
@@ -3452,8 +3357,12 @@ mod root_bound_tests {
     //! (e.g. a leftover `/tmp/Mind.toml` from a killed build) must never be
     //! adopted by a one-off `mindc build <file>` — that hijack turned a single
     //! file build into a full-tree walk (233k `getdents64`, ~2.3s vs ~60ms).
-    use super::find_project_root_for_file;
+    use super::{
+        canonical_dir, canonicalize_dir_with_missing_fallback, find_project_root_for_file,
+    };
     use std::fs;
+    use std::io::{self, ErrorKind};
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn touch_manifest(dir: &std::path::Path) {
@@ -3534,6 +3443,49 @@ mod root_bound_tests {
         assert!(
             find_project_root_for_file(&entry_dir).is_none(),
             "manifest above the repo root must not be adopted"
+        );
+    }
+
+    /// A missing parent retains the explicit-file discovery compatibility arm:
+    /// the caller can proceed to its normal source-not-found diagnostic.
+    #[test]
+    fn missing_parent_keeps_absolute_lexical_discovery_spelling() {
+        let td = TempDir::new().unwrap();
+        let missing = td.path().join("not-created");
+        let got = canonical_dir(&missing)
+            .expect("missing paths are a supported discovery case")
+            .expect("absolute temp path has a cwd");
+        assert_eq!(got, missing);
+    }
+
+    /// The OS-specific ENOTDIR/ENOTLINK variants are injected so the policy is
+    /// tested deterministically on every host without depending on its errno
+    /// spelling. The original io::Error remains recoverable from anyhow.
+    #[test]
+    fn non_directory_canonicalization_error_is_propagated_with_cause() {
+        let error = io::Error::new(ErrorKind::NotADirectory, "synthetic non-directory");
+        let result = canonicalize_dir_with_missing_fallback(
+            PathBuf::from("/mind-test/non-directory/child"),
+            |_| Err(error),
+        );
+        let error = result.expect_err("non-directory must not become lexical identity");
+        assert!(error.downcast_ref::<io::Error>().is_some());
+        assert!(error.to_string().contains("cannot canonicalize directory"));
+    }
+
+    #[test]
+    fn symlink_loop_canonicalization_error_is_propagated_with_cause() {
+        let error = io::Error::new(ErrorKind::Other, "synthetic symlink loop");
+        let result = canonicalize_dir_with_missing_fallback(
+            PathBuf::from("/mind-test/symlink-loop"),
+            |_| Err(error),
+        );
+        let error = result.expect_err("symlink loop must not become lexical identity");
+        assert!(error.downcast_ref::<io::Error>().is_some());
+        assert!(
+            error
+                .chain()
+                .any(|cause| cause.to_string().contains("synthetic symlink loop"))
         );
     }
 

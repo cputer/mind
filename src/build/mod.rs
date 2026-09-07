@@ -48,7 +48,7 @@ use source_key::compile_cache_material_from_snapshots as cache_material_from;
 use crate::project::{
     BuildTarget, EmitKind, OptimizeLevel, build_input_snapshot::BuildInputSnapshot,
     build_project_locked_with_snapshot as build_snapshot, find_project_root,
-    find_project_root_for_file, load_manifest,
+    find_project_root_for_file_checked, load_manifest,
 };
 
 use cache::{
@@ -152,17 +152,28 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // Mind.toml in bounds — the manifest is synthesised and the project root is
     // the entry file's OWN directory. Such a build compiles only the named entry
     // (see `BuildOptions::single_file`), never a whole-directory sibling walk.
-    let explicit_entry = opts.paths.first().map(|first| {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        canonical_explicit_entry(first, &cwd)
-    });
+    let explicit_entry = opts
+        .paths
+        .first()
+        .map(|first| {
+            let cwd = std::env::current_dir().map_err(|error| {
+                anyhow::Error::new(error).context("cannot read current directory")
+            })?;
+            canonical_explicit_entry(first, &cwd)
+        })
+        .transpose()
+        .map_err(|error| {
+            BuildError::Invalid(format!("cannot resolve explicit entry: {error:#}"))
+        })?;
     let (project_root, manifest, build_lock, single_file) =
         if let Some((entry_dir, first_path)) = explicit_entry.clone() {
             // The root is probed before any lock is held and re-audited after
             // it, inside `open_explicit` — see that function for the window
             // that ordering opens.
             let opened = open_explicit(
-                find_project_root_for_file(&entry_dir),
+                find_project_root_for_file_checked(&entry_dir).map_err(|error| {
+                    BuildError::Invalid(format!("cannot discover project root: {error:#}"))
+                })?,
                 &entry_dir,
                 &first_path,
             )?;
@@ -307,11 +318,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // the one seam that turns a driver error into a `BuildError` while KEEPING its
     // cause code. Hand-rolling a refusal here would strip that code and an
     // undiagnosed refusal fails closed at every consumer.
-    let entry_rel = entry_path
-        .strip_prefix(&project_root)
-        .unwrap_or(&entry_path)
-        .to_string_lossy()
-        .replace('\\', "/");
+    let entry_rel = entry_relative_to_root(&entry_path, &project_root)?;
     let selected_block = legacy_target
         .as_deref()
         .unwrap_or(crate::project::DEFAULT_TARGET_BLOCK);
@@ -379,7 +386,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
                     BuildDecision::CacheMiss
                 } else {
                     // Update manifest.
-                    update_manifest(&c_root, &project_root, &entry_path, key, opts.verbose);
+                    update_manifest(&c_root, &entry_rel, key, opts.verbose);
 
                     let final_path = match eff_emit {
                         EmitKind::Cdylib => ensure_cdylib_extension(artifact_path),
@@ -522,13 +529,7 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
                 };
                 // Best-effort: cache write failure does not fail the build.
                 let _ = write_object(&c_root, cache_material, &artifact_bytes, &meta);
-                update_manifest(
-                    &c_root,
-                    &project_root,
-                    &entry_path,
-                    &cache_material.key,
-                    opts.verbose,
-                );
+                update_manifest(&c_root, &entry_rel, &cache_material.key, opts.verbose);
             }
         }
     }
@@ -579,26 +580,31 @@ fn ensure_executable_if_binary(path: &Path, emit: EmitKind) {
 }
 
 /// Update `manifest.json` to record `source_path -> cache_key`.
-fn update_manifest(
-    c_root: &Path,
-    project_root: &Path,
-    entry_path: &Path,
-    cache_key: &str,
-    verbose: bool,
-) {
+fn update_manifest(c_root: &Path, entry_rel: &str, cache_key: &str, verbose: bool) {
     let mpath = cache::manifest_path(c_root);
     let mut manifest = BuildManifest::load(&mpath).unwrap_or_default();
-    let rel = entry_path
-        .strip_prefix(project_root)
-        .unwrap_or(entry_path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    manifest.entries.insert(rel, cache_key.to_string());
+    manifest
+        .entries
+        .insert(entry_rel.to_string(), cache_key.to_string());
     if let Err(e) = manifest.save(&mpath) {
         if verbose {
             eprintln!("   [CACHE] manifest write failed: {e}");
         }
     }
+}
+
+/// Derive the one project-relative spelling used by source selection, cache
+/// identity, and temporary manifest edits. A root/entry mismatch is an
+/// invariant failure and must never become an absolute cache or manifest key.
+fn entry_relative_to_root(entry_path: &Path, project_root: &Path) -> Result<String, BuildError> {
+    let relative = entry_path.strip_prefix(project_root).map_err(|_| {
+        BuildError::Invalid(format!(
+            "entry path {} is outside project root {}",
+            entry_path.display(),
+            project_root.display()
+        ))
+    })?;
+    Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
 // ---------------------------------------------------------------------------

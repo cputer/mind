@@ -5,6 +5,7 @@
 
 use super::{BuildError, build_synthetic_manifest};
 use crate::project::{ProjectManifest, load_manifest};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 pub(super) use crate::project::build_lock::ManifestEdit;
@@ -37,7 +38,7 @@ pub(super) struct BuildTransaction {
 /// directory compares unequal to the root whenever a component is a symlink,
 /// which defeats the vanished-temporary-manifest fallback and mis-classifies a
 /// co-located bare manifest as a whole-directory project.
-pub(super) fn canonical_explicit_entry(requested: &Path, cwd: &Path) -> (PathBuf, PathBuf) {
+pub(super) fn canonical_explicit_entry(requested: &Path, cwd: &Path) -> Result<(PathBuf, PathBuf)> {
     let absolute = if requested.is_absolute() {
         requested.to_path_buf()
     } else {
@@ -47,12 +48,13 @@ pub(super) fn canonical_explicit_entry(requested: &Path, cwd: &Path) -> (PathBuf
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| cwd.to_path_buf());
-    let entry_dir = crate::project::canonical_dir(&lexical_dir).unwrap_or(lexical_dir);
+    let entry_dir = crate::project::canonical_dir(&lexical_dir)?
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve current directory for explicit entry"))?;
     let entry_path = match absolute.file_name() {
         Some(name) => entry_dir.join(name),
         None => absolute,
     };
-    (entry_dir, entry_path)
+    Ok((entry_dir, entry_path))
 }
 
 /// Open the build transaction for an explicit `mindc build <file>`.
