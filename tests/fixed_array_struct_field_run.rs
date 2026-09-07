@@ -22,6 +22,8 @@ const SOURCE: &str = r#"
 type Elem = i64
 type Words = [Elem; 2]
 type Four = [i64; 4]
+type TwoWords = [i64; 2]
+type ThreeWords = [i64; 3]
 
 struct S { xs: [i64; 4], tail: i64 }
 struct AliasS { xs: Four }
@@ -31,6 +33,8 @@ struct Outer { inner: Inner }
 struct One { xs: [i64; 1], tail: i64 }
 struct Empty { xs: [i64; 0], tail: i64 }
 struct Wide { xs: [i64; 64] }
+struct LeftOwner { xs: TwoWords }
+struct RightOwner { xs: ThreeWords }
 
 fn read_struct(s: S) -> i64 {
     let a = s.xs
@@ -103,6 +107,16 @@ pub fn indexed_read64() -> i64 {
     let s = Wide { xs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63] }
     return s.xs[37]
 }
+
+pub fn same_owner_left() -> i64 {
+    let s = LeftOwner { xs: [11, 22] }
+    return s.xs[1]
+}
+
+pub fn same_owner_right() -> i64 {
+    let s = RightOwner { xs: [31, 32, 43] }
+    return s.xs[2]
+}
 "#;
 
 #[test]
@@ -144,11 +158,17 @@ fn fixed_array_struct_fields_run_native_artifact() {
             lib.get(b"indexed_read4").expect("load indexed_read4");
         let indexed_read64: Symbol<unsafe extern "C" fn() -> i64> =
             lib.get(b"indexed_read64").expect("load indexed_read64");
+        let same_owner_left: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"same_owner_left").expect("load same_owner_left");
+        let same_owner_right: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"same_owner_right").expect("load same_owner_right");
         assert_eq!(run(), 16 + 9 + 12 + 84 + 6 + 9 + 9 + 6 + 12 + 13);
         assert_eq!(float_run().to_bits(), 2.5f64.to_bits());
         assert_eq!(float_signed_zero().to_bits(), (-0.0f64).to_bits());
         assert_eq!(indexed_read4(), 30);
         assert_eq!(indexed_read64(), 37);
+        assert_eq!(same_owner_left(), 22);
+        assert_eq!(same_owner_right(), 43);
     }
 }
 

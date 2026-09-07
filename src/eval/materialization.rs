@@ -365,4 +365,161 @@ mod tests {
             ))
         ));
     }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn public_budget_is_shared_across_functions_and_branches() {
+        let functions = r#"
+fn first() -> [i64; 2] { return [1, 2] }
+fn second() -> [i64; 2] { return [3, 4] }
+"#;
+        let result = crate::pipeline::compile_source_with_limits(
+            functions,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 16,
+                ir_items: 10,
+                temp_slots: 10,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(crate::pipeline::CompileError::Materialization(
+                MaterializationRefusal::PayloadLimit {
+                    attempted: 32,
+                    limit: 16,
+                }
+            ))
+        ));
+
+        let branch = r#"
+fn branch(flag: i64) -> i64 {
+    if flag == 0 { let a: [i64; 2] = [1, 2] }
+    else { let b: [i64; 2] = [3, 4] }
+    return flag
+}
+"#;
+        let result = crate::pipeline::compile_source_with_limits(
+            branch,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 16,
+                ir_items: 10,
+                temp_slots: 10,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(crate::pipeline::CompileError::Materialization(
+                MaterializationRefusal::PayloadLimit {
+                    attempted: 32,
+                    limit: 16,
+                }
+            ))
+        ));
+    }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn public_field_owner_aliases_resolve_by_struct_and_index_is_constant_work() {
+        let source = r#"
+type LeftWords = [i64; 2]
+type RightWords = [i64; 3]
+struct Left { xs: LeftWords }
+struct Right { xs: RightWords }
+fn left(s: Left) -> i64 { return s.xs[1] }
+fn right(s: Right) -> i64 { return s.xs[2] }
+"#;
+        let result = crate::pipeline::compile_source_with_limits(
+            source,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 0,
+                ir_items: 100,
+                temp_slots: 0,
+            },
+        );
+        assert!(
+            result.is_ok(),
+            "indexed field aliases must not copy out arrays: {result:?}"
+        );
+    }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn public_whole_field_copyout_is_charged_and_refusal_is_fail_closed() {
+        let source = r#"
+struct Pair { xs: [i64; 2] }
+fn copyout(s: Pair) -> i64 {
+    let xs = s.xs
+    return xs[0]
+}
+"#;
+        let result = crate::pipeline::compile_source_with_limits(
+            source,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 15,
+                ir_items: 100,
+                temp_slots: 100,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(crate::pipeline::CompileError::Materialization(
+                MaterializationRefusal::PayloadLimit {
+                    attempted: 16,
+                    limit: 15,
+                }
+            ))
+        ));
+
+        // The first failed charge is preserved even when later work would
+        // exceed a different counter; lowering returns no partial IR product.
+        let two = "let a: [i64; 2] = [1, 2]\nlet b: [i64; 2] = [3, 4]";
+        let result = crate::pipeline::compile_source_with_limits(
+            two,
+            &crate::pipeline::CompileOptions::default(),
+            MaterializationLimits {
+                payload_bytes: 15,
+                ir_items: 0,
+                temp_slots: 100,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(crate::pipeline::CompileError::Materialization(
+                MaterializationRefusal::PayloadLimit {
+                    attempted: 16,
+                    limit: 15,
+                }
+            ))
+        ));
+    }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn refusal_stops_later_lowering_assumptions_and_emits_no_partial_ir() {
+        // ExternConst is deliberately a loud lowering refusal today.  It is
+        // placed after an over-budget literal to prove the first structured
+        // materialisation error stops the item walk instead of reaching that
+        // later assumption or returning a partial module.
+        let source = "let xs: [i64; 2] = [1, 2]\nextern const TABLE: [i64; 1]";
+        let module = crate::parser::parse(source).expect("refusal control source");
+        let result = crate::eval::lower::lower_to_ir_with_limits(
+            &module,
+            MaterializationLimits {
+                payload_bytes: 15,
+                ir_items: 0,
+                temp_slots: 0,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(MaterializationRefusal::PayloadLimit {
+                attempted: 16,
+                limit: 15,
+            })
+        ));
+    }
 }

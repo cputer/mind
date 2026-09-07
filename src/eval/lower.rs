@@ -1139,6 +1139,10 @@ impl LoweringContext {
         }
     }
 
+    fn failed(&self) -> bool {
+        self.refusal.is_some()
+    }
+
     fn charge_fixed_literal(&mut self, length: u32, runtime_elements: bool) -> bool {
         if self.refusal.is_some() {
             return false;
@@ -1585,6 +1589,13 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
     }
 
     for item in &module.items {
+        // A materialisation refusal is terminal for this invocation.  Do not
+        // walk later items after a failed charge: they may contain lowering
+        // assumptions for an aggregate whose construction was deliberately
+        // skipped.  The temporary IR is discarded by the Result boundary.
+        if context.failed() {
+            break;
+        }
         match item {
             ast::Node::Let {
                 name, ann, value, ..
@@ -5083,6 +5094,12 @@ fn lower_expr(
     receiver_types: &HashMap<crate::ast::Span, String>,
     context: &mut LoweringContext,
 ) -> ValueId {
+    // Recursive callers can reach this after a child charge refused.  Return
+    // a disposable SSA id so no later expansion or fallback path runs; the
+    // enclosing lowering invocation returns the original structured refusal.
+    if context.failed() {
+        return ir.fresh();
+    }
     match node {
         ast::Node::Lit(Literal::Int(n), _) => {
             let id = ir.fresh();
