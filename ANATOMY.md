@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1669 | **Est. tokens:** ~3188030
-**Generated:** 2026-09-07 05:20 UTC
+**Files:** 1669 | **Est. tokens:** ~3188449
+**Generated:** 2026-09-07 05:41 UTC
 
 ## Token Budget Guide
 
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 26 | ~116568 |
+| `src/eval/` | 26 | ~116567 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 3 | ~11869 |
-| `src/type_checker/` | 12 | ~51264 |
+| `src/type_checker/` | 12 | ~51669 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 382 | ~741873 |
+| `tests/` | 382 | ~741888 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1107,7 +1107,7 @@
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
 - `struct_resolver.rs` (~8148 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
-- `type_aliases.rs` (~1499 tok, large) — Copyright 2025 STARGA Inc.
+- `type_aliases.rs` (~1498 tok, large) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/exec/`
 
@@ -1263,7 +1263,7 @@
 - `top_level.rs` (~339 tok, medium) — Copyright 2025-2026 STARGA Inc.
 ### `src/type_checker/`
 
-- `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
+- `array_lengths.rs` (~2218 tok, huge) — Copyright 2026 STARGA Inc.
 - `duplicate_structs.rs` (~424 tok, medium) — Copyright 2026 STARGA Inc.
 - `lowering_refusals.rs` (~6770 tok, huge) — Copyright 2026 STARGA Inc.
 - `lowering_refusals_tests.rs` (~4372 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1580,7 +1580,7 @@
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct_field_run.rs` (~2390 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct_field_run.rs` (~2405 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.

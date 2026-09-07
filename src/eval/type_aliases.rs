@@ -44,9 +44,12 @@ impl LocalTypeAliases {
 /// in the same parsed module. `Node::Block` is transparent here because the
 /// parser represents a source-level `module name { ... }` wrapper as that node;
 /// the project export and local-const collectors use the same rule.
-pub(super) fn collect_local_fn_signatures(items: &[Node], ir: &mut IRModule) {
-    let aliases = LocalTypeAliases::new(items);
-    collect_signatures(items, &aliases, ir);
+pub(super) fn collect_local_fn_signatures(
+    items: &[Node],
+    aliases: &LocalTypeAliases,
+    ir: &mut IRModule,
+) {
+    collect_signatures(items, aliases, ir);
 }
 
 fn collect_local_type_aliases(items: &[Node], aliases: &mut BTreeMap<String, TypeAnn>) {

@@ -229,7 +229,7 @@ fn unsupported_struct_array_cells_are_refused_before_lowering() {
     let shared = dir.path().join("unsupported_fixed_array_struct_field.so");
     std::fs::write(
         &source,
-        "type U64Alias = u64\nstruct I { xs: [i32; 2] }\nstruct F { xs: [f32; 2] }\nstruct B { xs: [bool; 2] }\nstruct U { xs: [u64; 2] }\nstruct UA { xs: [U64Alias; 2] }\nfn main() -> i64 { let _i = I { xs: [1, 2] }; let _f = F { xs: [1.0, 2.0] }; let _b = B { xs: [true, false] }; let _u = U { xs: [1, 2] }; let _ua = UA { xs: [1, 2] }; return 0 }\n",
+        "type U64Alias = u64\nstruct I {\n    xs: [i32; 2],\n}\nstruct F {\n    xs: [f32; 2],\n}\nstruct B {\n    xs: [bool; 2],\n}\nstruct U {\n    xs: [u64; 2],\n}\nstruct UA {\n    xs: [U64Alias; 2],\n}\nfn main() -> i64 {\n    let _i = I { xs: [1, 2] };\n    let _f = F { xs: [1.0, 2.0] };\n    let _b = B { xs: [1, 0] };\n    let _u = U { xs: [1, 2] };\n    let _ua = UA { xs: [1, 2] };\n    return 0;\n}\n",
     )
     .expect("write unsupported fixed-array source");
     let check = Command::new(&mindc)

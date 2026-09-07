@@ -1145,6 +1145,7 @@ impl LoweringContext {
         self.refusal.is_some()
     }
 
+    #[cfg(feature = "std-surface")]
     fn charge_fixed_literal(&mut self, length: u32, runtime_elements: bool) -> bool {
         if self.refusal.is_some() {
             return false;
@@ -1171,6 +1172,7 @@ impl LoweringContext {
         }
     }
 
+    #[cfg(feature = "std-surface")]
     fn charge_vec_literal(&mut self, length: usize) -> bool {
         if self.refusal.is_some() {
             return false;
@@ -1184,6 +1186,7 @@ impl LoweringContext {
         }
     }
 
+    #[cfg(feature = "std-surface")]
     fn charge_fixed_field_store(&mut self, length: u32, f64_bits: bool) -> bool {
         if self.refusal.is_some() {
             return false;
@@ -1197,6 +1200,7 @@ impl LoweringContext {
         }
     }
 
+    #[cfg(feature = "std-surface")]
     fn charge_fixed_field_copyout(&mut self, length: u32, f64_bits: bool) -> bool {
         if self.refusal.is_some() {
             return false;
@@ -1288,6 +1292,8 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
     let preprocessed = preprocess_collection_mutations(module);
     #[cfg(feature = "std-surface")]
     let module = preprocessed.as_ref().unwrap_or(module);
+    #[cfg(feature = "std-surface")]
+    let local_type_aliases = super::type_aliases::LocalTypeAliases::new(&module.items);
     // Install this module's top-level `const NAME = value` table so a reference
     // `Lit(Ident(NAME))` inlines the value at its use site (the read path in the
     // `Lit(Ident)` arm). Overwrites any prior pass's table — a const-free module
@@ -1552,7 +1558,7 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
     // during the loop below; this pre-pass only widens visibility. Metadata only —
     // an all-i64 module records all-`ScalarI64` and lowers byte-identically.
     #[cfg(feature = "std-surface")]
-    super::type_aliases::collect_local_fn_signatures(&module.items, &mut ir);
+    super::type_aliases::collect_local_fn_signatures(&module.items, &local_type_aliases, &mut ir);
 
     // RFC 0012 §5.1 — register every imported `pub fn` signature (declared
     // param + return ABI) from the active whole-project module table, plus the
@@ -1725,8 +1731,10 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
                 // for the width-aware struct ABI lowering. Serialization-exempt
                 // (see `struct_field_types` in ir/mod.rs); unused until the
                 // lowering arms consume it, so an all-i64 struct is unchanged.
-                let all_field_types: Vec<crate::ast::TypeAnn> =
-                    fields.iter().map(|f| f.ty.clone()).collect();
+                let all_field_types: Vec<crate::ast::TypeAnn> = fields
+                    .iter()
+                    .map(|f| local_type_aliases.resolve(&f.ty))
+                    .collect();
                 ir.struct_field_types.insert(name.clone(), all_field_types);
                 // RFC 0010 Phase B: if the struct carries `#[repr(C)]`, register
                 // its field types in `repr_c_structs` so extern_type_to_mlir can

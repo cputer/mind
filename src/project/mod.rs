@@ -3478,7 +3478,7 @@ mod root_bound_tests {
 
     #[test]
     fn symlink_loop_canonicalization_error_is_propagated_with_cause() {
-        let error = io::Error::new(ErrorKind::Other, "synthetic symlink loop");
+        let error = io::Error::other("synthetic symlink loop");
         let result = canonicalize_dir_with_missing_fallback(
             PathBuf::from("/mind-test/symlink-loop"),
             |_| Err(error),
