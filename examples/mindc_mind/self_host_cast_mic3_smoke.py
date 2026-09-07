@@ -280,6 +280,34 @@ LOCAL_ALIAS_RETURN_FIXTURES = [
     ),
 ]
 
+# Preserve call width through enclosing arithmetic, while a declared wide
+# identifier widens the expression exactly as Rust's narrow lattice does.
+LOCAL_ALIAS_EXPR_FIXTURES = [
+    (
+        "local_alias_call_under_i64_cast",
+        "type Byte = u8;\nfn f() -> Byte { return 300; }\n",
+        "fn main() -> i64 { return (f() + 256) as i64; }\n",
+        44,
+    ),
+    (
+        "local_alias_nested_binop",
+        "type Byte = u8;\nfn f() -> Byte { return 300; }\n",
+        "fn main() -> i64 { return (f() + 256) + 256; }\n",
+        44,
+    ),
+    (
+        "local_alias_call_plus_wide_local",
+        "type Byte = u8;\nfn f() -> Byte { return 300; }\n",
+        "fn main() -> i64 { let w: i64 = 256; return f() + w; }\n",
+        44,
+    ),
+]
+
+LOCAL_ALIAS_ATTRIBUTE_BOUNDARY_FIXTURE = (
+    "type Byte = u8\n"
+    "#[test] fn compute() -> Byte { return 300; }\n"
+)
+
 
 def alias_chain_fixture(depth, reverse):
     names = [f"Alias{i}" for i in range(depth)]
@@ -432,6 +460,33 @@ def main():
         if not ok:
             fails += 1
 
+    for name, prefix, main_src, want in LOCAL_ALIAS_EXPR_FIXTURES:
+        src = prefix + main_src
+        o = oracle_mic3(src)
+        m = nfn_mic3(src)
+        ol = len(o) if o else -1
+        ml = len(m) if m else 0
+        byte_ok = (m == o and o is not None)
+        rc = run_native(src)
+        exec_ok = rc == (want & 0xFF)
+        ok = byte_ok and exec_ok
+        print(
+            f"  {'PASS' if ok else 'FAIL'}  {name}  mic3 nb_len={ml} oracle_len={ol} byte_id={byte_ok}"
+            f"  exec rc={rc}(want {want})"
+        )
+        if not ok:
+            fails += 1
+
+    attr_o = oracle_mic3(LOCAL_ALIAS_ATTRIBUTE_BOUNDARY_FIXTURE)
+    attr_m = nfn_mic3(LOCAL_ALIAS_ATTRIBUTE_BOUNDARY_FIXTURE)
+    attr_ok = attr_o is not None and attr_m == attr_o
+    print(
+        f"  {'PASS' if attr_ok else 'FAIL'}  local_alias_attribute_boundary"
+        f"  mic3 nb_len={len(attr_m)} oracle_len={len(attr_o) if attr_o else -1} byte_id={attr_ok}"
+    )
+    if not attr_ok:
+        fails += 1
+
     for name, fn_src, main_src, want in LOCAL_ALIAS_LONG_CHAIN_FIXTURES:
         rc = run_native(fn_src + main_src)
         ok = rc == (want & 0xFF)
@@ -443,6 +498,12 @@ def main():
     cap_ok = cap_rc is None
     print(f"  {'PASS' if cap_ok else 'FAIL'}  local_alias_cap_refusal  native rc={cap_rc}(want empty)")
     if not cap_ok:
+        fails += 1
+
+    cap_m = nfn_mic3(alias_cap_fixture())
+    cap_m_ok = cap_m == b""
+    print(f"  {'PASS' if cap_m_ok else 'FAIL'}  local_alias_cap_mic3_refusal  nb_len={len(cap_m)}(want empty)")
+    if not cap_m_ok:
         fails += 1
 
     float_rc = run_native(FLOAT_ALIAS_UNSUPPORTED)

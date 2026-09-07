@@ -2222,6 +2222,20 @@ pub fn alias_scalar_target_boundary(toks: Vec, src: i64, pos: i64) -> i64 {
     if tok_kind(toks, pos) == tk_semi() {
         return 1;
     }
+    // A semicolon is optional before a valid item attribute. The lexer keeps
+    // `#` as tk_unsupported, so recognize only a balanced `#[ ... ]` boundary;
+    // the normal attribute parser still decides whether that attribute is
+    // supported or must poison the item.
+    if load_byte(src, tok_lo(toks, pos)) == 35 {
+        if tok_kind(toks, pos + 1) == tk_lbracket() {
+            let after_attr: i64 = skip_balanced_bracket(toks, pos + 2, 1);
+            if after_attr > pos + 2 {
+                if tok_kind(toks, after_attr - 1) == tk_rbracket() {
+                    return 1;
+                }
+            }
+        }
+    }
     if tok_kind(toks, pos) == tk_kw_fn() || tok_kind(toks, pos) == tk_kw_pub() || tok_kind(toks, pos) == tk_kw_use() {
         return 1;
     }
@@ -2497,37 +2511,68 @@ pub fn flatten_named_narrow_return(src: i64, fn_node: i64, root: i64, nodes: i64
     desc_emit_binop(nodes, cursor, binop_to_byte(op_shr()), lslot, shslot)
 }
 
-// Return a cached narrow ABI code for the immediate expression forms whose
-// static type can affect an arithmetic result. The call cache is populated by
-// alias_annotate_call_module before flattening; transparent parentheses preserve
-// the same type. Unknown identifiers remain neutral here, matching the bounded
-// MIC3 slice rather than inventing an alias width for them.
+// Return the cached narrow-lattice code for an expression. 0 is a neutral
+// literal/unknown result, 64 is a proven wide result, and signed/unsigned
+// narrow widths use the existing +/-8/16/32 convention. The annotation pass
+// writes this slot once on every expression it visits, so a parenthesised or
+// nested arithmetic expression does not lose a call's ABI width.
 pub fn cached_narrow_expr_code(node: i64) -> i64 {
     if node == 0 {
         return 0;
     }
     let k: i64 = ast_kind(node);
-    if k == ast_call() {
+    if k == ast_ident() || k == ast_call() {
         let w: i64 = __mind_load_i64(node + 56);
-        if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+        if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 || w == 64 {
             return w;
         }
         return 0;
     }
-    if k == ast_paren() {
-        return cached_narrow_expr_code(ast_child0(node));
+    if k == ast_paren() || k == ast_binop() || k == ast_cast() {
+        let w: i64 = __mind_load_i64(node + 56);
+        if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 || w == 64 {
+            return w;
+        }
+        if k == ast_paren() {
+            return cached_narrow_expr_code(ast_child0(node));
+        }
     }
     0
 }
 
-pub fn flatten_narrow_binop_result(op: i64, left: i64, right: i64, root: i64, nodes: i64, cursor: i64) -> i64 {
+// Join the same narrow lattice used by Rust's infer_narrow_arith_ty: a wide
+// operand widens the result; two narrow operands keep the wider width (the
+// left operand wins ties); narrow plus a neutral literal keeps the narrow
+// operand; two neutral operands are wide. Non-arithmetic operators are neutral
+// because comparisons produce bool and are never re-masked.
+pub fn alias_join_narrow_code(left: i64, right: i64, op: i64) -> i64 {
     if op != op_add() && op != op_sub() && op != op_mul() && op != op_div() && op != op_mod() {
-        return root;
+        return 0;
     }
+    if left == 64 || right == 64 {
+        return 64;
+    }
+    if left != 0 {
+        if right != 0 {
+            let lw: i64 = if left < 0 { 0 - left } else { left };
+            let rw: i64 = if right < 0 { 0 - right } else { right };
+            if rw > lw {
+                return right;
+            }
+        }
+        return left;
+    }
+    if right != 0 {
+        return right;
+    }
+    64
+}
+
+pub fn flatten_narrow_binop_result(op: i64, left: i64, right: i64, root: i64, nodes: i64, cursor: i64) -> i64 {
     let lw: i64 = cached_narrow_expr_code(left);
     let rw: i64 = cached_narrow_expr_code(right);
-    let code: i64 = if lw != 0 { lw } else { rw };
-    if code == 0 {
+    let code: i64 = alias_join_narrow_code(lw, rw, op);
+    if code == 0 || code == 64 {
         return root;
     }
     if code < 0 {
@@ -20624,13 +20669,18 @@ pub fn selftest_mic3_module_nfn(src_addr: i64, src_len: i64, strbuf: i64, offs: 
     let alias_n: i64 = nb_collect_fns(items_addr, items_len, 0, alias_fns, 0);
     let alias_frt: i64 = frt_build_from_tokens(tokens, src_addr);
     let alias_tab: i64 = alias_build_from_tokens(tokens, src_addr);
-    if alias_count(alias_tab) >= 0 {
-        let _ar: i64 = alias_resolve_all(alias_tab, src_addr, 0);
-        if alias_count(alias_tab) >= 0 {
-            let _rr: i64 = alias_annotate_returns(src_addr, alias_tab, alias_frt, alias_fns, alias_n, 0);
-            let _rc: i64 = alias_annotate_call_module(src_addr, alias_tab, alias_frt, items_addr, items_len, 0);
-        }
+    if alias_count(alias_tab) < 0 {
+        // Alias-table capacity overflow is an explicit resource refusal. Do
+        // not continue into the ordinary item emitter with unresolved aliases:
+        // doing so widens a valid narrow declaration and emits wrong bytes.
+        return es_new();
     }
+    let _ar: i64 = alias_resolve_all(alias_tab, src_addr, 0);
+    if alias_count(alias_tab) < 0 {
+        return es_new();
+    }
+    let _rr: i64 = alias_annotate_returns(src_addr, alias_tab, alias_frt, alias_fns, alias_n, 0);
+    let _rc: i64 = alias_annotate_call_module(src_addr, alias_tab, alias_frt, items_addr, items_len, 0);
     // Multi-struct registry (declaration order with per-struct field spans). N==0
     // for struct-less modules, in which case the registry/strtab tail stays empty
     // and the bytes are unchanged from the original fns-only path.
@@ -43985,68 +44035,231 @@ pub fn alias_call_return_code(src: i64, aliases: i64, frt: i64, node: i64) -> i6
     0
 }
 
-pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, node: i64) -> i64 {
+// The Rust narrow-arithmetic pass classifies identifiers from the current
+// function's local binding table: a declared narrow local is Narrow, every
+// other identifier (including a declared i64 local) is Wide. Keep that
+// distinction here instead of treating an unannotated AST slot as the same
+// thing as an integer literal. `env` contains resolved widths keyed by the
+// source name; 0 means no local binding is known and therefore still widens.
+pub fn alias_env_lookup(env: Map, src: i64, lo: i64, hi: i64) -> i64 {
+    let key: i64 = name_hash(src, lo, hi);
+    alias_env_lookup_rest(env, key, 0, 0)
+}
+
+pub fn alias_env_lookup_rest(env: Map, key: i64, i: i64, best: i64) -> i64 {
+    if i >= map_len(env) {
+        return best;
+    }
+    let next: i64 = if map_key_at(env, i) == key { map_value_at(env, i) } else { best };
+    alias_env_lookup_rest(env, key, i + 1, next)
+}
+
+pub fn alias_type_code(src: i64, aliases: i64, ty: i64) -> i64 {
+    if ty == 0 {
+        return 64;
+    }
+    let lo: i64 = ast_span_lo(ty);
+    let hi: i64 = ast_span_hi(ty);
+    let ak: i64 = alias_find_latest(aliases, src, lo, hi);
+    if ak >= 0 {
+        let aw: i64 = alias_resolve_idx(aliases, src, ak, 0);
+        if aw != 0 {
+            return aw;
+        }
+        return 64;
+    }
+    let sw: i64 = narrow_cast_width(src, lo, hi);
+    if sw > 0 {
+        return sw;
+    }
+    let uw: i64 = unsigned_cast_width(src, lo, hi);
+    if uw > 0 {
+        return 0 - uw;
+    }
+    64
+}
+
+pub fn alias_env_bind(env: Map, src: i64, name: i64, code: i64) -> Map {
+    map_insert(env, name_hash(src, ast_span_lo(name), ast_span_hi(name)), code)
+}
+
+pub fn alias_annotate_struct_values(src: i64, aliases: i64, frt: i64, env: Map, fields: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    let _v: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(fields + i * 24 + 16));
+    alias_annotate_struct_values(src, aliases, frt, env, fields, n, i + 1)
+}
+
+pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, env: Map, node: i64) -> i64 {
     if node == 0 {
         return 0;
     }
     let k: i64 = ast_kind(node);
+    if k == ast_ident() {
+        let w: i64 = alias_env_lookup(env, src, ast_span_lo(node), ast_span_hi(node));
+        let result: i64 = if w == 8 || w == 16 || w == 32 || w == 0 - 8 || w == 0 - 16 || w == 0 - 32 {
+            w
+        } else {
+            64
+        };
+        __mind_store_i64(node + 56, result);
+        return result;
+    }
     if k == ast_call() {
-        let w: i64 = alias_call_return_code(src, aliases, frt, node);
-        if w != 0 {
-            __mind_store_i64(node + 56, w)
-        }
+        // Visit arguments before recording the call result, so nested calls
+        // receive their own cached widths in source evaluation order.
         let args: i64 = ast_child1(node);
         let n: i64 = ast_aux(node);
-        return alias_annotate_call_args(src, aliases, frt, args, n, 0);
+        let _a: i64 = alias_annotate_call_args(src, aliases, frt, env, args, n, 0);
+        let w: i64 = alias_call_return_code(src, aliases, frt, node);
+        __mind_store_i64(node + 56, w);
+        return w;
     }
     if k == ast_binop() {
-        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(node));
-        return alias_annotate_call_expr(src, aliases, frt, ast_child1(node));
+        let lw: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let rw: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child1(node));
+        let w: i64 = alias_join_narrow_code(lw, rw, ast_aux(node));
+        __mind_store_i64(node + 56, w);
+        return w;
     }
-    if k == ast_paren() || k == ast_neg() || k == ast_not() {
-        return alias_annotate_call_expr(src, aliases, frt, ast_child0(node));
+    if k == ast_paren() {
+        let w: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        __mind_store_i64(node + 56, w);
+        return w;
+    }
+    if k == ast_cast() {
+        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let cw: i64 = ast_aux(node);
+        let w: i64 = if cw == 8 || cw == 16 || cw == 32 {
+            if ast_cast_is_unsigned(src, node) == 1 { 0 - cw } else { cw }
+        } else {
+            64
+        };
+        __mind_store_i64(node + 56, w);
+        return w;
+    }
+    if k == ast_neg() || k == ast_not() {
+        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        // Rust's narrow lattice treats Neg/Not as neutral in this path.
+        __mind_store_i64(node + 56, 0);
+        return 0;
+    }
+    if k == ast_field() {
+        let _inner: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        __mind_store_i64(node + 56, 0);
+        return 0;
+    }
+    if k == ast_index() {
+        let _base: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let _idx: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child1(node));
+        __mind_store_i64(node + 56, 0);
+        return 0;
+    }
+    if k == ast_array_lit() {
+        let _elems: i64 = alias_annotate_call_args(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        __mind_store_i64(node + 56, 0);
+        return 0;
+    }
+    if k == ast_struct_lit() {
+        let _fields: i64 = alias_annotate_struct_values(src, aliases, frt, env, ast_child1(node), ast_aux(node), 0);
+        __mind_store_i64(node + 56, 0);
+        return 0;
+    }
+    if k == ast_if() {
+        let _cond: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(node));
+        let then_blk: i64 = ast_child1(node);
+        if ast_kind(then_blk) == ast_block() {
+            let _then: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(then_blk), ast_aux(then_blk), 0);
+        }
+        let else_blk: i64 = ast_child2(node);
+        if else_blk != 0 {
+            if ast_kind(else_blk) == ast_block() {
+                let _else: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(else_blk), ast_aux(else_blk), 0);
+            }
+        }
+        __mind_store_i64(node + 56, 0);
+        return 0;
     }
     0
 }
 
-pub fn alias_annotate_call_args(src: i64, aliases: i64, frt: i64, args: i64, n: i64, i: i64) -> i64 {
+pub fn alias_annotate_call_args(src: i64, aliases: i64, frt: i64, env: Map, args: i64, n: i64, i: i64) -> i64 {
     if i >= n {
         return 0;
     }
-    let _a: i64 = alias_annotate_call_expr(src, aliases, frt, __mind_load_i64(args + i * 8));
-    alias_annotate_call_args(src, aliases, frt, args, n, i + 1)
+    let _a: i64 = alias_annotate_call_expr(src, aliases, frt, env, __mind_load_i64(args + i * 8));
+    alias_annotate_call_args(src, aliases, frt, env, args, n, i + 1)
 }
 
-pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, stmts: i64, n: i64, i: i64) -> i64 {
+pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: Map, stmts: i64, n: i64, i: i64) -> Map {
     if i >= n {
-        return 0;
+        return env;
     }
     let stmt: i64 = __mind_load_i64(stmts + i * 8);
     let k: i64 = ast_kind(stmt);
     if k == ast_let() {
-        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child2(stmt));
+        let _l: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+        let name: i64 = ast_child0(stmt);
+        let ty: i64 = ast_child1(stmt);
+        let code: i64 = if ty == 0 {
+            64
+        } else {
+            alias_type_code(src, aliases, ty)
+        };
+        let next_env: Map = alias_env_bind(env, src, name, code);
+        return alias_annotate_call_stmts(src, aliases, frt, next_env, stmts, n, i + 1);
     } else {
         if k == ast_return() {
-            let _r: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(stmt));
+            let _r: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
         } else {
             if k == ast_if() {
-                let _c: i64 = alias_annotate_call_expr(src, aliases, frt, ast_child0(stmt));
+                let _c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
                 let tb: i64 = ast_child1(stmt);
                 if ast_kind(tb) == ast_block() {
-                    let _t: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(tb), ast_aux(tb), 0);
+                    let _t: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(tb), ast_aux(tb), 0);
                 }
                 let eb: i64 = ast_child2(stmt);
                 if eb != 0 {
                     if ast_kind(eb) == ast_block() {
-                        let _e: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(eb), ast_aux(eb), 0);
+                        let _e: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(eb), ast_aux(eb), 0);
                     }
                 }
             } else {
-                let _e: i64 = alias_annotate_call_expr(src, aliases, frt, stmt);
+                if k == ast_while() {
+                    let _c: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child0(stmt));
+                    let wb: i64 = ast_child1(stmt);
+                    if ast_kind(wb) == ast_block() {
+                        let _w: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(wb), ast_aux(wb), 0);
+                    }
+                } else {
+                    if k == ast_assign() {
+                        let _a: i64 = alias_annotate_call_expr(src, aliases, frt, env, ast_child2(stmt));
+                    } else {
+                        if k == ast_block() {
+                            let _b: Map = alias_annotate_call_stmts(src, aliases, frt, env, ast_child0(stmt), ast_aux(stmt), 0);
+                        } else {
+                            let _e: i64 = alias_annotate_call_expr(src, aliases, frt, env, stmt);
+                        }
+                    }
+                }
             }
         }
     }
-    alias_annotate_call_stmts(src, aliases, frt, stmts, n, i + 1)
+    alias_annotate_call_stmts(src, aliases, frt, env, stmts, n, i + 1)
+}
+
+pub fn alias_annotate_fn_param_env(src: i64, aliases: i64, fn_node: i64, i: i64, env: Map) -> Map {
+    let n: i64 = fn_def_params_len(fn_node);
+    if i >= n {
+        return env;
+    }
+    let p: i64 = __mind_load_i64(ast_child1(fn_node) + i * 8);
+    let name: i64 = ast_child0(p);
+    let ty: i64 = ast_child1(p);
+    let code: i64 = alias_type_code(src, aliases, ty);
+    let next: Map = alias_env_bind(env, src, name, code);
+    alias_annotate_fn_param_env(src, aliases, fn_node, i + 1, next)
 }
 
 pub fn alias_annotate_call_module(src: i64, aliases: i64, frt: i64, items: i64, n: i64, i: i64) -> i64 {
@@ -44057,7 +44270,8 @@ pub fn alias_annotate_call_module(src: i64, aliases: i64, frt: i64, items: i64, 
     if ast_kind(item) == ast_fn_def() {
         let body: i64 = ast_child2(item);
         if ast_kind(body) == ast_block() {
-            let _b: i64 = alias_annotate_call_stmts(src, aliases, frt, ast_child0(body), ast_aux(body), 0);
+            let params: Map = alias_annotate_fn_param_env(src, aliases, item, 0, map_new());
+            let _b: Map = alias_annotate_call_stmts(src, aliases, frt, params, ast_child0(body), ast_aux(body), 0);
         }
     }
     alias_annotate_call_module(src, aliases, frt, items, n, i + 1)
@@ -44065,17 +44279,18 @@ pub fn alias_annotate_call_module(src: i64, aliases: i64, frt: i64, items: i64, 
 
 // Find the fn whose NAME span equals src[lo..hi), or -1. Tail-recursive.
 pub fn frt_find(t: i64, src: i64, lo: i64, hi: i64, k: i64) -> i64 {
-    if k >= frt_count(t) {
+    let n: i64 = frt_count(t);
+    if k >= n {
         return 0 - 1;
     }
-    let later: i64 = frt_find(t, src, lo, hi, k + 1);
-    if later >= 0 {
-        return later;
+    // Search from the tail with a tail call. This preserves native's
+    // last-definition-wins policy while avoiding the old unwind recursion,
+    // whose stack grew to the entire function table before returning.
+    let idx: i64 = n - 1 - k;
+    if span_bytes_equal(src, lo, hi, frt_name_lo(t, idx), frt_name_hi(t, idx)) == 1 {
+        return idx;
     }
-    if span_bytes_equal(src, lo, hi, frt_name_lo(t, k), frt_name_hi(t, k)) == 1 {
-        return k;
-    }
-    0 - 1
+    frt_find(t, src, lo, hi, k + 1)
 }
 
 // The callee's declared return dtype for the name span src[lo..hi): FLOAT iff the fn is
