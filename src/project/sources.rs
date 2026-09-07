@@ -129,8 +129,11 @@ pub fn collect_sources(project_root: &Path, entry: &str) -> Result<Vec<PathBuf>>
                 return Ok(());
             }
         };
-        for entry in rd {
-            let entry = entry?;
+        // Refusals must be deterministic too: filesystem enumeration order must
+        // not choose which escaping or broken source is reported first.
+        let mut entries = rd.collect::<std::io::Result<Vec<_>>>()?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
             let path = entry.path();
             let file_type = entry.file_type()?;
             if file_type.is_symlink() {
@@ -456,5 +459,34 @@ mod tests {
         assert!(walked[0].ends_with("a.mind"));
         assert!(walked[1].ends_with("main.mind"));
         assert!(walked[2].ends_with("z.mind"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_escape_diagnostic_is_independent_of_creation_order() {
+        use std::os::unix::fs::symlink;
+
+        let project = tempdir().expect("temp project");
+        let outside = tempdir().expect("outside");
+        let src = project.path().join("src");
+        fs::create_dir(&src).expect("src");
+        fs::write(src.join("main.mind"), "").expect("entry");
+        let target = outside.path().join("external.mind");
+        fs::write(&target, "").expect("external source");
+        let mut diagnostics = Vec::new();
+        for order in [["z.mind", "a.mind"], ["a.mind", "z.mind"]] {
+            for name in order {
+                symlink(&target, src.join(name)).expect("escaping source link");
+            }
+            let diagnostic = collect_sources(project.path(), "src/main.mind")
+                .expect_err("source escape must be refused")
+                .to_string();
+            assert!(diagnostic.contains("a.mind"), "{diagnostic}");
+            diagnostics.push(diagnostic);
+            for name in order {
+                fs::remove_file(src.join(name)).expect("remove source link");
+            }
+        }
+        assert_eq!(diagnostics[0], diagnostics[1]);
     }
 }
