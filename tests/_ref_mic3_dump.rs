@@ -140,7 +140,7 @@ fn ref_ir(user_src: &str) -> IRModule {
     }
     combined.items.extend(module.items);
 
-    let mut ir = libmind::eval::lower::lower_to_ir(&combined);
+    let mut ir = libmind::eval::lower::lower_to_ir(&combined).expect("lowering");
     prune_unreachable_fns(&mut ir, &user_fn_names);
     ir
 }

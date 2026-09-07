@@ -50,11 +50,12 @@ fn narrow_locals_do_not_leak_across_modules() {
 
     // Lower B FIRST on this fresh thread — thread-local starts empty, so this is
     // the true clean baseline.
-    let b_clean = emit_mic3(&lower_to_ir(&parse(src_b).expect("parse B")));
+    let b_clean = emit_mic3(&lower_to_ir(&parse(src_b).expect("parse B")).expect("lowering"));
 
     // Pollute the thread-local with A's top-level narrow `let`, then lower B.
-    let _ = lower_to_ir(&parse(module_scope_a).expect("parse A(module-scope)"));
-    let b_after_a = emit_mic3(&lower_to_ir(&parse(src_b).expect("parse B again")));
+    let _ = lower_to_ir(&parse(module_scope_a).expect("parse A(module-scope)")).expect("lowering");
+    let b_after_a =
+        emit_mic3(&lower_to_ir(&parse(src_b).expect("parse B again")).expect("lowering"));
     assert_eq!(
         b_clean, b_after_a,
         "module B's i64 `let c` lowered differently after module A leaked a \

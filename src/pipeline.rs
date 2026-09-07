@@ -117,6 +117,9 @@ pub enum CompileError {
     /// The IR module did not pass verification.
     #[error("IR verification failed: {0}")]
     IrVerify(#[from] ir::IrVerifyError),
+    /// Compiler-side aggregate materialisation exceeded a deterministic budget.
+    #[error("materialization refused: {0}")]
+    Materialization(#[from] crate::eval::materialization::MaterializationRefusal),
     /// Autodiff requested without specifying a function.
     #[error("autodiff requested but no function was provided")]
     MissingFunctionName,
@@ -147,6 +150,9 @@ impl CompileError {
                 .collect(),
             CompileError::IrVerify(e) => {
                 vec![Diagnostic::error("ir-verify", "E3001", e.to_string())]
+            }
+            CompileError::Materialization(e) => {
+                vec![Diagnostic::error("materialization", "E6002", e.to_string())]
             }
             CompileError::MissingFunctionName => vec![Diagnostic::error(
                 "autodiff",
@@ -255,6 +261,33 @@ pub fn compile_source_with_name(
     source_name: Option<&str>,
     opts: &CompileOptions,
 ) -> Result<CompileProducts, CompileError> {
+    compile_source_with_name_and_limits(
+        source,
+        source_name,
+        opts,
+        crate::eval::materialization::MaterializationLimits::default(),
+    )
+}
+
+/// Compile source with an explicit compiler materialisation budget.
+///
+/// This additive entry point is used by bounded callers and regression tests;
+/// [`compile_source`] and [`compile_source_with_name`] retain their stable
+/// default budget behaviour.
+pub fn compile_source_with_limits(
+    source: &str,
+    opts: &CompileOptions,
+    limits: crate::eval::materialization::MaterializationLimits,
+) -> Result<CompileProducts, CompileError> {
+    compile_source_with_name_and_limits(source, None, opts, limits)
+}
+
+fn compile_source_with_name_and_limits(
+    source: &str,
+    source_name: Option<&str>,
+    opts: &CompileOptions,
+    limits: crate::eval::materialization::MaterializationLimits,
+) -> Result<CompileProducts, CompileError> {
     // Non-CPU targets (Gpu, Cerebras, etc.) lower in this crate to the
     // shared canonical IR, but final code emission requires the matching
     // `mind-runtime` backend library. mindc surfaces the target as
@@ -319,7 +352,7 @@ pub fn compile_source_with_name(
     #[cfg(feature = "compile-timings")]
     _tm.mark("typecheck");
 
-    let mut ir = eval::lower_to_ir(&module);
+    let mut ir = eval::lower_to_ir_with_limits(&module, limits)?;
     // RFC 0002 D3: merge manifest-declared exports into the IR set so
     // both `export { ... }` source blocks and `Mind.toml [exports]
     // c_abi` reach the same codegen pass. Empty in the default code

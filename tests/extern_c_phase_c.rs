@@ -342,7 +342,7 @@ fn end_to_end_win64_struct_lower_to_ir() {
 
     // Lower to IR.
     use libmind::eval::lower_to_ir;
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // Find the ExternFnDecl for win_consume.
     let extern_decl = ir.instrs.iter().find_map(|instr| {

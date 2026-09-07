@@ -64,7 +64,7 @@ fn find_binop(instrs: &[Instr], target: BinOp) -> bool {
 fn bitand_lowers_to_ir_binop_bitand() {
     let src = "let x: i64 = 123 & 255; x";
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::BitAnd),
         "expected BinOp::BitAnd in IR; got:\n{:?}",
@@ -80,7 +80,7 @@ fn bitand_lowers_to_ir_binop_bitand() {
 fn bitor_lowers_to_ir_binop_bitor() {
     let src = "let x: i64 = 255 | 15; x";
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::BitOr),
         "expected BinOp::BitOr in IR"
@@ -91,7 +91,7 @@ fn bitor_lowers_to_ir_binop_bitor() {
 fn bitxor_lowers_to_ir_binop_bitxor() {
     let src = "let x: i64 = 170 ^ 85; x";
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::BitXor),
         "expected BinOp::BitXor in IR"
@@ -106,7 +106,7 @@ fn bitxor_lowers_to_ir_binop_bitxor() {
 fn shl_lowers_to_ir_binop_shl() {
     let src = "let x: i64 = 1 << 8; x";
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::Shl),
         "expected BinOp::Shl in IR"
@@ -117,7 +117,7 @@ fn shl_lowers_to_ir_binop_shl() {
 fn shr_lowers_to_ir_binop_shr() {
     let src = "let x: i64 = 256 >> 2; x";
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::Shr),
         "expected BinOp::Shr in IR"
@@ -136,7 +136,7 @@ fn load_byte(buf: i64, i: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         find_binop(&ir.instrs, BinOp::BitAnd),
         "expected BinOp::BitAnd inside fn body; IR:\n{:?}",

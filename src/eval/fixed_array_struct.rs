@@ -177,6 +177,7 @@ pub(super) fn struct_layout(ir: &IRModule, name: &str) -> Option<StructLayout> {
 /// "non-i64 argument to call" aggregate-ABI error). Every other field value
 /// lowers normally.
 #[cfg(feature = "std-surface")]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_struct_field_value(
     struct_name: &str,
     field_name: &str,
@@ -185,6 +186,7 @@ pub(super) fn lower_struct_field_value(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut super::LoweringContext,
 ) -> ValueId {
     let field_ty = ir
         .struct_defs
@@ -195,9 +197,16 @@ pub(super) fn lower_struct_field_value(
         .and_then(fixed_array_cell_type)
         .map(|(element, length)| (element.clone(), length))
     {
-        return fixed_array::lower_binding(&element, length, value, ir, |node, inner_ir| {
-            lower_expr(node, inner_ir, env, struct_env, receiver_types)
-        });
+        return fixed_array::lower_binding(
+            &element,
+            length,
+            value,
+            ir,
+            |node, inner_ir, context| {
+                lower_expr(node, inner_ir, env, struct_env, receiver_types, context)
+            },
+            context,
+        );
     }
     if let ast::Node::ArrayLit { elements, .. } = value {
         let is_arr_field = ir
@@ -212,10 +221,10 @@ pub(super) fn lower_struct_field_value(
             .map(is_array_surface_ty)
             .unwrap_or(false);
         if is_arr_field {
-            return lower_array_surface_lit(elements, ir, env, struct_env, receiver_types);
+            return lower_array_surface_lit(elements, ir, env, struct_env, receiver_types, context);
         }
     }
-    lower_expr(value, ir, env, struct_env, receiver_types)
+    lower_expr(value, ir, env, struct_env, receiver_types, context)
 }
 
 /// Store a fixed-array SSA aggregate into the inline cells owned by a struct
@@ -229,6 +238,7 @@ pub(super) fn store_fixed_array_field(
     field_addr: ValueId,
     value: ValueId,
     ir: &mut IRModule,
+    context: &mut super::LoweringContext,
 ) {
     if !fixed_array_cell_supported_in(element, ir) {
         panic!(
@@ -241,6 +251,9 @@ pub(super) fn store_fixed_array_field(
         || matches!(element, TypeAnn::Named(name) if name == "f32")
     {
         panic!("fixed f32 struct fields are not supported by the inline scalar-cell ABI");
+    }
+    if !context.charge_fixed_field_store(length, f64_bits) {
+        return;
     }
     for position in 0..length {
         let index = ir.fresh();
@@ -291,6 +304,7 @@ pub(super) fn store_fixed_array_field(
 /// into the owning record cells.  This keeps field-index assignment's value
 /// semantics explicit and avoids the scalar `lower_expr(IndexAssign)` refusal.
 #[cfg(feature = "std-surface")]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_fixed_array_field_index_assign(
     receiver: &ast::Node,
     index: &ast::Node,
@@ -299,6 +313,7 @@ pub(super) fn lower_fixed_array_field_index_assign(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut super::LoweringContext,
 ) -> Option<ValueId> {
     let ast::Node::FieldAccess {
         receiver: owner,
@@ -324,7 +339,7 @@ pub(super) fn lower_fixed_array_field_index_assign(
     if !fixed_array_cell_supported_in(&element, ir) {
         return None;
     }
-    let owner_id = lower_expr(owner, ir, env, struct_env, receiver_types);
+    let owner_id = lower_expr(owner, ir, env, struct_env, receiver_types, context);
     let (offset, _, _) = struct_layout(ir, &struct_key)
         .and_then(|(layout, _, _)| layout.get(idx).copied())
         .unwrap_or(((idx as i64) * 8, 8, true));
@@ -342,8 +357,8 @@ pub(super) fn lower_fixed_array_field_index_assign(
         });
         sum
     };
-    let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
-    let value_id = lower_expr(value, ir, env, struct_env, receiver_types);
+    let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
+    let value_id = lower_expr(value, ir, env, struct_env, receiver_types, context);
     let length_id = ir.fresh();
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));
@@ -406,6 +421,7 @@ pub(super) fn lower_fixed_array_field_index_access(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut super::LoweringContext,
 ) -> Option<ValueId> {
     let ast::Node::FieldAccess {
         receiver: owner,
@@ -461,7 +477,7 @@ pub(super) fn lower_fixed_array_field_index_access(
                 "resolved struct receiver `{name}` has no SSA binding while lowering indexed field `{field}`"
             )
         }),
-        None => lower_expr(owner, ir, env, struct_env, receiver_types),
+        None => lower_expr(owner, ir, env, struct_env, receiver_types, context),
     };
     let (offset, _, _) = struct_layout(ir, &struct_name)
         .and_then(|(layout, _, _)| layout.get(idx).copied())
@@ -480,7 +496,7 @@ pub(super) fn lower_fixed_array_field_index_access(
         });
         addr
     };
-    let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
+    let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
     let length_id = ir.fresh();
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));

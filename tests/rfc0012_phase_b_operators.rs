@@ -94,7 +94,7 @@ fn check_src(src: &str, env: &TypeEnv) -> Vec<libmind::diagnostics::Diagnostic> 
 fn ir_text(src: &str) -> String {
     let wrapped = format!("let a = 0\nlet b = 0\n{src}");
     let module = parser::parse(&wrapped).unwrap_or_else(|e| panic!("parse error: {e:?}"));
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     format_ir_module(&ir)
 }
 

@@ -25,7 +25,13 @@ fn const_f64(node: &Node) -> Option<f64> {
     }
 }
 
-fn lower_dense(element: &TypeAnn, length: u32, value: &Node, ir: &mut IRModule) -> Option<ValueId> {
+fn lower_dense(
+    element: &TypeAnn,
+    length: u32,
+    value: &Node,
+    ir: &mut IRModule,
+    context: &mut super::LoweringContext,
+) -> Option<ValueId> {
     let dtype = match element {
         TypeAnn::ScalarF64 => DType::F64,
         TypeAnn::ScalarF32 => DType::F32,
@@ -37,6 +43,9 @@ fn lower_dense(element: &TypeAnn, length: u32, value: &Node, ir: &mut IRModule) 
         return None;
     };
     if elements.len() != length as usize || elements.iter().any(|item| const_f64(item).is_none()) {
+        return None;
+    }
+    if !context.charge_fixed_literal(length, false) {
         return None;
     }
     let data = elements
@@ -104,7 +113,8 @@ pub(crate) fn lower_runtime_construction(
     length: u32,
     value: &Node,
     ir: &mut IRModule,
-    mut lower_element: impl FnMut(&Node, &mut IRModule) -> ValueId,
+    mut lower_element: impl FnMut(&Node, &mut IRModule, &mut super::LoweringContext) -> ValueId,
+    context: &mut super::LoweringContext,
 ) -> Option<ValueId> {
     if !needs_runtime_construction(element, length, value, ir) {
         return None;
@@ -112,6 +122,9 @@ pub(crate) fn lower_runtime_construction(
     let Node::ArrayLit { elements, .. } = value else {
         return None;
     };
+    if !context.charge_fixed_literal(length, true) {
+        return None;
+    }
 
     let mut aggregate = ir.fresh();
     ir.instrs.push(Instr::ConstArray {
@@ -120,7 +133,7 @@ pub(crate) fn lower_runtime_construction(
         values: vec![0; elements.len()],
     });
     for (position, item) in elements.iter().enumerate() {
-        let item_id = lower_element(item, ir);
+        let item_id = lower_element(item, ir, context);
         let index = ir.fresh();
         ir.instrs.push(Instr::ConstI64(index, position as i64));
         let next = ir.fresh();
@@ -145,13 +158,16 @@ pub(crate) fn lower_binding(
     length: u32,
     value: &Node,
     ir: &mut IRModule,
-    mut lower_node: impl FnMut(&Node, &mut IRModule) -> ValueId,
+    mut lower_node: impl FnMut(&Node, &mut IRModule, &mut super::LoweringContext) -> ValueId,
+    context: &mut super::LoweringContext,
 ) -> ValueId {
-    if let Some(dense) = lower_dense(element, length, value, ir) {
+    if let Some(dense) = lower_dense(element, length, value, ir, context) {
         return dense;
     }
-    if let Some(runtime) = lower_runtime_construction(element, length, value, ir, &mut lower_node) {
+    if let Some(runtime) =
+        lower_runtime_construction(element, length, value, ir, &mut lower_node, context)
+    {
         return runtime;
     }
-    lower_node(value, ir)
+    lower_node(value, ir, context)
 }

@@ -37,7 +37,7 @@ fn fndef_names(instrs: &[Instr]) -> Vec<String> {
 #[test]
 fn vec_zeroed_parses_and_lowers() {
     let module = parser::parse(VEC_SRC).expect("std/vec.mind must parse cleanly");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let names = fndef_names(&ir.instrs);
     assert!(
         names.iter().any(|n| n == "vec_zeroed"),

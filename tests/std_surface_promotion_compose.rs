@@ -197,7 +197,7 @@ pub fn probe() -> i64 {
 fn match_option_payload_binds_and_transforms_value() {
     // IR stratum: the payload binding must lower (the `build` constructor call
     // is present — no const-0 collapse of the whole pipeline).
-    let ir = lower_to_ir(&must_parse(SRC_MATCH_OPTION));
+    let ir = lower_to_ir(&must_parse(SRC_MATCH_OPTION)).expect("lowering");
     assert!(
         count_calls_named(&ir.instrs, "build") >= 1,
         "match × Option-payload pipeline collapsed in lowering.\nIR: {:?}",
@@ -231,7 +231,7 @@ pub fn probe() -> i64 {
 
 #[test]
 fn method_dispatch_accessor_and_ufcs_on_string() {
-    let ir = lower_to_ir(&must_parse(SRC_METHOD_STRING));
+    let ir = lower_to_ir(&must_parse(SRC_METHOD_STRING)).expect("lowering");
     // Accessor `s.len()` -> field load; UFCS `s.push(b)` -> `string_push` call.
     assert!(
         count_calls_named(&ir.instrs, "__mind_load_i64") >= 1,
@@ -295,7 +295,7 @@ pub fn probe() -> i64 {
 
 #[test]
 fn enum_tag_match_writes_field_in_each_arm() {
-    let ir = lower_to_ir(&must_parse(SRC_ENUM_TAG_FIELD));
+    let ir = lower_to_ir(&must_parse(SRC_ENUM_TAG_FIELD)).expect("lowering");
     assert!(
         count_calls_named(&ir.instrs, "apply") >= 2,
         "enum-tag-match × field-write pipeline collapsed.\nIR: {:?}",
@@ -323,7 +323,7 @@ pub fn probe() -> i64 {
 
 #[test]
 fn ufcs_method_reads_receiver_field_as_argument() {
-    let ir = lower_to_ir(&must_parse(SRC_UFCS_BORROW));
+    let ir = lower_to_ir(&must_parse(SRC_UFCS_BORROW)).expect("lowering");
     assert!(
         count_calls_named(&ir.instrs, "s_combine") >= 1,
         "`s.combine(s.b)` UFCS did not desugar to `s_combine`.\nIR: {:?}",
@@ -375,7 +375,7 @@ pub fn probe() -> i64 {
 
 #[test]
 fn accessor_and_ufcs_chained_in_one_expression() {
-    let ir = lower_to_ir(&must_parse(SRC_CHAIN));
+    let ir = lower_to_ir(&must_parse(SRC_CHAIN)).expect("lowering");
     assert!(
         count_calls_named(&ir.instrs, "s_scale") >= 1,
         "`v.scale(7)` UFCS did not desugar to `s_scale`.\nIR: {:?}",
@@ -491,7 +491,7 @@ pub fn probe() -> i64 {
 
 #[test]
 fn ufcs_let_binding_field_read() {
-    let ir = lower_to_ir(&must_parse(SRC_UFCS_LET_FIELD_READ));
+    let ir = lower_to_ir(&must_parse(SRC_UFCS_LET_FIELD_READ)).expect("lowering");
     // UFCS `s.grow(b)` must desugar to the `buf_grow` free function.
     assert!(
         count_calls_named(&ir.instrs, "buf_grow") >= 1,

@@ -408,7 +408,13 @@ fn run_eval_once(src: &str, emit_opts: EmitOpts, exec_mode: eval::ExecMode) {
                         eval::ExecMode::MlirGpu { .. } => return,
                         eval::ExecMode::Preview => {}
                     }
-                    let ir = eval::lower_to_ir(&module);
+                    let ir = match eval::lower_to_ir(&module) {
+                        Ok(ir) => ir,
+                        Err(err) => {
+                            eprintln!("error[materialization]: {err}");
+                            return;
+                        }
+                    };
                     // deferred: this `mind`-binary AOT/preview path emits artifacts from RAW
                     // lowered IR — it calls neither `ir::prepare_ir_for_backend` nor even
                     // `opt::ir_canonical::canonicalize_module`/`verify_module`, so it gets no

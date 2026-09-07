@@ -33,7 +33,7 @@ const JSON_MIND_SRC: &str = include_str!("../std/json.mind");
 
 fn lower_json_mind() -> libmind::ir::IRModule {
     let module = parser::parse(JSON_MIND_SRC).expect("std/json.mind must parse cleanly");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 fn count_calls_recursive(instrs: &[Instr], callee: &str) -> usize {

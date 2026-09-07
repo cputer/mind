@@ -72,7 +72,7 @@ fn x_merge_then_val(instrs: &[Instr]) -> Option<usize> {
 /// Lower `src`, then resolve the `"x"`-merge then/else edges to their constant
 /// values (if any). Shared by every shape below.
 fn edge_consts(src: &str) -> (Option<i64>, Option<i64>) {
-    let ir = lower_to_ir(&parser::parse(src).expect("parse"));
+    let ir = lower_to_ir(&parser::parse(src).expect("parse")).expect("lowering");
     let mut consts = HashMap::new();
     collect_consts(&ir.instrs, &mut consts);
     let (then_val, else_val) = x_merge_edges(&ir.instrs).expect("x-merge edges exist");
@@ -99,7 +99,7 @@ fn f(c: i64) -> i64 {
     return x
 }
 "#;
-    let ir = lower_to_ir(&parser::parse(src).expect("parse"));
+    let ir = lower_to_ir(&parser::parse(src).expect("parse")).expect("lowering");
     let mut consts = HashMap::new();
     collect_consts(&ir.instrs, &mut consts);
     let then_val = x_merge_then_val(&ir.instrs).expect("x-merge then-edge exists");

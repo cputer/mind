@@ -467,7 +467,7 @@ fn end_to_end_repr_c_struct_lower_to_ir() {
 
     // Lower to IR: repr_c_structs must be populated.
     use libmind::eval::lower_to_ir;
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         ir.repr_c_structs.contains_key("Point"),
         "repr_c_structs must contain 'Point'; got keys: {:?}",
@@ -574,7 +574,7 @@ fn repr_c_struct_after_extern_block_classifies_correctly() {
     let module = parser::parse(src).unwrap_or_else(|e| panic!("parse failed: {e:?}"));
 
     use libmind::eval::lower_to_ir;
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // repr_c_structs must be populated regardless of declaration order.
     assert!(

@@ -110,7 +110,7 @@ fn count_to(n: i64) -> i64 {
         "FnDef not found in module items"
     );
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert_eq!(
         count_while_instrs(&ir.instrs),
         1,
@@ -157,7 +157,7 @@ fn grid_sum(n: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert_eq!(
         count_while_instrs(&ir.instrs),
         2,
@@ -197,7 +197,7 @@ fn accumulate(n: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert_eq!(
         count_while_instrs(&ir.instrs),
         1,
@@ -257,7 +257,7 @@ fn conditional_loop(cond: i64, n: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert_eq!(
         count_while_instrs(&ir.instrs),
         1,

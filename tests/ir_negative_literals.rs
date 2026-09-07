@@ -23,7 +23,7 @@ use libmind::parser;
 /// the IR structurally).
 fn fn_body_const_i64s(src: &str) -> Vec<i64> {
     let module = parser::parse(src).unwrap_or_else(|e| panic!("parse failed: {e:#?}"));
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mut out = Vec::new();
     for instr in &ir.instrs {
         if let Instr::FnDef { body, .. } = instr {
@@ -39,7 +39,7 @@ fn fn_body_const_i64s(src: &str) -> Vec<i64> {
 
 fn fn_body_const_f64s(src: &str) -> Vec<f64> {
     let module = parser::parse(src).unwrap_or_else(|e| panic!("parse failed: {e:#?}"));
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mut out = Vec::new();
     for instr in &ir.instrs {
         if let Instr::FnDef { body, .. } = instr {
@@ -142,7 +142,7 @@ fn negative_literal_as_argument() {
 fn negative_literal_in_array() {
     let module =
         parser::parse("pub fn f() -> [i64; 2] { let a: [i64; 2] = [-7, 9]; return a; }").unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mut found = false;
     for instr in &ir.instrs {
         if let Instr::FnDef { body, .. } = instr {
@@ -174,7 +174,7 @@ fn negative_float_literal() {
 #[test]
 fn double_negation_lowers_as_subtraction() {
     let module = parser::parse("pub fn f() -> i64 { let a: i64 = -(-8); return a; }").unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     for instr in &ir.instrs {
         if let Instr::FnDef { body, .. } = instr {
             let consts: Vec<i64> = body

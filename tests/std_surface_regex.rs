@@ -33,7 +33,7 @@ const REGEX_MIND_SRC: &str = include_str!("../std/regex.mind");
 
 fn lower_regex_mind() -> libmind::ir::IRModule {
     let module = parser::parse(REGEX_MIND_SRC).expect("std/regex.mind must parse cleanly");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 fn count_calls_recursive(instrs: &[Instr], callee: &str) -> usize {

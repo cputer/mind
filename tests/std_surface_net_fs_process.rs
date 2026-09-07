@@ -52,7 +52,7 @@ fn has_fn(ir: &libmind::ir::IRModule, name: &str) -> bool {
 #[test]
 fn fs_mind_parses_and_lowers() {
     let module = parser::parse(FS_MIND_SRC).expect("std/fs.mind must parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     for want in [
         "read_to_string",
         "try_read_to_string",
@@ -86,7 +86,7 @@ fn fs_mind_parses_and_lowers() {
 #[test]
 fn net_mind_parses_and_lowers() {
     let module = parser::parse(NET_MIND_SRC).expect("std/net.mind must parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     for want in [
         "tcp_listen",
         "tcp_listen_port",
@@ -116,7 +116,7 @@ fn net_mind_parses_and_lowers() {
 #[test]
 fn process_mind_parses_and_lowers() {
     let module = parser::parse(PROCESS_MIND_SRC).expect("std/process.mind must parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     for want in [
         "spawn",
         "spawn_capture",

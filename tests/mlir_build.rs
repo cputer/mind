@@ -27,7 +27,7 @@ mod common;
 
 fn parse_and_lower(src: &str) -> (String, eval::MlirLowerPreset) {
     let module = parser::parse_with_diagnostics(src).expect("parse module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let plain_mlir = eval::emit_mlir_string(&ir, eval::MlirLowerPreset::None);
     (plain_mlir, eval::MlirLowerPreset::None)
 }

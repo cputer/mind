@@ -55,7 +55,7 @@ fn has_fn(ir: &libmind::ir::IRModule, name: &str) -> bool {
 #[test]
 fn http_mind_parses_and_lowers() {
     let module = parser::parse(HTTP_MIND_SRC).expect("std/http.mind must parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     for want in [
         "http_get",
         "http_post",

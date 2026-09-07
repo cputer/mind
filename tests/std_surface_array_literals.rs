@@ -37,7 +37,7 @@ fn array_lit_three_elements_parses_and_lowers() {
     let src = "[1, 2, 3]";
     let module = parser::parse(src).expect("[1, 2, 3] must parse");
     // The parsed module should contain an ArrayLit node.
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     // Must contain a ConstArray instruction with 3 elements.
     let has_const_array = ir
         .instrs
@@ -74,7 +74,7 @@ fn array_lit_4096_entries_no_stack_overflow() {
     src.push(']');
 
     let module = parser::parse(&src).expect("4096-entry array literal must parse without overflow");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let has_const_array = ir
         .instrs
         .iter()
@@ -97,7 +97,7 @@ fn nth(i: i64) -> i64 {
 }
 "#;
     let module = parser::parse(src).expect("const FOO + fn nth must parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // The module-level ConstArray for FOO must exist.
     let has_foo = ir.instrs.iter().any(|i| {
@@ -158,7 +158,7 @@ fn type_mismatch_length_rejected() {
 fn alias_typed_array_param_lowers_like_its_target() {
     fn mlir(src: &str) -> String {
         let module = parser::parse(src).expect("array-param module must parse");
-        let mut ir = lower_to_ir(&module);
+        let mut ir = lower_to_ir(&module).expect("lowering");
         compile_ir_to_mlir_text(&mut ir).expect("array-param module must lower to MLIR")
     }
 
@@ -207,7 +207,7 @@ fn first(values: [f64; 4]) -> f64 {
 
     fn assert_array_load_refusal(src: &str, reason: &str) {
         let module = parser::parse(src).expect("refusal module must parse");
-        let mut ir = lower_to_ir(&module);
+        let mut ir = lower_to_ir(&module).expect("lowering");
         let err = compile_ir_to_mlir_text(&mut ir)
             .expect_err("unresolved aggregate type must not acquire an invented ABI");
         assert!(

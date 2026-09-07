@@ -130,7 +130,7 @@ fn step2_struct_typed_parameter_resolves_field_access() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let loads = count_calls_deep(&ir.instrs, "__mind_load_i64");
     assert_eq!(
@@ -198,7 +198,7 @@ fn step2_fn_return_receiver_resolves_field_access() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let loads = count_calls_deep(&ir.instrs, "__mind_load_i64");
     assert_eq!(
@@ -252,7 +252,7 @@ fn step2_fn_with_non_struct_return_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 // ─── Case (1) — chained access (infrastructure check) ────────────────
@@ -314,7 +314,7 @@ fn step2_chained_access_on_scalar_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn invalid() -> i64 {
     // A same-scope scalar rebind must remove the old array-element type.
     // Keeping it would authorize a field load from scalar storage and emit
     // successful wrong code instead of refusing the invalid receiver.
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -358,7 +358,7 @@ fn invalid() -> i64 {
     // `module_const_type("P")` must not resurrect Pair after the local scalar
     // binding occupied that name; treating integer 3 as a record address would
     // be successful wrong code or an invalid memory read.
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn invalid(ITEMS: i64) -> i64 {
 
     // The occupied parameter binding must block both direct and fixed-array
     // fallback to the same-named module constant.
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 // ─── Smoke: Step 1 + Step 2 don't double-resolve ─────────────────────
@@ -421,7 +421,7 @@ fn step1_path_still_used_when_receiver_is_bound_ident() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let loads = count_calls_deep(&ir.instrs, "__mind_load_i64");
     assert_eq!(

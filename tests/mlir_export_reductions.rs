@@ -30,7 +30,7 @@ fn mlir_export_reductions_cover_sum_and_mean() {
         tensor.mean(s, axes=[0], keepdims=false)
     "#;
     let module = parser::parse(src).expect("parse reductions module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
 
     // Pinned fold: unrolled scalar adds rebuilt with `tensor.from_elements`,
@@ -64,7 +64,7 @@ fn reduce_all_axes_when_axes_empty_yields_scalar() {
         tensor.sum(x, axes=[], keepdims=false)
     "#;
     let module = parser::parse(src).expect("parse empty-axes reduction");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
     assert!(
         !mlir.contains("tensor.reduce"),
@@ -98,7 +98,7 @@ fn over_cap_float_reduction_gates_on_fast_optin() {
         tensor.sum(x, axes=[], keepdims=false)
     "#;
     let module = parser::parse(src).expect("parse over-cap reduction");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
 
     // Default (no opt-in): the non-deterministic float tree path is REFUSED.
     // This is the interp analogue of native's UnsupportedOp — both back ends
@@ -142,7 +142,7 @@ fn over_cap_integer_reduction_stays_treeshaped_ungated() {
         tensor.sum(x, axes=[], keepdims=false)
     "#;
     let module = parser::parse(src).expect("parse over-cap integer reduction");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
     assert!(
         mlir.contains("tensor.reduce"),

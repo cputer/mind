@@ -76,7 +76,7 @@ fn audit(instrs: &[Instr], saw: &mut bool, ok: &mut bool) {
 
 fn assert_stepped(src: &str, label: &str) {
     let module = parser::parse(src).unwrap_or_else(|e| panic!("{label}: parse failed: {e:?}"));
-    let ir = lower::lower_to_ir(&module);
+    let ir = lower::lower_to_ir(&module).expect("lowering");
     let mut saw = false;
     let mut ok = true;
     audit(&ir.instrs, &mut saw, &mut ok);

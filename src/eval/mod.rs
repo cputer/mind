@@ -47,6 +47,7 @@ pub(crate) use module_bindings::{
 };
 use module_bindings::{OwnerGuard as EvalOwnerGuard, bound_symbol as eval_bound_symbol};
 use module_bindings::{current_owner as current_eval_owner, symbol_display_name};
+pub mod materialization;
 /// Module-wide narrow-int surface prescan — the compile-speed early-skip gate
 /// for `infer_narrow_arith_ty` (see narrow_scan.rs for the byte-identity proof).
 #[cfg(feature = "std-surface")]
@@ -228,7 +229,7 @@ mod enum_value_tests {
 
 pub use closures::desugar_closures;
 pub use ir_interp::eval_ir;
-pub use lower::lower_to_ir;
+pub use lower::{lower_to_ir, lower_to_ir_with_limits};
 #[cfg(feature = "mlir-build")]
 pub use mlir_build::BuildError as MlirBuildError;
 #[cfg(feature = "mlir-build")]
@@ -676,7 +677,7 @@ pub fn eval_module_value_with_env_mode(
         ExecMode::Preview | ExecMode::CpuExec | ExecMode::Cuda => Ok(last),
         #[cfg(feature = "mlir-exec")]
         ExecMode::MlirExternal(cfg) => {
-            let ir = lower_to_ir(m);
+            let ir = lower_to_ir(m).map_err(|e| EvalError::UnsupportedMsg(e.to_string()))?;
             let opts = mlir_export::MlirEmitOptions {
                 mode: mlir_export::MlirEmitMode::Executable,
                 ..Default::default()
@@ -697,7 +698,7 @@ pub fn eval_module_value_with_env_mode(
         }
         #[cfg(feature = "mlir-jit")]
         ExecMode::MlirJitCpu => {
-            let ir = lower_to_ir(m);
+            let ir = lower_to_ir(m).map_err(|e| EvalError::UnsupportedMsg(e.to_string()))?;
             let opts = mlir_export::MlirEmitOptions {
                 mode: mlir_export::MlirEmitMode::Executable,
                 lower_preset: Some(MlirLowerPreset::JitCpu.as_str().to_string()),
@@ -743,7 +744,7 @@ pub fn eval_module_value_with_env_mode(
             blocks,
             threads,
         } => {
-            let ir = lower_to_ir(m);
+            let ir = lower_to_ir(m).map_err(|e| EvalError::UnsupportedMsg(e.to_string()))?;
             let opts = mlir_export::MlirEmitOptions {
                 mode: mlir_export::MlirEmitMode::Executable,
                 lower_preset: Some(MlirLowerPreset::GpuDefault.as_str().to_string()),

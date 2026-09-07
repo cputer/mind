@@ -104,7 +104,7 @@ fn field_access_emits_load_for_known_struct_var() {
     // Read every field of a known-struct variable: must emit exactly one
     // __mind_load_i64 per FieldAccess, no extra allocations.
     let module = module_with_field_reads(&["addr", "len", "cap"]);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     assert_eq!(
         count_calls(&ir.instrs, "__mind_alloc"),
@@ -131,7 +131,7 @@ fn field_access_first_field_uses_base_addr_directly() {
     // checking that the load's arg ValueId equals the alloc's destination
     // ValueId (i.e., the same SSA name is reused).
     let module = module_with_field_reads(&["addr"]);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let alloc_dst = ir
         .instrs
@@ -162,7 +162,7 @@ fn field_access_nonzero_field_uses_addr_plus_offset() {
     // Reading `v.len` (index 1) and `v.cap` (index 2) must each emit
     // a ConstI64(_, 8) or ConstI64(_, 16), an Add, then the load.
     let module = module_with_field_reads(&["len", "cap"]);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // Gather all ConstI64 values that appear AFTER the StructLit's stores.
     // The first stores need their own offsets (8, 16 inside StructLit);
@@ -235,7 +235,7 @@ fn field_access_unknown_receiver_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn field_access_unknown_struct_field_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn field_assign_unknown_receiver_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module);
+    let _ = lower_to_ir(&module).expect("lowering");
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn field_access_module_scope_binding_visible_inside_fn_body() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // Locate the FnDef body and verify it contains a __mind_load_i64.
     let fn_body_loads: usize = ir

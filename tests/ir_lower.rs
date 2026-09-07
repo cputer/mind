@@ -19,7 +19,7 @@ use libmind::parser;
 fn lower_and_eval_add_ints() {
     let src = "1 + 2 * 3";
     let module = parser::parse(src).unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let value = eval::eval_ir(&ir);
     let rendered = eval::format_value_human(&value);
     assert_eq!(rendered, "7");
@@ -29,7 +29,7 @@ fn lower_and_eval_add_ints() {
 fn lower_tensor_preview() {
     let src = "let x: Tensor[f32,(2,3)] = 0; x + 1";
     let module = parser::parse(src).unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let value = eval::eval_ir(&ir);
     let rendered = eval::format_value_human(&value);
     assert!(rendered.contains("Tensor["), "{rendered}");
@@ -40,7 +40,7 @@ fn lower_tensor_preview() {
 fn lower_export_block_populates_ir_exports() {
     let src = "export { foo, bar }";
     let module = parser::parse(src).unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     assert_eq!(ir.exports.len(), 2);
     assert!(ir.exports.contains("foo"));
     assert!(ir.exports.contains("bar"));
@@ -58,7 +58,7 @@ fn lower_export_block_populates_ir_exports() {
 fn lower_no_export_keeps_exports_empty() {
     let src = "1 + 2";
     let module = parser::parse(src).unwrap();
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     assert!(
         ir.exports.is_empty(),
         "default code path must leave IRModule.exports empty"

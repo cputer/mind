@@ -2595,7 +2595,7 @@ fn try_emit_mic(source_code: &str) -> Option<String> {
 
     let module = parser::parse_with_diagnostics(source_code).ok()?;
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut ir_module = eval::lower_to_ir(&module);
+        let mut ir_module = eval::lower_to_ir(&module).ok()?;
         ir::prepare_ir_for_backend(&mut ir_module).ok()?;
         Some(ir::compact::emit_mic(&ir_module))
     }))

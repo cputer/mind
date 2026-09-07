@@ -27,7 +27,7 @@ fn mlir_export_emits_linalg_dot_and_matmul() {
         mat
     "#;
     let module = parser::parse(src).expect("parse linalg module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
 
     assert!(mlir.contains("linalg.dot"), "expected linalg.dot in {mlir}");
@@ -47,7 +47,7 @@ fn mlir_export_emits_relu_maximumf() {
         tensor.relu(a)
     "#;
     let module = parser::parse(src).expect("parse relu module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
     eprintln!("=== eval relu MLIR ===\n{mlir}\n======================");
     assert!(

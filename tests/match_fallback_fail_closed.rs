@@ -93,7 +93,7 @@ fn nonfinal_bare_ident_named_like_variant_refuses_not_fallback() {
     let module = must_parse(
         "enum E { Flag, Other }\nfn f(x: i64) -> i64 {\n    match x { Flag => 1, _ => 2 }\n}",
     );
-    let result = std::panic::catch_unwind(|| lower_to_ir(&module));
+    let result = std::panic::catch_unwind(|| lower_to_ir(&module).expect("lowering"));
     assert!(
         result.is_err(),
         "a non-final bare-ident arm colliding with a registered variant must \
@@ -109,7 +109,7 @@ fn nonfinal_prelude_variant_ident_refuses_not_fallback() {
     let module = must_parse(
         "fn f(x: i64) -> i64 {\n    let _o = Some(1)\n    match x { Some => 1, _ => 2 }\n}",
     );
-    let result = std::panic::catch_unwind(|| lower_to_ir(&module));
+    let result = std::panic::catch_unwind(|| lower_to_ir(&module).expect("lowering"));
     assert!(
         result.is_err(),
         "a non-final bare-ident arm colliding with a prelude variant (`Some`) must \
@@ -138,7 +138,7 @@ fn correct_exhaustive_and_catch_all_matches_still_lower() {
     );
     // And lowering must NOT panic for any of these well-formed shapes.
     let module = must_parse(src);
-    let result = std::panic::catch_unwind(|| lower_to_ir(&module));
+    let result = std::panic::catch_unwind(|| lower_to_ir(&module).expect("lowering"));
     assert!(
         result.is_ok(),
         "a well-formed exhaustive/catch-all match must lower cleanly, never refuse."

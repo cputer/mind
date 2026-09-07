@@ -37,7 +37,7 @@ fn fndef_names(instrs: &[Instr]) -> Vec<String> {
 #[test]
 fn reactor_parses_and_lowers_with_api() {
     let module = parser::parse(REACTOR_SRC).expect("std/reactor.mind must parse cleanly");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let names = fndef_names(&ir.instrs);
     for required in [
         "reactor_new",

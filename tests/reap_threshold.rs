@@ -127,7 +127,7 @@ fn lower_reap_threshold_propagated_to_ir() {
         fn expert_a(x: i32) -> i32 { return x; }
     "#;
     let m = parser::parse(src).expect("parse failed");
-    let ir = lower_to_ir(&m);
+    let ir = lower_to_ir(&m).expect("lowering");
     let fn_def = ir.instrs.iter().find_map(|instr| {
         if let Instr::FnDef {
             name,
@@ -162,7 +162,7 @@ fn dce_prunes_unreachable_expert() {
         fn expert_a(x: i32) -> i32 { return x; }
     "#;
     let m = parser::parse(src).expect("parse failed");
-    let mut ir = lower_to_ir(&m);
+    let mut ir = lower_to_ir(&m).expect("lowering");
     canonicalize_module(&mut ir);
 
     let fn_def = ir.instrs.iter().find_map(|instr| {
@@ -199,7 +199,7 @@ fn dce_preserves_called_expert() {
         }
     "#;
     let m = parser::parse(src).expect("parse failed");
-    let mut ir = lower_to_ir(&m);
+    let mut ir = lower_to_ir(&m).expect("lowering");
     canonicalize_module(&mut ir);
 
     let fn_def = ir.instrs.iter().find_map(|instr| {
@@ -226,7 +226,7 @@ fn dce_no_op_without_reap_threshold() {
         fn plain_expert(x: i32) -> i32 { return x; }
     "#;
     let m = parser::parse(src).expect("parse failed");
-    let mut ir = lower_to_ir(&m);
+    let mut ir = lower_to_ir(&m).expect("lowering");
     let body_before = ir.instrs.iter().find_map(|instr| {
         if let Instr::FnDef { name, body, .. } = instr {
             if name == "plain_expert" {

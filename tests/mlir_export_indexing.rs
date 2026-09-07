@@ -26,7 +26,7 @@ fn mlir_export_handles_index_slice_and_gather() {
         tensor.gather(slice, axis=0, idx=idxs)
     "#;
     let module = parser::parse(src).expect("parse indexing module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
 
     assert!(

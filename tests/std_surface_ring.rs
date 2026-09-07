@@ -36,7 +36,7 @@ fn fndef_names(instrs: &[Instr]) -> Vec<String> {
 #[test]
 fn ring_parses_and_lowers_with_api() {
     let module = parser::parse(RING_SRC).expect("std/ring.mind must parse cleanly");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let names = fndef_names(&ir.instrs);
     for required in [
         "ring_new",

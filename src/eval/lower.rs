@@ -34,6 +34,9 @@ use crate::ast;
 use crate::ast::Literal;
 use crate::ast::TensorElemOp;
 use crate::ast::TypeAnn;
+use crate::eval::materialization::{
+    MaterializationBudget, MaterializationLimits, MaterializationRefusal,
+};
 
 use crate::ir::BinOp;
 use crate::ir::IRModule;
@@ -1119,7 +1122,99 @@ fn register_enums_in_block(ir: &mut IRModule, stmts: &[ast::Node]) {
     }
 }
 
-pub fn lower_to_ir(module: &ast::Module) -> IRModule {
+pub fn lower_to_ir(module: &ast::Module) -> Result<IRModule, MaterializationRefusal> {
+    lower_to_ir_with_limits(module, MaterializationLimits::default())
+}
+
+pub struct LoweringContext {
+    budget: MaterializationBudget,
+    refusal: Option<MaterializationRefusal>,
+}
+
+impl LoweringContext {
+    fn new(limits: MaterializationLimits) -> Self {
+        Self {
+            budget: MaterializationBudget::new(limits),
+            refusal: None,
+        }
+    }
+
+    fn charge_fixed_literal(&mut self, length: u32, runtime_elements: bool) -> bool {
+        if self.refusal.is_some() {
+            return false;
+        }
+        match self.budget.charge_fixed_literal(length, runtime_elements) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.refusal = Some(reason);
+                false
+            }
+        }
+    }
+
+    fn charge_static_elements(&mut self, length: usize, runtime_elements: bool) -> bool {
+        if self.refusal.is_some() {
+            return false;
+        }
+        match self.budget.charge_static_elements(length, runtime_elements) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.refusal = Some(reason);
+                false
+            }
+        }
+    }
+
+    fn charge_vec_literal(&mut self, length: usize) -> bool {
+        if self.refusal.is_some() {
+            return false;
+        }
+        match self.budget.charge_vec_literal(length) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.refusal = Some(reason);
+                false
+            }
+        }
+    }
+
+    fn charge_fixed_field_store(&mut self, length: u32, f64_bits: bool) -> bool {
+        if self.refusal.is_some() {
+            return false;
+        }
+        match self.budget.charge_fixed_field_store(length, f64_bits) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.refusal = Some(reason);
+                false
+            }
+        }
+    }
+
+    fn charge_fixed_field_copyout(&mut self, length: u32, f64_bits: bool) -> bool {
+        if self.refusal.is_some() {
+            return false;
+        }
+        match self.budget.charge_fixed_field_copyout(length, f64_bits) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.refusal = Some(reason);
+                false
+            }
+        }
+    }
+}
+
+pub fn lower_to_ir_with_limits(
+    module: &ast::Module,
+    limits: MaterializationLimits,
+) -> Result<IRModule, MaterializationRefusal> {
+    let mut context = LoweringContext::new(limits);
+    let ir = lower_to_ir_inner(module, &mut context);
+    context.refusal.map_or(Ok(ir), Err)
+}
+
+fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRModule {
     // PURE-SCALAR FAST LANE. For a module whose every item passes
     // `is_pure_scalar_arith_item` (the `scalar_math` compile-speed floor:
     // `1 + 2 * 3 - 4 / 2`) AND an empty whole-project registry, every setup
@@ -1503,6 +1598,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                         &env,
                         &struct_env,
                         receiver_types,
+                        context,
                     ),
                     // RH f64-aggregate: top-level `let a: [f64/f32; N] = [lit..]`
                     // → typed ConstDenseTensor.
@@ -1512,9 +1608,10 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                         *length,
                         value,
                         &mut ir,
-                        |node, inner_ir| {
-                            lower_expr(node, inner_ir, &env, &struct_env, receiver_types)
+                        |node, inner_ir, context| {
+                            lower_expr(node, inner_ir, &env, &struct_env, receiver_types, context)
                         },
+                        context,
                     ),
                     // `array<T>` binding whose RHS is an array literal `[..]`:
                     // lower onto the std.vec heap runtime (vec_new + vec_push
@@ -1534,9 +1631,10 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                             &env,
                             &struct_env,
                             receiver_types,
+                            context,
                         )
                     }
-                    _ => lower_expr(value, &mut ir, &env, &struct_env, receiver_types),
+                    _ => lower_expr(value, &mut ir, &env, &struct_env, receiver_types, context),
                 };
                 // Narrow-typed binding (`let c: u8 = a * b`, i8/u8/i16/u16/u32):
                 // truncate/sign-adjust the lowered init to the declared width, so
@@ -1555,7 +1653,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                 ir.instrs.push(Instr::Output(id));
             }
             ast::Node::Assign { name, value, .. } => {
-                let id = lower_expr(value, &mut ir, &env, &struct_env, receiver_types);
+                let id = lower_expr(value, &mut ir, &env, &struct_env, receiver_types, context);
                 // Reassigning a module-level narrow local re-masks to its declared
                 // width (no-op for non-narrow names — the all-i64 hot path).
                 #[cfg(feature = "std-surface")]
@@ -1678,6 +1776,9 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                             elems.len()
                         );
                     }
+                    if !context.charge_static_elements(elems.len(), false) {
+                        continue;
+                    }
                     let data: Vec<u64> = elems.iter().map(|e| dense_elem_bits(e, &dtype)).collect();
                     let shape = vec![ShapeDim::Known(*length as usize)];
                     ir.const_dense_defs
@@ -1700,6 +1801,13 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                     ir.instrs.push(Instr::ConstI64(id, 0));
                     ir.instrs.push(Instr::Output(id));
                 } else {
+                    let element_count = match value.as_ref() {
+                        ast::Node::ArrayLit { elements, .. } => elements.len(),
+                        _ => 0,
+                    };
+                    if !context.charge_static_elements(element_count, false) {
+                        continue;
+                    }
                     let values = extract_array_lit_values(value);
                     ir.const_array_defs.insert(name.clone(), values.clone());
                     let id = ir.fresh();
@@ -1736,7 +1844,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
                 ir.instrs.push(Instr::Output(id));
             }
             other => {
-                let id = lower_expr(other, &mut ir, &env, &struct_env, receiver_types);
+                let id = lower_expr(other, &mut ir, &env, &struct_env, receiver_types, context);
                 // #6: thread nested-region exit rebindings (a `while`/`if`
                 // statement that mutates an outer var) back into the enclosing
                 // env so a later top-level read sees the post-region SSA id.
@@ -1795,7 +1903,14 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
         // Lower the concrete instance through the ordinary FnDef path: it records
         // the instance signature and pushes an `Instr::FnDef` carrying a real
         // body (the empty `type_params` skips the template short-circuit).
-        let _ = lower_expr(&instance, &mut ir, &env, &struct_env, receiver_types);
+        let _ = lower_expr(
+            &instance,
+            &mut ir,
+            &env,
+            &struct_env,
+            receiver_types,
+            context,
+        );
         // Closure: lowering an instance may itself register further generic
         // instances (a generic body that calls another generic). Merge any
         // not-yet-emitted requests; the idempotent `or_insert` on the fixed
@@ -1812,6 +1927,7 @@ pub fn lower_to_ir(module: &ast::Module) -> IRModule {
     ir
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_tensor_binding(
     ir: &mut IRModule,
     value: &ast::Node,
@@ -1820,6 +1936,7 @@ fn lower_tensor_binding(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
     if let Some((dtype, shape)) = parse_tensor_ann(dtype, dims) {
         match value {
@@ -1877,6 +1994,9 @@ fn lower_tensor_binding(
                     })
                     .product();
                 if expected == elements.len() {
+                    if !context.charge_static_elements(expected, false) {
+                        return ir.fresh();
+                    }
                     let data: Vec<u64> = elements
                         .iter()
                         .map(|e| dense_elem_bits(e, &dtype))
@@ -1895,7 +2015,7 @@ fn lower_tensor_binding(
         }
     }
 
-    lower_expr(value, ir, env, struct_env, receiver_types)
+    lower_expr(value, ir, env, struct_env, receiver_types, context)
 }
 
 /// Signed-integer bit-width of a scalar `as`-cast *target* type, if the target
@@ -3010,7 +3130,11 @@ fn lower_array_surface_lit(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
+    if !context.charge_vec_literal(elements.len()) {
+        return ir.fresh();
+    }
     let mut handle = ir.fresh();
     ir.instrs.push(Instr::Call {
         dst: handle,
@@ -3018,7 +3142,7 @@ fn lower_array_surface_lit(
         args: vec![],
     });
     for elem in elements {
-        let val = lower_expr(elem, ir, env, struct_env, receiver_types);
+        let val = lower_expr(elem, ir, env, struct_env, receiver_types, context);
         let next = ir.fresh();
         ir.instrs.push(Instr::Call {
             dst: next,
@@ -3046,6 +3170,7 @@ fn lower_return_array_lit(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> Option<ValueId> {
     let mut value = value;
     while let ast::Node::Paren(inner, _) = value {
@@ -3061,7 +3186,10 @@ fn lower_return_array_lit(
             *length,
             value,
             ir,
-            |node, inner_ir| lower_expr(node, inner_ir, env, struct_env, receiver_types),
+            |node, inner_ir, context| {
+                lower_expr(node, inner_ir, env, struct_env, receiver_types, context)
+            },
+            context,
         )),
         Some(ret) if is_array_surface_ty(ret) => Some(lower_array_surface_lit(
             elements,
@@ -3069,6 +3197,7 @@ fn lower_return_array_lit(
             env,
             struct_env,
             receiver_types,
+            context,
         )),
         _ => None,
     }
@@ -3131,7 +3260,11 @@ fn lower_map_surface_lit(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
+    if !context.charge_vec_literal(entries.len()) {
+        return ir.fresh();
+    }
     let mut handle = ir.fresh();
     ir.instrs.push(Instr::Call {
         dst: handle,
@@ -3139,8 +3272,8 @@ fn lower_map_surface_lit(
         args: vec![],
     });
     for (key, value) in entries {
-        let k = lower_expr(key, ir, env, struct_env, receiver_types);
-        let v = lower_expr(value, ir, env, struct_env, receiver_types);
+        let k = lower_expr(key, ir, env, struct_env, receiver_types, context);
+        let v = lower_expr(value, ir, env, struct_env, receiver_types, context);
         let next = ir.fresh();
         ir.instrs.push(Instr::Call {
             dst: next,
@@ -3203,7 +3336,11 @@ fn lower_set_surface_lit(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
+    if !context.charge_vec_literal(elements.len()) {
+        return ir.fresh();
+    }
     let mut handle = ir.fresh();
     ir.instrs.push(Instr::Call {
         dst: handle,
@@ -3211,7 +3348,7 @@ fn lower_set_surface_lit(
         args: vec![],
     });
     for elem in elements {
-        let k = lower_expr(elem, ir, env, struct_env, receiver_types);
+        let k = lower_expr(elem, ir, env, struct_env, receiver_types, context);
         let one = ir.fresh();
         ir.instrs.push(Instr::ConstI64(one, 1));
         let next = ir.fresh();
@@ -4867,6 +5004,7 @@ fn lower_logical_expr(
     env: &HashMap<String, ValueId>,
     struct_env: &HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
     let lit = |n: i64| ast::Node::Lit(ast::Literal::Int(n), span);
     let is_cmp = |e: &ast::Node| {
@@ -4915,7 +5053,7 @@ fn lower_logical_expr(
             span,
         },
     };
-    lower_expr(&desugared, ir, env, struct_env, receiver_types)
+    lower_expr(&desugared, ir, env, struct_env, receiver_types, context)
 }
 
 /// Keep a large match arm's temporaries in a non-recursive frame. This generic
@@ -4943,6 +5081,7 @@ fn lower_expr(
     // returns (`foo().x`), and struct-typed parameters that Step 1
     // can't see via a direct `Ident` lookup.
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
     match node {
         ast::Node::Lit(Literal::Int(n), _) => {
@@ -4979,7 +5118,7 @@ fn lower_expr(
             _ => {
                 let zero = ir.fresh();
                 ir.instrs.push(Instr::ConstI64(zero, 0));
-                let rhs = lower_expr(operand, ir, env, struct_env, receiver_types);
+                let rhs = lower_expr(operand, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
                 ir.instrs.push(Instr::BinOp {
                     dst,
@@ -5001,7 +5140,7 @@ fn lower_expr(
                 id
             }
             _ => {
-                let lhs = lower_expr(operand, ir, env, struct_env, receiver_types);
+                let lhs = lower_expr(operand, ir, env, struct_env, receiver_types, context);
                 let zero = ir.fresh();
                 ir.instrs.push(Instr::ConstI64(zero, 0));
                 let dst = ir.fresh();
@@ -5019,7 +5158,7 @@ fn lower_expr(
         // Reuses the keystone-stable integer `Sub` lowering; no new opcode and
         // no feature gate needed (works in every build config).
         ast::Node::BitNot { operand, .. } => {
-            let rhs = lower_expr(operand, ir, env, struct_env, receiver_types);
+            let rhs = lower_expr(operand, ir, env, struct_env, receiver_types, context);
             let neg_one = ir.fresh();
             ir.instrs.push(Instr::ConstI64(neg_one, -1));
             let dst = ir.fresh();
@@ -5166,28 +5305,38 @@ fn lower_expr(
             // so the ArrayLoad that follows has a valid base in this
             // IR's SSA namespace.
             #[cfg(feature = "std-surface")]
-            if let Some(values) = ir.const_array_defs.get(name).cloned() {
-                let id = ir.fresh();
-                ir.instrs.push(Instr::ConstArray {
-                    dst: id,
-                    name: Some(name.clone()),
-                    values,
-                });
-                return id;
+            if let Some(length) = ir.const_array_defs.get(name).map(Vec::len) {
+                if !context.charge_static_elements(length, false) {
+                    return ir.fresh();
+                }
+                if let Some(values) = ir.const_array_defs.get(name).cloned() {
+                    let id = ir.fresh();
+                    ir.instrs.push(Instr::ConstArray {
+                        dst: id,
+                        name: Some(name.clone()),
+                        values,
+                    });
+                    return id;
+                }
             }
             // Phase 17.9 — named f64/f32 const-array identifier: re-emit the
             // TYPED dense blob (with its exact IEEE-754 bits + element dtype) so
             // the following ArrayLoad has a well-typed base in this SSA namespace.
             #[cfg(feature = "std-surface")]
-            if let Some((data, dtype, shape)) = ir.const_dense_defs.get(name).cloned() {
-                let id = ir.fresh();
-                ir.instrs.push(Instr::ConstDenseTensor {
-                    dst: id,
-                    dtype,
-                    shape,
-                    data,
-                });
-                return id;
+            if let Some(length) = ir.const_dense_defs.get(name).map(|(data, _, _)| data.len()) {
+                if !context.charge_static_elements(length, false) {
+                    return ir.fresh();
+                }
+                if let Some((data, dtype, shape)) = ir.const_dense_defs.get(name).cloned() {
+                    let id = ir.fresh();
+                    ir.instrs.push(Instr::ConstDenseTensor {
+                        dst: id,
+                        dtype,
+                        shape,
+                        data,
+                    });
+                    return id;
+                }
             }
             // Module-level `const NAME = value` (scalar / string / collection):
             // inline the value expression in the current SSA namespace. `env` is
@@ -5211,13 +5360,16 @@ fn lower_expr(
                             length,
                             &cval,
                             ir,
-                            |item, inner_ir| {
-                                lower_expr(item, inner_ir, env, struct_env, receiver_types)
+                            |item, inner_ir, context| {
+                                lower_expr(item, inner_ir, env, struct_env, receiver_types, context)
                             },
+                            context,
                         )
-                        .unwrap_or_else(|| lower_expr(&cval, ir, env, struct_env, receiver_types))
+                        .unwrap_or_else(|| {
+                            lower_expr(&cval, ir, env, struct_env, receiver_types, context)
+                        })
                     }
-                    _ => lower_expr(&cval, ir, env, struct_env, receiver_types),
+                    _ => lower_expr(&cval, ir, env, struct_env, receiver_types, context),
                 };
                 crate::ir::end_resolving_const(name);
                 return id;
@@ -5309,8 +5461,8 @@ fn lower_expr(
         ast::Node::Binary {
             op, left, right, ..
         } => {
-            let lhs = lower_expr(left, ir, env, struct_env, receiver_types);
-            let rhs = lower_expr(right, ir, env, struct_env, receiver_types);
+            let lhs = lower_expr(left, ir, env, struct_env, receiver_types, context);
+            let rhs = lower_expr(right, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let op = match op {
                 ast::BinOp::Add => BinOp::Add,
@@ -5358,7 +5510,17 @@ fn lower_expr(
             left,
             right,
             span,
-        } => lower_logical_expr(op, left, right, *span, ir, env, struct_env, receiver_types),
+        } => lower_logical_expr(
+            op,
+            left,
+            right,
+            *span,
+            ir,
+            env,
+            struct_env,
+            receiver_types,
+            context,
+        ),
         // Phase 6.5 Stage 1a — bitwise binary operators.
         // `ast::Node::Bitwise` is kept separate from `Node::Binary` by design
         // (see ast/mod.rs comments). Map each BitOp to its IR BinOp variant.
@@ -5367,8 +5529,8 @@ fn lower_expr(
         ast::Node::Bitwise {
             op, left, right, ..
         } => lower_out_of_line(|| {
-            let lhs = lower_expr(left, ir, env, struct_env, receiver_types);
-            let mut rhs = lower_expr(right, ir, env, struct_env, receiver_types);
+            let lhs = lower_expr(left, ir, env, struct_env, receiver_types, context);
+            let mut rhs = lower_expr(right, ir, env, struct_env, receiver_types, context);
             let ir_op = match op {
                 ast::BitOp::And => BinOp::BitAnd,
                 ast::BitOp::Or => BinOp::BitOr,
@@ -5415,7 +5577,7 @@ fn lower_expr(
         ast::Node::CallTensorSum {
             x, axes, keepdims, ..
         } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
             ir.instrs.push(Instr::Sum {
@@ -5429,7 +5591,7 @@ fn lower_expr(
         ast::Node::CallTensorMean {
             x, axes, keepdims, ..
         } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
             ir.instrs.push(Instr::Mean {
@@ -5441,13 +5603,13 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallTensorRelu { x, .. } => {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::Relu { dst, src });
             dst
         }
         ast::Node::CallReshape { x, dims, .. } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let new_shape = dims.iter().map(|dim| parse_dim(dim)).collect();
             ir.instrs.push(Instr::Reshape {
@@ -5458,7 +5620,7 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallExpandDims { x, axis, .. } => {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::ExpandDims {
                 dst,
@@ -5468,14 +5630,14 @@ fn lower_expr(
             dst
         }
         ast::Node::CallSqueeze { x, axes, .. } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let axes = axes.iter().map(|a| *a as i64).collect();
             ir.instrs.push(Instr::Squeeze { dst, src, axes });
             dst
         }),
         ast::Node::CallTranspose { x, axes, .. } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let perm = axes
                 .as_ref()
@@ -5485,7 +5647,7 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallIndex { x, axis, i, .. } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let indices = vec![IndexSpec {
                 axis: (*axis).max(0) as i64,
@@ -5495,8 +5657,8 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallMatMul { a, b, .. } => {
-            let lhs = lower_expr(a, ir, env, struct_env, receiver_types);
-            let rhs = lower_expr(b, ir, env, struct_env, receiver_types);
+            let lhs = lower_expr(a, ir, env, struct_env, receiver_types, context);
+            let rhs = lower_expr(b, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::MatMul {
                 dst,
@@ -5521,8 +5683,8 @@ fn lower_expr(
         // which is byte-identical and sufficient for the Phase B gate
         // as implemented in this test suite.
         ast::Node::TensorMatmul { lhs, rhs, .. } => {
-            let a = lower_expr(lhs, ir, env, struct_env, receiver_types);
-            let b = lower_expr(rhs, ir, env, struct_env, receiver_types);
+            let a = lower_expr(lhs, ir, env, struct_env, receiver_types, context);
+            let b = lower_expr(rhs, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::MatMul { dst, a, b });
             dst
@@ -5534,8 +5696,8 @@ fn lower_expr(
         // produces for tensor operands.  The IR-level representation is
         // identical: both forms emit `add %L, %R` (or sub/mul/div).
         ast::Node::TensorElemwise { op, lhs, rhs, .. } => lower_out_of_line(|| {
-            let l = lower_expr(lhs, ir, env, struct_env, receiver_types);
-            let r = lower_expr(rhs, ir, env, struct_env, receiver_types);
+            let l = lower_expr(lhs, ir, env, struct_env, receiver_types, context);
+            let r = lower_expr(rhs, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let ir_op = match op {
                 TensorElemOp::Add => BinOp::Add,
@@ -5565,8 +5727,8 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallDot { a, b, .. } => {
-            let lhs = lower_expr(a, ir, env, struct_env, receiver_types);
-            let rhs = lower_expr(b, ir, env, struct_env, receiver_types);
+            let lhs = lower_expr(a, ir, env, struct_env, receiver_types, context);
+            let rhs = lower_expr(b, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::Dot {
                 dst,
@@ -5582,7 +5744,7 @@ fn lower_expr(
             end,
             ..
         } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let dims = vec![SliceSpec {
                 axis: (*axis).max(0) as i64,
@@ -5601,7 +5763,7 @@ fn lower_expr(
             step,
             ..
         } => lower_out_of_line(|| {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             let dims = vec![SliceSpec {
                 axis: (*axis).max(0) as i64,
@@ -5613,8 +5775,8 @@ fn lower_expr(
             dst
         }),
         ast::Node::CallGather { x, axis, idx, .. } => {
-            let src = lower_expr(x, ir, env, struct_env, receiver_types);
-            let indices = lower_expr(idx, ir, env, struct_env, receiver_types);
+            let src = lower_expr(x, ir, env, struct_env, receiver_types, context);
+            let indices = lower_expr(idx, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::Gather {
                 dst,
@@ -5624,7 +5786,9 @@ fn lower_expr(
             });
             dst
         }
-        ast::Node::Paren(inner, _) => lower_expr(inner, ir, env, struct_env, receiver_types),
+        ast::Node::Paren(inner, _) => {
+            lower_expr(inner, ir, env, struct_env, receiver_types, context)
+        }
         ast::Node::Tuple { elements, .. } => lower_out_of_line(|| {
             // A tuple is an anonymous all-i64 product type, lowered with the
             // exact machinery of an all-i64 `StructLit` / multi-payload enum
@@ -5641,7 +5805,7 @@ fn lower_expr(
             if n <= 1 {
                 return elements
                     .first()
-                    .map(|e| lower_expr(e, ir, env, struct_env, receiver_types))
+                    .map(|e| lower_expr(e, ir, env, struct_env, receiver_types, context))
                     .unwrap_or_else(|| {
                         let id = ir.fresh();
                         ir.instrs.push(Instr::ConstI64(id, 0));
@@ -5670,7 +5834,7 @@ fn lower_expr(
             // Store each element at offset 8*i (lowered in source order, after
             // the alloc — same left-to-right evaluation as `StructLit`).
             for (i, element) in elements.iter().enumerate() {
-                let value = lower_expr(element, ir, env, struct_env, receiver_types);
+                let value = lower_expr(element, ir, env, struct_env, receiver_types, context);
                 let field_addr = if i == 0 {
                     addr
                 } else {
@@ -5953,9 +6117,17 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             )
                             .unwrap_or_else(|| {
-                                lower_expr(val, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types)
+                                lower_expr(
+                                    val,
+                                    &mut fn_ir,
+                                    &fn_env,
+                                    &fn_struct_env,
+                                    receiver_types,
+                                    context,
+                                )
                             });
                             #[cfg(not(feature = "std-surface"))]
                             let lowered = lower_expr(
@@ -5964,6 +6136,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
                             // Narrow-signature ABI: mask a `-> i8/u8/i16/u16`
                             // return to its declared width (no-op otherwise).
@@ -5991,6 +6164,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             ),
                             // RH f64-aggregate surface: a local `let a: [f64; N] =
                             // [lit, ...]` (or `[f32; N]`) fixed-array literal routes
@@ -6008,15 +6182,17 @@ fn lower_expr(
                                 *length,
                                 value,
                                 &mut fn_ir,
-                                |node, inner_ir| {
+                                |node, inner_ir, context| {
                                     lower_expr(
                                         node,
                                         inner_ir,
                                         &fn_env,
                                         &fn_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 },
+                                context,
                             ),
                             // `array<T>` binding with an array-literal RHS:
                             // lower onto the std.vec heap runtime.
@@ -6035,6 +6211,7 @@ fn lower_expr(
                                     &fn_env,
                                     &fn_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                             }
                             _ => lower_expr(
@@ -6043,6 +6220,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             ),
                         };
                         // Narrow-typed binding: mask/sign-adjust to declared width
@@ -6117,8 +6295,14 @@ fn lower_expr(
                         // name to `__mind_load_i64(addr + 8*i)` in `fn_env` — the
                         // read side of the `Node::Tuple` aggregate. A tuple-free fn
                         // body never reaches here, so the keystone is byte-identical.
-                        let addr =
-                            lower_expr(value, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
+                        let addr = lower_expr(
+                            value,
+                            &mut fn_ir,
+                            &fn_env,
+                            &fn_struct_env,
+                            receiver_types,
+                            context,
+                        );
                         // BUG6 (corr2): recover each element's declared/synthesised
                         // width+signedness so a `u64` (or narrow) destructured element
                         // re-materialises its tag — mirrors the tuple-INDEX read `t.N`.
@@ -6170,8 +6354,14 @@ fn lower_expr(
                         // outer-mutation threading (see the Let arm above).
                         #[cfg(feature = "std-surface")]
                         let value_start = fn_ir.instrs.len();
-                        let id =
-                            lower_expr(value, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
+                        let id = lower_expr(
+                            value,
+                            &mut fn_ir,
+                            &fn_env,
+                            &fn_struct_env,
+                            receiver_types,
+                            context,
+                        );
                         // Bug #209: thread a value-position `if`'s outer-var
                         // mutations back; the assignment target's own binding
                         // below wins for `name` (the RHS value is what's assigned).
@@ -6222,7 +6412,19 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
+                            ret_id = Some(id);
+                        } else if let Some(id) = lower_fixed_array_field_index_assign(
+                            receiver,
+                            index,
+                            value,
+                            &mut fn_ir,
+                            &fn_env,
+                            &fn_struct_env,
+                            receiver_types,
+                            context,
+                        ) {
                             ret_id = Some(id);
                         } else if let ast::Node::Lit(Literal::Ident(root), _) = receiver.as_ref() {
                             let base = lower_expr(
@@ -6231,6 +6433,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let idx = lower_expr(
                                 index,
@@ -6238,6 +6441,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let val = lower_expr(
                                 value,
@@ -6245,6 +6449,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let dst = fn_ir.fresh();
                             fn_ir.instrs.push(Instr::ArrayStore {
@@ -6262,6 +6467,7 @@ fn lower_expr(
                                 &fn_env,
                                 &fn_struct_env,
                                 receiver_types,
+                                context,
                             );
                             ret_id = Some(id);
                         }
@@ -6283,17 +6489,31 @@ fn lower_expr(
                                     &fn_env,
                                     &fn_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                             } else {
                                 None
                             };
                         #[cfg(feature = "std-surface")]
                         let id = typed_tail.unwrap_or_else(|| {
-                            lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types)
+                            lower_expr(
+                                other,
+                                &mut fn_ir,
+                                &fn_env,
+                                &fn_struct_env,
+                                receiver_types,
+                                context,
+                            )
                         });
                         #[cfg(not(feature = "std-surface"))]
-                        let id =
-                            lower_expr(other, &mut fn_ir, &fn_env, &fn_struct_env, receiver_types);
+                        let id = lower_expr(
+                            other,
+                            &mut fn_ir,
+                            &fn_env,
+                            &fn_struct_env,
+                            receiver_types,
+                            context,
+                        );
                         ret_id = Some(id);
                         // Gap C: if the emitted statement was an `Instr::If`,
                         // thread its outer-binding assignment merges back into
@@ -6388,12 +6608,14 @@ fn lower_expr(
             let ret_val = value.as_ref().map(|v| {
                 #[cfg(feature = "std-surface")]
                 {
-                    lower_return_array_lit(v, ir, env, struct_env, receiver_types)
-                        .unwrap_or_else(|| lower_expr(v, ir, env, struct_env, receiver_types))
+                    lower_return_array_lit(v, ir, env, struct_env, receiver_types, context)
+                        .unwrap_or_else(|| {
+                            lower_expr(v, ir, env, struct_env, receiver_types, context)
+                        })
                 }
                 #[cfg(not(feature = "std-surface"))]
                 {
-                    lower_expr(v, ir, env, struct_env, receiver_types)
+                    lower_expr(v, ir, env, struct_env, receiver_types, context)
                 }
             });
             // Narrow-signature ABI: mask a `-> i8/u8/i16/u16` return to its
@@ -6449,6 +6671,7 @@ fn lower_expr(
                             &local_env,
                             &local_struct_env,
                             receiver_types,
+                            context,
                         ),
                         // RH f64-aggregate: `let a: [f64/f32; N] = [lit..]` declared
                         // inside a loop body → typed ConstDenseTensor (mirrors the
@@ -6460,15 +6683,17 @@ fn lower_expr(
                             *length,
                             value,
                             ir,
-                            |node, inner_ir| {
+                            |node, inner_ir, context| {
                                 lower_expr(
                                     node,
                                     inner_ir,
                                     &local_env,
                                     &local_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                             },
+                            context,
                         ),
                         // `array<T>` binding with an array-literal RHS: lower
                         // onto the std.vec heap runtime.
@@ -6486,9 +6711,17 @@ fn lower_expr(
                                 &local_env,
                                 &local_struct_env,
                                 receiver_types,
+                                context,
                             )
                         }
-                        _ => lower_expr(value, ir, &local_env, &local_struct_env, receiver_types),
+                        _ => lower_expr(
+                            value,
+                            ir,
+                            &local_env,
+                            &local_struct_env,
+                            receiver_types,
+                            context,
+                        ),
                     };
                     // Narrow-typed block-local: mask/sign-adjust to declared width.
                     #[cfg(feature = "std-surface")]
@@ -6520,7 +6753,14 @@ fn lower_expr(
                     // `__mind_load_i64(addr + 8*i)` in the block-local env — the
                     // read side of the `Node::Tuple` aggregate. Tuple-free blocks
                     // never reach here, so the keystone stays byte-identical.
-                    let addr = lower_expr(value, ir, &local_env, &local_struct_env, receiver_types);
+                    let addr = lower_expr(
+                        value,
+                        ir,
+                        &local_env,
+                        &local_struct_env,
+                        receiver_types,
+                        context,
+                    );
                     // BUG6 (corr2): re-materialise each element's declared/synthesised
                     // width+signedness (see the fn-body destructure); `None` slots are
                     // byte-identical no-ops.
@@ -6572,6 +6812,7 @@ fn lower_expr(
                         &local_env,
                         &local_struct_env,
                         receiver_types,
+                        context,
                     ));
                     // #6: thread nested-region exit rebindings back into this
                     // value-block's env (byte-neutral — no instructions).
@@ -6622,7 +6863,7 @@ fn lower_expr(
             // unique and disjoint from the parent scope's ids (especially fn
             // parameters which occupy the lowest ids).
             let mut cond_ir = sub_ir_from(ir);
-            let cond_id = lower_expr(cond, &mut cond_ir, env, struct_env, receiver_types);
+            let cond_id = lower_expr(cond, &mut cond_ir, env, struct_env, receiver_types, context);
 
             // ── 2. Lower the then-branch into a scratch sub-module ────────────
             //      Starts from cond_ir's highest id.
@@ -6691,6 +6932,7 @@ fn lower_expr(
                                     &then_env,
                                     &then_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                                 .unwrap_or_else(|| {
                                     lower_expr(
@@ -6699,6 +6941,7 @@ fn lower_expr(
                                         &then_env,
                                         &then_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 })
                             }
@@ -6710,6 +6953,7 @@ fn lower_expr(
                                     &then_env,
                                     &then_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                             }
                         });
@@ -6738,6 +6982,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             ),
                             // RH f64-aggregate: `let a: [f64/f32; N] = [lit..]` in a
                             // then/if-arm body → typed ConstDenseTensor.
@@ -6747,15 +6992,17 @@ fn lower_expr(
                                 *length,
                                 value,
                                 &mut then_ir,
-                                |node, inner_ir| {
+                                |node, inner_ir, context| {
                                     lower_expr(
                                         node,
                                         inner_ir,
                                         &then_env,
                                         &then_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 },
+                                context,
                             ),
                             // `array<T>` binding with an array-literal RHS: lower
                             // onto the std.vec heap runtime (vec_new + vec_push)
@@ -6780,6 +7027,7 @@ fn lower_expr(
                                     &then_env,
                                     &then_struct_env,
                                     receiver_types,
+                                    context,
                                 )
                             }
                             _ => lower_expr(
@@ -6788,6 +7036,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             ),
                         };
                         // Narrow-typed branch-local: mask/sign-adjust to width.
@@ -6851,6 +7100,7 @@ fn lower_expr(
                             &then_env,
                             &then_struct_env,
                             receiver_types,
+                            context,
                         );
                         // Bug #209: thread a value-position `if`'s outer-var
                         // mutations back; the assignment target's own binding
@@ -6911,7 +7161,19 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             );
+                        } else if let Some(id) = lower_fixed_array_field_index_assign(
+                            receiver,
+                            index,
+                            value,
+                            &mut then_ir,
+                            &then_env,
+                            &then_struct_env,
+                            receiver_types,
+                            context,
+                        ) {
+                            then_result = id;
                         } else if let ast::Node::Lit(Literal::Ident(root), _) = receiver.as_ref() {
                             let base = lower_expr(
                                 receiver,
@@ -6919,6 +7181,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let idx = lower_expr(
                                 index,
@@ -6926,6 +7189,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let val = lower_expr(
                                 value,
@@ -6933,6 +7197,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let dst = then_ir.fresh();
                             then_ir.instrs.push(Instr::ArrayStore {
@@ -6963,6 +7228,7 @@ fn lower_expr(
                                 &then_env,
                                 &then_struct_env,
                                 receiver_types,
+                                context,
                             );
                         }
                     }
@@ -6987,6 +7253,7 @@ fn lower_expr(
                             &mut then_env,
                             &mut then_struct_env,
                             receiver_types,
+                            context,
                         );
                         // Tuple destructuring is a declaration, not an
                         // assignment to same-spelled outer bindings. Keep its
@@ -7005,6 +7272,7 @@ fn lower_expr(
                             &then_env,
                             &then_struct_env,
                             receiver_types,
+                            context,
                         );
                         // F2: thread a nested region's EXIT/merge ids upward so
                         // an outer var mutated inside it is visible (and
@@ -7063,6 +7331,7 @@ fn lower_expr(
                                         &else_env,
                                         &else_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                     .unwrap_or_else(|| {
                                         lower_expr(
@@ -7071,6 +7340,7 @@ fn lower_expr(
                                             &else_env,
                                             &else_struct_env,
                                             receiver_types,
+                                            context,
                                         )
                                     })
                                 }
@@ -7082,6 +7352,7 @@ fn lower_expr(
                                         &else_env,
                                         &else_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 }
                             });
@@ -7111,6 +7382,7 @@ fn lower_expr(
                                         &else_env,
                                         &else_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 }
                                 // RH f64-aggregate: `let a: [f64/f32; N] = [lit..]` in
@@ -7122,15 +7394,17 @@ fn lower_expr(
                                         *length,
                                         value,
                                         &mut else_ir,
-                                        |node, inner_ir| {
+                                        |node, inner_ir, context| {
                                             lower_expr(
                                                 node,
                                                 inner_ir,
                                                 &else_env,
                                                 &else_struct_env,
                                                 receiver_types,
+                                                context,
                                             )
                                         },
+                                        context,
                                     )
                                 }
                                 // `array<T> = [..]` inside an else/match-arm body:
@@ -7153,6 +7427,7 @@ fn lower_expr(
                                         &else_env,
                                         &else_struct_env,
                                         receiver_types,
+                                        context,
                                     )
                                 }
                                 _ => lower_expr(
@@ -7161,6 +7436,7 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 ),
                             };
                             // Narrow-typed branch-local: mask/sign-adjust to width.
@@ -7220,6 +7496,7 @@ fn lower_expr(
                                 &else_env,
                                 &else_struct_env,
                                 receiver_types,
+                                context,
                             );
                             // Bug #209: thread a value-position `if`'s outer-var
                             // mutations back; the assignment target's own binding
@@ -7264,6 +7541,7 @@ fn lower_expr(
                                 &mut else_env,
                                 &mut else_struct_env,
                                 receiver_types,
+                                context,
                             );
                             for name in names {
                                 if !else_local_decls.iter().any(|n| n == name) {
@@ -7298,7 +7576,19 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 );
+                            } else if let Some(id) = lower_fixed_array_field_index_assign(
+                                receiver,
+                                index,
+                                value,
+                                &mut else_ir,
+                                &else_env,
+                                &else_struct_env,
+                                receiver_types,
+                                context,
+                            ) {
+                                else_result = id;
                             } else if let ast::Node::Lit(Literal::Ident(root), _) =
                                 receiver.as_ref()
                             {
@@ -7308,6 +7598,7 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 );
                                 let idx = lower_expr(
                                     index,
@@ -7315,6 +7606,7 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 );
                                 let val = lower_expr(
                                     value,
@@ -7322,6 +7614,7 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 );
                                 let dst = else_ir.fresh();
                                 else_ir.instrs.push(Instr::ArrayStore {
@@ -7347,6 +7640,7 @@ fn lower_expr(
                                     &else_env,
                                     &else_struct_env,
                                     receiver_types,
+                                    context,
                                 );
                             }
                         }
@@ -7357,6 +7651,7 @@ fn lower_expr(
                                 &else_env,
                                 &else_struct_env,
                                 receiver_types,
+                                context,
                             );
                             for (nm, eid) in last_region_exit_rebindings(&else_ir.instrs) {
                                 else_env.insert(nm.clone(), eid);
@@ -7582,14 +7877,28 @@ fn lower_expr(
             else_branch,
             ..
         } => {
-            let _cond_id = lower_expr(cond, ir, env, struct_env, receiver_types);
+            let _cond_id = lower_expr(cond, ir, env, struct_env, receiver_types, context);
             let mut last_id = None;
             for stmt in then_branch {
-                last_id = Some(lower_expr(stmt, ir, env, struct_env, receiver_types));
+                last_id = Some(lower_expr(
+                    stmt,
+                    ir,
+                    env,
+                    struct_env,
+                    receiver_types,
+                    context,
+                ));
             }
             if let Some(else_stmts) = else_branch {
                 for stmt in else_stmts {
-                    last_id = Some(lower_expr(stmt, ir, env, struct_env, receiver_types));
+                    last_id = Some(lower_expr(
+                        stmt,
+                        ir,
+                        env,
+                        struct_env,
+                        receiver_types,
+                        context,
+                    ));
                 }
             }
             last_id.unwrap_or_else(|| {
@@ -7652,7 +7961,7 @@ fn lower_expr(
                         .map(|(i, a)| {
                             let ty = field_types.as_ref().and_then(|ts| ts.get(i));
                             let coerced = coerce_enum_field_to_bits(a.clone(), ty, a.span());
-                            lower_expr(&coerced, ir, env, struct_env, receiver_types)
+                            lower_expr(&coerced, ir, env, struct_env, receiver_types, context)
                         })
                         .collect();
                     // Record size = the enum's uniform `1 + max arity` (recovered
@@ -7695,9 +8004,17 @@ fn lower_expr(
                                 *length,
                                 a,
                                 ir,
-                                |item, inner_ir| {
-                                    lower_expr(item, inner_ir, env, struct_env, receiver_types)
+                                |item, inner_ir, context| {
+                                    lower_expr(
+                                        item,
+                                        inner_ir,
+                                        env,
+                                        struct_env,
+                                        receiver_types,
+                                        context,
+                                    )
                                 },
+                                context,
                             ) {
                                 return id;
                             }
@@ -7709,16 +8026,17 @@ fn lower_expr(
                                 env,
                                 struct_env,
                                 receiver_types,
+                                context,
                             );
                         }
                     }
-                    lower_expr(a, ir, env, struct_env, receiver_types)
+                    lower_expr(a, ir, env, struct_env, receiver_types, context)
                 })
                 .collect();
             #[cfg(not(feature = "std-surface"))]
             let arg_ids: Vec<ValueId> = args
                 .iter()
-                .map(|a| lower_expr(a, ir, env, struct_env, receiver_types))
+                .map(|a| lower_expr(a, ir, env, struct_env, receiver_types, context))
                 .collect();
             // Codegen monomorphization: if the callee is a registered generic
             // and the concrete arg type is inferable, route this call to the
@@ -7745,7 +8063,7 @@ fn lower_expr(
             inner, is_option, ..
         } => lower_out_of_line(|| {
             let desugared = build_try_desugar(inner, *is_option);
-            lower_expr(&desugared, ir, env, struct_env, receiver_types)
+            lower_expr(&desugared, ir, env, struct_env, receiver_types, context)
         }),
         // Phase 10.7 / "finish MIND" Step 1: `match scrutinee { arms }` —
         // DESUGAR to a right-nested chain of `Instr::If`. Each integer/bool
@@ -7771,7 +8089,7 @@ fn lower_expr(
                 &ir.enum_payload_types,
                 &ir.enum_struct_field_names,
             ) {
-                Some(if_node) => lower_expr(&if_node, ir, env, struct_env, receiver_types),
+                Some(if_node) => lower_expr(&if_node, ir, env, struct_env, receiver_types, context),
                 None => {
                     // Unsupported pattern kind (enum variant / non-int
                     // literal) — preserve the prior sequential behaviour so
@@ -7783,21 +8101,29 @@ fn lower_expr(
                     // binding like `Some(v)`) to the scrutinee id before lowering
                     // each arm body, else a body that reads the binding reaches
                     // the fail-closed undefined-identifier panic (audit #9).
-                    let scrut_id = lower_expr(scrutinee, ir, env, struct_env, receiver_types);
+                    let scrut_id =
+                        lower_expr(scrutinee, ir, env, struct_env, receiver_types, context);
                     let mut last_id = ir.fresh();
                     ir.instrs.push(Instr::ConstI64(last_id, 0));
                     for arm in arms {
                         let mut binds: Vec<String> = Vec::new();
                         collect_pattern_bindings(&arm.pattern, &mut binds);
                         if binds.is_empty() {
-                            last_id = lower_expr(&arm.body, ir, env, struct_env, receiver_types);
+                            last_id =
+                                lower_expr(&arm.body, ir, env, struct_env, receiver_types, context);
                         } else {
                             let mut arm_env = env.clone();
                             for b in binds {
                                 arm_env.insert(b, scrut_id);
                             }
-                            last_id =
-                                lower_expr(&arm.body, ir, &arm_env, struct_env, receiver_types);
+                            last_id = lower_expr(
+                                &arm.body,
+                                ir,
+                                &arm_env,
+                                struct_env,
+                                receiver_types,
+                                context,
+                            );
                         }
                     }
                     last_id
@@ -7810,7 +8136,7 @@ fn lower_expr(
         ast::Node::Match {
             scrutinee, arms, ..
         } => {
-            let scrut_id = lower_expr(scrutinee, ir, env, struct_env, receiver_types);
+            let scrut_id = lower_expr(scrutinee, ir, env, struct_env, receiver_types, context);
             let mut last_id = ir.fresh();
             ir.instrs.push(Instr::ConstI64(last_id, 0));
             for arm in arms {
@@ -7826,13 +8152,14 @@ fn lower_expr(
                 let mut binds: Vec<String> = Vec::new();
                 collect_pattern_bindings(&arm.pattern, &mut binds);
                 if binds.is_empty() {
-                    last_id = lower_expr(&arm.body, ir, env, struct_env, receiver_types);
+                    last_id = lower_expr(&arm.body, ir, env, struct_env, receiver_types, context);
                 } else {
                     let mut arm_env = env.clone();
                     for b in binds {
                         arm_env.insert(b, scrut_id);
                     }
-                    last_id = lower_expr(&arm.body, ir, &arm_env, struct_env, receiver_types);
+                    last_id =
+                        lower_expr(&arm.body, ir, &arm_env, struct_env, receiver_types, context);
                 }
             }
             last_id
@@ -7840,7 +8167,9 @@ fn lower_expr(
         // Phase 10.7: `&expr` / `&mut expr` — no-op metadata wrapper in
         // v1. The inner expression lowers directly; the ref tag is only
         // meaningful to the type-checker.
-        ast::Node::Ref { inner, .. } => lower_expr(inner, ir, env, struct_env, receiver_types),
+        ast::Node::Ref { inner, .. } => {
+            lower_expr(inner, ir, env, struct_env, receiver_types, context)
+        }
         // A cast `<expr> as <ty>`. Scalars and raw pointers are all carried as
         // i64 SSA values, so for pointers / f-types / aliases the target type is
         // purely a type-checker concern and the operand lowers transparently
@@ -7864,7 +8193,7 @@ fn lower_expr(
         // `std-surface` because `BinOp::Shl`/`Shr` only exist there.
         #[cfg(feature = "std-surface")]
         ast::Node::As { expr, ty, .. } => {
-            let val = lower_expr(expr, ir, env, struct_env, receiver_types);
+            let val = lower_expr(expr, ir, env, struct_env, receiver_types, context);
             match scalar_int_cast_width(ty) {
                 // Narrowing to a known signed integer narrower than 64 bits
                 // (`i8`/`i16`/`i32`, in `as` and call form). The operation is
@@ -7989,7 +8318,9 @@ fn lower_expr(
             }
         }
         #[cfg(not(feature = "std-surface"))]
-        ast::Node::As { expr, .. } => lower_expr(expr, ir, env, struct_env, receiver_types),
+        ast::Node::As { expr, .. } => {
+            lower_expr(expr, ir, env, struct_env, receiver_types, context)
+        }
         // RFC 0005 Gap 1: `while cond { body }` lowering.
         //
         // The condition and body each lower into their own sub-modules so
@@ -8097,7 +8428,14 @@ fn lower_expr(
             let mut cond_ir = IRModule::new();
             // Seed the condition sub-module's env with the current bindings
             // so identifiers in the condition (e.g. `i`, `n`) resolve.
-            let cond_id = lower_expr(cond, &mut cond_ir, &seed_env, struct_env, receiver_types);
+            let cond_id = lower_expr(
+                cond,
+                &mut cond_ir,
+                &seed_env,
+                struct_env,
+                receiver_types,
+                context,
+            );
 
             // Lower the body into a scratch sub-module.  Track every Assign
             // target — those are the variables that are live across the
@@ -8169,6 +8507,7 @@ fn lower_expr(
                             &body_env,
                             &body_struct_env,
                             receiver_types,
+                            context,
                         );
                         // Narrow-typed loop-body local: mask/sign-adjust to width.
                         #[cfg(feature = "std-surface")]
@@ -8213,6 +8552,7 @@ fn lower_expr(
                             &body_env,
                             &body_struct_env,
                             receiver_types,
+                            context,
                         );
                         // Re-mask a narrow loop-carried local to its declared width;
                         // the masked id is what gets recorded as the carried value.
@@ -8272,7 +8612,19 @@ fn lower_expr(
                                 &body_env,
                                 &body_struct_env,
                                 receiver_types,
+                                context,
                             );
+                        } else if let Some(_id) = lower_fixed_array_field_index_assign(
+                            receiver,
+                            index,
+                            value,
+                            &mut body_ir,
+                            &body_env,
+                            &body_struct_env,
+                            receiver_types,
+                            context,
+                        ) {
+                            let _ = _id;
                         } else if let ast::Node::Lit(Literal::Ident(root), _) = receiver.as_ref() {
                             // Capture the PRE-store incarnation before the rebind — for
                             // the first store this is the pre-loop init id, which
@@ -8285,6 +8637,7 @@ fn lower_expr(
                                 &body_env,
                                 &body_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let idx = lower_expr(
                                 index,
@@ -8292,6 +8645,7 @@ fn lower_expr(
                                 &body_env,
                                 &body_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let val = lower_expr(
                                 value,
@@ -8299,6 +8653,7 @@ fn lower_expr(
                                 &body_env,
                                 &body_struct_env,
                                 receiver_types,
+                                context,
                             );
                             let dst = body_ir.fresh();
                             body_ir.instrs.push(Instr::ArrayStore {
@@ -8324,6 +8679,7 @@ fn lower_expr(
                                 &body_env,
                                 &body_struct_env,
                                 receiver_types,
+                                context,
                             );
                         }
                     }
@@ -8335,6 +8691,7 @@ fn lower_expr(
                             &mut body_env,
                             &mut body_struct_env,
                             receiver_types,
+                            context,
                         );
                         for name in names {
                             if !body_local_decls.iter().any(|n| n == name) {
@@ -8349,6 +8706,7 @@ fn lower_expr(
                             &body_env,
                             &body_struct_env,
                             receiver_types,
+                            context,
                         );
                         // F2: a nested region (if/while) inside the loop body may
                         // mutate an OUTER (loop-carried) variable. Thread the
@@ -8482,7 +8840,14 @@ fn lower_expr(
                                             ty,
                                             f.value.span(),
                                         );
-                                        lower_expr(&coerced, ir, env, struct_env, receiver_types)
+                                        lower_expr(
+                                            &coerced,
+                                            ir,
+                                            env,
+                                            struct_env,
+                                            receiver_types,
+                                            context,
+                                        )
                                     }
                                     None => {
                                         // A field omitted in the literal — zero-fill its
@@ -8574,9 +8939,10 @@ fn lower_expr(
                         env,
                         struct_env,
                         receiver_types,
+                        context,
                     );
                     #[cfg(not(feature = "std-surface"))]
-                    let value = lower_expr(&f.value, ir, env, struct_env, receiver_types);
+                    let value = lower_expr(&f.value, ir, env, struct_env, receiver_types, context);
                     let field_addr = if i == 0 {
                         addr
                     } else {
@@ -8624,9 +8990,10 @@ fn lower_expr(
                     env,
                     struct_env,
                     receiver_types,
+                    context,
                 );
                 #[cfg(not(feature = "std-surface"))]
-                let value = lower_expr(&f.value, ir, env, struct_env, receiver_types);
+                let value = lower_expr(&f.value, ir, env, struct_env, receiver_types, context);
                 let (offset, width, _signed) = layout[i];
                 let field_addr = if offset == 0 {
                     addr
@@ -8642,6 +9009,13 @@ fn lower_expr(
                     });
                     sum
                 };
+                if let Some((element, length)) = struct_field_type(ir, struct_key, i)
+                    .and_then(fixed_array_cell_type)
+                    .map(|(element, length)| (element.clone(), length))
+                {
+                    store_fixed_array_field(&element, length, field_addr, value, ir, context);
+                    continue;
+                }
                 let store_ret = ir.fresh();
                 ir.instrs.push(Instr::Call {
                     dst: store_ret,
@@ -8722,7 +9096,7 @@ fn lower_expr(
                         elements.len()
                     );
                 }
-                let addr = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                let addr = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                 let elem_addr = if idx == 0 {
                     addr
                 } else {
@@ -8772,7 +9146,8 @@ fn lower_expr(
                         _ => None,
                     };
                     if let Some(len_fn) = len_fn {
-                        let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                        let recv_id =
+                            lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                         let dst = ir.fresh();
                         ir.instrs.push(Instr::Call {
                             dst,
@@ -8838,7 +9213,7 @@ fn lower_expr(
                                 "resolved struct receiver `{var_name}` has no SSA binding while lowering field `{field}` — refusing to emit const 0"
                             ),
                         },
-                        None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                        None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
                     };
                     let field_addr = if offset == 0 {
                         addr
@@ -8854,6 +9229,85 @@ fn lower_expr(
                         });
                         sum
                     };
+                    if let Some((element, length)) = struct_field_type(ir, &struct_name, idx)
+                        .and_then(fixed_array_cell_type)
+                        .map(|(element, length)| (element.clone(), length))
+                    {
+                        if !fixed_array_cell_supported_in(&element, ir) {
+                            panic!(
+                                "fixed struct-array field element type is not supported by the inline scalar-cell ABI"
+                            );
+                        }
+                        if !context
+                            .charge_fixed_field_copyout(length, fixed_array_cell_bits_ty(&element))
+                        {
+                            return ir.fresh();
+                        }
+                        let aggregate = ir.fresh();
+                        if fixed_array_cell_bits_ty(&element) {
+                            // f64 cells are kept as raw bits in the record;
+                            // start with a typed f64 aggregate so ArrayStore
+                            // receives an f64 scalar after the inverse bitcast.
+                            ir.instrs.push(Instr::ConstDenseTensor {
+                                dst: aggregate,
+                                dtype: DType::F64,
+                                shape: vec![ShapeDim::Known(length as usize)],
+                                data: vec![0; length as usize],
+                            });
+                        } else {
+                            ir.instrs.push(Instr::ConstArray {
+                                dst: aggregate,
+                                name: None,
+                                values: vec![0; length as usize],
+                            });
+                        }
+                        let mut current = aggregate;
+                        for position in 0..length {
+                            let cell_addr = if position == 0 {
+                                field_addr
+                            } else {
+                                let cell_offset = ir.fresh();
+                                ir.instrs
+                                    .push(Instr::ConstI64(cell_offset, i64::from(position) * 8));
+                                let sum = ir.fresh();
+                                ir.instrs.push(Instr::BinOp {
+                                    dst: sum,
+                                    op: BinOp::Add,
+                                    lhs: field_addr,
+                                    rhs: cell_offset,
+                                });
+                                sum
+                            };
+                            let bits = ir.fresh();
+                            ir.instrs.push(Instr::Call {
+                                dst: bits,
+                                name: "__mind_load_i64".to_string(),
+                                args: vec![cell_addr],
+                            });
+                            let item = if fixed_array_cell_bits_ty(&element) {
+                                let decoded = ir.fresh();
+                                ir.instrs.push(Instr::Call {
+                                    dst: decoded,
+                                    name: "__mind_bits_to_f64".to_string(),
+                                    args: vec![bits],
+                                });
+                                decoded
+                            } else {
+                                bits
+                            };
+                            let index = ir.fresh();
+                            ir.instrs.push(Instr::ConstI64(index, i64::from(position)));
+                            let next = ir.fresh();
+                            ir.instrs.push(Instr::ArrayStore {
+                                dst: next,
+                                base: current,
+                                index,
+                                value: item,
+                            });
+                            current = next;
+                        }
+                        return current;
+                    }
                     let loaded = ir.fresh();
                     ir.instrs.push(Instr::Call {
                         dst: loaded,
@@ -8973,7 +9427,7 @@ fn lower_expr(
                                 "resolved struct receiver `{var_name}` has no SSA binding while lowering assignment to field `{field}` — refusing to emit const 0"
                             ),
                         },
-                        None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                        None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
                     };
                     let field_addr = if offset == 0 {
                         addr
@@ -8989,7 +9443,26 @@ fn lower_expr(
                         });
                         sum
                     };
-                    let rhs = lower_expr(value, ir, env, struct_env, receiver_types);
+                    if let Some((element, length)) = struct_field_type(ir, &struct_name, idx)
+                        .and_then(fixed_array_cell_type)
+                        .map(|(element, length)| (element.clone(), length))
+                    {
+                        let rhs = lower_struct_field_value(
+                            &struct_name,
+                            field,
+                            value,
+                            ir,
+                            env,
+                            struct_env,
+                            receiver_types,
+                            context,
+                        );
+                        store_fixed_array_field(&element, length, field_addr, rhs, ir, context);
+                        let unit = ir.fresh();
+                        ir.instrs.push(Instr::ConstI64(unit, 0));
+                        return unit;
+                    }
+                    let rhs = lower_expr(value, ir, env, struct_env, receiver_types, context);
                     let store_ret = ir.fresh();
                     ir.instrs.push(Instr::Call {
                         dst: store_ret,
@@ -9023,7 +9496,17 @@ fn lower_expr(
             // return-position routings. All-const literals (genuine LUTs) and
             // the empty literal keep the ConstArray path byte-identically.
             if !elements.is_empty() && elements.iter().any(|e| extract_const_i64(e).is_none()) {
-                return lower_array_surface_lit(elements, ir, env, struct_env, receiver_types);
+                return lower_array_surface_lit(
+                    elements,
+                    ir,
+                    env,
+                    struct_env,
+                    receiver_types,
+                    context,
+                );
+            }
+            if !context.charge_static_elements(elements.len(), false) {
+                return ir.fresh();
             }
             let values: Vec<i64> = elements
                 .iter()
@@ -9043,14 +9526,14 @@ fn lower_expr(
         // has no map literal, so the keystone is unaffected.
         #[cfg(feature = "std-surface")]
         ast::Node::MapLit { entries, .. } => {
-            lower_map_surface_lit(entries, ir, env, struct_env, receiver_types)
+            lower_map_surface_lit(entries, ir, env, struct_env, receiver_types, context)
         }
         // Set literal `{ a, b, c }` → std.map runtime (map_new + map_insert(_,_,1)
         // chain — a set is a map keyed by its elements). main.mind has no set
         // literal, so the keystone is unaffected.
         #[cfg(feature = "std-surface")]
         ast::Node::SetLit { elements, .. } => {
-            lower_set_surface_lit(elements, ir, env, struct_env, receiver_types)
+            lower_set_surface_lit(elements, ir, env, struct_env, receiver_types, context)
         }
         // RFC 0005 Phase 6.2b Gap 2 — `receiver[index]`.  When the receiver
         // resolves to a ConstArray base address, this emits `ArrayLoad`.
@@ -9058,6 +9541,21 @@ fn lower_expr(
         ast::Node::IndexAccess {
             receiver, index, ..
         } => {
+            // A fixed array stored inline in a struct is represented by
+            // scalar cells, not by an SSA tensor. Read one checked cell
+            // directly; the fallback paths below remain for dynamic vectors,
+            // fixed bytes, and ordinary ConstArray values.
+            if let Some(value) = lower_fixed_array_field_index_access(
+                receiver,
+                index,
+                ir,
+                env,
+                struct_env,
+                receiver_types,
+                context,
+            ) {
+                return value;
+            }
             // `arr[i]` on a vec-sentinel (`array<T>`) receiver → std.vec
             // `vec_get` (the receiver is an i64 heap handle, not a const array,
             // so the `ArrayLoad` LUT path below would misinterpret it).
@@ -9073,8 +9571,8 @@ fn lower_expr(
                 // sign-sensitive representations); `i64`/float/string/struct/
                 // nested-array elements resolve to `None` and stay untouched.
                 let elem_ty = index_element_narrow_ty(receiver, ir, struct_env, receiver_types);
-                let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
-                let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
+                let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
+                let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
                 ir.instrs.push(Instr::Call {
                     dst,
@@ -9100,8 +9598,8 @@ fn lower_expr(
             if receiver_collection_sentinel(receiver, ir, struct_env, receiver_types)
                 == Some(FIXED_BYTES_SENTINEL)
             {
-                let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
-                let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
+                let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
+                let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
                 let addr = ir.fresh();
                 ir.instrs.push(Instr::BinOp {
                     dst: addr,
@@ -9117,8 +9615,8 @@ fn lower_expr(
                 });
                 return dst;
             }
-            let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
-            let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
+            let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
+            let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
             let dst = ir.fresh();
             ir.instrs.push(Instr::ArrayLoad {
                 dst,
@@ -9143,9 +9641,9 @@ fn lower_expr(
                 receiver_collection_sentinel(receiver, ir, struct_env, receiver_types),
                 Some(ARRAY_VEC_SENTINEL | MUT_SLICE_VEC_SENTINEL)
             ) {
-                let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
-                let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
-                let val_id = lower_expr(value, ir, env, struct_env, receiver_types);
+                let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
+                let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
+                let val_id = lower_expr(value, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
                 ir.instrs.push(Instr::Call {
                     dst,
@@ -9161,9 +9659,9 @@ fn lower_expr(
             if receiver_collection_sentinel(receiver, ir, struct_env, receiver_types)
                 == Some(FIXED_BYTES_SENTINEL)
             {
-                let base = lower_expr(receiver, ir, env, struct_env, receiver_types);
-                let index_id = lower_expr(index, ir, env, struct_env, receiver_types);
-                let val_id = lower_expr(value, ir, env, struct_env, receiver_types);
+                let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
+                let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
+                let val_id = lower_expr(value, ir, env, struct_env, receiver_types, context);
                 let addr = ir.fresh();
                 ir.instrs.push(Instr::BinOp {
                     dst: addr,
@@ -9312,6 +9810,7 @@ fn lower_expr(
                 &mut body_struct_env,
                 receiver_types,
                 Some(&mut alloc_ids),
+                context,
             );
 
             // Determine the result value (last expression in body).
@@ -9390,7 +9889,7 @@ fn lower_expr(
             // type-check accepts `byte` as a 1-arg intrinsic. mind-flow lexer idiom.
             #[cfg(feature = "std-surface")]
             if method == "byte" && args.is_empty() {
-                let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                 let mask = ir.fresh();
                 ir.instrs.push(Instr::ConstI64(mask, 0xFF));
                 let dst = ir.fresh();
@@ -9453,10 +9952,18 @@ fn lower_expr(
                         _ => None,
                     };
                     if let Some(fname) = fname {
-                        let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                        let recv_id =
+                            lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                         let mut call_args = vec![recv_id];
                         for a in args {
-                            call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                            call_args.push(lower_expr(
+                                a,
+                                ir,
+                                env,
+                                struct_env,
+                                receiver_types,
+                                context,
+                            ));
                         }
                         let dst = ir.fresh();
                         ir.instrs.push(Instr::Call {
@@ -9485,10 +9992,18 @@ fn lower_expr(
                         _ => None,
                     };
                     if let Some(fname) = fname {
-                        let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                        let recv_id =
+                            lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                         let mut call_args = vec![recv_id];
                         for a in args {
-                            call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                            call_args.push(lower_expr(
+                                a,
+                                ir,
+                                env,
+                                struct_env,
+                                receiver_types,
+                                context,
+                            ));
                         }
                         let dst = ir.fresh();
                         ir.instrs.push(Instr::Call {
@@ -9510,10 +10025,12 @@ fn lower_expr(
                     receiver_collection_sentinel(receiver, ir, struct_env, receiver_types);
                 if sentinel == Some(SET_SENTINEL) || sentinel == Some(SET_STR_SENTINEL) {
                     let is_str = sentinel == Some(SET_STR_SENTINEL);
-                    let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                    let recv_id =
+                        lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                     match method.as_str() {
                         "contains" | "has" if args.len() == 1 => {
-                            let x = lower_expr(&args[0], ir, env, struct_env, receiver_types);
+                            let x =
+                                lower_expr(&args[0], ir, env, struct_env, receiver_types, context);
                             let dst = ir.fresh();
                             ir.instrs.push(Instr::Call {
                                 dst,
@@ -9527,7 +10044,8 @@ fn lower_expr(
                             return dst;
                         }
                         "add" | "insert" if args.len() == 1 => {
-                            let x = lower_expr(&args[0], ir, env, struct_env, receiver_types);
+                            let x =
+                                lower_expr(&args[0], ir, env, struct_env, receiver_types, context);
                             let one = ir.fresh();
                             ir.instrs.push(Instr::ConstI64(one, 1));
                             let dst = ir.fresh();
@@ -9571,7 +10089,7 @@ fn lower_expr(
                 {
                     let mut call_args = Vec::with_capacity(args.len());
                     for a in args {
-                        call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                        call_args.push(lower_expr(a, ir, env, struct_env, receiver_types, context));
                     }
                     let dst = ir.fresh();
                     ir.instrs.push(Instr::Call {
@@ -9584,10 +10102,10 @@ fn lower_expr(
             }
             #[cfg(feature = "std-surface")]
             if receiver_is_string(receiver, ir, struct_env, receiver_types) {
-                let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types);
+                let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                 let mut call_args = vec![recv_id];
                 for a in args {
-                    call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                    call_args.push(lower_expr(a, ir, env, struct_env, receiver_types, context));
                 }
                 let dst = ir.fresh();
                 ir.instrs.push(Instr::Call {
@@ -9644,9 +10162,9 @@ fn lower_expr(
                 let addr = match &var_name_opt {
                     Some(var_name) => match env.get(var_name) {
                         Some(id) => *id,
-                        None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                        None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
                     },
-                    None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                    None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
                 };
                 let field_addr = if idx == 0 {
                     addr
@@ -9677,13 +10195,15 @@ fn lower_expr(
                     let recv_id = match &var_name_opt {
                         Some(var_name) => match env.get(var_name) {
                             Some(id) => *id,
-                            None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                            None => {
+                                lower_expr(receiver, ir, env, struct_env, receiver_types, context)
+                            }
                         },
-                        None => lower_expr(receiver, ir, env, struct_env, receiver_types),
+                        None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
                     };
                     let mut call_args = vec![recv_id];
                     for a in args {
-                        call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                        call_args.push(lower_expr(a, ir, env, struct_env, receiver_types, context));
                     }
                     // `array<T>` (the `vec` sentinel) method-name aliasing onto
                     // the std.vec free functions. The only surface/runtime name
@@ -9742,7 +10262,14 @@ fn lower_expr(
                             let fn_name = format!("{}_{}", type_key.to_lowercase(), method);
                             let mut call_args = Vec::with_capacity(args.len());
                             for a in args {
-                                call_args.push(lower_expr(a, ir, env, struct_env, receiver_types));
+                                call_args.push(lower_expr(
+                                    a,
+                                    ir,
+                                    env,
+                                    struct_env,
+                                    receiver_types,
+                                    context,
+                                ));
                             }
                             let dst = ir.fresh();
                             ir.instrs.push(Instr::Call {
@@ -9819,7 +10346,7 @@ fn lower_expr(
                     // pointer bits reach stdout: only the string BYTES and the
                     // decimal i64 values are written.
                     ast::Node::Lit(Literal::Str(_), _) => {
-                        let rec = lower_expr(arg, ir, env, struct_env, receiver_types);
+                        let rec = lower_expr(arg, ir, env, struct_env, receiver_types, context);
                         // addr = __mind_load_i64(rec + 0)
                         let addr = ir.fresh();
                         ir.instrs.push(Instr::Call {
@@ -9854,7 +10381,7 @@ fn lower_expr(
                     // Numeric (i64) arg: printI64(v); printNewline() — one value
                     // per line for unambiguous downstream parsing.
                     _ => {
-                        let v = lower_expr(arg, ir, env, struct_env, receiver_types);
+                        let v = lower_expr(arg, ir, env, struct_env, receiver_types, context);
                         let sink = ir.fresh();
                         ir.instrs.push(Instr::Call {
                             dst: sink,
@@ -9923,7 +10450,7 @@ fn lower_expr(
                 else_branch: Some(vec![trap_call]),
                 span: *span,
             };
-            lower_expr(&if_node, ir, env, struct_env, receiver_types)
+            lower_expr(&if_node, ir, env, struct_env, receiver_types, context)
         }),
         // A `struct`/`enum` type definition carries no runtime value — it is a
         // compile-time declaration collected in an earlier pass (see the
@@ -10087,8 +10614,8 @@ fn lower_expr(
                 let ctr_var = format!("__for_i_{uniq}");
                 let end_var = format!("__for_end_{uniq}");
 
-                let start_id = lower_expr(start, ir, env, struct_env, receiver_types);
-                let end_id = lower_expr(end, ir, env, struct_env, receiver_types);
+                let start_id = lower_expr(start, ir, env, struct_env, receiver_types, context);
+                let end_id = lower_expr(end, ir, env, struct_env, receiver_types, context);
 
                 let mut loop_env = env.clone();
                 loop_env.insert(ctr_var.clone(), start_id);
@@ -10136,7 +10663,14 @@ fn lower_expr(
                     body: while_body,
                     span: *span,
                 };
-                return lower_expr(&while_node, ir, &loop_env, struct_env, receiver_types);
+                return lower_expr(
+                    &while_node,
+                    ir,
+                    &loop_env,
+                    struct_env,
+                    receiver_types,
+                    context,
+                );
             }
 
             // ---- Byte-neutral form (gate OFF) — the original desugar VERBATIM --
@@ -10144,7 +10678,7 @@ fn lower_expr(
             // so the synthesized `while` condition and body resolve it. The
             // While arm seeds its body/cond envs from this env, so VAR's
             // pre-loop init id is captured as the loop-carried init.
-            let start_id = lower_expr(start, ir, env, struct_env, receiver_types);
+            let start_id = lower_expr(start, ir, env, struct_env, receiver_types, context);
             let mut loop_env = env.clone();
             loop_env.insert(var.clone(), start_id);
 
@@ -10186,7 +10720,14 @@ fn lower_expr(
             // Lower the synthesized `while` with VAR in scope. Reuses the
             // `While` arm verbatim (cond/body sub-modules, loop-carried vars,
             // F2 region-scoped exit ids).
-            lower_expr(&while_node, ir, &loop_env, struct_env, receiver_types)
+            lower_expr(
+                &while_node,
+                ir,
+                &loop_env,
+                struct_env,
+                receiver_types,
+                context,
+            )
         }),
         // For-each `for x in coll { body }` over an `array<T>` (std.vec handle).
         // Flat-desugared to an indexed `while` so the loop-carried index gets the
@@ -10208,7 +10749,7 @@ fn lower_expr(
             let len_var = format!("__fe_len_{uniq}");
 
             // Pre-lower the collection (i64 vec handle) and its length once.
-            let coll_id = lower_expr(collection, ir, env, struct_env, receiver_types);
+            let coll_id = lower_expr(collection, ir, env, struct_env, receiver_types, context);
             let len_id = ir.fresh();
             ir.instrs.push(Instr::Call {
                 dst: len_id,
@@ -10287,7 +10828,14 @@ fn lower_expr(
                 body: while_body,
                 span: *span,
             };
-            lower_expr(&while_node, ir, &loop_env, &fe_struct_env, receiver_types)
+            lower_expr(
+                &while_node,
+                ir,
+                &loop_env,
+                &fe_struct_env,
+                receiver_types,
+                context,
+            )
         }),
         // A `const NAME = value` DECLARATION is a no-op at the value level — the
         // value is inlined at each `Lit(Ident(NAME))` use site (see the
@@ -11622,6 +12170,7 @@ fn lower_stmt_seq(
     struct_env: &mut HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
     mut alloc_ids: Option<&mut Vec<ValueId>>,
+    context: &mut LoweringContext,
 ) -> Option<ValueId> {
     let mut last_id: Option<ValueId> = None;
     for stmt in stmts {
@@ -11639,16 +12188,22 @@ fn lower_stmt_seq(
                         env,
                         struct_env,
                         receiver_types,
+                        context,
                     ),
                     // RH f64-aggregate: region-local `let a: [f64/f32; N] = [lit..]`
                     // → typed ConstDenseTensor.
                     #[cfg(feature = "std-surface")]
-                    Some(TypeAnn::Array { element, length }) => {
-                        fixed_array::lower_binding(element, *length, value, ir, |node, inner_ir| {
-                            lower_expr(node, inner_ir, env, struct_env, receiver_types)
-                        })
-                    }
-                    _ => lower_expr(value, ir, env, struct_env, receiver_types),
+                    Some(TypeAnn::Array { element, length }) => fixed_array::lower_binding(
+                        element,
+                        *length,
+                        value,
+                        ir,
+                        |node, inner_ir, context| {
+                            lower_expr(node, inner_ir, env, struct_env, receiver_types, context)
+                        },
+                        context,
+                    ),
+                    _ => lower_expr(value, ir, env, struct_env, receiver_types, context),
                 };
                 // Narrow-typed Region-local: mask to declared width AND record it
                 // so a later `c = c + …` reassignment in this region re-masks.
@@ -11661,10 +12216,10 @@ fn lower_stmt_seq(
                 id
             }
             ast::Node::LetTuple { names, value, .. } => {
-                lower_lettuple_stmt(names, value, ir, env, struct_env, receiver_types)
+                lower_lettuple_stmt(names, value, ir, env, struct_env, receiver_types, context)
             }
             ast::Node::Assign { name, value, .. } => {
-                let id = lower_expr(value, ir, env, struct_env, receiver_types);
+                let id = lower_expr(value, ir, env, struct_env, receiver_types, context);
                 // Reassigning a narrow Region-local re-masks to its declared width.
                 #[cfg(feature = "std-surface")]
                 let id = mask_narrow_assign(ir, name, id);
@@ -11672,7 +12227,7 @@ fn lower_stmt_seq(
                 id
             }
             other => {
-                let id = lower_expr(other, ir, env, struct_env, receiver_types);
+                let id = lower_expr(other, ir, env, struct_env, receiver_types, context);
                 // #6: thread nested-region exit rebindings back into the region
                 // env (byte-neutral — the helper emits no instructions).
                 #[cfg(feature = "std-surface")]
@@ -11709,8 +12264,9 @@ fn lower_lettuple_stmt(
     env: &mut HashMap<String, ValueId>,
     struct_env: &mut HashMap<String, String>,
     receiver_types: &HashMap<crate::ast::Span, String>,
+    context: &mut LoweringContext,
 ) -> ValueId {
-    let addr = lower_expr(value, ir, env, struct_env, receiver_types);
+    let addr = lower_expr(value, ir, env, struct_env, receiver_types, context);
     // BUG6 (corr2): re-materialise each destructured element's declared/
     // synthesised width+signedness (mirrors the tuple-INDEX read `t.N`), so a
     // `u64` element re-tags unsigned and a narrow element keeps its width. A

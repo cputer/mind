@@ -32,7 +32,7 @@ const SRC: &str = include_str!("../std/iouring.mind");
 #[test]
 fn iouring_parses_and_lowers_with_ring_api() {
     let module = parser::parse(SRC).expect("std/iouring.mind must parse cleanly");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let names: Vec<&str> = ir
         .instrs
         .iter()

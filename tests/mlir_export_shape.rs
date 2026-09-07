@@ -25,7 +25,7 @@ fn mlir_export_covers_shape_ops() {
         tensor.transpose(squeezed, axes=[1,0])
     "#;
     let module = parser::parse(src).expect("parse shape module");
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::to_mlir(&ir, "main");
 
     assert!(

@@ -35,7 +35,7 @@ const VEC_MIND_SRC: &str = include_str!("../std/vec.mind");
 
 fn lower_vec_mind() -> libmind::ir::IRModule {
     let module = parser::parse(VEC_MIND_SRC).expect("std/vec.mind must parse");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 fn fn_body<'a>(ir: &'a libmind::ir::IRModule, name: &str) -> &'a [Instr] {

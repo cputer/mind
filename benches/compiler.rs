@@ -390,7 +390,7 @@ fn bench_c_export_lowering(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("parse_lower", name), &source, |b, src| {
             b.iter(|| {
                 let module = parse(black_box(src)).expect("parse failed");
-                lower_to_ir(&module)
+                lower_to_ir(&module).expect("lowering")
             })
         });
     }

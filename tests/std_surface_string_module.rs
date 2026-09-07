@@ -32,7 +32,7 @@ const STRING_MIND_SRC: &str = include_str!("../std/string.mind");
 
 fn lower_string_mind() -> libmind::ir::IRModule {
     let module = parser::parse(STRING_MIND_SRC).expect("std/string.mind must parse");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 fn fn_body<'a>(ir: &'a libmind::ir::IRModule, name: &str) -> &'a [Instr] {

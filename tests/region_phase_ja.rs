@@ -85,7 +85,7 @@ fn alloc_in_region() -> i64 {
 }
 "#;
     let module = parse(src).expect("parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // Find an Instr::Region in the top-level or fn-body instruction streams.
     fn has_region(instrs: &[Instr]) -> bool {
@@ -130,7 +130,7 @@ fn escape_test() -> i64 {
 }
 "#;
     let module = parse(src).expect("parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     fn find_region_escape(instrs: &[Instr]) -> bool {
         for instr in instrs {
@@ -184,7 +184,7 @@ fn direct_escape() -> i64 {
 }
 "#;
     let module = parse(src).expect("parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     fn find_direct_escape(instrs: &[Instr]) -> Option<bool> {
         for instr in instrs {
@@ -228,7 +228,7 @@ fn scalar_region() -> i64 {
 }
 "#;
     let module = parse(src).expect("parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     fn check_no_escape(instrs: &[Instr]) -> Option<bool> {
         for instr in instrs {
@@ -275,7 +275,7 @@ fn nested() -> i64 {
 }
 "#;
     let module = parse(src).expect("parse");
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     fn count_regions(instrs: &[Instr]) -> usize {
         let mut count = 0;

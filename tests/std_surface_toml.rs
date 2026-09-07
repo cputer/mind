@@ -37,7 +37,7 @@ const TOML_MIND_SRC: &str = include_str!("../std/toml.mind");
 
 fn lower_toml_mind() -> libmind::ir::IRModule {
     let module = parser::parse(TOML_MIND_SRC).expect("std/toml.mind must parse cleanly");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 /// Recursively count calls to `callee` anywhere in an instruction stream.

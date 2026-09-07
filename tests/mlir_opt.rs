@@ -35,7 +35,7 @@ fn mlir_opt_runs_when_available() {
         Ok(module) => module,
         Err(diags) => panic!("failed to parse input: {:?}", diags),
     };
-    let ir = eval::lower_to_ir(&module);
+    let ir = eval::lower_to_ir(&module).expect("lowering");
     let mlir = eval::emit_mlir_string(&ir, eval::MlirLowerPreset::None);
 
     let result = eval::mlir_opt::run_mlir_opt(&mlir, &bin, &["canonicalize".into()], 2_000)

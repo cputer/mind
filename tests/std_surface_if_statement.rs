@@ -77,7 +77,7 @@ fn pick(cond: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let if_count = count_if_instrs(&ir.instrs);
     assert!(
@@ -104,7 +104,7 @@ fn classify(b: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let if_count = count_if_instrs(&ir.instrs);
     assert!(
@@ -122,7 +122,7 @@ fn classify(b: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let if_count = count_if_instrs(&ir.instrs);
     assert!(
@@ -147,7 +147,7 @@ fn nested(a: i64, b: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let if_count = count_if_instrs(&ir.instrs);
     assert!(
@@ -177,7 +177,7 @@ fn gap_c_demo(cond: i64) -> i64 {
 "#;
     let module = must_parse(src);
     // Must parse and lower without errors or panics.
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     assert!(
         count_if_instrs(&ir.instrs) >= 1,
         "expected Instr::If to exist"
@@ -224,7 +224,7 @@ fn is_space(b: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let if_count = count_if_instrs(&ir.instrs);
     assert!(

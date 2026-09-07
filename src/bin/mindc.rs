@@ -918,7 +918,7 @@ fn parse_and_lower_for_profile_check(
                 .collect::<Vec<_>>()
                 .join("\n")
         })?;
-    let ir = libmind::eval::lower_to_ir(&module);
+    let ir = libmind::eval::lower_to_ir(&module).map_err(|e| e.to_string())?;
     match libmind::ir::frozen_profile::profile_frozen_admits(&ir) {
         Ok(()) => Ok(None),
         Err(rejection) => Ok(Some(rejection)),

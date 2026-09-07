@@ -82,7 +82,7 @@ fn probe() -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let calls = count_calls_named(&ir.instrs, "string_len");
     assert_eq!(
         calls, 1,
@@ -105,7 +105,7 @@ fn probe(s: String) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     let calls = count_calls_named(&ir.instrs, "string_len");
     assert_eq!(
         calls, 1,
@@ -137,7 +137,7 @@ fn probe_cap() -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     // The accessor name selects the std function: `addr`->string_addr,
     // `cap`->string_cap. Distinct names per field prove the lowering keys off
     // the NAMED field, not a fixed offset or a name-agnostic catch-all.
@@ -215,7 +215,7 @@ fn probe() -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
     // The whole point: `v.push(42)` is a REAL call to `vec_push`, with the
     // receiver `v` as the first argument and `42` as the second — not a
     // silent const-0 placeholder.
@@ -254,7 +254,7 @@ fn probe(x: i64) -> i64 {
 }
 "#;
     let module = must_parse(src);
-    let result = std::panic::catch_unwind(|| lower_to_ir(&module));
+    let result = std::panic::catch_unwind(|| lower_to_ir(&module).expect("lowering"));
     assert!(
         result.is_err(),
         "an unresolved method-with-args call must fail loud (panic), NOT silently \

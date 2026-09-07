@@ -22,7 +22,7 @@ fn for_loop_lowers_to_ir_without_panic() {
     let src = "fn main() -> i64 { let mut s: i64 = 0; for i in 0..10 { s = s + i; } return s; }";
     let module = parser::parse(src).expect("parse failed");
     // Must not panic on the For (was: `no IR lowering for For in value position`).
-    let ir = lower::lower_to_ir(&module);
+    let ir = lower::lower_to_ir(&module).expect("lowering");
     // Sanity: lowering produced a non-empty module.
     assert!(
         !ir.instrs.is_empty(),

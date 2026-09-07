@@ -90,7 +90,7 @@ fn struct_def_populates_schema_registry() {
         }],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let schema = ir
         .struct_defs
@@ -134,7 +134,7 @@ fn struct_lit_emits_alloc_plus_n_stores() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     assert_eq!(
         count_calls(&ir.instrs, "__mind_alloc"),
@@ -182,7 +182,7 @@ fn struct_lit_reorders_out_of_order_fields_into_canonical_order() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     // Each Call("__mind_store_i64", [field_addr, value]).
     // We can't directly read the ConstI64 values from the args without
@@ -240,7 +240,7 @@ fn struct_lit_without_struct_def_falls_back_to_literal_order() {
         }],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let n_stores = count_calls(&ir.instrs, "__mind_store_i64");
     assert_eq!(
@@ -281,7 +281,7 @@ fn struct_lit_alloc_uses_8_times_field_count_bytes() {
         ],
     };
 
-    let ir = lower_to_ir(&module);
+    let ir = lower_to_ir(&module).expect("lowering");
 
     let alloc_args = nth_call_args(&ir.instrs, "__mind_alloc", 0);
     assert_eq!(alloc_args.len(), 1, "alloc takes one arg (bytes)");

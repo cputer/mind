@@ -37,7 +37,7 @@ const ASYNC_MIND_SRC: &str = include_str!("../std/async.mind");
 
 fn lower_async_mind() -> libmind::ir::IRModule {
     let module = parser::parse(ASYNC_MIND_SRC).expect("std/async.mind must parse cleanly");
-    lower_to_ir(&module)
+    lower_to_ir(&module).expect("lowering")
 }
 
 fn has_fndef(ir: &libmind::ir::IRModule, name: &str) -> bool {
