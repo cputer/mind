@@ -427,6 +427,15 @@ for tier in "${want[@]}"; do
   raw_log="${MIND_TIER_LOG_DIR:-${TMPDIR:-/tmp}}/mind-tier-$tier.log"
   mkdir -p "$(dirname "$raw_log")"
 
+  # The exec tier enables mlir-build and therefore includes the manifest-bound
+  # VNNI native-runtime case. On VNNI hardware that case requires an explicit
+  # opt-in; a missing opt-in is a verification failure, not a legal skip. Keep
+  # this in the shared driver so CI and preflight callers cannot drift.
+  tier_env=()
+  if [ "$tier" = exec ]; then
+    tier_env+=(MIND_INTDOT_VNNI_VERIFY=1)
+  fi
+
   if [ -n "$from_log" ]; then
     raw_log="$from_log"
     # cargo's exit status is RECORDED IN THE LOG (see the marker written below), so
@@ -437,12 +446,12 @@ for tier in "${want[@]}"; do
     # verdict is then honestly UNAVAILABLE rather than silently assumed to be 0.
     :
   elif [ "$require_toolchain" = 1 ]; then
-    MIND_BENCH_REQUIRE=1 cargo test --no-default-features --features "$features" \
+    env "${tier_env[@]}" MIND_BENCH_REQUIRE=1 cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$raw_log" 2>&1
     cargo_status=$?
     echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$raw_log"
   else
-    cargo test --no-default-features --features "$features" \
+    env "${tier_env[@]}" cargo test --no-default-features --features "$features" \
       --no-fail-fast >"$raw_log" 2>&1
     cargo_status=$?
     echo "MIND_TIER_CARGO_EXIT=$cargo_status" >>"$raw_log"

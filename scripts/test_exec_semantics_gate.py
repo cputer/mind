@@ -32,6 +32,7 @@ Run: ``python3 scripts/test_exec_semantics_gate.py`` (no third-party deps).
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -220,6 +221,49 @@ def run_gate(log_text: str, tier: str) -> subprocess.CompletedProcess[str]:
         if log.read_bytes() != before:
             raise AssertionError("--from-log changed the raw cargo log")
         return proc
+
+
+def check_exec_vnni_opt_in() -> None:
+    """The live exec-tier driver must opt VNNI hardware into native execution.
+
+    Use a fake cargo executable and ``--print-count`` so this checks the actual
+    shell environment wiring without compiling or running any workload.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        marker = root / "env.txt"
+        fake_cargo = root / "cargo"
+        fake_cargo.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' \"$MIND_INTDOT_VNNI_VERIFY\" > \"$MIND_TEST_MARKER\"\n"
+            "printf '%s\\n' \"$MIND_BENCH_REQUIRE\" >> \"$MIND_TEST_MARKER\"\n",
+            encoding="utf-8",
+        )
+        fake_cargo.chmod(0o755)
+        env = os.environ.copy()
+        # Exercise the driver even when CI itself already exports these flags.
+        env.pop("MIND_INTDOT_VNNI_VERIFY", None)
+        env.pop("MIND_BENCH_REQUIRE", None)
+        env["PATH"] = f"{root}{os.pathsep}{env['PATH']}"
+        env["MIND_TIER_LOG_DIR"] = str(root)
+        env["MIND_TEST_MARKER"] = str(marker)
+        proc = subprocess.run(
+            ["bash", str(GATE), "--print-count", "exec"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise AssertionError(
+                "exec-tier fake-cargo wiring probe failed "
+                f"(rc={proc.returncode}): {proc.stdout[-1000:]}{proc.stderr[-1000:]}"
+            )
+        if marker.read_text(encoding="utf-8").splitlines() != ["1", "1"]:
+            raise AssertionError(
+                "exec-tier cargo invocation did not receive "
+                "MIND_INTDOT_VNNI_VERIFY=1 and MIND_BENCH_REQUIRE=1"
+            )
 
 
 CASES: list[tuple[str, str, str, int, tuple[str, ...], tuple[str, ...]]] = []
@@ -588,6 +632,12 @@ def main() -> int:
         print(f"FAIL: {GATE} not found", file=sys.stderr)
         return 2
     bad = 0
+    try:
+        check_exec_vnni_opt_in()
+        print("[PASS] exec tier supplies the VNNI native-verification opt-in")
+    except (AssertionError, OSError) as exc:
+        print(f"[FAIL] exec tier VNNI wiring: {exc}")
+        bad += 1
     for name, produce, want in PARSER_CHECKS:
         got = produce()
         ok = got == want
@@ -618,7 +668,7 @@ def main() -> int:
             sys.stderr.write(proc.stderr[-2000:])
     # The sanctioned marker shape (see scripts/gate_assert.py MARKER_RES); a
     # bare `ran=/fail=` is refused by examples/mindc_mind/smoke_wiring_lint.py.
-    ran = len(CASES) + len(PARSER_CHECKS)
+    ran = 1 + len(CASES) + len(PARSER_CHECKS)
     print(f"\nSDLC-GATE exec_semantics_gate_selftest ran={ran} fail={bad}")
     if bad:
         print("FAIL: exec_semantics_gate.sh did not grade as required above")

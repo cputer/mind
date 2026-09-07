@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1648 | **Est. tokens:** ~3123061
-**Generated:** 2026-09-07 00:04 UTC
+**Files:** 1648 | **Est. tokens:** ~3123723
+**Generated:** 2026-09-07 00:08 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35735 |
+| `.github/workflows/` | 9 | ~35779 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 29 | ~113566 |
+| `scripts/` | 29 | ~114184 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -264,7 +264,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~23844 tok, huge) — name: CI
+- `ci.yml` (~23888 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -899,7 +899,7 @@
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
 - `commit-msg-hook.sh` (~866 tok, large) — commit-msg-hook.sh — local commit-msg hook: refuse a commit whose MESSAGE
 - `enumeration_drift_lint.py` (~2544 tok, huge) — Fail closed when a comment's ENUMERATION drifts from the code it describes.
-- `exec_semantics_gate.sh` (~10069 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
+- `exec_semantics_gate.sh` (~10180 tok, huge) — exec_semantics_gate.sh — run the test tiers CI could not reach, and PROVE they ran.
 - `gate_assert.py` (~3627 tok, huge) — gate_assert.py — the ONE definition of "did this gate actually assert anything?"
 - `gate_runner_wiring_lint.py` (~6454 tok, huge) — Wiring lint: a workflow may reach a gate ONLY through scripts/run_gate.py.
 - `install.ps1` (~1856 tok, huge) — # install.ps1 - mindc one-line installer for Windows (PowerShell)
@@ -915,7 +915,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~9289 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~9295 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~2136 tok, huge) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~3204 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -926,7 +926,7 @@
 - `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
-- `test_exec_semantics_gate.py` (~6145 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
+- `test_exec_semantics_gate.py` (~6646 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
 - `test_gate_wiring.py` (~7055 tok, huge) — Regression test for scripts/check_gate_wiring.py.
 - `test_no_ai_attribution.py` (~3509 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
 - `test_smoke_wiring_lint.py` (~2257 tok, huge) — Regression test for the CI-coverage and branch-awareness contracts of

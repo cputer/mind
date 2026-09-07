@@ -364,7 +364,7 @@ if [ "${1:-}" = "--full" ]; then
   # carries a file-level #![cfg(all(feature="mlir-build", feature="std-surface",
   # feature="cross-module-imports"))]; drop any one and the whole file vanishes and
   # cargo reports `ok. 0 passed` with exit 0. Hence the POSITIVE-count assert.
-  xs_out=$(MIND_BENCH_REQUIRE=1 cargo test --no-default-features \
+  xs_out=$(MIND_BENCH_REQUIRE=1 MIND_INTDOT_VNNI_VERIFY=1 cargo test --no-default-features \
              --features "mlir-build std-surface cross-module-imports" \
              --test cross_substrate_identity -- --nocapture 2>&1 || true)
   xs_n=$(printf '%s\n' "$xs_out" | sed -n 's/^test result: ok\. \([0-9]*\) passed.*/\1/p' | tail -1)

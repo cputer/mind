@@ -1467,6 +1467,9 @@ jobs:
       http_proxy: ""
       https_proxy: ""
       no_proxy: ""
+      # A VNNI-capable runner must execute the manifest-bound VPDPBUSD case
+      # instead of failing its required native-verification opt-in.
+      MIND_INTDOT_VNNI_VERIFY: "1"
 
     steps:
       - name: Checkout
