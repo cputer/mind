@@ -20,7 +20,9 @@ pub(crate) mod lowering_refusals;
 pub mod nerve_lint;
 mod nerve_walk;
 mod qualified_enums;
+mod struct_bindings;
 use qualified_enums::variant_payload_of;
+use struct_bindings::{StructNamesGuard, struct_name_in_scope};
 mod resolve;
 mod type_display;
 use type_display::{
@@ -1884,21 +1886,18 @@ fn infer_expr(node: &Node, env: &TypeEnv) -> Result<(ValueType, AstSpan), TypeEr
             let _ = infer_expr(right, env)?;
             Ok((lt, *span))
         }
-        // Phase 10.6: struct literal expression. Type-check each field's
-        // value sub-expression to surface errors there; the aggregate
-        // type is reported as a Named alias of the struct's identifier
-        // so downstream consumers (e.g. function-return-type checks)
-        // can match it against `TypeAnn::Named(name)`. Full structural
-        // resolution against StructDef arrives in a follow-up.
-        Node::StructLit { name, fields, span } => {
+        // This loose scalar/tensor model represents an aggregate's opaque
+        // handle, not the integer widths of its fields. Use the same i64
+        // representation as struct parameters and function results; an i32
+        // placeholder falsely reports narrowing on a same-struct rebind.
+        // Declared field types remain owned by the struct schema. The scalar
+        // class pass separately prevents replacing a known struct with a
+        // scalar, so the handle representation is not a scalar conversion.
+        Node::StructLit { fields, span, .. } => {
             for f in fields {
                 infer_expr(&f.value, env)?;
             }
-            // Return ScalarI32 as a stable placeholder until structural
-            // typing lands; the field-value checks already ran above so
-            // the bulk of the contract is validated.
-            let _ = name;
-            Ok((ValueType::ScalarI32, *span))
+            Ok((ValueType::ScalarI64, *span))
         }
         // Phase 10.6: index access `xs[i]`. Type-check the receiver +
         // index expressions for early error surfacing; return ScalarI32
@@ -2942,6 +2941,9 @@ fn is_bool_ann(ty: &TypeAnn) -> bool {
 #[derive(Debug, Clone, Default)]
 struct ClassCtx {
     classes: HashMap<String, ScalarClass>,
+    /// Known struct bindings retain aggregate identity independently of the
+    /// loose handle ValueType. Lexical clones/shadows follow `classes`.
+    structs: HashMap<String, String>,
     /// PROVABLE aggregate shapes (tuple arity / array length) in scope, for the
     /// E2620/E2621 ident checks that `ValueType` (scalar-or-tensor only) cannot
     /// express. Same lifecycle as `classes`: seeded ONLY from a literal
@@ -3237,6 +3239,7 @@ fn check_scalar_class_stmt(
             name, ann, value, ..
         } => {
             walk_expr_class_checks(value, ctx, src, file, errs);
+            struct_bindings::seed_let(name, ann, value, ctx);
             match ann.as_ref().and_then(scalar_class_of_ann) {
                 Some(ann_class) => {
                     if let Some(val_class) = confident_scalar_class(value, ctx) {
@@ -3277,6 +3280,7 @@ fn check_scalar_class_stmt(
         }
         Node::Assign { name, value, .. } => {
             walk_expr_class_checks(value, ctx, src, file, errs);
+            struct_bindings::check_assignment(name, value, ctx, src, file, errs);
             if let Some(&ann_class) = ctx.classes.get(name) {
                 if let Some(val_class) = confident_scalar_class(value, ctx) {
                     if ann_class != val_class {
@@ -3347,6 +3351,7 @@ fn check_scalar_class_stmt(
             // aggregate for the loop body: drop its stale shape so an in-body
             // index/destructure of `var` never fires off the outer literal shape.
             inner.aggs.remove(var);
+            inner.structs.remove(var);
             check_scalar_classes(body, ret_class, &mut inner, src, file, errs);
         }
         Node::Block { stmts, .. } => {
@@ -3382,6 +3387,7 @@ fn check_scalar_class_stmt(
             // seed_tail_branch_ctx's LetTuple drop).
             for nm in names {
                 ctx.aggs.remove(nm);
+                ctx.structs.remove(nm);
             }
         }
         // Nested fns carry their own return type; the mini-module recursion
@@ -3711,6 +3717,7 @@ fn walk_expr_class_checks(
                     // for the arm; drop its shape so an in-arm index/destructure of
                     // that name never fires off the stale outer literal shape.
                     arm_ctx.aggs.remove(name);
+                    arm_ctx.structs.remove(name);
                 }
                 if let Some(guard) = &arm.guard {
                     walk_expr_class_checks(guard, &arm_ctx, src, file, errs);
@@ -4187,52 +4194,6 @@ impl Drop for IntraSigGuard {
 thread_local! {
     static FIXED_BYTES_LOCALS: std::cell::RefCell<Option<BTreeSet<String>>> =
         const { std::cell::RefCell::new(None) };
-}
-
-// ── E2026 — locally-declared struct names ─────────────────────────────
-//
-// The names of every module-level `struct` in the file being checked, so the
-// `let` arm can recognise a struct-typed annotation (`let v: Value = …`) even
-// inside the FnDef-body mini-module recursion (whose sub-module holds only the
-// body statements, NO `StructDef` items). Same merge-on-install / restore-on-
-// drop discipline as `INTRA_FN_SIGS` / `FIXED_BYTES_LOCALS`.
-thread_local! {
-    static STRUCT_NAMES: std::cell::RefCell<Option<BTreeSet<String>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// True iff `name` is a `struct` declared in the module currently being
-/// checked. `false` when the side-table is unpopulated (no module context).
-fn struct_name_in_scope(name: &str) -> bool {
-    STRUCT_NAMES.with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(name)))
-}
-
-/// RAII guard for `STRUCT_NAMES`; merges onto any parent table (so the fn-body
-/// recursion keeps the enclosing module's structs visible) and restores the
-/// previous table on drop.
-struct StructNamesGuard {
-    prev: Option<BTreeSet<String>>,
-}
-
-impl StructNamesGuard {
-    fn install(names: BTreeSet<String>) -> Self {
-        let prev = STRUCT_NAMES.with(|cell| {
-            let mut slot = cell.borrow_mut();
-            let prev = slot.clone();
-            match slot.as_mut() {
-                Some(existing) => existing.extend(names),
-                None => *slot = Some(names),
-            }
-            prev
-        });
-        StructNamesGuard { prev }
-    }
-}
-
-impl Drop for StructNamesGuard {
-    fn drop(&mut self) {
-        STRUCT_NAMES.with(|cell| *cell.borrow_mut() = self.prev.take());
-    }
 }
 
 /// Syntactically-confident scalar RHS forms for E2026: numeric literals,
@@ -4797,6 +4758,9 @@ fn check_module_types_in_file_impl(
             }
             Node::EnumDef { .. } => {
                 has_enum = true;
+            }
+            Node::Block { stmts, .. } => {
+                struct_bindings::collect_struct_names(stmts, &mut struct_names)
             }
             _ => {}
         }

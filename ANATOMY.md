@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1646 | **Est. tokens:** ~3120384
-**Generated:** 2026-09-06 23:26 UTC
+**Files:** 1648 | **Est. tokens:** ~3123061
+**Generated:** 2026-09-07 00:04 UTC
 
 ## Token Budget Guide
 
@@ -123,12 +123,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 1 | ~6839 |
-| `src/type_checker/` | 11 | ~50194 |
+| `src/type_checker/` | 12 | ~51264 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 372 | ~713800 |
+| `tests/` | 373 | ~715407 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1268,6 +1268,7 @@
 ### `src/type_checker/`
 
 - `stdlib_signatures.rs` (~620 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `struct_bindings.rs` (~1070 tok, large) — Copyright 2026 STARGA Inc.
 - `type_display.rs` (~628 tok, large) — Copyright 2026 STARGA Inc.
 ### `src/types/`
 
@@ -2214,6 +2215,7 @@
 - `struct_array_field_run.rs` (~802 tok, large) — Copyright 2025 STARGA Inc.
 - `struct_field_collection_run.rs` (~808 tok, large) — Copyright 2025 STARGA Inc.
 - `struct_field_in_loop_run.rs` (~1043 tok, large) — Copyright 2025 STARGA Inc.
+- `struct_literal_rebind.rs` (~1607 tok, huge) — Copyright 2026 STARGA Inc.
 - `struct_narrow_field.rs` (~771 tok, large) — Copyright 2025 STARGA Inc.
 - `substrate_nonentry_import_link.rs` (~1449 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/support/`
