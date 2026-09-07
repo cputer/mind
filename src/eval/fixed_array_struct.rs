@@ -92,6 +92,27 @@ pub(super) fn fixed_array_cell_supported_in(ty: &TypeAnn, ir: &IRModule) -> bool
         || matches!(ty, TypeAnn::Named(name) if matches!(name.as_str(), "i64" | "f64"))
 }
 
+/// Return whether a resolved struct field is a fixed array whose element ABI
+/// is outside the currently runnable cell representation. Shared by the
+/// lowering fallback and runnable-artifact gate so both use the resolved IR
+/// schema rather than independently guessing from declarations.
+pub(crate) fn fixed_array_field_unsupported(ir: &IRModule, struct_name: &str, field: &str) -> bool {
+    let Some(fields) = ir.struct_defs.get(struct_name) else {
+        return false;
+    };
+    let Some(idx) = fields.iter().position(|name| name == field) else {
+        return false;
+    };
+    let Some(TypeAnn::Array { element, .. }) = ir
+        .struct_field_types
+        .get(struct_name)
+        .and_then(|types| types.get(idx))
+    else {
+        return false;
+    };
+    !fixed_array_cell_supported_in(element, ir)
+}
+
 #[cfg(feature = "std-surface")]
 pub(super) fn struct_field_alignment(ty: &TypeAnn) -> i64 {
     if matches!(ty, TypeAnn::Array { .. }) {

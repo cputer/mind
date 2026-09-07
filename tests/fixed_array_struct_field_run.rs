@@ -274,3 +274,173 @@ fn unsupported_struct_array_cells_are_refused_before_lowering() {
         "unsupported fixed-array build reached a panic: {build_err}"
     );
 }
+
+#[test]
+fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
+    let mindc = common::mindc_bin();
+    if !mindc.exists() {
+        common::gate::skipped(
+            "fixed_array_struct_field_boundary",
+            "fixed-array-struct-field-boundary: mindc not found; skipping",
+        );
+        return;
+    }
+    let root = common::scratch_dir("fixed_array_struct_field_boundary");
+    let env_std = format!("{}/std", env!("CARGO_MANIFEST_DIR"));
+    let run = |args: &[&str], cwd: Option<&std::path::Path>| {
+        let mut command = Command::new(&mindc);
+        command.args(args).env("MINDC_STD_DIR", &env_std);
+        if let Some(cwd) = cwd {
+            command.current_dir(cwd);
+        }
+        command.output().expect("run mindc boundary control")
+    };
+    let text = |out: &std::process::Output| {
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+
+    // A declaration without a construction/access operation has no backend
+    // work and retains base125 runnable behavior.
+    let unused = root.join("unused.mind");
+    let unused_so = root.join("unused.so");
+    std::fs::write(
+        &unused,
+        "struct Unused { xs: [u8; 2] }\nfn main() -> i64 { return 0 }\n",
+    )
+    .expect("write unused declaration control");
+    let out = run(
+        &[
+            "--emit-shared",
+            unused_so.to_str().unwrap(),
+            unused.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(out.status.success(), "unused declaration: {}", text(&out));
+    assert!(
+        unused_so.is_file(),
+        "unused declaration emitted no artifact"
+    );
+
+    // Field-index mutation used to reach the generic fixed-array panic before
+    // the post-lowering blocker could run. It must now refuse structurally.
+    let mutation = root.join("mutation.mind");
+    let mutation_so = root.join("mutation.so");
+    std::fs::write(
+        &mutation,
+        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { s.xs[1] = 3; return 0 }\n",
+    )
+    .expect("write mutation control");
+    let out = run(
+        &[
+            "--emit-shared",
+            mutation_so.to_str().unwrap(),
+            mutation.to_str().unwrap(),
+        ],
+        None,
+    );
+    let mutation_text = text(&out);
+    assert_eq!(out.status.code(), Some(1), "mutation: {mutation_text}");
+    assert!(
+        mutation_text.contains("lower::fixed_struct_array_cell")
+            && !mutation_text.contains("panicked at"),
+        "mutation did not fail structurally: {mutation_text}"
+    );
+    assert!(
+        !mutation_so.exists(),
+        "mutation refusal emitted an artifact"
+    );
+
+    #[cfg(feature = "cross-module-imports")]
+    {
+        // Imported schemas use the defining module's qualified owner. The
+        // unsupported `a.Bad` operation must block both project emitters while
+        // an unused imported declaration remains runnable.
+        for (tag, main_src, expect_success, owner) in [
+            (
+                "used",
+                "import a;\nimport b;\npub fn run(p: a.Bad) -> i64 { return p.xs[1] }\n",
+                false,
+                Some("a.Bad.xs"),
+            ),
+            (
+                "unused",
+                "import a;\nimport b;\npub fn run() -> i64 { return 0 }\n",
+                true,
+                None,
+            ),
+        ] {
+            let project = root.join(format!("project_{tag}"));
+            std::fs::create_dir_all(project.join("src")).expect("create boundary project");
+            std::fs::write(
+                project.join("Mind.toml"),
+                "[package]\nname=\"fixed_array_boundary\"\nversion=\"0.1.0\"\n\n[build]\nemit=\"cdylib\"\n",
+            )
+            .expect("write boundary manifest");
+            std::fs::write(
+                project.join("src/a.mind"),
+                "pub struct Bad { xs: [u8; 2] }\n",
+            )
+            .expect("write unsupported owner");
+            std::fs::write(
+                project.join("src/b.mind"),
+                "pub struct Bad { xs: [i64; 2] }\n",
+            )
+            .expect("write supported colliding owner");
+            std::fs::write(project.join("src/main.mind"), main_src).expect("write boundary entry");
+            for kind in ["object", "cdylib"] {
+                let artifact = project.join(format!("{tag}-{kind}.out"));
+                // Object projects derive the final object suffix from the
+                // requested stem; cdylib honors --out verbatim. Intermediates
+                // under target/obj are not final-artifact evidence.
+                let expected_artifact = if kind == "object" {
+                    artifact.with_extension("o")
+                } else {
+                    let file_name = artifact.file_name().expect("boundary artifact name");
+                    artifact
+                        .parent()
+                        .expect("boundary artifact parent")
+                        .join(format!("lib{}.so", file_name.to_string_lossy()))
+                };
+                let out = run(
+                    &[
+                        "build",
+                        "--emit",
+                        kind,
+                        "--no-cache",
+                        "--out",
+                        artifact.to_str().unwrap(),
+                    ],
+                    Some(&project),
+                );
+                let rendered = text(&out);
+                assert_eq!(
+                    out.status.success(),
+                    expect_success,
+                    "project {tag}/{kind}: {rendered}"
+                );
+                if let Some(owner) = owner {
+                    assert!(rendered.contains(owner), "project owner lost: {rendered}");
+                    assert!(
+                        !rendered.contains("panicked at"),
+                        "project panicked: {rendered}"
+                    );
+                    assert!(
+                        !artifact.exists() && !expected_artifact.exists(),
+                        "project refusal emitted an artifact"
+                    );
+                } else {
+                    assert!(
+                        expected_artifact.is_file(),
+                        "project unused emitted no final artifact: {}",
+                        expected_artifact.display()
+                    );
+                }
+            }
+        }
+    }
+}

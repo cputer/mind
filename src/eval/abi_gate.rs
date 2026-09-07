@@ -47,7 +47,12 @@ const HELP: &str = "the shipped backend lowers only the i64-scalar ABI; this con
 /// (object / shared-library) lowering path would silently miscompile. The
 /// returned `Vec` is empty for an all-i64 program (no allocation on the happy
 /// path beyond the empty `Vec`), and the module is never mutated.
-pub fn check_runnable_lowerable(module: &Module, src: &str, file: Option<&str>) -> Vec<Diagnostic> {
+pub fn check_runnable_lowerable(
+    module: &Module,
+    _ir: &crate::ir::IRModule,
+    src: &str,
+    file: Option<&str>,
+) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     // Only function signatures gate now. Struct declarations no longer gate: the
     // width-aware struct ABI lowers sub-i64 fields (i32/u32/i16/u16/i8/u8/bool)
@@ -88,59 +93,184 @@ pub fn check_runnable_lowerable(module: &Module, src: &str, file: Option<&str>) 
         }
     }
     #[cfg(feature = "std-surface")]
-    check_fixed_struct_array_fields(module, src, file, &mut out);
+    check_fixed_struct_array_operations(module, _ir, src, file, &mut out);
     out
 }
 
 /// Fixed arrays remain valid source-level types and are available through the
 /// inspection/IR surfaces. The inline struct-field ABI currently materializes
-/// only i64/f64 cells, however, so a runnable artifact must refuse any other
-/// fixed-array field before MLIR/code emission. This is deliberately separate
-/// from type checking: an unsupported backend representation is not a type
-/// error and must not make `mindc check` or `--emit-ir` reject valid source.
+/// only i64/f64 cells, however, so a runnable artifact must refuse an actual
+/// construction/access/update of any other fixed-array field before MLIR/code
+/// emission. Declaration-only fields are deliberately ignored: they have no
+/// lowering operation and retain the base125 runnable behavior.
 #[cfg(feature = "std-surface")]
-fn check_fixed_struct_array_fields(
+fn check_fixed_struct_array_operations(
     module: &Module,
+    ir: &crate::ir::IRModule,
     src: &str,
     file: Option<&str>,
     out: &mut Vec<Diagnostic>,
 ) {
-    let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&module.items);
-    fn walk(
-        items: &[Node],
-        aliases: &crate::eval::type_aliases::LocalTypeAliases,
+    let receiver_types = crate::eval::struct_resolver::build_field_access_types(module);
+    let mut seen = std::collections::HashSet::new();
+
+    #[allow(clippy::too_many_arguments)]
+    fn report(
+        owner: &str,
+        field: &str,
+        span: AstSpan,
+        ir: &crate::ir::IRModule,
         src: &str,
         file: Option<&str>,
         out: &mut Vec<Diagnostic>,
+        seen: &mut std::collections::HashSet<AstSpan>,
     ) {
-        for item in items {
-            match item {
-                Node::StructDef { name, fields, .. } => {
-                    for field in fields {
-                        let TypeAnn::Array { element, .. } = aliases.resolve(&field.ty) else {
-                            continue;
-                        };
-                        if matches!(element.as_ref(), TypeAnn::ScalarI64 | TypeAnn::ScalarF64) {
-                            continue;
-                        }
-                        out.push(mk(
-                            src,
-                            file,
-                            field.span,
-                            "lower::fixed_struct_array_cell",
-                            format!(
-                                "fixed struct-array field `{name}.{}` is not lowerable to a runnable artifact: only i64/f64 scalar cells are supported",
-                                field.name
-                            ),
-                        ));
-                    }
+        if !crate::eval::lower::fixed_array_struct::fixed_array_field_unsupported(ir, owner, field)
+            || !seen.insert(span)
+        {
+            return;
+        }
+        out.push(mk(
+            src,
+            file,
+            span,
+            "lower::fixed_struct_array_cell",
+            format!(
+                "fixed struct-array field `{owner}.{field}` is not lowerable to a runnable artifact: only i64/f64 scalar cells are supported"
+            ),
+        ));
+    }
+
+    fn walk(
+        node: &Node,
+        ir: &crate::ir::IRModule,
+        receiver_types: &crate::eval::struct_resolver::FieldAccessTypes,
+        src: &str,
+        file: Option<&str>,
+        out: &mut Vec<Diagnostic>,
+        seen: &mut std::collections::HashSet<AstSpan>,
+    ) {
+        use Node as N;
+        match node {
+            N::FnDef(fd, _) => fd
+                .body
+                .iter()
+                .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
+            N::StructLit { name, fields, span } => {
+                for field in fields {
+                    report(name, &field.name, *span, ir, src, file, out, seen);
+                    walk(&field.value, ir, receiver_types, src, file, out, seen);
                 }
-                Node::Block { stmts, .. } => walk(stmts, aliases, src, file, out),
-                _ => {}
             }
+            N::FieldAccess {
+                receiver,
+                field,
+                span,
+            } => {
+                if let Some(owner) = receiver_types.get(span) {
+                    report(owner, field, *span, ir, src, file, out, seen);
+                }
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+            }
+            N::FieldAssign {
+                receiver,
+                field,
+                value,
+                span,
+            } => {
+                if let Some(owner) = receiver_types.get(span) {
+                    report(owner, field, *span, ir, src, file, out, seen);
+                }
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+                walk(value, ir, receiver_types, src, file, out, seen);
+            }
+            N::Let { value, .. } | N::Const { value, .. } => {
+                walk(value, ir, receiver_types, src, file, out, seen)
+            }
+            N::Assign { value, .. }
+            | N::Return {
+                value: Some(value), ..
+            } => walk(value, ir, receiver_types, src, file, out, seen),
+            N::Call { args, .. } => args
+                .iter()
+                .for_each(|a| walk(a, ir, receiver_types, src, file, out, seen)),
+            N::MethodCall { receiver, args, .. } => {
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+                args.iter()
+                    .for_each(|a| walk(a, ir, receiver_types, src, file, out, seen));
+            }
+            N::IndexAccess {
+                receiver, index, ..
+            } => {
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+                walk(index, ir, receiver_types, src, file, out, seen);
+            }
+            N::IndexAssign {
+                receiver,
+                index,
+                value,
+                ..
+            } => {
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+                walk(index, ir, receiver_types, src, file, out, seen);
+                walk(value, ir, receiver_types, src, file, out, seen);
+            }
+            N::Block { stmts, .. } => stmts
+                .iter()
+                .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
+            N::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                walk(cond, ir, receiver_types, src, file, out, seen);
+                then_branch
+                    .iter()
+                    .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
+                if let Some(branch) = else_branch {
+                    branch
+                        .iter()
+                        .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
+                }
+            }
+            N::Paren(inner, _) | N::Neg { operand: inner, .. } | N::Ref { inner, .. } => {
+                walk(inner, ir, receiver_types, src, file, out, seen)
+            }
+            N::As { expr, .. } => walk(expr, ir, receiver_types, src, file, out, seen),
+            N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
+                walk(left, ir, receiver_types, src, file, out, seen);
+                walk(right, ir, receiver_types, src, file, out, seen);
+            }
+            #[cfg(feature = "std-surface")]
+            N::Bitwise { left, right, .. } => {
+                walk(left, ir, receiver_types, src, file, out, seen);
+                walk(right, ir, receiver_types, src, file, out, seen);
+            }
+            N::Match {
+                scrutinee, arms, ..
+            } => {
+                walk(scrutinee, ir, receiver_types, src, file, out, seen);
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        walk(guard, ir, receiver_types, src, file, out, seen);
+                    }
+                    walk(&arm.body, ir, receiver_types, src, file, out, seen);
+                }
+            }
+            #[cfg(feature = "std-surface")]
+            N::While { cond, body, .. } => {
+                walk(cond, ir, receiver_types, src, file, out, seen);
+                body.iter()
+                    .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
+            }
+            _ => {}
         }
     }
-    walk(&module.items, &aliases, src, file, out);
+
+    for item in &module.items {
+        walk(item, ir, &receiver_types, src, file, out, &mut seen);
+    }
 }
 
 /// Reason a function PARAMETER `TypeAnn` cannot lower in the runnable ABI, or

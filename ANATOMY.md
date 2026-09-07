@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1669 | **Est. tokens:** ~3188595
-**Generated:** 2026-09-07 05:57 UTC
+**Files:** 1669 | **Est. tokens:** ~3191625
+**Generated:** 2026-09-07 06:30 UTC
 
 ## Token Budget Guide
 
@@ -89,7 +89,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 10 | ~46137 |
+| `src/` | 10 | ~46138 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 26 | ~117072 |
+| `src/eval/` | 26 | ~118485 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 382 | ~741934 |
+| `tests/` | 382 | ~743550 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1077,14 +1077,14 @@
 - `mod.rs` (~7402 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/eval/`
 
-- `abi_gate.rs` (~12709 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
+- `abi_gate.rs` (~13917 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
 - `assert_check.rs` (~989 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9338 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
 - `field_access.rs` (~4796 tok, huge) — Copyright 2026 STARGA Inc.
 - `fixed_array.rs` (~1478 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct.rs` (~5091 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct.rs` (~5296 tok, huge) — Copyright 2026 STARGA Inc.
 - `interp_mem.rs` (~3817 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_interp.rs` (~4212 tok, huge) — Copyright 2025 STARGA Inc.
 - `materialization.rs` (~4386 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1214,7 +1214,7 @@
 - `mod.rs` (~4955 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `pipeline.rs` (~6302 tok, huge) — Copyright 2025 STARGA Inc.
+- `pipeline.rs` (~6303 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
 - `active_module_table.rs` (~422 tok, medium) — Copyright 2025-2026 STARGA Inc.
@@ -1580,7 +1580,7 @@
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct_field_run.rs` (~2451 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct_field_run.rs` (~4067 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.

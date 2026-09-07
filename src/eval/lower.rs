@@ -72,10 +72,10 @@ mod fixed_array;
 mod field_access;
 #[cfg(feature = "std-surface")]
 #[path = "fixed_array_struct.rs"]
-mod fixed_array_struct;
+pub(crate) mod fixed_array_struct;
 #[cfg(feature = "std-surface")]
 use fixed_array_struct::{
-    fixed_array_cell_type, lower_fixed_array_field_index_access,
+    fixed_array_cell_type, fixed_array_field_unsupported, lower_fixed_array_field_index_access,
     lower_fixed_array_field_index_assign, lower_struct_field_value, store_fixed_array_field,
     store_helper_for_width, struct_field_type, struct_layout,
 };
@@ -9267,6 +9267,32 @@ fn lower_expr(
             value,
             ..
         } => {
+            // Unsupported fixed-array struct fields are admitted by the source
+            // type checker and rejected by the runnable ABI gate after IR
+            // preparation. Keep this lowering path total until that gate runs:
+            // the generic fixed-array refusal below is for supported immutable
+            // aggregates, while an unsupported struct field would otherwise
+            // panic before the structured capability diagnostic is available.
+            #[cfg(feature = "std-surface")]
+            if let ast::Node::FieldAccess {
+                receiver: owner,
+                field,
+                span,
+            } = receiver.as_ref()
+            {
+                let owner_name = receiver_types
+                    .get(span)
+                    .cloned()
+                    .or_else(|| receiver_struct_type(owner, ir, struct_env));
+                if let Some(owner_name) = owner_name {
+                    let owner_key = struct_key_for(ir, &owner_name);
+                    if fixed_array_field_unsupported(ir, owner_key, field) {
+                        let unit = ir.fresh();
+                        ir.instrs.push(Instr::ConstI64(unit, 0));
+                        return unit;
+                    }
+                }
+            }
             // `arr[i] = v` on a vec-sentinel (`array<T>`) receiver → std.vec
             // `vec_set`. A const array stays read-only (placeholder), preserving
             // the prior IR shape for the non-array path.
