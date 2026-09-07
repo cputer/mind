@@ -1,0 +1,257 @@
+// Copyright 2026 STARGA Inc.
+// Licensed under the Apache License, Version 2.0.
+
+//! Project identity and temporary-manifest race controls.
+
+use super::{canonical_explicit_entry, open_explicit};
+use crate::project::build_lock::ProjectBuildLock;
+use crate::project::{find_project_root_for_file, resolve_sources};
+use std::fs;
+use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Barrier};
+use std::thread;
+
+const ENTRY_SOURCE: &str = "fn main() -> i64 { 42 }\n";
+
+/// A *bare* manifest: no `[targets.*].sources`, the shape of a prior
+/// standalone build's temporary `Mind.toml`. The package name is
+/// distinctive so a test can tell a loaded manifest from a synthesised one,
+/// which takes its name from the entry's file stem.
+const BARE_MANIFEST: &str =
+    "[package]\nname = \"preceding\"\nversion = \"0.1.0\"\n\n[build]\nentry = \"alpha.mind\"\n";
+
+/// One directory, two spellings: canonical `real/` and the symlink `link/`.
+struct Aliased {
+    _tmp: tempfile::TempDir,
+    real: PathBuf,
+    link: PathBuf,
+}
+
+fn aliased_dir() -> Aliased {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    // Pin the canonical spelling of the temp root itself; on macOS it is
+    // already reached through a symlink, and the only aliasing under test
+    // must be the one this fixture creates.
+    let base = tmp.path().canonicalize().expect("canonical temp root");
+    let real = base.join("real");
+    fs::create_dir(&real).expect("real dir");
+    let link = base.join("link");
+    symlink(&real, &link).expect("directory symlink");
+    fs::write(real.join("alpha.mind"), ENTRY_SOURCE).expect("entry");
+    Aliased {
+        _tmp: tmp,
+        real,
+        link,
+    }
+}
+
+fn cwd() -> PathBuf {
+    std::env::current_dir().expect("cwd")
+}
+
+/// Both spellings resolve to one directory identity, under which the entry
+/// is project-root-relative.
+///
+/// The relative spelling is load-bearing: `run_build` derives the manifest
+/// `entry` key by stripping the root prefix off the entry path. A lexical
+/// `link/alpha.mind` does not start with the canonical root, so the strip
+/// falls through to an absolute path that source confinement then correctly
+/// refuses — `manifest entry "…" must be project-root-relative`.
+#[test]
+fn symlink_and_canonical_spellings_open_one_directory_identity() {
+    let d = aliased_dir();
+    fs::write(d.real.join("Mind.toml"), BARE_MANIFEST).expect("manifest");
+
+    let (canonical_dir, canonical_entry) =
+        canonical_explicit_entry(&d.real.join("alpha.mind"), &cwd());
+    let (alias_dir, alias_entry) = canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd());
+
+    assert_eq!(canonical_dir, alias_dir, "one directory, two spellings");
+    assert_eq!(canonical_entry, alias_entry);
+    assert_eq!(alias_dir, d.real, "the identity is the canonical spelling");
+    assert_eq!(
+        find_project_root_for_file(&alias_dir).as_deref(),
+        Some(d.real.as_path()),
+        "the root probe and the entry directory must agree by construction"
+    );
+    assert_eq!(
+        alias_entry.strip_prefix(&alias_dir).ok(),
+        Some(Path::new("alpha.mind")),
+        "the manifest entry key must be project-root-relative"
+    );
+}
+
+/// A co-located *bare* manifest scopes the build to the named entry through
+/// either spelling, and an unrelated sibling stays out of the source set.
+#[test]
+fn adjacent_bare_manifest_scopes_to_the_entry_through_either_spelling() {
+    let d = aliased_dir();
+    fs::write(d.real.join("Mind.toml"), BARE_MANIFEST).expect("manifest");
+    fs::write(d.real.join("unrelated.mind"), "fn other() -> i64 { 7 }\n").expect("sibling");
+
+    for spelling in [&d.real, &d.link] {
+        let (entry_dir, entry_path) =
+            canonical_explicit_entry(&spelling.join("alpha.mind"), &cwd());
+        let opened = open_explicit(
+            find_project_root_for_file(&entry_dir),
+            &entry_dir,
+            &entry_path,
+        )
+        .expect("transaction opens");
+        assert!(
+            opened.single_file,
+            "{} adopted a whole-directory walk",
+            spelling.display()
+        );
+        assert_eq!(opened.root, d.real);
+        let (sources, _) = resolve_sources(&opened.root, "alpha.mind", None, opened.single_file)
+            .expect("source set");
+        assert_eq!(
+            sources,
+            vec![d.real.join("alpha.mind")],
+            "{} swept in an unrelated sibling",
+            spelling.display()
+        );
+    }
+
+    // Positive control: the sibling IS reachable by the whole-directory
+    // walk, so the exclusions above are the classification doing work and
+    // not an empty directory proving nothing.
+    let (walked, _) = resolve_sources(&d.real, "alpha.mind", None, false).expect("walk");
+    assert!(
+        walked.contains(&d.real.join("unrelated.mind")),
+        "the walk that single-file scoping suppresses does not see the sibling"
+    );
+}
+
+/// A vanished temporary manifest, reproduced against the real lock with
+/// explicit barriers.
+///
+/// A concurrent standalone build holds the project lock while its temporary
+/// `Mind.toml` exists and removes that file before releasing — the ordering
+/// `run_build` uses, where `ManifestEdit::restore` runs under the lock. The
+/// build under test therefore probes a root that exists and, once it owns
+/// the lock, finds no manifest there.
+///
+/// No sleep and no timing assumption: the entering transaction cannot take
+/// the lock before the preceding one releases it, and the removal precedes
+/// that release, so the manifest is gone at every observation made here.
+#[test]
+fn vanished_temporary_manifest_under_the_lock_is_not_a_manifest_error() {
+    let d = aliased_dir();
+    let manifest_path = d.real.join("Mind.toml");
+    fs::write(&manifest_path, BARE_MANIFEST).expect("temporary manifest");
+    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("alpha.mind"), &cwd());
+
+    let gate = Arc::new(Barrier::new(2));
+    let preceding = {
+        let gate = Arc::clone(&gate);
+        let root = d.real.clone();
+        let manifest_path = manifest_path.clone();
+        thread::spawn(move || {
+            let lock = ProjectBuildLock::acquire(&root).expect("preceding transaction lock");
+            gate.wait(); // 1: the manifest exists and the lock is held
+            gate.wait(); // 2: the other build has probed; wind this one down
+            fs::remove_file(&manifest_path).expect("remove the temporary manifest");
+            drop(lock);
+        })
+    };
+
+    gate.wait(); // 1
+    let probed = find_project_root_for_file(&entry_dir);
+    assert_eq!(
+        probed.as_deref(),
+        Some(d.real.as_path()),
+        "the probe must take the Some(root) branch"
+    );
+    gate.wait(); // 2
+
+    let opened = open_explicit(probed, &entry_dir, &entry_path)
+        .expect("a vanished temporary manifest is a standalone build, not a manifest error");
+    assert!(opened.single_file);
+    assert_eq!(opened.root, d.real);
+    assert_eq!(
+        opened.manifest.package.name, "alpha",
+        "the manifest must be synthesised from the entry, not the vanished file"
+    );
+    drop(opened);
+
+    preceding.join().expect("preceding transaction");
+    assert!(
+        !manifest_path.exists(),
+        "no temporary manifest is left behind"
+    );
+}
+
+/// The fallback above is bounded to the entry's own directory: a genuine
+/// project whose manifest disappears is still a hard, loud error.
+#[test]
+fn a_vanished_ancestor_project_manifest_is_still_an_error() {
+    let d = aliased_dir();
+    fs::create_dir(d.real.join("src")).expect("src");
+    fs::write(d.real.join("src/main.mind"), ENTRY_SOURCE).expect("entry");
+    // A repo boundary, so the bounded root scan may ascend out of `src/`.
+    fs::write(d.real.join(".git"), "gitdir: elsewhere\n").expect("repo boundary");
+    fs::write(d.real.join("Mind.toml"), BARE_MANIFEST).expect("manifest");
+
+    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd());
+    let probed = find_project_root_for_file(&entry_dir);
+    assert_eq!(probed.as_deref(), Some(d.real.as_path()));
+    assert_ne!(probed.as_deref(), Some(entry_dir.as_path()));
+
+    fs::remove_file(d.real.join("Mind.toml")).expect("manifest disappears");
+    // Matched rather than `expect_err`: the Ok payload owns a held build
+    // lock, and rendering it for a panic message is not worth a `Debug`
+    // impl on a transaction that must never be printed.
+    match open_explicit(probed, &entry_dir, &entry_path) {
+        Ok(_) => panic!("a real project losing its manifest was silently synthesised"),
+        Err(err) => assert!(
+            err.to_string().contains("manifest error"),
+            "unexpected diagnostic: {err}"
+        ),
+    }
+}
+
+/// A real multi-file project keeps its whole-directory walk through the
+/// symlink spelling: canonicalising the boundary must not narrow a genuine
+/// project to its entry.
+#[test]
+fn a_real_project_keeps_its_whole_directory_scope_through_the_symlink() {
+    let d = aliased_dir();
+    fs::create_dir(d.real.join("src")).expect("src");
+    fs::write(d.real.join("src/main.mind"), ENTRY_SOURCE).expect("entry");
+    fs::write(d.real.join("src/helper.mind"), "fn helper() -> i64 { 1 }\n").expect("sibling");
+    fs::write(d.real.join(".git"), "gitdir: elsewhere\n").expect("repo boundary");
+    fs::write(
+        d.real.join("Mind.toml"),
+        "[package]\nname = \"real_project\"\nversion = \"0.1.0\"\n\n\
+         [build]\nentry = \"src/main.mind\"\n",
+    )
+    .expect("manifest");
+
+    let (entry_dir, entry_path) = canonical_explicit_entry(&d.link.join("src/main.mind"), &cwd());
+    let opened = open_explicit(
+        find_project_root_for_file(&entry_dir),
+        &entry_dir,
+        &entry_path,
+    )
+    .expect("transaction opens");
+    assert!(
+        !opened.single_file,
+        "a real project was narrowed to its entry"
+    );
+    assert_eq!(opened.root, d.real);
+    assert_eq!(opened.manifest.package.name, "real_project");
+
+    let entry_rel = entry_path
+        .strip_prefix(&opened.root)
+        .expect("entry is project-root-relative")
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert_eq!(entry_rel, "src/main.mind");
+    let (sources, _) =
+        resolve_sources(&opened.root, &entry_rel, None, opened.single_file).expect("walk");
+    assert!(sources.contains(&d.real.join("src/main.mind")));
+    assert!(sources.contains(&d.real.join("src/helper.mind")));
+}

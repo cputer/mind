@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1656 | **Est. tokens:** ~3143107
-**Generated:** 2026-09-07 01:54 UTC
+**Files:** 1658 | **Est. tokens:** ~3149114
+**Generated:** 2026-09-07 03:00 UTC
 
 ## Token Budget Guide
 
@@ -93,7 +93,7 @@
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
-| `src/build/` | 8 | ~25480 |
+| `src/build/` | 9 | ~29265 |
 | `src/build/cache/` | 3 | ~3150 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10613 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 376 | ~723476 |
+| `tests/` | 377 | ~725698 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1033,10 +1033,11 @@
 
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~9861 tok, huge) — Copyright 2025 STARGA Inc.
-- `project_transaction.rs` (~288 tok, medium) — Copyright 2026 STARGA Inc.
+- `mod.rs` (~9431 tok, huge) — Copyright 2025 STARGA Inc.
+- `project_transaction.rs` (~1882 tok, huge) — Copyright 2026 STARGA Inc.
 - `source_key.rs` (~3219 tok, huge) — Copyright 2025 STARGA Inc.
 - `source_snapshot_tests.rs` (~1337 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `transaction_identity_tests.rs` (~2621 tok, huge) — Copyright 2026 STARGA Inc.
 ### `src/cache/`
 
 - `entry.rs` (~977 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1765,6 +1766,7 @@
 - `mindc_doc_phase1.rs` (~3004 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
 - `mindc_project_lock.rs` (~1069 tok, large) — Copyright 2026 STARGA Inc.
+- `mindc_symlinked_project_identity.rs` (~2222 tok, huge) — Copyright 2026 STARGA Inc.
 - `mindc_test_evaluator_issues.rs` (~4490 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_imports.rs` (~4130 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_nested_modules.rs` (~1901 tok, huge) — Copyright 2025-2026 STARGA Inc.

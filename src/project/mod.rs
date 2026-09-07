@@ -762,6 +762,30 @@ pub fn find_project_root() -> Result<PathBuf> {
     }
 }
 
+/// The one directory identity used at a build-transaction boundary.
+///
+/// Invariant: the project root, an explicit entry's directory, and the locked
+/// directory are all produced by this function, so comparing them tests
+/// directory identity instead of path spelling. A lexical spelling and a
+/// canonical one differ whenever any component is a symlink; on macOS the
+/// per-user temporary directory (`/var/folders/...` against
+/// `/private/var/folders/...`) makes that the normal case rather than an edge.
+///
+/// A relative path is anchored at the caller's cwd first — an unanchored one
+/// ascends to the empty `PathBuf`, where `Mind.toml` appears to resolve at `""`
+/// and the default source walk then captures nothing. `None` only when that cwd
+/// is unreadable. A directory that cannot be canonicalised (it does not exist
+/// yet) falls back to its absolute lexical form, the same fallback at every
+/// call site, so the boundary spellings still agree with each other.
+pub(crate) fn canonical_dir(dir: &Path) -> Option<PathBuf> {
+    let absolute = if dir.is_absolute() {
+        dir.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(dir)
+    };
+    Some(absolute.canonicalize().unwrap_or(absolute))
+}
+
 /// Resolve the project root that GOVERNS an explicit source file, bounded so a
 /// stray ancestor `Mind.toml` can never hijack a one-off `mindc build <file>`.
 ///
@@ -792,18 +816,10 @@ pub fn find_project_root() -> Result<PathBuf> {
 /// upgrade path: add a `[workspace]`/manifest-root sentinel so a non-git project
 /// declares its own boundary without a stray ancestor being adoptable.
 pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
-    // CLI entry paths are commonly relative (`mindc check src/x.mind`). Keep
-    // every probe rooted at the caller's actual cwd. Letting a relative path
-    // ascend to the empty `PathBuf` made `Mind.toml` appear to resolve at `""`,
-    // but the subsequent default source walk treated `""` as a non-directory
-    // and captured zero siblings. Explicit `sources = [...]` happened to work,
-    // masking the broken default project closure.
-    let entry_dir = if entry_dir.is_absolute() {
-        entry_dir.to_path_buf()
-    } else {
-        std::env::current_dir().ok()?.join(entry_dir)
-    };
-    let entry_dir = entry_dir.canonicalize().unwrap_or(entry_dir);
+    // The root below is derived from the canonical spelling, so a caller that
+    // later relates its own entry directory to it must use [`canonical_dir`]
+    // too — otherwise the two agree only when no component is a symlink.
+    let entry_dir = canonical_dir(entry_dir)?;
 
     // 1. Locate the enclosing git repository, if any (`.git` may be a dir for a
     //    normal repo or a file for a worktree/submodule — `exists()` covers both).

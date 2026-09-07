@@ -42,7 +42,7 @@ use anyhow::{Context, Result};
 
 use artifact::{default_artifact_path, legacy_opts_from, legacy_target_name};
 use driver_error::classify_driver_error;
-use project_transaction::{ManifestEdit, lock_project, single_file_manifest};
+use project_transaction::{ManifestEdit, canonical_explicit_entry, lock_project, open_explicit};
 use source_key::compile_cache_material_from_snapshots as cache_material_from;
 
 use crate::project::{
@@ -152,71 +152,39 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // Mind.toml in bounds — the manifest is synthesised and the project root is
     // the entry file's OWN directory. Such a build compiles only the named entry
     // (see `BuildOptions::single_file`), never a whole-directory sibling walk.
-    let mut single_file = false;
-    let (project_root, manifest, build_lock) = if !opts.paths.is_empty() {
+    let explicit_entry = opts.paths.first().map(|first| {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let first_path = if opts.paths[0].is_absolute() {
-            opts.paths[0].clone()
+        canonical_explicit_entry(first, &cwd)
+    });
+    let (project_root, manifest, build_lock, single_file) =
+        if let Some((entry_dir, first_path)) = explicit_entry.clone() {
+            // The root is probed before any lock is held and re-audited after
+            // it, inside `open_explicit` — see that function for the window
+            // that ordering opens.
+            let opened = open_explicit(
+                find_project_root_for_file(&entry_dir),
+                &entry_dir,
+                &first_path,
+            )?;
+            (
+                opened.root,
+                opened.manifest,
+                opened.lock,
+                opened.single_file,
+            )
         } else {
-            cwd.join(&opts.paths[0])
-        };
-        let entry_dir = first_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| cwd.clone());
-        match find_project_root_for_file(&entry_dir) {
-            Some(root) => {
-                let lock = lock_project(&root)?;
-                // A preceding standalone build may have removed its temporary
-                // manifest while we waited for its transaction to finish.
-                let m = if root == entry_dir && !root.join("Mind.toml").exists() {
-                    single_file_manifest(&first_path)?
-                } else {
-                    load_manifest(&root)
-                        .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?
-                };
-                // A file explicitly named on the command line that sits DIRECTLY
-                // next to a *bare* manifest (one declaring no `[targets.*].sources`
-                // list) is a single-file build: the manifest is either a real
-                // one-file project or — the common case — a leftover synthetic
-                // `Mind.toml` a PRIOR `mindc build <file>` wrote into a scratch
-                // directory (`/tmp`, `$HOME`). Without this, the second build of a
-                // trivial file in such a directory adopts that leftover manifest as
-                // a "project" and compiles every unrelated sibling `.mind` as a
-                // translation unit (the class of failure this fixes). A genuine
-                // multi-file project keeps the whole-directory walk: its entry
-                // lives in a `src/` subtree (root != the file's own dir) or it
-                // declares an explicit `[targets.*].sources` list.
-                let declares_sources = m.targets.values().any(|t| t.sources.is_some());
-                if !declares_sources && root == entry_dir {
-                    single_file = true;
+            match find_project_root() {
+                Ok(root) => {
+                    let lock = lock_project(&root)?;
+                    let m = load_manifest(&root)
+                        .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?;
+                    (root, m, lock, false)
                 }
-                (root, m, lock)
+                Err(e) => {
+                    return Err(BuildError::Invalid(format!("cannot locate Mind.toml: {e}")));
+                }
             }
-            None => {
-                let lock = lock_project(&entry_dir)?;
-                single_file = true;
-                // No governing manifest in-bounds — synthesise a single-file
-                // manifest rooted at the entry file's OWN directory (never cwd
-                // nor a distant ancestor), so source collection stays scoped to
-                // it rather than to whatever tree happens to sit above.
-                let m = single_file_manifest(&first_path)?;
-                (entry_dir, m, lock)
-            }
-        }
-    } else {
-        match find_project_root() {
-            Ok(root) => {
-                let lock = lock_project(&root)?;
-                let m = load_manifest(&root)
-                    .map_err(|e| BuildError::Invalid(format!("manifest error: {e}")))?;
-                (root, m, lock)
-            }
-            Err(e) => {
-                return Err(BuildError::Invalid(format!("cannot locate Mind.toml: {e}")));
-            }
-        }
-    };
+        };
 
     // Validate [package].name per RFC 0008 §3.
     validate_package_name(&manifest.package.name)?;
@@ -239,8 +207,16 @@ pub fn run_build(opts: &BuildOpts) -> Result<BuildOutput, BuildError> {
     // 3. Reject targets that have no backend implementation yet.
     validate_target(eff_target)?;
 
-    // 4. Resolve the entry / source file(s).
-    let entry_path = resolve_entry(opts, &project_root, &manifest.build.entry, eff_emit)?;
+    // 4. Resolve the entry / source file(s). An explicit CLI path was already
+    //    resolved to the transaction's canonical identity above; re-deriving it
+    //    from `opts.paths` here would reintroduce a spelling `project_root` is
+    //    not comparable with.
+    let entry_path = resolve_entry(
+        explicit_entry.as_ref().map(|(_, entry)| entry.as_path()),
+        &project_root,
+        &manifest.build.entry,
+        eff_emit,
+    )?;
 
     // 5. Build the output path.
     let artifact_path = match &opts.out {
@@ -721,33 +697,27 @@ fn validate_target(target: BuildTarget) -> Result<(), BuildError> {
 }
 
 fn resolve_entry(
-    opts: &BuildOpts,
+    explicit: Option<&Path>,
     project_root: &Path,
     manifest_entry: &str,
     eff_emit: EmitKind,
 ) -> Result<PathBuf, BuildError> {
-    // a) Explicit CLI paths take priority. A relative path is resolved against
-    //    the CURRENT DIRECTORY (where the user typed it), never `project_root`:
-    //    the bounded root may be an ancestor (git repo root) or a synthesised
-    //    entry dir, and joining a cwd-relative path onto it would resolve the
-    //    file in the wrong place (e.g. `mindc build t.mind` from a subdir whose
-    //    governing Mind.toml sits at the repo root would look for
-    //    `<repo>/t.mind`). Absolute paths are used verbatim.
-    if let Some(first) = opts.paths.first() {
-        let p = if first.is_absolute() {
-            first.clone()
-        } else {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(first)
-        };
+    // a) An explicit CLI path takes priority, in the canonical spelling
+    //    [`canonical_explicit_entry`] produced. A relative path was resolved
+    //    against the CURRENT DIRECTORY (where the user typed it), never
+    //    `project_root`: the bounded root may be an ancestor (git repo root) or
+    //    a synthesised entry dir, and joining a cwd-relative path onto it would
+    //    resolve the file in the wrong place (e.g. `mindc build t.mind` from a
+    //    subdir whose governing Mind.toml sits at the repo root would look for
+    //    `<repo>/t.mind`).
+    if let Some(p) = explicit {
         if !p.exists() {
             return Err(BuildError::failed(format!(
                 "source file not found: {}",
                 p.display()
             )));
         }
-        return Ok(p);
+        return Ok(p.to_path_buf());
     }
 
     // b) Manifest [build].entry (which defaults to "src/main.mind").
@@ -940,3 +910,6 @@ mod manifest_patch_tests {
         assert_entry(&patched, "m.mind");
     }
 }
+
+#[cfg(all(test, unix))]
+mod transaction_identity_tests;
