@@ -511,17 +511,22 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
   # stage0 seed stale. This gate runs the FROZEN pure-MIND ELF on the CURRENT source
   # (PRIMARY mode — no MINDC_SO needed) and asserts it still reproduces the seed: the
   # exact drift that reddened main after #10 added main.mind helpers with no --reseed.
-  # Fix on FAIL:  python3 examples/mindc_mind/self_host_loop_smoke.py --reseed
+  # Fix on FAIL:  python3 examples/mindc_mind/self_host_loop_smoke.py --advance
   # with MINDC_SO UNSET (the resolver then emits a fresh oracle itself, and refuses
-  # a stale one -- never point MINDC_SO at the in-tree libmindc_mind.so to reseed:
-  # that freezes whatever compiler that leftover artifact came from),
-  # then commit the re-blessed testdata/selfhost_loop/{stage1.elf,MANIFEST.txt}.
+  # a stale one -- never point MINDC_SO at the in-tree libmindc_mind.so: that would
+  # corroborate the new seed with whatever compiler that leftover artifact came
+  # from), then commit the advanced testdata/selfhost_loop/{stage1.elf,MANIFEST.txt}.
+  # --advance is the ordinary answer to source drift: the EXISTING frozen pure-MIND
+  # stage0 compiles the new source, the result must be a fixed point, and a fresh
+  # Rust oracle must agree -- so the pure-MIND seed chain stays unbroken. --reseed
+  # re-mints the seed from RUST output and is legacy: reach for it only when the old
+  # seed cannot compile the new source at all, and say so in the change.
   # ONE site, deliberately. preflight used to run this smoke TWICE — a duplicate
   # "self-host LOOP byte-identity" step ran it earlier. That cost a second run of a
   # minutes-long gate, kept a second copy of the hardcoded "--reseed in the SAME
   # change" advice 028fcbf4 removed from this one, and had the two sites DISAGREE
-  # about exit 2 (the other FAILed on it; this one skips). Folding them removes all
-  # three at once. The absent-file guard is the deleted site's contribution.
+  # about exit 2. A blocked required gate now fails the aggregate, consistently
+  # with CI. The absent-file guard is the deleted site's contribution.
   if [ ! -f examples/mindc_mind/self_host_loop_smoke.py ]; then
     bad "self_host_loop_smoke.py MISSING — the loop gate cannot run; do NOT push"
   fi
@@ -534,8 +539,8 @@ python3 scripts/run_gate.py examples/mindc_mind/ri_d1_frozen_profile_gate.py || 
   # exit 2 = BLOCKED, "could not evaluate". The smoke uses it for more than one
   # cause (absent frozen fixture here; a refused fallback oracle under --reseed),
   # so print ITS reason rather than asserting one this script cannot know.
-    echo "skip (BLOCKED — the gate could not evaluate; its reason:)"
-    grep -E "BLOCKED" /tmp/preflight-loop.out | tail -2
+    bad "self-host loop gate BLOCKED — a required gate was not evaluated; do NOT push"
+    grep -E "FAIL|BLOCKED" /tmp/preflight-loop.out | tail -2
   else
     # Do NOT prescribe --reseed here. This branch fires for EVERY non-zero exit, but
     # only one of the causes is drift; another is "no fresh oracle could be built"

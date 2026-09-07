@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1658 | **Est. tokens:** ~3149479
-**Generated:** 2026-09-07 03:30 UTC
+**Files:** 1659 | **Est. tokens:** ~3168816
+**Generated:** 2026-09-07 04:34 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35779 |
+| `.github/workflows/` | 9 | ~35863 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 169 | ~430909 |
+| `examples/mindc_mind/` | 169 | ~437232 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 29 | ~113999 |
+| `scripts/` | 29 | ~114108 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 377 | ~726063 |
+| `tests/` | 378 | ~738884 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -264,7 +264,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~23888 tok, huge) — name: CI
+- `ci.yml` (~23972 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -699,7 +699,7 @@
 - `self_host_ifret_chain_mic3_smoke.py` (~1725 tok, huge)
 - `self_host_letpath_failclose_smoke.py` (~2243 tok, huge) — Self-host LET-PATH fail-closed smoke — pins the S1-collapse fail-open wall.
 - `self_host_lockstep_smoke.py` (~2241 tok, huge) — SUB-STEP A lockstep smoke: the loop-carry frame COUNT and the loop-carry EMIT are
-- `self_host_loop_smoke.py` (~4992 tok, huge)
+- `self_host_loop_smoke.py` (~11294 tok, huge)
 - `self_host_match_smoke.py` (~1893 tok, huge)
 - `self_host_matchscalar_mic3_smoke.py` (~1725 tok, huge)
 - `self_host_mic3_float_valueif_smoke.py` (~1768 tok, huge)
@@ -765,7 +765,7 @@
 - `self_host_not_smoke.py` (~1481 tok, large)
 - `self_host_open_smoke.py` (~1310 tok, large)
 - `self_host_param_mutation_smoke.py` (~1323 tok, large) — CPU-as-oracle smoke for the param-mutation fix (nb_expr ident arm: consult the
-- `self_host_standalone_driver_smoke.py` (~3253 tok, huge)
+- `self_host_standalone_driver_smoke.py` (~3274 tok, huge)
 - `self_host_struct_return_smoke.py` (~4122 tok, huge) — self_host_struct_return_smoke.py — regression lock for STRUCT-BY-VALUE
 - `self_host_tc_class_mismatch_smoke.py` (~1167 tok, large) — CPU-as-oracle smoke for the pure-MIND E2015 int<->float class-mismatch rule.
 - `self_host_tc_class_rules_smoke.py` (~1889 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2010/E2011/E2013/E2016 class rules.
@@ -915,7 +915,7 @@
 ### `scripts/`
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
-- `preflight.sh` (~9295 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
+- `preflight.sh` (~9404 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~2136 tok, huge) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
 - `run_crypto_vectors.sh` (~3204 tok, huge) — Build every pure-MIND crypto/TLS std module to a shared object and run its
@@ -1947,6 +1947,7 @@
 
 - `scalar_cast_call_run.rs` (~673 tok, large) — Copyright 2025 STARGA Inc.
 - `scalar_cast_unsigned_narrow_run.rs` (~1047 tok, large) — Copyright 2025 STARGA Inc.
+- `self_host_loop_advance_test.py` (~12821 tok, huge) — Harness controls for `self_host_loop_smoke.py --advance`.
 ### `tests/selfhost_gaps/`
 
 - `GAPS.md` (~5947 tok, huge) — Self-host nfn driver — gap inventory (fuzz-discovered)

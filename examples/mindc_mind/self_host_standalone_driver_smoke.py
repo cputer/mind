@@ -153,7 +153,9 @@ def main() -> int:
         return 0
     if not _FROZEN.exists():
         print(f"BLOCKED: frozen bootstrap seed {_FROZEN} not found — it is the "
-              f"headline oracle. Re-freeze via self_host_loop_smoke.py --reseed.")
+              f"headline oracle. Advance the seed via "
+              f"self_host_loop_smoke.py --advance (--reseed is the legacy, "
+              f"Rust-seeded path).")
         return 2
 
     lib = ctypes.CDLL(str(SO))

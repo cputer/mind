@@ -662,6 +662,12 @@ jobs:
         run: python3 scripts/run_gate.py tests/gate_assert_count_contract_test.py
         working-directory: ${{ github.workspace }}
 
+      - name: Bootstrap advancement harness controls
+        # Synthetic process/oracle controls for seed identity, agreement,
+        # publication and rollback. The real compiler loop runs separately.
+        run: python3 scripts/run_gate.py tests/self_host_loop_advance_test.py
+        working-directory: ${{ github.workspace }}
+
       - name: Gate-vacuity sweep (run_gate.py --vacuity-sweep)
         # THE POSITIVE CONTROL for every gate in this repo. Runs the whole smoke
         # corpus TWICE, once per way of taking the compiler away, and REQUIRES
