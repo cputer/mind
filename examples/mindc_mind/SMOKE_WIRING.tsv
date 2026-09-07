@@ -67,6 +67,7 @@ self_host_arridx_mic3_smoke	ci	gate
 self_host_body_smoke	ci,keystone	gate	
 self_host_carry_cap_smoke	ci,keystone	gate	
 self_host_cast_mic3_smoke	ci	gate	
+self_host_alias_controls_smoke	ci	gate	
 self_host_check_driver_smoke	ci	gate	
 self_host_continue_smoke	none	gate	RED at this commit: nested_for_continue HANGS (the harness reports `HUNG (must fail-close or terminate, never hang)`) — issue #308/#286 regression gate. deferred: wire once nested `continue` inside a range-for either lowers correctly or refuses fail-closed; a hanging case must never be wired into CI as-is.
 self_host_dtype_tag_smoke	ci	gate	
