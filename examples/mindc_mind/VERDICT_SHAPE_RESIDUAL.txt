@@ -58,7 +58,6 @@ self_host_args_from_os_smoke
 self_host_argv_smoke
 self_host_arridx_mic3_smoke
 self_host_carry_cap_smoke
-self_host_cast_mic3_smoke
 self_host_check_driver_smoke
 self_host_continue_smoke
 self_host_dtype_tag_smoke

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1671 | **Est. tokens:** ~3198052
-**Generated:** 2026-09-08 04:42 UTC
+**Files:** 1671 | **Est. tokens:** ~3198251
+**Generated:** 2026-09-08 04:49 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35874 |
+| `.github/workflows/` | 9 | ~36080 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 172 | ~440956 |
+| `examples/mindc_mind/` | 172 | ~440949 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -264,7 +264,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~23983 tok, huge) — name: CI
+- `ci.yml` (~24189 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -634,7 +634,7 @@
 - `EXPECTED.md` (~773 tok, large) — Phase 6.5 Stage 5 — Expected IR Text (APEX)
 - `FIXED_POINT_REPORT.md` (~1770 tok, huge) — Phase 6.5 — Bootstrap Fixed-Point Report
 - `SMOKE_WIRING.tsv` (~3716 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
-- `VERDICT_SHAPE_RESIDUAL.txt` (~1107 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
+- `VERDICT_SHAPE_RESIDUAL.txt` (~1100 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `_diagnostic_project.py` (~376 tok, medium) — Owned CLI projects for diagnostic smoke fixtures."""
 - `_frozen_native_oracle.py` (~384 tok, medium) — Integrity-checked frozen references for the native ELF smoke."""
 - `_ref_add.note` (~16 tok, tiny) — 6fa59a74687e6bac38c983655d4d93ab1873299f130f68cbe481cf92041f6610

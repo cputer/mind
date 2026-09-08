@@ -1219,6 +1219,22 @@ jobs:
           [ "$fail" -eq 0 ]
         working-directory: ${{ github.workspace }}
 
+      - name: Self-host alias semantics and cast identity controls
+        # Pin the complete executed control counts; the shared corpus loop's
+        # default floor of one cannot detect a partially removed harness.
+        run: |
+          MINDC_SO=/tmp/libmindc_mind_self_host.so \
+          MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
+          MINDC="${{ github.workspace }}/target/release/mindc" \
+            python3 scripts/run_gate.py --min-asserted 8 \
+              examples/mindc_mind/self_host_alias_controls_smoke.py
+          MINDC_SO=/tmp/libmindc_mind_self_host.so \
+          MINDC_BIN="${{ github.workspace }}/target/release/mindc" \
+          MINDC="${{ github.workspace }}/target/release/mindc" \
+            python3 scripts/run_gate.py --min-asserted 47 \
+              examples/mindc_mind/self_host_cast_mic3_smoke.py
+        working-directory: ${{ github.workspace }}
+
       - name: Self-host front-end + mic@3 + struct/method corpus gates
         # Front-end + mic@3 + struct/method + control-flow corpus: parse and
         # lowering shapes (and/or precedence, else-if chains, match, value-if,
@@ -1248,8 +1264,6 @@ jobs:
             self_host_argv_smoke \
             self_host_array_smoke \
             self_host_arridx_mic3_smoke \
-            self_host_cast_mic3_smoke \
-            self_host_alias_controls_smoke \
             self_host_check_driver_smoke \
             self_host_else_if_smoke \
             self_host_ifret_chain_mic3_smoke \
