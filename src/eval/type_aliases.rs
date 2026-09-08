@@ -11,33 +11,101 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Module-local type-alias resolution for AST-to-IR signature metadata.
+//! Owner-preserving type-alias resolution for AST-to-IR lowering metadata.
 //!
 //! Source type spellings stay in the AST. MLIR ABI lowering consumes the
-//! structural `TypeAnn` target through `IRModule::fn_signatures`, so this pass
-//! resolves aliases only while that lowering-only side table is captured.
+//! structural `TypeAnn` target through `IRModule::fn_signatures`; scalar
+//! coercion helpers use the same scoped targets while lowering function bodies.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{Node, TypeAnn};
 use crate::ir::IRModule;
 
+thread_local! {
+    /// Aliases owned by the module currently being lowered. Lowering has many
+    /// recursive statement paths, so keeping the owner-scoped table here lets
+    /// scalar coercion helpers canonicalize annotations without flattening
+    /// aliases from sibling source modules into one global namespace.
+    static ACTIVE_ALIASES: std::cell::RefCell<LocalTypeAliases> =
+        std::cell::RefCell::new(LocalTypeAliases::default());
+}
+
 /// Module-local aliases collected once and reused by all signature/type users
 /// in a pass. This is the same alias policy used by lowering's signatures.
+#[derive(Clone, Default)]
 pub(crate) struct LocalTypeAliases {
     aliases: BTreeMap<String, TypeAnn>,
+    #[cfg(feature = "cross-module-imports")]
+    imports: Vec<String>,
 }
 
 impl LocalTypeAliases {
     pub(crate) fn new(items: &[Node]) -> Self {
         let mut aliases = BTreeMap::new();
         collect_local_type_aliases(items, &mut aliases);
-        Self { aliases }
+        Self {
+            aliases,
+            #[cfg(feature = "cross-module-imports")]
+            imports: collect_imports(items),
+        }
     }
 
     pub(crate) fn resolve(&self, ty: &TypeAnn) -> TypeAnn {
         resolve_or_original(ty, &self.aliases)
     }
+
+    /// Make this module's aliases available to recursive lowering helpers.
+    /// The guard restores the prior owner on every exit path, including a
+    /// materialization refusal or a nested lowering invocation.
+    pub(crate) fn install(&self) -> ActiveAliasesGuard {
+        ACTIVE_ALIASES.with(|active| {
+            let previous = std::mem::replace(&mut *active.borrow_mut(), self.clone());
+            ActiveAliasesGuard(previous)
+        })
+    }
+}
+
+pub(crate) struct ActiveAliasesGuard(LocalTypeAliases);
+
+impl Drop for ActiveAliasesGuard {
+    fn drop(&mut self) {
+        ACTIVE_ALIASES.with(|active| {
+            *active.borrow_mut() = std::mem::take(&mut self.0);
+        });
+    }
+}
+
+/// Resolve a type annotation against the current source module, then resolve a
+/// visible owner-qualified imported alias from the project registry. Cycles
+/// preserve the original named annotation, matching `LocalTypeAliases`.
+pub(crate) fn resolve_active(ty: &TypeAnn) -> TypeAnn {
+    ACTIVE_ALIASES.with(|active| {
+        let active = active.borrow();
+        let resolved = active.resolve(ty);
+        #[cfg(feature = "cross-module-imports")]
+        if let TypeAnn::Named(name) = &resolved {
+            if let Some(target) =
+                crate::qualified_enums::resolve_alias_target(name, &active.imports)
+            {
+                return target;
+            }
+        }
+        resolved
+    })
+}
+
+#[cfg(feature = "cross-module-imports")]
+fn collect_imports(items: &[Node]) -> Vec<String> {
+    let mut imports = Vec::new();
+    for item in items {
+        match item {
+            Node::Import { path, .. } => imports.push(path.join(".")),
+            Node::Block { stmts, .. } => imports.extend(collect_imports(stmts)),
+            _ => {}
+        }
+    }
+    imports
 }
 
 /// Populate local function-signature metadata after resolving aliases declared

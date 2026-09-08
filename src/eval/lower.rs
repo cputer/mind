@@ -1294,6 +1294,8 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
     let module = preprocessed.as_ref().unwrap_or(module);
     #[cfg(feature = "std-surface")]
     let local_type_aliases = super::type_aliases::LocalTypeAliases::new(&module.items);
+    #[cfg(feature = "std-surface")]
+    let _active_type_aliases = local_type_aliases.install();
     // Install this module's top-level `const NAME = value` table so a reference
     // `Lit(Ident(NAME))` inlines the value at its use site (the read path in the
     // `Lit(Ident)` arm). Overwrites any prior pass's table — a const-free module
@@ -2051,7 +2053,8 @@ fn lower_tensor_binding(
 /// pointers and same-width casts.
 #[cfg(feature = "std-surface")]
 fn scalar_int_cast_width(ty: &TypeAnn) -> Option<u32> {
-    match ty {
+    let ty = super::type_aliases::resolve_active(ty);
+    match &ty {
         TypeAnn::ScalarI32 => Some(32),
         TypeAnn::ScalarI64 => Some(64),
         TypeAnn::Named(name) => match name.as_str() {
@@ -2081,7 +2084,8 @@ fn scalar_int_cast_width(ty: &TypeAnn) -> Option<u32> {
 /// `TypeAnn::Named`. All map to their mask width here.
 #[cfg(feature = "std-surface")]
 fn scalar_uint_cast_width(ty: &TypeAnn) -> Option<u32> {
-    match ty {
+    let ty = super::type_aliases::resolve_active(ty);
+    match &ty {
         TypeAnn::ScalarU32 => Some(32),
         TypeAnn::Named(name) => match name.as_str() {
             "u8" => Some(8),
@@ -2110,7 +2114,8 @@ fn scalar_uint_cast_width(ty: &TypeAnn) -> Option<u32> {
 /// and as `TypeAnn::Named`.
 #[cfg(feature = "std-surface")]
 fn scalar_float_cast_width(ty: &TypeAnn) -> Option<u32> {
-    match ty {
+    let ty = super::type_aliases::resolve_active(ty);
+    match &ty {
         TypeAnn::ScalarF32 => Some(32),
         TypeAnn::ScalarF64 => Some(64),
         TypeAnn::Named(name) => match name.as_str() {
@@ -2145,7 +2150,8 @@ fn scalar_float_cast_width(ty: &TypeAnn) -> Option<u32> {
 /// `TypeAnn::Named("u64")` (there is no `ScalarU64` variant).
 #[cfg(feature = "std-surface")]
 fn scalar_int64_cast_signed(ty: &TypeAnn) -> Option<bool> {
-    match ty {
+    let ty = super::type_aliases::resolve_active(ty);
+    match &ty {
         TypeAnn::ScalarI64 => Some(true),
         TypeAnn::Named(name) => match name.as_str() {
             "i64" => Some(true),
@@ -2170,7 +2176,7 @@ fn scalar_int64_cast_signed(ty: &TypeAnn) -> Option<bool> {
 ///     sign-extends in one i64-carried value (same as `scalar_int_cast_width`).
 ///   * narrow UNSIGNED (`u8`/`u16`/`u32`) → a single `BitAnd` against the i64
 ///     const mask `(1 << W) - 1` (zero-extend, same as `scalar_uint_cast_width`).
-///   * `i64`/`u64`/pointers/floats/handles/aliases/no annotation → unchanged
+///   * `i64`/`u64`/pointers/floats/handles/unresolved names/no annotation → unchanged
 ///     (`val` returned verbatim, so i64 locals and the keystone are byte-identical).
 ///
 /// No new IR opcode and no mic@1/mic@3 layout change (only `ConstI64`/`BinOp`),
@@ -2231,7 +2237,7 @@ fn mask_narrow_let(ir: &mut IRModule, ann: &Option<TypeAnn>, val: ValueId) -> Va
     // value `ScalarU64` at the MLIR stage via an identity `__mind_conv_u64`
     // marker so later sign-sensitive ops (`< / % >>`) pick the UNSIGNED
     // variants. `i64` (`scalar_int64_cast_signed(ty) == Some(true)`), pointers,
-    // handles, floats and aliases stay untagged — no marker, byte-identical.
+    // handles, floats and unresolved named types stay untagged — no marker.
     // Additive: no existing compiling program has a `u64` let reaching a
     // canary/keystone (all u64 sign-sensitive use was E2014-rejected), so no
     // artifact gains this instruction.
@@ -2249,10 +2255,9 @@ fn mask_narrow_let(ir: &mut IRModule, ann: &Option<TypeAnn>, val: ValueId) -> Va
 
 /// True when `ty` is a NARROW integer scalar that `mask_narrow_let` actually
 /// re-materialises at sub-i64 width (`i8`/`i16`/`i32`/`u8`/`u16`/`u32`). `i64`,
-/// `u64`, pointers, handles, floats and aliases all return `false` — they carry
-/// their full i64 representation unchanged, so they never need re-masking on
-/// reassignment and never enter the narrow-locals registry (keeping it empty for
-/// any all-i64 module, the keystone included).
+/// `u64`, pointers, handles, floats and unresolved named types return `false`.
+/// Resolved aliases follow their structural target, so aliases of narrow
+/// integers enter the same reassignment registry as the builtin spelling.
 #[cfg(feature = "std-surface")]
 fn is_narrow_scalar_ty(ty: &TypeAnn) -> bool {
     matches!(scalar_int_cast_width(ty), Some(w) if w < 64)
@@ -2302,7 +2307,8 @@ fn is_tuple_ann_ty(ty: &TypeAnn) -> bool {
 /// is correct with no unsigned-op special-casing.
 #[cfg(feature = "std-surface")]
 fn is_named_narrow_sig_ty(ty: &TypeAnn) -> bool {
-    matches!(ty, TypeAnn::Named(n) if matches!(n.as_str(), "i8" | "u8" | "i16" | "u16"))
+    let ty = super::type_aliases::resolve_active(ty);
+    matches!(&ty, TypeAnn::Named(n) if matches!(n.as_str(), "i8" | "u8" | "i16" | "u16"))
 }
 
 /// Mask/sign-adjust a RETURN value to the enclosing fn's declared narrow
