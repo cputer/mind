@@ -83,6 +83,14 @@ These are type-checking refusals before artifact emission. See
 `module { ... }` blocks are transparent declaration lists and share that
 namespace. Separate project files may declare structs with the same name.
 
+In a manifest-captured project, a bare cross-module name is resolved against
+the current module's exact imports. If multiple imported modules export the
+same bare function or type name, the checker refuses it with `E2003` for a
+call or `E2002` for a type; qualify the type or remove the conflicting import.
+An unimported sibling cannot supply the signature or symbol for an imported
+call. Legacy explicit multi-file checks retain their implicit project metadata
+when no manifest-captured import scope is available.
+
 Two E6xxx assignments distinguish host capability from compiler lowering:
 
 - `E6002`: the requested backend is unavailable on the current host or build.

@@ -14,6 +14,8 @@
 
 #[cfg(feature = "std-surface")]
 mod array_lengths;
+#[cfg(feature = "cross-module-imports")]
+mod cross_module_types;
 mod duplicate_structs;
 #[cfg(feature = "std-surface")]
 pub(crate) mod lowering_refusals;
@@ -25,6 +27,8 @@ use qualified_enums::variant_payload_of;
 use struct_bindings::{StructNamesGuard, struct_name_in_scope};
 mod resolve;
 mod type_display;
+#[cfg(feature = "cross-module-imports")]
+use cross_module_types::{cm_arg_compatible, cm_typeann_to_valuetype, describe_param_type};
 use type_display::{
     binop_display, describe_tensor, describe_value_type, dim_display, dtype_name, format_shape,
     format_usize_shape,
@@ -4311,11 +4315,24 @@ impl Drop for FixedBytesLocalsGuard {
 /// match only; globs / re-export chains are deliverable 3+.
 #[cfg(feature = "cross-module-imports")]
 fn cm_inject_imported_symbols(tenv: &mut TypeEnv, path: &[String]) {
+    let owner = crate::qualified_enums::current_module_path();
+    let visible = crate::project::active_module_table::visible_symbols(owner.as_deref());
     crate::project::active_module_table::with(|active| {
         if let Some(table) = active {
-            if let Some(exports) = table.get_import(path) {
+            let exports =
+                crate::project::active_module_table::resolve_import(owner.as_deref(), path)
+                    .and_then(|target| table.get(&target))
+                    .or_else(|| table.get_import(path));
+            if let Some(exports) = exports {
                 for sym in &exports.exported {
-                    tenv.entry(sym.clone()).or_insert(ValueType::ScalarI32);
+                    // A bare imported symbol is admitted only when the
+                    // current owner selects exactly one exporting module.
+                    // Injecting every export into `tenv` would make an
+                    // ambiguous name look resolved to the body resolver even
+                    // after the owner-aware lookup correctly refused it.
+                    if visible.contains(sym) {
+                        tenv.entry(sym.clone()).or_insert(ValueType::ScalarI32);
+                    }
                 }
             }
         }
@@ -4337,8 +4354,13 @@ pub fn cm_set_project_table(table: Option<crate::project::module_table::ModuleTa
 #[cfg(feature = "cross-module-imports")]
 pub fn cm_imported_export_names(path: &[String]) -> Vec<String> {
     crate::project::active_module_table::with(|active| {
+        let owner = crate::qualified_enums::current_module_path();
         active
-            .and_then(|table| table.get_import(path))
+            .and_then(|table| {
+                crate::project::active_module_table::resolve_import(owner.as_deref(), path)
+                    .and_then(|target| table.get(&target))
+                    .or_else(|| table.get_import(path))
+            })
             .map(|exports| exports.exported.clone())
             .unwrap_or_default()
     })
@@ -4351,9 +4373,10 @@ pub fn cm_imported_export_names(path: &[String]) -> Vec<String> {
 /// `ExportedFn` is a name + a `Vec<TypeAnn>` + an `Option<TypeAnn>`.
 #[cfg(feature = "cross-module-imports")]
 fn cm_lookup_fn(name: &str) -> Option<crate::project::module_table::ExportedFn> {
-    crate::project::active_module_table::with(|active| {
-        active.and_then(|table| table.lookup_imported_fn(name).cloned())
-    })
+    crate::project::active_module_table::lookup_visible_fn(
+        crate::qualified_enums::current_module_path().as_deref(),
+        name,
+    )
 }
 
 /// RFC 0005 phase 2 — cross-module array-param recognition. Returns the
@@ -4385,20 +4408,17 @@ pub fn cm_all_imported_fn_signatures() -> Vec<(
     Vec<crate::ast::TypeAnn>,
     Option<crate::ast::TypeAnn>,
 )> {
-    let (active_present, mut signatures) = crate::project::active_module_table::with(|active| {
-        (
-            active.is_some(),
-            active
-                .map(|table| {
-                    table
-                        .all_exported_fns()
-                        .into_iter()
-                        .map(|f| (f.name.clone(), f.param_types.clone(), f.ret_type.clone()))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default(),
-        )
-    });
+    let (active_present, mut signatures) =
+        crate::project::active_module_table::with(|active| (active.is_some(), Vec::new()));
+    if active_present {
+        signatures.extend(
+            crate::project::active_module_table::visible_fns(
+                crate::qualified_enums::current_module_path().as_deref(),
+            )
+            .into_iter()
+            .map(|f| (f.name, f.param_types, f.ret_type)),
+        );
+    }
     if !active_present {
         signatures.extend(bundled_std_fn_signatures().iter().cloned());
     }
@@ -4415,9 +4435,10 @@ pub fn cm_all_imported_fn_signatures() -> Vec<(
 /// that path is byte-identical.
 #[cfg(feature = "cross-module-imports")]
 pub(crate) fn cm_symbol_exported(name: &str) -> bool {
-    crate::project::active_module_table::with(|active| {
-        active.is_some_and(|table| table.exports_symbol(name))
-    })
+    crate::project::active_module_table::symbol_visible(
+        crate::qualified_enums::current_module_path().as_deref(),
+        name,
+    )
 }
 
 /// RFC 0005 Phase B — validate a call against an imported fn's
@@ -4491,50 +4512,6 @@ fn check_imported_fn_call(
         .map(cm_typeann_to_valuetype)
         .unwrap_or(ValueType::ScalarI64);
     Ok((ret, span))
-}
-
-/// RFC 0005 Phase B — map a `TypeAnn` to a `ValueType` for cross-
-/// module call-site checking.  Reuses the type-checker's existing
-/// `valuetype_from_ann`; falls back to `ScalarI64` for everything the
-/// helper can't resolve (Named struct/enum types, Slice/Array/Ref
-/// aggregates).  This matches RFC 0005's Option-C heap ABI where
-/// struct values are i64 base-addresses on the wire.
-#[cfg(feature = "cross-module-imports")]
-fn cm_typeann_to_valuetype(ann: &crate::ast::TypeAnn) -> ValueType {
-    valuetype_from_ann(ann).unwrap_or(ValueType::ScalarI64)
-}
-
-/// Phase D2 (light) — render a parameter's TypeAnn for an error
-/// message in a way that *preserves* Named struct identity. The Phase
-/// B compatibility check still operates on `ValueType` (where Named
-/// structs collapse to `ScalarI64`), but when we hand an error string
-/// to the user, "expected Vec (heap-record i64 addr)" is far more
-/// debuggable than "expected scalar i64". Slice / Array / Ref
-/// aggregates and primitive scalars fall through to the existing
-/// `describe_value_type` rendering.
-#[cfg(feature = "cross-module-imports")]
-fn describe_param_type(ann: &crate::ast::TypeAnn) -> String {
-    match ann {
-        crate::ast::TypeAnn::Named(name) => {
-            format!("{name} (heap-record i64 addr)")
-        }
-        _ => describe_value_type(&cm_typeann_to_valuetype(ann)),
-    }
-}
-
-/// RFC 0005 Phase B — compatibility check for a single arg.  Accepts
-/// exact matches plus the universal i32 -> i64 widening that integer
-/// literals depend on (literals come in as `ScalarI32` from the
-/// lexer; the call ABI is i64).
-#[cfg(feature = "cross-module-imports")]
-fn cm_arg_compatible(expected: &ValueType, actual: &ValueType) -> bool {
-    if expected == actual {
-        return true;
-    }
-    matches!(
-        (expected, actual),
-        (ValueType::ScalarI64, ValueType::ScalarI32) | (ValueType::ScalarI32, ValueType::ScalarI64)
-    )
 }
 
 /// Gated entrypoint: type-check `module` with cross-module symbol

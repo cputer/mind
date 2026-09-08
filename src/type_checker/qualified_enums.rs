@@ -271,6 +271,25 @@ fn validate_type(
                 false
             }
         });
+        #[cfg(feature = "cross-module-imports")]
+        if !name.contains('.')
+            && crate::ir::with_global_enums(|g| {
+                g.qualified.bare_type_is_ambiguous(
+                    name,
+                    imports,
+                    crate::qualified_enums::current_module_path().as_deref(),
+                )
+            })
+        {
+            errors.push(super::diag_from_span(
+                src,
+                file,
+                format!("ambiguous bare type `{name}`; qualify it with its module"),
+                span,
+                super::resolve::UNKNOWN_IDENT_CODE,
+            ));
+            continue;
+        }
         if name.contains('.') && !known {
             errors.push(super::diag_from_span(
                 src,

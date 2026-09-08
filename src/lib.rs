@@ -46,6 +46,9 @@ pub mod diagnostics;
 pub mod distributed;
 pub mod eval;
 pub mod exec;
+#[cfg(feature = "cross-module-imports")]
+#[path = "eval/import_collision_gate.rs"]
+pub(crate) mod import_collision_gate;
 pub mod ir;
 // The intrinsic registry (name, i64 arity, determinism class). Crate-internal:
 // `ir::evidence` and `type_checker` are its only consumers, and it must not

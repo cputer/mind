@@ -111,7 +111,17 @@ impl ProjectScope {
             .is_some_and(|module| module.exported.iter().any(|name| name == symbol))
     }
     pub fn install(&self) -> ProjectTableGuard {
-        ProjectTableGuard::install_with_enums(self.table.clone(), (*self.enums).clone())
+        let entry_module = self
+            .sources
+            .first()
+            .map(|source| source.module_path().to_string())
+            .unwrap_or_else(|| "crate".to_string());
+        ProjectTableGuard::install_with_scope(
+            self.table.clone(),
+            (*self.enums).clone(),
+            self.resolved_imports.clone(),
+            entry_module,
+        )
     }
 }
 
@@ -164,6 +174,8 @@ fn install_parsed(project_modules: Vec<(String, Module)>) -> ProjectTableGuard {
 pub struct ProjectTableGuard {
     _guard: super::active_module_table::Guard,
     _enums: Option<crate::qualified_enums::GlobalGuard>,
+    _resolved_imports: Option<super::active_module_table::ResolvedImportsGuard>,
+    _module_path: Option<crate::qualified_enums::ModuleGuard>,
 }
 
 impl ProjectTableGuard {
@@ -171,6 +183,8 @@ impl ProjectTableGuard {
         Self {
             _guard: super::active_module_table::Guard::install(table),
             _enums: None,
+            _resolved_imports: None,
+            _module_path: None,
         }
     }
 
@@ -181,6 +195,24 @@ impl ProjectTableGuard {
         Self {
             _guard: super::active_module_table::Guard::install(table),
             _enums: Some(crate::qualified_enums::GlobalGuard::install(enums)),
+            _resolved_imports: None,
+            _module_path: None,
+        }
+    }
+
+    fn install_with_scope(
+        table: super::module_table::ModuleTable,
+        enums: crate::ir::GlobalEnums,
+        resolved_imports: BTreeMap<(String, Vec<String>), String>,
+        module_path: String,
+    ) -> Self {
+        Self {
+            _guard: super::active_module_table::Guard::install(table),
+            _enums: Some(crate::qualified_enums::GlobalGuard::install(enums)),
+            _resolved_imports: Some(super::active_module_table::ResolvedImportsGuard::install(
+                resolved_imports,
+            )),
+            _module_path: Some(crate::qualified_enums::ModuleGuard::install(module_path)),
         }
     }
 }
@@ -441,6 +473,10 @@ fn capture_scope<'a>(
         .map(|(path, module)| (path.clone(), module))
         .collect::<Vec<_>>();
     let table = super::module_table::build_module_table(&refs);
+    // Build qualified type visibility with the same owner bindings used by
+    // native linking; raw basenames are insufficient for a root-level entry.
+    let _resolved_guard =
+        super::active_module_table::ResolvedImportsGuard::install(resolved_imports.clone());
     let enums = super::build_global_enums(&parsed);
     Ok(ProjectScope {
         entry: entry.to_path_buf(),

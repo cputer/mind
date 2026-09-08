@@ -437,6 +437,14 @@ fn compile_source_with_name_and_limits(
     // `--emit-obj` / `--emit-shared` paths; inspection surfaces ignore it.
     let mut runnable_blockers =
         crate::eval::abi_gate::check_runnable_lowerable(&module, &ir, source, source_name);
+    #[cfg(feature = "cross-module-imports")]
+    runnable_blockers.extend(
+        crate::import_collision_gate::check_imported_local_fn_collisions(
+            &module,
+            source,
+            source_name,
+        ),
+    );
     // Fail-closed on a generic call whose argument cannot be monomorphized — the
     // lowering would otherwise leave a dangling bare-template reference, writing
     // an EXIT=0 `.so` with an undefined symbol (a silent miscompile). Inert

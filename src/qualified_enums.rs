@@ -93,7 +93,9 @@ impl Registry {
         let mut owners = BTreeSet::new();
         if let Some(module) = current {
             if self.type_keys.contains_key(&format!("{module}.{name}")) {
-                owners.insert(module.to_string());
+                // A declaration in the current module has lexical precedence
+                // over imported owners with the same bare spelling.
+                return true;
             }
         }
         for import in imports {
@@ -104,6 +106,26 @@ impl Registry {
             }
         }
         owners.len() == 1
+    }
+
+    pub(crate) fn bare_type_is_ambiguous(
+        &self,
+        name: &str,
+        imports: &[String],
+        current: Option<&str>,
+    ) -> bool {
+        if current.is_some_and(|module| self.type_keys.contains_key(&format!("{module}.{name}"))) {
+            return false;
+        }
+        let mut owners = BTreeSet::new();
+        for import in imports {
+            let owner = canonical_module(import);
+            let key = format!("{owner}.{name}");
+            if self.exported_types.contains(&key) {
+                owners.insert(owner);
+            }
+        }
+        owners.len() > 1
     }
 
     pub(crate) fn is_canonical_type(&self, name: &str) -> bool {
@@ -230,11 +252,15 @@ impl Registry {
 
 #[cfg(feature = "cross-module-imports")]
 pub(crate) fn module_imports(module: &crate::ast::Module) -> Vec<String> {
+    let owner = current_module_path();
     module
         .items
         .iter()
         .filter_map(|item| match item {
-            crate::ast::Node::Import { path, .. } => Some(path.join(".")),
+            crate::ast::Node::Import { path, .. } => {
+                crate::project::active_module_table::resolve_import(owner.as_deref(), path)
+                    .or_else(|| Some(path.join(".")))
+            }
             _ => None,
         })
         .collect()
@@ -452,6 +478,7 @@ pub(crate) fn rebuild(parsed: &[(String, crate::ast::Module)], enums: &mut crate
     let mut raw_alias_targets = BTreeMap::new();
     let mut alias_imports = BTreeMap::new();
     for (path, module) in parsed {
+        let _module_guard = ModuleGuard::install(path.clone());
         let exports = collect_module_exports(path, module);
         let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&module.items);
         alias_imports.insert(path.clone(), module_imports(module));

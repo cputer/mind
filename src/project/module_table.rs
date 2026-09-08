@@ -175,25 +175,26 @@ impl ModuleTable {
     }
 
     /// RFC 0005 Phase B — look up an imported fn's signature by name,
-    /// searching every module in the table.  Returns the first match
-    /// in deterministic (sorted-path) iteration order; in practice
-    /// `pub fn` names are unique within a project (parser-enforced
-    /// per module; the project-loader convention prevents
-    /// cross-module shadowing).  Returns `None` if the name resolves
-    /// only to a struct / const / enum or to an `export { ... }`-
-    /// block name without a captured signature — the caller falls
-    /// back to Phase-A loose typing in that case.
+    /// searching every module in the table. A name with more than one owner
+    /// is ambiguous and returns `None`; callers must not select a hash-map
+    /// iteration winner for a cross-module ABI. Returns `None` if the name
+    /// resolves only to a struct / const / enum or to an `export { ... }`-
+    /// block name without a captured signature.
     pub fn lookup_imported_fn(&self, name: &str) -> Option<&ExportedFn> {
         let mut keys: Vec<&String> = self.modules.keys().collect();
         keys.sort();
+        let mut found = None;
         for key in keys {
             if let Some(m) = self.modules.get(key) {
                 if let Some(f) = m.exported_fns.iter().find(|f| f.name == name) {
-                    return Some(f);
+                    if found.is_some() {
+                        return None;
+                    }
+                    found = Some(f);
                 }
             }
         }
-        None
+        found
     }
 
     /// RFC 0012 §5.1 — every imported `pub fn` signature across the whole
@@ -212,6 +213,79 @@ impl ModuleTable {
         for key in keys {
             if let Some(m) = self.modules.get(key) {
                 out.extend(m.exported_fns.iter());
+            }
+        }
+        out
+    }
+
+    /// Borrow every typed function candidate with its defining owner.  The
+    /// active project resolver uses this form while the table is installed;
+    /// cloning a whole `ModuleTable` or each candidate would make every
+    /// visible-signature query scale with the complete project payload.
+    pub(crate) fn exported_fn_candidate_refs(&self, name: &str) -> Vec<(&str, &ExportedFn)> {
+        let mut keys: Vec<&String> = self.modules.keys().collect();
+        keys.sort();
+        keys.into_iter()
+            .filter_map(|key| {
+                self.modules.get(key).and_then(|module| {
+                    module
+                        .exported_fns
+                        .iter()
+                        .find(|function| function.name == name)
+                        .map(|function| (key.as_str(), function))
+                })
+            })
+            .collect()
+    }
+
+    /// Borrow all typed functions in deterministic owner/declaration order.
+    pub(crate) fn all_exported_fn_refs(&self) -> Vec<(&str, &ExportedFn)> {
+        let mut keys: Vec<&String> = self.modules.keys().collect();
+        keys.sort();
+        let mut out = Vec::new();
+        for key in keys {
+            if let Some(module) = self.modules.get(key) {
+                out.extend(
+                    module
+                        .exported_fns
+                        .iter()
+                        .map(|function| (key.as_str(), function)),
+                );
+            }
+        }
+        out
+    }
+
+    /// Borrow every owner that exports a value/type name.  This is the
+    /// allocation-light counterpart used by the active resolver.
+    pub(crate) fn exported_symbol_candidate_refs(&self, name: &str) -> Vec<&str> {
+        let mut keys: Vec<&String> = self.modules.keys().collect();
+        keys.sort();
+        keys.into_iter()
+            .filter(|key| {
+                self.modules
+                    .get(*key)
+                    .is_some_and(|module| module.exported.iter().any(|item| item == name))
+            })
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// Borrow every exported value/type name with its defining owner in one
+    /// deterministic pass. The active resolver uses this to build the whole
+    /// visible symbol set without rescanning every module for each name.
+    pub(crate) fn all_exported_symbol_refs(&self) -> Vec<(&str, &str)> {
+        let mut keys: Vec<&String> = self.modules.keys().collect();
+        keys.sort();
+        let mut out = Vec::new();
+        for key in keys {
+            if let Some(module) = self.modules.get(key) {
+                out.extend(
+                    module
+                        .exported
+                        .iter()
+                        .map(|name| (key.as_str(), name.as_str())),
+                );
             }
         }
         out
@@ -602,6 +676,14 @@ mod tests {
         assert!(table.lookup_imported_fn("vec_new").is_some());
         assert!(table.lookup_imported_fn("stdout").is_some());
         assert!(table.lookup_imported_fn("not_a_fn").is_none());
+    }
+
+    #[test]
+    fn lookup_imported_fn_refuses_same_name_from_multiple_owners() {
+        let a = parse("fn f(x: i64) -> i64 { x }").expect("parse");
+        let b = parse("fn f(x: f64) -> f64 { x }").expect("parse");
+        let table = build_module_table(&[("crate.a".into(), &a), ("crate.b".into(), &b)]);
+        assert!(table.lookup_imported_fn("f").is_none());
     }
 
     #[test]
