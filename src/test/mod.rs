@@ -388,11 +388,26 @@ fn execute_tests(
 ) -> Result<TestRunSummary, TestError> {
     let runner: Arc<TestRunner> = Arc::new(run_one_test);
     let sink: Arc<ResultSink> = Arc::new(print_result);
-    execute_tests_with(entries, eval_support, opts, runner, sink)
+    execute_tests_with(
+        entries,
+        eval_support,
+        opts,
+        runner,
+        sink,
+        CompletionControl::default(),
+    )
 }
 
 type TestRunner = dyn Fn(&TestEntry, Option<&EvalSupport>) -> TestResult + Send + Sync;
 type ResultSink = dyn Fn(&TestResult, &ReporterKind) + Send + Sync;
+
+/// Tests may observe a completed result after it reaches the shared queue.
+/// The production control is zero-sized and has no callback or branch.
+#[derive(Clone, Default)]
+struct CompletionControl {
+    #[cfg(test)]
+    after_store: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+}
 
 fn execute_tests_with(
     entries: Vec<TestEntry>,
@@ -400,6 +415,7 @@ fn execute_tests_with(
     opts: &TestOptions,
     runner: Arc<TestRunner>,
     sink: Arc<ResultSink>,
+    completion: CompletionControl,
 ) -> Result<TestRunSummary, TestError> {
     let thread_count = if opts.threads == 0 {
         std::thread::available_parallelism()
@@ -427,6 +443,7 @@ fn execute_tests_with(
         let r = Arc::clone(&results);
         let support = Arc::clone(&eval_support);
         let run = Arc::clone(&runner);
+        let _completion = completion.clone();
         let handle = std::thread::spawn(move || {
             loop {
                 let entry = {
@@ -444,6 +461,10 @@ fn execute_tests_with(
                     ordinal: entry.ordinal,
                     result,
                 });
+                #[cfg(test)]
+                if let Some(after_store) = &_completion.after_store {
+                    after_store(entry.ordinal);
+                }
             }
         });
         handles.push(handle);
@@ -834,7 +855,10 @@ mod deterministic_report_tests {
 
     #[test]
     fn coordinator_drains_forced_reverse_completion_before_emitting_duplicate_names() {
-        use super::{EvalSupport, ReporterKind, TestEntry, TestOptions, execute_tests_with};
+        use super::{
+            CompletionControl, EvalSupport, ReporterKind, TestEntry, TestOptions,
+            execute_tests_with,
+        };
         use std::collections::BTreeMap;
 
         let both_started = Arc::new(Barrier::new(2));
@@ -858,7 +882,6 @@ mod deterministic_report_tests {
                     duration: Duration::ZERO,
                 }
             } else {
-                release_first_tx.send(()).expect("release first result");
                 TestResult {
                     name: entry.name.clone(),
                     status: TestStatus::Passed,
@@ -866,6 +889,16 @@ mod deterministic_report_tests {
                 }
             }
         });
+        // Releasing the first runner before the second returns is a race:
+        // the first could still reach the shared result queue first. Release
+        // it only after the real worker has stored ordinal 1.
+        let completion = CompletionControl {
+            after_store: Some(Arc::new(move |ordinal| {
+                if ordinal == 1 {
+                    release_first_tx.send(()).expect("release first result");
+                }
+            })),
+        };
 
         let emitted = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let emitted_sink = Arc::clone(&emitted);
@@ -895,6 +928,7 @@ mod deterministic_report_tests {
             &opts,
             runner,
             sink,
+            completion,
         )
         .expect("coordinator execution");
 
