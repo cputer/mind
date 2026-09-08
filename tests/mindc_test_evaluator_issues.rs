@@ -420,6 +420,12 @@ fn struct_store_called_helper_refuses() {
     let got = store_helper();
     assert got == 9, "store in a called helper must not silently disappear"
 }
+
+#[test]
+fn struct_store_old_value_control_refuses() {
+    let got = store_direct();
+    assert got == 1, "old-value assertion must not pass when the store is unsupported"
+}
 "#;
 
 #[test]
@@ -432,11 +438,12 @@ fn struct_field_assignment_refuses_in_direct_and_called_helpers() {
     assert_line(&out, "struct_read_only_helper_still_passes ... ok");
     assert_line(&out, "struct_store_direct_refuses ... FAILED");
     assert_line(&out, "struct_store_called_helper_refuses ... FAILED");
+    assert_line(&out, "struct_store_old_value_control_refuses ... FAILED");
     assert_line(
         &out,
         "struct field assignment `.x` is unsupported by the interpreter; mutation semantics are not defined",
     );
-    assert_line(&out, "1 passed; 2 failed");
+    assert_line(&out, "1 passed; 3 failed");
 }
 
 #[cfg(feature = "std-surface")]

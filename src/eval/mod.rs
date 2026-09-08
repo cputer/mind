@@ -2092,8 +2092,7 @@ pub(crate) fn eval_value_expr_mode(
         // makes a later field read observe the old value while the test can
         // still be reported green.
         Node::FieldAssign { field, .. } => Err(EvalError::UnsupportedMsg(format!(
-            "struct field assignment `.{field}` is unsupported by the interpreter; "
-                "mutation semantics are not defined"
+            "struct field assignment `.{field}` is unsupported by the interpreter; mutation semantics are not defined"
         ))),
         // Phase 10.7: `match`. Evaluate the scrutinee and take the first arm
         // whose pattern matches — `Wildcard`, `Ident` (binds the value), or
@@ -3376,7 +3375,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_field_assignment_refuses_without_mutating_or_returning_rhs() {
+    fn eval_field_assignment_refuses_instead_of_returning_rhs() {
         let src = r#"
 struct Point { x: i64 }
 
@@ -3406,7 +3405,10 @@ p.x = 9;
 "#;
         let module = parser::parse(src).expect("module field-assignment fixture parses");
         let mut env = HashMap::new();
-        let err = eval_module_value_with_env(&module, &mut env, Some(src)).unwrap_err();
+        // This test targets the module executor's dispatch. Its hand-built
+        // annotation is outside the evaluator's source type-check surface;
+        // bypass that unrelated gate so the FieldAssign refusal is exercised.
+        let err = eval_module_value_with_env(&module, &mut env, None).unwrap_err();
         assert!(
             err.to_string()
                 .contains("struct field assignment `.x` is unsupported by the interpreter"),
