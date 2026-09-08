@@ -451,6 +451,8 @@ def do_advance(combined: bytes, stdin_image: bytes, user_lo: int) -> int:
         print("        Nothing written — a non-fixed-point compiler must never "
               "become the seed.")
         return 1
+    print(f"  PASS  [ADVANCE] stage1 == stage2 == stage3 — fixed point "
+          f"proved ({h1})")
 
     # ORACLE — required, never deferred. A new fixed point that only the old
     # compiler agrees with is one compiler's opinion; the independently built
@@ -483,6 +485,8 @@ def do_advance(combined: bytes, stdin_image: bytes, user_lo: int) -> int:
               f"({h1}). Two independent compilers disagree about the current "
               f"source, so neither may be frozen; nothing written.")
         return 1
+    print(f"  PASS  [ADVANCE] fresh Rust oracle output == new fixed point "
+          f"({h_oracle}) — independent agreement proved")
 
     # Nothing may be published over a fixture that changed under us: another
     # advance may have completed while this one was running, and overwriting it

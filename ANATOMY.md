@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1672 | **Est. tokens:** ~3202723
-**Generated:** 2026-09-08 05:26 UTC
+**Files:** 1672 | **Est. tokens:** ~3202783
+**Generated:** 2026-09-08 06:03 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 172 | ~440949 |
+| `examples/mindc_mind/` | 172 | ~441009 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -702,7 +702,7 @@
 - `self_host_letpath_failclose_smoke.py` (~2243 tok, huge) — Self-host LET-PATH fail-closed smoke — pins the S1-collapse fail-open wall.
 - `self_host_lockstep_smoke.py` (~2241 tok, huge) — SUB-STEP A lockstep smoke: the loop-carry frame COUNT and the loop-carry EMIT are
 - `self_host_loop_smoke.md` (~1543 tok, huge) — Self-host LOOP gate contract
-- `self_host_loop_smoke.py` (~8576 tok, huge) — Self-host LOOP reproduction and advancement gate.
+- `self_host_loop_smoke.py` (~8636 tok, huge) — Self-host LOOP reproduction and advancement gate.
 - `self_host_match_smoke.py` (~1893 tok, huge)
 - `self_host_matchscalar_mic3_smoke.py` (~1725 tok, huge)
 - `self_host_mic3_float_valueif_smoke.py` (~1768 tok, huge)
