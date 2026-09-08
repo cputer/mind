@@ -113,7 +113,10 @@ GATED_EVENTS = ("push", "pull_request")
 # publication path lives in its own helper. These are reviewed support/test
 # modules for existing gates, not new product surfaces; each remains below the
 # 800-line source ceiling and the stable runner commands stay unchanged.
-HARNESS_CEILING = 257
+# 257 -> 258 adds self_host_alias_controls_smoke.py, a reviewed focused gate
+# for the alias environment's collision, scope-isolation, and typed-join cases.
+# It is wired into CI and remains below the unchanged 800-line source ceiling.
+HARNESS_CEILING = 258
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

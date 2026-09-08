@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1670 | **Est. tokens:** ~3194455
-**Generated:** 2026-09-08 04:27 UTC
+**Files:** 1671 | **Est. tokens:** ~3198052
+**Generated:** 2026-09-08 04:42 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~873 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~35863 |
+| `.github/workflows/` | 9 | ~35874 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -66,11 +66,11 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 171 | ~437648 |
+| `examples/mindc_mind/` | 172 | ~440956 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
-| `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~1928 |
+| `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2138 |
 | `examples/native/` | 4 | ~1440 |
 | `examples/parser/` | 5 | ~17923 |
 | `examples/typecheck/` | 5 | ~14553 |
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 29 | ~114044 |
+| `scripts/` | 29 | ~114103 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2756 |
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 27 | ~119699 |
+| `src/eval/` | 27 | ~119708 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -264,7 +264,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~23972 tok, huge) — name: CI
+- `ci.yml` (~23983 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -633,7 +633,7 @@
 - `.gitignore` (~5 tok, tiny) — __pycache__/
 - `EXPECTED.md` (~773 tok, large) — Phase 6.5 Stage 5 — Expected IR Text (APEX)
 - `FIXED_POINT_REPORT.md` (~1770 tok, huge) — Phase 6.5 — Bootstrap Fixed-Point Report
-- `SMOKE_WIRING.tsv` (~3706 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
+- `SMOKE_WIRING.tsv` (~3716 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
 - `VERDICT_SHAPE_RESIDUAL.txt` (~1107 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `_diagnostic_project.py` (~376 tok, medium) — Owned CLI projects for diagnostic smoke fixtures."""
 - `_frozen_native_oracle.py` (~384 tok, medium) — Integrity-checked frozen references for the native ELF smoke."""
@@ -679,6 +679,7 @@
 - `ref_netverify.py` (~1473 tok, large) — # Canonical independent net-verify harness for i64 references in the native-ELF backend.
 - `rh_f64_aggregate_canary_smoke.py` (~1597 tok, huge) — RH f64-aggregate surface canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
 - `ri_d1_frozen_profile_gate.py` (~3278 tok, huge) — RI-D1 readiness gate (task #313): prove `mindc build --backend native` is READY to be
+- `self_host_alias_controls_smoke.py` (~1447 tok, large) — Focused native alias-environment controls.
 - `self_host_andor_precedence_smoke.py` (~1680 tok, huge) — Front-end PARITY battery for `&&` / `||` precedence + short-circuit.
 - `self_host_andor_smoke.py` (~2142 tok, huge) — Permanent battery for the self-host `&&` / `||` short-circuit operators.
 - `self_host_arena_growth_smoke.py` (~1382 tok, large)
@@ -688,7 +689,7 @@
 - `self_host_arridx_mic3_smoke.py` (~1864 tok, huge)
 - `self_host_body_smoke.py` (~3055 tok, huge)
 - `self_host_carry_cap_smoke.py` (~1169 tok, large) — Cap-guard smoke for the self-host loop-carry / loop-frame scratch tables.
-- `self_host_cast_mic3_smoke.py` (~2829 tok, huge)
+- `self_host_cast_mic3_smoke.py` (~4680 tok, huge)
 - `self_host_check_driver_smoke.py` (~2879 tok, huge)
 - `self_host_continue_smoke.py` (~1384 tok, large) — Regression gate for #308 (closes #286's break/continue fixtures): the pure-MIND
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).
@@ -818,7 +819,7 @@
 - `rh_f64_aggregate_canary.mind` (~876 tok, large) — RH f64-aggregate self-host/native canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
 ### `examples/mindc_mind/testdata/selfhost_loop/`
 
-- `MANIFEST.txt` (~102 tok, small) — # Frozen self-host bootstrap ELF (A6/RI-E1): the checked-in pure-MIND stage0
+- `MANIFEST.txt` (~312 tok, medium) — # Frozen self-host bootstrap ELF (A6/RI-E1): the checked-in pure-MIND stage0
 - `PROVENANCE_298_f64_selfhost_mlir.md` (~1826 tok, huge) — #298 self-host f64 MLIR emit — self-host loop seed refreeze provenance
 ### `examples/mindc_mind/testdata/`
 
@@ -895,7 +896,7 @@
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7653 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~9325 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~9384 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~2217 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~4343 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
@@ -1108,7 +1109,7 @@
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
 - `struct_resolver.rs` (~8361 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
-- `type_aliases.rs` (~1498 tok, large) — Copyright 2025 STARGA Inc.
+- `type_aliases.rs` (~1507 tok, huge) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/exec/`
 
