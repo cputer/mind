@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1681 | **Est. tokens:** ~3224736
-**Generated:** 2026-09-08 12:57 UTC
+**Files:** 1681 | **Est. tokens:** ~3225326
+**Generated:** 2026-09-08 12:58 UTC
 
 ## Token Budget Guide
 
@@ -126,7 +126,7 @@
 | `src/test/` | 4 | ~13787 |
 | `src/type_checker/` | 12 | ~51264 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 8 | ~13568 |
+| `src/types/` | 8 | ~14158 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
 | `tests/` | 384 | ~752146 |
@@ -1296,9 +1296,9 @@
 ### `src/types/`
 
 - `canonical.rs` (~182 tok, small) — Copyright 2025 STARGA Inc.
-- `canonical_registry.rs` (~4444 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_tests.rs` (~3021 tok, huge)
-- `canonical_types.rs` (~2580 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_registry.rs` (~4613 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_tests.rs` (~3383 tok, huge)
+- `canonical_types.rs` (~2639 tok, huge) — Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1042 tok, large) — Copyright 2025 STARGA Inc.

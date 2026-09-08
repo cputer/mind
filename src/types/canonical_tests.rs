@@ -389,3 +389,51 @@ fn schema_field_and_zero_extent_controls_are_explicit() {
         SemanticType::FixedArray { extent: 0, .. }
     ));
 }
+
+#[test]
+fn nested_element_limits_survive_dynamic_and_empty_containers() {
+    let fixed = |extent| TypeExpr::FixedArray {
+        element: Box::new(TypeExpr::Scalar(ScalarType::I64)),
+        extent,
+    };
+    let finish = |ty| {
+        let mut builder = SchemaRegistryBuilder::new(RegistryLimits {
+            max_fixed_elements: 4,
+            ..RegistryLimits::default()
+        });
+        builder
+            .add_schema(record(
+                id("pkg", "Owner"),
+                vec![FieldDraft::new("items", ty)],
+            ))
+            .unwrap();
+        builder.finish()
+    };
+    for element in [fixed(5), fixed(3)] {
+        let result = finish(TypeExpr::DynamicArray {
+            element: Box::new(element.clone()),
+        });
+        if matches!(element, TypeExpr::FixedArray { extent: 5, .. }) {
+            assert!(matches!(
+                result,
+                Err(SchemaError::FixedElementLimitExceeded { limit: 4 })
+            ));
+        } else {
+            assert!(result.is_ok()); // descriptor + three elements exactly fills the limit
+        }
+    }
+    assert!(matches!(
+        finish(TypeExpr::FixedArray {
+            element: Box::new(fixed(5)),
+            extent: 0
+        }),
+        Err(SchemaError::FixedElementLimitExceeded { limit: 4 })
+    ));
+    assert!(
+        finish(TypeExpr::FixedArray {
+            element: Box::new(fixed(4)),
+            extent: 0
+        })
+        .is_ok()
+    );
+}

@@ -484,7 +484,7 @@ fn add_fixed_elements(
     limits: &RegistryLimits,
     cumulative: &mut u128,
 ) -> Result<u128, SchemaError> {
-    let elements = descriptor_elements(ty)?;
+    let elements = descriptor_elements(ty, limits)?;
     *cumulative = cumulative
         .checked_add(elements)
         .ok_or(SchemaError::FixedElementOverflow)?;
@@ -496,13 +496,24 @@ fn add_fixed_elements(
     Ok(elements)
 }
 
-fn descriptor_elements(ty: &SemanticType) -> Result<u128, SchemaError> {
-    match ty {
-        SemanticType::Scalar(_)
-        | SemanticType::RecordRef(_)
-        | SemanticType::DynamicArray { .. } => Ok(1),
-        SemanticType::FixedArray { element, extent } => descriptor_elements(element)?
+fn descriptor_elements(ty: &SemanticType, limits: &RegistryLimits) -> Result<u128, SchemaError> {
+    let elements = match ty {
+        SemanticType::Scalar(_) | SemanticType::RecordRef(_) => 1,
+        // Count the descriptor and one element shape, never an unknown runtime
+        // length. A dynamic boundary must not hide an invalid fixed shape.
+        SemanticType::DynamicArray { element } => descriptor_elements(element, limits)?
+            .checked_add(1)
+            .ok_or(SchemaError::FixedElementOverflow)?,
+        SemanticType::FixedArray { element, extent } => descriptor_elements(element, limits)?
             .checked_mul(u128::from(*extent))
-            .ok_or(SchemaError::FixedElementOverflow),
+            .ok_or(SchemaError::FixedElementOverflow)?,
+    };
+    // Validate each shape before its parent multiplies it, including parents
+    // with extent zero. Empty storage does not legalize an invalid element type.
+    if elements > limits.max_fixed_elements {
+        return Err(SchemaError::FixedElementLimitExceeded {
+            limit: limits.max_fixed_elements,
+        });
     }
+    Ok(elements)
 }

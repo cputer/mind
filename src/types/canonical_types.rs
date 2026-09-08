@@ -274,7 +274,10 @@ pub struct RegistryLimits {
     pub max_type_depth: u32,
     /// Maximum extent of one fixed-array descriptor.
     pub max_extent: u64,
-    /// Maximum cumulative logical fixed-array element descriptors.
+    /// Maximum cumulative logical element descriptors. Fixed arrays multiply
+    /// their element shape; dynamic arrays count one descriptor plus one
+    /// element shape, without assuming a runtime length. Every nested shape
+    /// must also fit independently, including inside an empty fixed array.
     pub max_fixed_elements: u128,
     /// Maximum cumulative bytes in logical identity/type descriptor strings.
     pub max_identity_bytes: u64,
