@@ -264,6 +264,7 @@ fn external_intrinsics_lower_to_func_calls_with_private_decls() {
             dst,
             name: name.to_string(),
             args,
+            resolved_callee: None,
         });
         m.instrs.push(Instr::Output(dst));
 

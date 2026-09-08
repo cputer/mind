@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1690 | **Est. tokens:** ~3246322
-**Generated:** 2026-09-08 16:24 UTC
+**Files:** 1690 | **Est. tokens:** ~3246363
+**Generated:** 2026-09-08 16:57 UTC
 
 ## Token Budget Guide
 
@@ -35,7 +35,7 @@
 | `audits/` | 6 | ~607 |
 | `bench/` | 5 | ~7574 |
 | `bench/fft/` | 8 | ~8060 |
-| `benches/` | 28 | ~84219 |
+| `benches/` | 28 | ~84242 |
 | `benches/common/` | 1 | ~668 |
 | `benchmarks/` | 13 | ~28066 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
@@ -130,7 +130,7 @@
 | `src/types/` | 8 | ~17587 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~752276 |
+| `tests/` | 384 | ~752294 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -340,7 +340,7 @@
 - `parser_throughput.rs` (~916 tok, large) — Copyright 2025 STARGA Inc.
 - `shapes.rs` (~1368 tok, large) — Simple broadcasting scenarios
 - `simple_benchmarks.rs` (~794 tok, large) — Mirror mindc's allocator so this compile-speed bench measures the same heap
-- `std_surface.rs` (~1067 tok, large) — Copyright 2025 STARGA Inc.
+- `std_surface.rs` (~1090 tok, large) — Copyright 2025 STARGA Inc.
 ### `benchmarks/`
 
 - `BENCHMARK_RESULTS.md` (~4559 tok, huge) — MIND Benchmark Results
@@ -2211,7 +2211,7 @@
 - `std_surface_bitwise_binops.rs` (~2409 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_bool_return.rs` (~1279 tok, large) — Copyright 2026 STARGA Inc.
 - `std_surface_break_continue.rs` (~1335 tok, large) — Copyright 2026 STARGA Inc.
-- `std_surface_call_lowering.rs` (~1227 tok, large) — Copyright 2025 STARGA Inc.
+- `std_surface_call_lowering.rs` (~1236 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cdylib_link.rs` (~2900 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_cli.rs` (~1007 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_cli_equals_form.rs` (~874 tok, large) — Copyright 2025 STARGA Inc.
@@ -2222,7 +2222,7 @@
 - `std_surface_http.rs` (~4060 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_i32_intrinsics.rs` (~824 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_if_statement.rs` (~3458 tok, huge) — Copyright 2025 STARGA Inc.
-- `std_surface_intrinsics.rs` (~3430 tok, huge) — Copyright 2025 STARGA Inc.
+- `std_surface_intrinsics.rs` (~3439 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_ansi.rs` (~793 tok, large) — Copyright 2025 STARGA Inc.
 - `std_surface_io_canon.rs` (~4912 tok, huge) — Copyright 2025 STARGA Inc.
 - `std_surface_io_module.rs` (~1544 tok, huge) — Copyright 2025 STARGA Inc.

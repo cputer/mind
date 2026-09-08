@@ -62,6 +62,7 @@ fn bench_dense_reduction_throughput(c: &mut Criterion) {
                     dst,
                     name: nm.to_string(),
                     args: vec![a, b, n],
+                    resolved_callee: None,
                 });
                 m.instrs.push(Instr::Output(dst));
                 black_box(lower_ir_to_mlir(black_box(&m)).expect("lower vec dot"))
@@ -87,6 +88,7 @@ fn bench_call_lowering(c: &mut Criterion) {
                         dst,
                         name: format!("__mind_intr_{}", i % 5),
                         args: vec![arg],
+                        resolved_callee: None,
                     });
                     if i + 1 == n {
                         m.instrs.push(Instr::Output(dst));

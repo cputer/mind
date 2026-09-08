@@ -152,6 +152,7 @@ fn inline_intrinsics_reject_tensor_operands_in_every_position() {
                 dst,
                 name: name.into(),
                 args,
+                resolved_callee: None,
             });
             m.instrs.push(Instr::Output(dst));
             let err = lower_ir_to_mlir(&m)

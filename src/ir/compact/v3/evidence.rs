@@ -53,7 +53,7 @@
 //! # Back-compat guarantee
 //!
 //! `emit_mic3` (plain, no evidence) produces zero MAP bytes after the body.
-//! [`parse_mic3_envelope`] accepts either the plain body or one body followed by
+//! [`super::parse_mic3_envelope`] accepts either the plain body or one body followed by
 //! a valid MAP epilogue and requires the whole artifact to be consumed. The
 //! legacy [`super::parse_mic3`] body-prefix API remains suffix-tolerant for
 //! compatibility.
@@ -253,7 +253,7 @@ pub enum SigningKey {
 /// Emit a mic@3 artifact with an embedded `evidence_chain.*` MAP epilogue.
 ///
 /// The `trace_hash` is SHA-256 of the canonical mic@3 bytes (via
-/// [`ir_trace_hash`]) — the RFC-0001 fixed-point encoding that the pipeline
+/// [`crate::ir::ir_trace_hash`]) — the RFC-0001 fixed-point encoding that the pipeline
 /// and self-host already produce, and which carries full function bodies.  The
 /// MAP is appended **after** the mic@3 body so that a reader ignorant of the
 /// epilogue can still parse the IR.
