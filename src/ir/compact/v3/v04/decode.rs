@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
 use crate::ir::compact::v2::zigzag_decode;
@@ -488,7 +489,7 @@ pub(crate) fn parse_v04_prefix(data: &[u8]) -> Result<ParsedMic3Prefix, Mic3Erro
 
     let function_count = input.count(FUNCTION_CHARGE, "function declarations")?;
     let mut function_identities = Vec::with_capacity(function_count);
-    let mut bundle = CanonicalModuleTypes::new(registry);
+    let mut function_declarations = BTreeMap::new();
     for _ in 0..function_count {
         let identity =
             FunctionIdentity::new(input.string_ref(&strings)?, input.string_ref(&strings)?);
@@ -518,9 +519,12 @@ pub(crate) fn parse_v04_prefix(data: &[u8]) -> Result<ParsedMic3Prefix, Mic3Erro
             kind,
             crate::types::FunctionSignature::new(parameters, return_type),
         );
-        bundle
-            .add_declaration(declaration)
-            .map_err(|cause| error(format!("invalid v0x04 function declaration: {cause}")))?;
+        if function_declarations
+            .insert(identity.clone(), declaration)
+            .is_some()
+        {
+            return Err(error("duplicate v0x04 function declaration"));
+        }
         function_identities.push(identity);
     }
 
@@ -566,16 +570,21 @@ pub(crate) fn parse_v04_prefix(data: &[u8]) -> Result<ParsedMic3Prefix, Mic3Erro
         input.require_zero_surface_count(label)?;
     }
     let row_count = input.count(VALUE_ROW_CHARGE, "module semantic values")?;
+    let mut module_values = BTreeMap::new();
     let mut previous = None;
     for _ in 0..row_count {
         let value = input.vid()?;
         require_increasing_value(previous, value, "module semantic values")?;
         previous = Some(value);
         let semantic_type = input.read_semantic_type(&schema_identities, 0)?;
-        bundle
-            .set_module_value_type(value, semantic_type)
-            .map_err(|cause| error(format!("invalid v0x04 module type: {cause}")))?;
+        if module_values.insert(value, semantic_type).is_some() {
+            return Err(error("duplicate v0x04 module semantic value"));
+        }
     }
+
+    let bundle =
+        CanonicalModuleTypes::from_parts_checked(registry, module_values, function_declarations)
+            .map_err(|cause| error(format!("invalid v0x04 canonical parts: {cause}")))?;
 
     let mut module = IRModule::new();
     module.next_id = next_id;

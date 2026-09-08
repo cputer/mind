@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1700 | **Est. tokens:** ~3281336
-**Generated:** 2026-09-08 20:04 UTC
+**Files:** 1700 | **Est. tokens:** ~3282222
+**Generated:** 2026-09-08 21:59 UTC
 
 ## Token Budget Guide
 
@@ -111,8 +111,8 @@
 | `src/ir/` | 8 | ~90766 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
-| `src/ir/compact/v3/` | 13 | ~73076 |
-| `src/ir/compact/v3/v04/` | 3 | ~13618 |
+| `src/ir/compact/v3/` | 13 | ~73690 |
+| `src/ir/compact/v3/v04/` | 3 | ~13696 |
 | `src/lint/` | 2 | ~4001 |
 | `src/lint/rules/` | 6 | ~10017 |
 | `src/mlir/` | 3 | ~6625 |
@@ -128,7 +128,7 @@
 | `src/test/` | 4 | ~14244 |
 | `src/type_checker/` | 14 | ~52067 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 8 | ~17868 |
+| `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
 | `tests/` | 386 | ~758264 |
@@ -1181,12 +1181,12 @@
 - `slhdsa.rs` (~3201 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/v3/v04/`
 
-- `decode.rs` (~6205 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `decode.rs` (~6283 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `encode.rs` (~6147 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mod.rs` (~1266 tok, large) — Copyright 2025-2026 STARGA Inc.
 ### `src/ir/compact/v3/`
 
-- `v04_tests.rs` (~4919 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_tests.rs` (~5533 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/ir/`
 
 - `evidence.rs` (~13387 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1325,7 +1325,7 @@
 - `canonical.rs` (~214 tok, medium) — Copyright 2025 STARGA Inc.
 - `canonical_registry.rs` (~5107 tok, huge) — Copyright 2025 STARGA Inc.
 - `canonical_tests.rs` (~3544 tok, huge)
-- `canonical_types.rs` (~5572 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_types.rs` (~5766 tok, huge) — Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.

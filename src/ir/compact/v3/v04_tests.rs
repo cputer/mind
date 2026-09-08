@@ -524,6 +524,63 @@ fn encoder_refuses_a_body_that_its_fixed_decode_budget_cannot_admit() {
 }
 
 #[test]
+fn decoded_parts_enforce_one_cumulative_descriptor_budget() {
+    fn fixed_product(inner_extent: u64) -> SemanticType {
+        SemanticType::FixedArray {
+            extent: 1 << 20,
+            element: Box::new(SemanticType::FixedArray {
+                extent: inner_extent,
+                element: Box::new(i64_type()),
+            }),
+        }
+    }
+
+    // One function signature and two module rows each contribute 2^38
+    // elements. Their combined 3 * 2^38 cost is below the 2^40 carrier limit.
+    let accepted_type = fixed_product(1 << 18);
+    let registry = SchemaRegistryBuilder::default()
+        .finish()
+        .expect("empty registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    let external = FunctionIdentity::new("dep", "wide");
+    bundle
+        .add_declaration(FunctionDeclaration::new(
+            external,
+            FunctionKind::External,
+            FunctionSignature::new(vec![accepted_type.clone()], None),
+        ))
+        .expect("signature below cumulative limit");
+    let mut module = IRModule::new();
+    for constant in [7, 9] {
+        let value = module.fresh();
+        module.instrs.push(Instr::ConstI64(value, constant));
+        bundle
+            .set_module_value_type(value, accepted_type.clone())
+            .expect("row below cumulative limit");
+    }
+    module.canonical_types = Some(Box::new(bundle));
+    let accepted = emit_mic3_checked(&module).expect("accepted cumulative body");
+    parse_mic3_body(&accepted).expect("staged parts at 3 * 2^38 must decode");
+
+    // Raise only the three inner extents from 2^18 to 2^19. Each descriptor
+    // remains individually legal, while their combined 3 * 2^39 exceeds 2^40.
+    let encoded_accepted_type = [2, 0x80, 0x80, 0x40, 2, 0x80, 0x80, 0x10, 0, 1];
+    let matches: Vec<usize> = accepted
+        .windows(encoded_accepted_type.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == encoded_accepted_type).then_some(offset))
+        .collect();
+    assert_eq!(matches.len(), 3, "one signature plus two module rows");
+    let mut excessive = accepted.clone();
+    for offset in matches {
+        excessive[offset + 7] = 0x20;
+    }
+    let error = parse_mic3_body(&excessive).expect_err("combined descriptor budget must fail");
+    assert!(error.message.contains("fixed-array element count exceeds"));
+    parse_mic3_body(&accepted).expect("positive decode after cumulative refusal");
+}
+
+#[test]
 fn nested_record_descriptors_cycles_and_insertion_order_are_canonical() {
     let forward = emit_mic3_checked(&descriptor_only_module(false)).expect("forward registry");
     let reverse = emit_mic3_checked(&descriptor_only_module(true)).expect("reverse registry");

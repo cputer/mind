@@ -305,9 +305,9 @@ impl FunctionSemanticTypes {
     }
 }
 
-/// The single semantic authority carried by an IR module in B1.  It is
-/// transient until the v0x04 codec exists; callers must use its validation
-/// boundary before attempting to serialize a populated bundle.
+/// The single semantic authority carried by an IR module in B1. The draft
+/// v0x04 codec transports it; source lowering and consumer propagation remain
+/// incomplete. Callers must use its validation boundary before serialization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalModuleTypes {
     schema_registry: SchemaRegistry,
@@ -322,6 +322,24 @@ impl CanonicalModuleTypes {
             module_values: BTreeMap::new(),
             functions: BTreeMap::new(),
         }
+    }
+
+    /// Construct a complete decoded carrier and validate its cumulative
+    /// descriptor budget once. Wire decoders already reject duplicate and
+    /// unsorted rows while staging these maps; this checked seam prevents a
+    /// staged invalid carrier from becoming publicly observable.
+    pub(crate) fn from_parts_checked(
+        schema_registry: SchemaRegistry,
+        module_values: BTreeMap<ValueId, SemanticType>,
+        functions: BTreeMap<FunctionIdentity, FunctionDeclaration>,
+    ) -> Result<Self, SchemaError> {
+        let bundle = Self {
+            schema_registry,
+            module_values,
+            functions,
+        };
+        bundle.validate()?;
+        Ok(bundle)
     }
 
     pub fn schema_registry(&self) -> &SchemaRegistry {
@@ -414,6 +432,7 @@ impl CanonicalModuleTypes {
             self.module_values.values().chain(function_types),
         )?;
         for (identity, declaration) in &self.functions {
+            validate_function_identity(identity)?;
             if identity != declaration.identity() {
                 return Err(SchemaError::FunctionIdentityMismatch {
                     identity: identity.clone(),
