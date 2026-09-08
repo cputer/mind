@@ -4,7 +4,7 @@ Release workflow.
 
 WHY THIS EXISTS
 ---------------
-`.github/workflows/release.yml` publishes signed-for-download binaries for five
+`.github/workflows/release.yml` publishes checksum-bearing binaries for five
 platforms under the project's own name.  Whatever it will build and upload is,
 for every downstream user, "what MIND released".  That makes the set of
 conditions under which it is *allowed to run* a security property, not a

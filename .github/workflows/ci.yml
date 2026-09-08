@@ -95,6 +95,39 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  pqc_hybrid_signing:
+    name: PQC hybrid signing controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pqc-hybrid-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            pqc-hybrid-${{ runner.os }}-
+
+      - name: Execute both-leg positive and non-degradability controls
+        # The script first asks libtest for the exact tests selected by its
+        # prefix, requires the two named controls, then requires both names and
+        # an exact nonzero 2/2 result in the execution output. The tests use only
+        # deterministic TEST seeds embedded in source; no live key is available
+        # to this job.
+        run: python3 scripts/run_gate.py --min-asserted 2 scripts/pqc_hybrid_ci.sh
+
   build_test:
     name: Build & Test
     strategy:
