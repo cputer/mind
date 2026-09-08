@@ -187,3 +187,163 @@ fn cross_module_field_access_runs() {
         String::from_utf8_lossy(&out.stderr),
     );
 }
+
+#[test]
+fn cross_module_return_alias_scope_and_shape_controls() {
+    let mindc = mindc_bin();
+    if !mindc.exists() {
+        crate::common::gate::skipped(
+            "cross_module_return_alias_scope_and_shape_controls",
+            "cross-module-return-alias-controls: mindc not found; skipping",
+        );
+        return;
+    }
+
+    let root = std::env::temp_dir().join(format!(
+        "mind_xmod_return_alias_controls_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("src")).expect("create return-alias project src");
+    std::fs::write(
+        root.join("Mind.toml"),
+        r#"[package]
+name = "return_alias_controls"
+version = "0.1.0"
+
+[build]
+entry = "src/compute.mind"
+output = "return_alias_controls"
+
+[targets.cpu]
+backend = "cpu"
+
+[exports]
+c_abi = ["read"]
+"#,
+    )
+    .expect("write return-alias manifest");
+    std::fs::write(
+        root.join("src").join("types.mind"),
+        "struct Item { value: i64 }\ntype Items = [Item; 2]\npub fn make_items() -> Items { return [Item { value: 11 }, Item { value: 42 }] }\n",
+    )
+    .expect("write defining module");
+    std::fs::write(
+        root.join("src").join("compute.mind"),
+        "use crate.types\ntype Item = i64\npub fn read() -> i64 { return make_items()[1].value }\n",
+    )
+    .expect("write consumer module");
+    let so = root.join("return_alias_controls.so");
+    let out = Command::new(&mindc)
+        .current_dir(&root)
+        .args([
+            "build",
+            "--emit",
+            "cdylib",
+            "--no-cache",
+            "--out",
+            so.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run return-alias project");
+    assert!(
+        out.status.success() && so.is_file(),
+        "defining-owner return schema was reinterpreted:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let py = format!(
+        "import ctypes\n\
+         lib = ctypes.CDLL(r'{}')\n\
+         f = lib.read\n\
+         f.restype = ctypes.c_int64\n\
+         assert f() == 42\n\
+         print('ok')\n",
+        so.to_string_lossy()
+    );
+    let run = Command::new("python3")
+        .args(["-c", &py])
+        .output()
+        .expect("run return-alias shared library");
+    assert!(
+        run.status.success(),
+        "return-alias runtime result was wrong:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // Incompatible imported bare names refuse before duplicate-symbol linking.
+    let ambiguous = root.join("ambiguous");
+    std::fs::create_dir_all(ambiguous.join("src")).expect("create ambiguity project src");
+    std::fs::write(
+        ambiguous.join("Mind.toml"),
+        r#"[package]
+name = "return_shape_ambiguity"
+version = "0.1.0"
+
+[build]
+entry = "src/compute.mind"
+output = "return_shape_ambiguity"
+
+[targets.cpu]
+backend = "cpu"
+
+[exports]
+c_abi = ["read"]
+"#,
+    )
+    .expect("write ambiguity manifest");
+    std::fs::write(
+        ambiguous.join("src").join("array.mind"),
+        "struct Item { value: i64 }\npub fn make_items() -> [Item; 2] { return [Item { value: 11 }, Item { value: 42 }] }\n",
+    )
+    .expect("write array owner");
+    std::fs::write(
+        ambiguous.join("src").join("scalar.mind"),
+        "pub fn make_items() -> i64 { return 7 }\n",
+    )
+    .expect("write scalar owner");
+    std::fs::write(
+        ambiguous.join("src").join("compute.mind"),
+        "use crate.array\nuse crate.scalar\npub fn read() -> i64 { return make_items()[1].value }\n",
+    )
+    .expect("write ambiguity consumer");
+    let ambiguous_so = ambiguous.join("return_shape_ambiguity.so");
+    let out = Command::new(&mindc)
+        .current_dir(&ambiguous)
+        .args([
+            "build",
+            "--emit",
+            "cdylib",
+            "--no-cache",
+            "--out",
+            ambiguous_so.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run imported return-shape ambiguity");
+    let rendered = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "ambiguous imported return compiled: {rendered}"
+    );
+    assert!(
+        rendered.contains("E6009"),
+        "ambiguity lost structured refusal: {rendered}"
+    );
+    assert!(
+        !rendered.contains("duplicate symbol"),
+        "ambiguity reached linker: {rendered}"
+    );
+    assert!(
+        !rendered.contains("panicked at"),
+        "ambiguity panicked: {rendered}"
+    );
+    assert!(
+        !ambiguous_so.exists(),
+        "ambiguous imported return emitted an artifact"
+    );
+}

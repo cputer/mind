@@ -104,6 +104,8 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
     let mut fn_array_returns: HashMap<String, TypeAnn> = HashMap::new();
     let mut ambiguous_array_returns: HashSet<String> = HashSet::new();
     let mut local_fn_names: HashSet<String> = HashSet::new();
+    #[cfg(all(feature = "std-surface", feature = "cross-module-imports"))]
+    let mut imported_return_schemas: HashMap<String, Option<TypeAnn>> = HashMap::new();
     for item in &module.items {
         match item {
             Node::StructDef { name, fields, .. } => {
@@ -214,13 +216,16 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     .or_insert_with(|| t.to_string());
             }
             if !local_fn_names.contains(fname) {
-                let resolved_rt = crate::eval::type_aliases::resolve_active(rt);
-                if declared_array_element_named(&resolved_rt).is_some() {
+                // Global return metadata was resolved in the defining module
+                // by `build_global_enums`; applying the consumer aliases here
+                // would reinterpret a defining `Item` as the consumer's
+                // same-named scalar alias.
+                if declared_array_element_named(rt).is_some() {
                     insert_unique_array_return(
                         &mut fn_array_returns,
                         &mut ambiguous_array_returns,
                         fname,
-                        resolved_rt,
+                        rt.clone(),
                     );
                 }
             }
@@ -232,15 +237,30 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
         if local_fn_names.contains(&fname) {
             continue;
         }
-        if let Some(rt) = ret {
-            let resolved_rt = crate::eval::type_aliases::resolve_active(&rt);
-            if declared_array_element_named(&resolved_rt).is_some() {
-                insert_unique_array_return(
-                    &mut fn_array_returns,
-                    &mut ambiguous_array_returns,
-                    &fname,
-                    resolved_rt,
-                );
+        // `cm_all_imported_fn_signatures` publishes owner-resolved types from
+        // the module table. Keep them in that owner scope; resolving again
+        // under the consumer aliases can turn `[Item; N]` into `[i64; N]`.
+        // Record every return shape, including scalar/no-return shapes, so a
+        // duplicate imported bare name cannot silently select its array
+        // declaration when another owner publishes a conflicting scalar.
+        if let Some(previous) = imported_return_schemas.get(&fname) {
+            if previous != &ret {
+                fn_array_returns.remove(&fname);
+                ambiguous_array_returns.insert(fname.clone());
+            }
+        } else {
+            imported_return_schemas.insert(fname.clone(), ret.clone());
+        }
+        if !ambiguous_array_returns.contains(&fname) {
+            if let Some(rt) = ret {
+                if declared_array_element_named(&rt).is_some() {
+                    insert_unique_array_return(
+                        &mut fn_array_returns,
+                        &mut ambiguous_array_returns,
+                        &fname,
+                        rt,
+                    );
+                }
             }
         }
     }

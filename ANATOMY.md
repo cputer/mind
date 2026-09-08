@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1675 | **Est. tokens:** ~3210881
-**Generated:** 2026-09-08 11:17 UTC
+**Files:** 1675 | **Est. tokens:** ~3212367
+**Generated:** 2026-09-08 11:28 UTC
 
 ## Token Budget Guide
 
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14085 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 29 | ~123035 |
+| `src/eval/` | 29 | ~123320 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~750960 |
+| `tests/` | 384 | ~752161 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1109,7 +1109,7 @@
 ### `src/eval/`
 
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
-- `struct_resolver.rs` (~9189 tok, huge) — Copyright 2025 STARGA Inc.
+- `struct_resolver.rs` (~9474 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
 - `type_aliases.rs` (~2114 tok, huge) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1438,7 +1438,7 @@
 - `cross_module.rs` (~1332 tok, large) — Copyright 2025 STARGA Inc.
 - `cross_module_cdylib_compose.rs` (~4092 tok, huge) — Copyright 2025 STARGA Inc.
 - `cross_module_enum_run.rs` (~1089 tok, large) — Copyright 2025 STARGA Inc.
-- `cross_module_field_access_run.rs` (~1745 tok, huge) — Copyright 2025 STARGA Inc.
+- `cross_module_field_access_run.rs` (~2946 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/cross_substrate_identity/`
 
 - `README.md` (~1280 tok, large) — cross_substrate_identity — the internal mind-bench reproducibility gate
