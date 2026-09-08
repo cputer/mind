@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1695 | **Est. tokens:** ~3257450
-**Generated:** 2026-09-08 17:34 UTC
+**Files:** 1695 | **Est. tokens:** ~3259040
+**Generated:** 2026-09-08 18:56 UTC
 
 ## Token Budget Guide
 
@@ -130,7 +130,7 @@
 | `src/types/` | 8 | ~17587 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 386 | ~756674 |
+| `tests/` | 386 | ~758264 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1466,7 +1466,7 @@
 - `cross_module.rs` (~1332 tok, large) — Copyright 2025 STARGA Inc.
 - `cross_module_cdylib_compose.rs` (~4092 tok, huge) — Copyright 2025 STARGA Inc.
 - `cross_module_enum_run.rs` (~1089 tok, large) — Copyright 2025 STARGA Inc.
-- `cross_module_field_access_run.rs` (~2940 tok, huge) — Copyright 2025 STARGA Inc.
+- `cross_module_field_access_run.rs` (~4530 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/cross_substrate_identity/`
 
 - `README.md` (~1280 tok, large) — cross_substrate_identity — the internal mind-bench reproducibility gate

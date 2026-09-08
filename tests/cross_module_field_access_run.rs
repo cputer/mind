@@ -306,6 +306,29 @@ c_abi = ["read"]
     )
     .expect("write ambiguity consumer");
     let ambiguous_so = ambiguous.join("return_shape_ambiguity.so");
+    let check = Command::new(&mindc)
+        .current_dir(&ambiguous)
+        .args(["check", "src/compute.mind"])
+        .output()
+        .expect("check imported return-shape ambiguity");
+    let checked = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(
+        !check.status.success(),
+        "ambiguous check succeeded: {checked}"
+    );
+    assert!(
+        checked.contains("E2003"),
+        "ambiguous check lost E2003: {checked}"
+    );
+    assert!(
+        checked.contains("make_items"),
+        "ambiguous check did not identify the offending call: {checked}"
+    );
+
     let out = Command::new(&mindc)
         .current_dir(&ambiguous)
         .args([
@@ -328,8 +351,12 @@ c_abi = ["read"]
         "ambiguous imported return compiled: {rendered}"
     );
     assert!(
-        rendered.contains("E6009"),
-        "ambiguity lost structured refusal: {rendered}"
+        rendered.contains("E2003"),
+        "ambiguity lost the documented E2003 refusal: {rendered}"
+    );
+    assert!(
+        rendered.contains("make_items"),
+        "ambiguity emit did not identify the offending call: {rendered}"
     );
     assert!(
         !rendered.contains("duplicate symbol"),
@@ -342,5 +369,173 @@ c_abi = ["read"]
     assert!(
         !ambiguous_so.exists(),
         "ambiguous imported return emitted an artifact"
+    );
+
+    // The same ambiguous bare function must remain a type-check refusal when
+    // its result first flows through a local alias. This guards against a
+    // direct-shape-only exception being widened into a successful ABI choice.
+    std::fs::write(
+        ambiguous.join("src").join("compute.mind"),
+        "use crate.array\nuse crate.scalar\npub fn read() -> i64 { let xs = make_items(); return xs[1].value }\n",
+    )
+    .expect("write aliased ambiguity consumer");
+    let check = Command::new(&mindc)
+        .current_dir(&ambiguous)
+        .args(["check", "src/compute.mind"])
+        .output()
+        .expect("check aliased return-shape ambiguity");
+    let checked = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(
+        !check.status.success(),
+        "aliased ambiguity check succeeded: {checked}"
+    );
+    assert!(
+        checked.contains("E2003"),
+        "aliased ambiguity lost E2003: {checked}"
+    );
+    assert!(
+        checked.contains("make_items"),
+        "aliased ambiguity check did not identify the offending call: {checked}"
+    );
+    let aliased_so = ambiguous.join("aliased-return-shape-ambiguity.so");
+    let emit = Command::new(&mindc)
+        .current_dir(&ambiguous)
+        .args([
+            "build",
+            "--emit",
+            "cdylib",
+            "--no-cache",
+            "--out",
+            aliased_so.to_str().unwrap(),
+        ])
+        .output()
+        .expect("emit aliased return-shape ambiguity");
+    let emitted = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&emit.stdout),
+        String::from_utf8_lossy(&emit.stderr)
+    );
+    assert!(
+        !emit.status.success(),
+        "aliased ambiguity emit succeeded: {emitted}"
+    );
+    assert!(
+        emitted.contains("E2003"),
+        "aliased ambiguity emit lost E2003: {emitted}"
+    );
+    assert!(
+        emitted.contains("make_items"),
+        "aliased ambiguity emit did not identify the offending call: {emitted}"
+    );
+    assert!(
+        !emitted.contains("duplicate symbol"),
+        "aliased ambiguity reached linker: {emitted}"
+    );
+    assert!(
+        !aliased_so.exists(),
+        "aliased ambiguity emitted an artifact"
+    );
+
+    // Equal return annotations do not make two defining owners one owner.
+    // Their Item schemas intentionally differ, so a resolver comparing only
+    // the consumer-visible `[Item; 1]` text must still fail closed at E2003.
+    let same_shape = root.join("same-shape-ambiguity");
+    std::fs::create_dir_all(same_shape.join("src")).expect("create same-shape project src");
+    std::fs::write(
+        same_shape.join("Mind.toml"),
+        r#"[package]
+name = "same_shape_ambiguity"
+version = "0.1.0"
+
+[build]
+entry = "src/compute.mind"
+output = "same_shape_ambiguity"
+
+[targets.cpu]
+backend = "cpu"
+
+[exports]
+c_abi = ["read"]
+"#,
+    )
+    .expect("write same-shape manifest");
+    std::fs::write(
+        same_shape.join("src").join("left.mind"),
+        "struct Item { value: i64 }\npub fn make_items() -> [Item; 1] { return [Item { value: 11 }] }\n",
+    )
+    .expect("write left same-shape owner");
+    std::fs::write(
+        same_shape.join("src").join("right.mind"),
+        "struct Item { other: i64 }\npub fn make_items() -> [Item; 1] { return [Item { other: 99 }] }\n",
+    )
+    .expect("write right same-shape owner");
+    std::fs::write(
+        same_shape.join("src").join("compute.mind"),
+        "use crate.left\nuse crate.right\npub fn read() -> i64 { return make_items()[0].value }\n",
+    )
+    .expect("write same-shape ambiguity consumer");
+    let check = Command::new(&mindc)
+        .current_dir(&same_shape)
+        .args(["check", "src/compute.mind"])
+        .output()
+        .expect("check same-shape ambiguity");
+    let checked = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(
+        !check.status.success(),
+        "same-shape ambiguity check succeeded: {checked}"
+    );
+    assert!(
+        checked.contains("E2003"),
+        "same-shape ambiguity lost E2003: {checked}"
+    );
+    assert!(
+        checked.contains("make_items"),
+        "same-shape check did not identify the offending call: {checked}"
+    );
+    let same_shape_so = same_shape.join("same_shape_ambiguity.so");
+    let emit = Command::new(&mindc)
+        .current_dir(&same_shape)
+        .args([
+            "build",
+            "--emit",
+            "cdylib",
+            "--no-cache",
+            "--out",
+            same_shape_so.to_str().unwrap(),
+        ])
+        .output()
+        .expect("emit same-shape ambiguity");
+    let emitted = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&emit.stdout),
+        String::from_utf8_lossy(&emit.stderr)
+    );
+    assert!(
+        !emit.status.success(),
+        "same-shape ambiguity emit succeeded: {emitted}"
+    );
+    assert!(
+        emitted.contains("E2003"),
+        "same-shape ambiguity emit lost E2003: {emitted}"
+    );
+    assert!(
+        emitted.contains("make_items"),
+        "same-shape emit did not identify the offending call: {emitted}"
+    );
+    assert!(
+        !emitted.contains("duplicate symbol"),
+        "same-shape ambiguity reached linker: {emitted}"
+    );
+    assert!(
+        !same_shape_so.exists(),
+        "same-shape ambiguity emitted an artifact"
     );
 }
