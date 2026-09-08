@@ -42252,7 +42252,9 @@ pub fn selftest_native_elf_hb_from_tokens(tokens: Vec, src_addr: i64, hash_addr:
     // before native lowering.  Parameter metadata alone resolves ABI widths;
     // local alias bindings (including value-if initializers) need the same
     // exact-span walk so their declaration width reaches nb_width_of_ann.
-    let alias_rc: i64 = alias_annotate_call_module(src_addr, alias_status, frt, items_addr, items_len, 0);
+    // `ordered`/`n_fns` is the pruned emission set; using it here keeps an
+    // unreachable function's alias budget from refusing the whole module.
+    let alias_rc: i64 = alias_annotate_call_module(src_addr, alias_status, frt, ordered, n_fns, 0);
     if alias_rc == alias_env_refusal() {
         return es_new();
     }

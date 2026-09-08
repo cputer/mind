@@ -136,6 +136,20 @@ CASES = [
         "}\nfn main() -> i64 { return compute(1); }\n",
         0,
     ),
+    (
+        "called_and_uncalled_alias_isolation",
+        "type Byte = i8;\n"
+        "fn unused() -> i64 {\n"
+        "    let hidden: Byte = if 1 == 1 { 300 } else { 300 };\n"
+        "    if hidden > 255 { return 99; }\n"
+        "    return 98;\n"
+        "}\n"
+        "fn compute() -> i64 {\n"
+        "    let visible: Byte = if 1 == 1 { 7 } else { 7 };\n"
+        "    return visible;\n"
+        "}\nfn main() -> i64 { return compute(); }\n",
+        7,
+    ),
 ]
 
 
