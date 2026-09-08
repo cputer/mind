@@ -26,6 +26,12 @@ pub mod infer;
 pub mod intern;
 pub mod value;
 
+pub use canonical::{
+    AliasIdentity, CanonicalField, CanonicalModuleTypes, CanonicalSchema, FieldDraft,
+    FunctionDeclaration, FunctionIdentity, FunctionKind, FunctionSemanticTypes, FunctionSignature,
+    RegistryLimits, ScalarType, SchemaDraft, SchemaError, SchemaId, SchemaIdentity, SchemaRegistry,
+    SchemaRegistryBuilder, SemanticType, TypeExpr,
+};
 pub use infer::*;
 pub use value::ValueType;
 

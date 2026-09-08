@@ -1,7 +1,7 @@
 use crate::eval::value::Value;
 use crate::eval::{ExecMode, eval_module_value_with_env_mode};
 use crate::ir::IRModule;
-use crate::ir::compact::v3::{emit_mic3, parse_mic3};
+use crate::ir::compact::v3::{emit_mic3_checked, parse_mic3_body};
 use crate::pipeline::{CompileOptions, compile_source};
 use crate::runtime::types::BackendTarget;
 
@@ -364,10 +364,12 @@ pub fn run_value_oracle(source: &str, ir: &IRModule) -> Result<Value, String> {
     //     survive emit -> parse -> emit unchanged. A codec or lowering
     //     regression that perturbs the artifact fails here instead of being
     //     invisible to a value-only check.
-    let bytes = emit_mic3(ir);
-    let recovered = parse_mic3(&bytes)
+    let bytes = emit_mic3_checked(ir)
+        .map_err(|err| format!("canonical mic@3 artifact emission failed: {err}"))?;
+    let recovered = parse_mic3_body(&bytes)
         .map_err(|err| format!("canonical mic@3 artifact does not parse back: {err:?}"))?;
-    let reemitted = emit_mic3(&recovered);
+    let reemitted = emit_mic3_checked(&recovered)
+        .map_err(|err| format!("canonical mic@3 artifact re-emission failed: {err}"))?;
     if reemitted != bytes {
         return Err(format!(
             "canonical mic@3 artifact is not a fixed point: {} bytes emitted, \

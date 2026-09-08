@@ -91,11 +91,11 @@ pub(super) fn lower_field_access(
             sum
         };
         let loaded = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: loaded,
-            name: "__mind_load_i64".to_string(),
-            args: vec![elem_addr],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            loaded,
+            "__mind_load_i64".to_string(),
+            vec![elem_addr],
+        ));
         return mask_narrow_let(ir, &Some(elements[idx].clone()), loaded);
     }
     // `array<T>` length: `arr.len` / `arr.length` (no parens) on a
@@ -123,11 +123,8 @@ pub(super) fn lower_field_access(
             if let Some(len_fn) = len_fn {
                 let recv_id = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst,
-                    name: len_fn.to_string(),
-                    args: vec![recv_id],
-                });
+                ir.instrs
+                    .push(Instr::legacy_call(dst, len_fn.to_string(), vec![recv_id]));
                 return dst;
             }
         }
@@ -244,18 +241,18 @@ pub(super) fn lower_field_access(
                         sum
                     };
                     let bits = ir.fresh();
-                    ir.instrs.push(Instr::Call {
-                        dst: bits,
-                        name: "__mind_load_i64".to_string(),
-                        args: vec![cell_addr],
-                    });
+                    ir.instrs.push(Instr::legacy_call(
+                        bits,
+                        "__mind_load_i64".to_string(),
+                        vec![cell_addr],
+                    ));
                     let item = if fixed_array_cell_bits_ty(&element) {
                         let decoded = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: decoded,
-                            name: "__mind_bits_to_f64".to_string(),
-                            args: vec![bits],
-                        });
+                        ir.instrs.push(Instr::legacy_call(
+                            decoded,
+                            "__mind_bits_to_f64".to_string(),
+                            vec![bits],
+                        ));
                         decoded
                     } else {
                         bits
@@ -274,11 +271,11 @@ pub(super) fn lower_field_access(
                 return current;
             }
             let loaded = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: loaded,
-                name: load_helper_for_width(width).to_string(),
-                args: vec![field_addr],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                loaded,
+                load_helper_for_width(width).to_string(),
+                vec![field_addr],
+            ));
             // The typed load zero-extends; a SIGNED narrow field needs a
             // sign-extend (shl then arithmetic shr by 64-bits). i64 and
             // unsigned/bool fields use the zero-extended value directly,
@@ -414,11 +411,11 @@ pub(super) fn lower_field_assign(
             }
             let rhs = lower_expr(value, ir, env, struct_env, receiver_types, context);
             let store_ret = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: store_ret,
-                name: store_helper_for_width(width).to_string(),
-                args: vec![field_addr, rhs],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                store_ret,
+                store_helper_for_width(width).to_string(),
+                vec![field_addr, rhs],
+            ));
             // A field assignment is a statement; the store's return
             // (unit) id is the value this expression yields.
             store_ret

@@ -173,6 +173,8 @@ fn vararg_f32_hint_promotes_to_f64_in_mlir() {
         dst,
         name: "log_float".to_string(),
         args: vec![fmt, float_arg],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 
@@ -217,6 +219,8 @@ fn win64_extern_decl_emits_cconv_attribute() {
         dst,
         name: "win_api_fn".to_string(),
         args: vec![arg],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 
@@ -257,6 +261,8 @@ fn sysv_extern_decl_has_no_cconv_attribute() {
         dst,
         name: "posix_fn".to_string(),
         args: vec![arg],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 

@@ -630,11 +630,7 @@ mod tests {
     }
 
     fn call(name: &str) -> Instr {
-        Instr::Call {
-            dst: ValueId(1),
-            name: name.into(),
-            args: vec![ValueId(0)],
-        }
+        Instr::legacy_call(ValueId(1), name, vec![ValueId(0)])
     }
 
     #[test]
@@ -755,6 +751,7 @@ mod tests {
                 ret_id: None,
                 body: vec![call("cos")],
                 reap_threshold: None,
+                semantic_types: None,
                 #[cfg(feature = "std-surface")]
                 value_types: std::collections::BTreeMap::new(),
             },
@@ -861,6 +858,7 @@ mod tests {
                 lanes: 8,
             }],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         }]);
@@ -1134,11 +1132,7 @@ mod tests {
         // break of `--require-strict-fp`). The `collect_extern_float_rets`
         // pre-pass makes the taint set order-independent.
         let m = module_with(vec![
-            Instr::Call {
-                dst: ValueId(2),
-                name: "libm_pow".to_string(),
-                args: vec![ValueId(0), ValueId(1)],
-            },
+            Instr::legacy_call(ValueId(2), "libm_pow", vec![ValueId(0), ValueId(1)]),
             Instr::ExternFnDecl {
                 name: "libm_pow".to_string(),
                 param_types: vec!["f64".to_string(), "f64".to_string()],
@@ -1166,11 +1160,11 @@ mod tests {
             Instr::While {
                 cond_id: ValueId(9),
                 cond_instrs: vec![],
-                body: vec![Instr::Call {
-                    dst: ValueId(3),
-                    name: "libm_pow".to_string(),
-                    args: vec![ValueId(0), ValueId(1)],
-                }],
+                body: vec![Instr::legacy_call(
+                    ValueId(3),
+                    "libm_pow",
+                    vec![ValueId(0), ValueId(1)],
+                )],
                 live_vars: vec![],
                 init_ids: vec![],
                 exit_ids: vec![],
@@ -1194,11 +1188,7 @@ mod tests {
         // not a taint source even when declared after its caller — the pre-pass
         // must collect only f32/f64-RETURN decls, exactly like the old walk.
         let m = module_with(vec![
-            Instr::Call {
-                dst: ValueId(2),
-                name: "print_f64".to_string(),
-                args: vec![ValueId(0)],
-            },
+            Instr::legacy_call(ValueId(2), "print_f64", vec![ValueId(0)]),
             Instr::ExternFnDecl {
                 name: "print_f64".to_string(),
                 param_types: vec!["f64".to_string()],

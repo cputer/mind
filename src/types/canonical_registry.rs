@@ -35,6 +35,55 @@ impl SchemaRegistry {
     }
 }
 
+/// Validate a semantic descriptor with the same shape and element accounting
+/// used while freezing schemas.  B1 value and function metadata must not grow
+/// a second, weaker validator: in particular, zero outer extents still visit
+/// their element shape and dynamic boundaries charge their descriptor node.
+/// The returned count is the descriptor's logical element cost; callers that
+/// admit several descriptors may add it to their scope-specific total.
+pub(crate) fn validate_semantic_descriptor(
+    ty: &SemanticType,
+    schemas: &SchemaRegistry,
+) -> Result<u128, SchemaError> {
+    validate_semantic_shape(ty, schemas, 0)?;
+    descriptor_elements(ty, &schemas.limits())
+}
+
+fn validate_semantic_shape(
+    ty: &SemanticType,
+    schemas: &SchemaRegistry,
+    depth: u32,
+) -> Result<(), SchemaError> {
+    if depth > schemas.limits().max_type_depth {
+        return Err(SchemaError::TypeDepthExceeded {
+            limit: schemas.limits().max_type_depth,
+        });
+    }
+    match ty {
+        SemanticType::Scalar(_) => Ok(()),
+        SemanticType::RecordRef(identity) => {
+            schemas
+                .schema(identity)
+                .map(|_| ())
+                .ok_or_else(|| SchemaError::UnknownSemanticSchema {
+                    identity: identity.clone(),
+                })
+        }
+        SemanticType::FixedArray { element, extent } => {
+            if *extent > schemas.limits().max_extent {
+                return Err(SchemaError::ExtentLimitExceeded {
+                    extent: *extent,
+                    limit: schemas.limits().max_extent,
+                });
+            }
+            validate_semantic_shape(element, schemas, depth + 1)
+        }
+        SemanticType::DynamicArray { element } => {
+            validate_semantic_shape(element, schemas, depth + 1)
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SchemaRegistryBuilder {
     limits: RegistryLimits,

@@ -17,9 +17,13 @@
 //! populates it yet.  The builder resolves aliases while defining ownership is
 //! still explicit, then freezes a deterministic schema table for later slices.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use thiserror::Error;
+
+use super::canonical_registry::{self, SchemaRegistry};
+use crate::ir::ValueId;
 
 /// A logical declaration identity.  `owner` is a resolver-provided logical
 /// module/package owner, never a filesystem path or a caller's import alias.
@@ -147,6 +151,278 @@ pub enum SemanticType {
     DynamicArray {
         element: Box<SemanticType>,
     },
+}
+
+/// Logical identity of a function declaration.  The owner is supplied by the
+/// resolver and is independent of import aliases, source paths, traversal
+/// order, and backend symbol spelling.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FunctionIdentity {
+    owner: String,
+    name: String,
+    type_args: Vec<String>,
+}
+
+impl FunctionIdentity {
+    pub fn new(owner: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            owner: owner.into(),
+            name: name.into(),
+            type_args: Vec::new(),
+        }
+    }
+
+    pub fn with_type_args<I, S>(mut self, type_args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.type_args = type_args.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn type_args(&self) -> &[String] {
+        &self.type_args
+    }
+}
+
+impl fmt::Display for FunctionIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.owner, self.name)?;
+        if !self.type_args.is_empty() {
+            write!(f, "<{}>", self.type_args.join(","))?;
+        }
+        Ok(())
+    }
+}
+
+/// Canonical signature for a function declaration or external declaration.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FunctionSignature {
+    params: Vec<SemanticType>,
+    return_type: Option<SemanticType>,
+}
+
+impl FunctionSignature {
+    pub fn new(params: Vec<SemanticType>, return_type: Option<SemanticType>) -> Self {
+        Self {
+            params,
+            return_type,
+        }
+    }
+
+    pub fn params(&self) -> &[SemanticType] {
+        &self.params
+    }
+
+    pub fn return_type(&self) -> Option<&SemanticType> {
+        self.return_type.as_ref()
+    }
+}
+
+/// The declaration authority for a logical function identity.  The kind is
+/// explicit so intrinsic handling never depends on a spelling prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FunctionKind {
+    Local,
+    External,
+    Intrinsic,
+}
+
+/// One canonical declaration.  Signatures live here, once, rather than being
+/// duplicated in every function body carrier.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FunctionDeclaration {
+    identity: FunctionIdentity,
+    kind: FunctionKind,
+    signature: FunctionSignature,
+}
+
+impl FunctionDeclaration {
+    pub fn new(
+        identity: FunctionIdentity,
+        kind: FunctionKind,
+        signature: FunctionSignature,
+    ) -> Self {
+        Self {
+            identity,
+            kind,
+            signature,
+        }
+    }
+
+    pub fn identity(&self) -> &FunctionIdentity {
+        &self.identity
+    }
+
+    pub fn kind(&self) -> FunctionKind {
+        self.kind
+    }
+
+    pub fn signature(&self) -> &FunctionSignature {
+        &self.signature
+    }
+}
+
+/// Semantic metadata co-located with one function body.  Value IDs are local
+/// to this function scope; two functions may therefore both contain `%0`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionSemanticTypes {
+    identity: FunctionIdentity,
+    values: BTreeMap<ValueId, SemanticType>,
+}
+
+impl FunctionSemanticTypes {
+    pub fn new(identity: FunctionIdentity) -> Self {
+        Self {
+            identity,
+            values: BTreeMap::new(),
+        }
+    }
+
+    pub fn identity(&self) -> &FunctionIdentity {
+        &self.identity
+    }
+
+    pub fn values(&self) -> &BTreeMap<ValueId, SemanticType> {
+        &self.values
+    }
+
+    pub fn set_value_type(&mut self, value: ValueId, ty: SemanticType) -> Result<(), SchemaError> {
+        if self.values.contains_key(&value) {
+            return Err(SchemaError::DuplicateValueType { value });
+        }
+        self.values.insert(value, ty);
+        Ok(())
+    }
+}
+
+/// The single semantic authority carried by an IR module in B1.  It is
+/// transient until the v0x04 codec exists; callers must use its validation
+/// boundary before attempting to serialize a populated bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalModuleTypes {
+    schema_registry: SchemaRegistry,
+    module_values: BTreeMap<ValueId, SemanticType>,
+    functions: BTreeMap<FunctionIdentity, FunctionDeclaration>,
+}
+
+impl CanonicalModuleTypes {
+    pub fn new(schema_registry: SchemaRegistry) -> Self {
+        Self {
+            schema_registry,
+            module_values: BTreeMap::new(),
+            functions: BTreeMap::new(),
+        }
+    }
+
+    pub fn schema_registry(&self) -> &SchemaRegistry {
+        &self.schema_registry
+    }
+
+    pub fn module_values(&self) -> &BTreeMap<ValueId, SemanticType> {
+        &self.module_values
+    }
+
+    pub fn functions(&self) -> &BTreeMap<FunctionIdentity, FunctionDeclaration> {
+        &self.functions
+    }
+
+    /// Whether this carrier contains any semantic authority.  An empty
+    /// optional bundle is equivalent to the legacy `None` state and does not
+    /// require a newer wire version.
+    pub fn is_empty(&self) -> bool {
+        self.schema_registry.schemas().is_empty()
+            && self.module_values.is_empty()
+            && self.functions.is_empty()
+    }
+
+    pub fn set_module_value_type(
+        &mut self,
+        value: ValueId,
+        ty: SemanticType,
+    ) -> Result<(), SchemaError> {
+        if self.module_values.contains_key(&value) {
+            return Err(SchemaError::DuplicateValueType { value });
+        }
+        validate_descriptor_budget(
+            &self.schema_registry,
+            self.module_values.values().chain(std::iter::once(&ty)),
+        )?;
+        self.module_values.insert(value, ty);
+        Ok(())
+    }
+
+    /// Validate a function-local semantic value against the same registry
+    /// shape authority used for module values and frozen schemas.
+    pub(crate) fn validate_value_type(&self, ty: &SemanticType) -> Result<u128, SchemaError> {
+        canonical_registry::validate_semantic_descriptor(ty, &self.schema_registry)
+    }
+
+    pub fn add_declaration(&mut self, declaration: FunctionDeclaration) -> Result<(), SchemaError> {
+        let identity = declaration.identity.clone();
+        validate_function_identity(&identity)?;
+        validate_function_declaration(&declaration)?;
+        if self.functions.contains_key(&identity) {
+            return Err(SchemaError::DuplicateFunction { identity });
+        }
+        let existing_functions = self.functions.values().flat_map(|declaration| {
+            declaration
+                .signature
+                .params()
+                .iter()
+                .chain(declaration.signature.return_type())
+        });
+        let candidate_types = declaration
+            .signature
+            .params()
+            .iter()
+            .chain(declaration.signature.return_type());
+        if validate_descriptor_budget(
+            &self.schema_registry,
+            self.module_values
+                .values()
+                .chain(existing_functions)
+                .chain(candidate_types),
+        )
+        .is_err()
+        {
+            return Err(SchemaError::InvalidFunctionType { identity });
+        }
+        self.functions.insert(identity, declaration);
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        let function_types = self.functions.values().flat_map(|declaration| {
+            declaration
+                .signature
+                .params()
+                .iter()
+                .chain(declaration.signature.return_type())
+        });
+        validate_descriptor_budget(
+            &self.schema_registry,
+            self.module_values.values().chain(function_types),
+        )?;
+        for (identity, declaration) in &self.functions {
+            if identity != declaration.identity() {
+                return Err(SchemaError::FunctionIdentityMismatch {
+                    identity: identity.clone(),
+                });
+            }
+            validate_function_declaration(declaration)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -342,4 +618,82 @@ pub enum SchemaError {
     AliasLimitExceeded { limit: u64 },
     #[error("logical identity bytes exceed {limit}")]
     IdentityBytesExceeded { limit: u64 },
+    #[error("empty function identity component: {kind}")]
+    EmptyFunctionIdentity { kind: &'static str },
+    #[error("path-like function identity component: {value}")]
+    PathLikeFunctionIdentity { value: String },
+    #[error("unsupported generic function identity: {identity}")]
+    UnsupportedFunctionTypeArguments { identity: FunctionIdentity },
+    #[error("duplicate function identity: {identity}")]
+    DuplicateFunction { identity: FunctionIdentity },
+    #[error("intrinsic declaration uses a non-reserved identity: {identity}")]
+    InvalidIntrinsicIdentity { identity: FunctionIdentity },
+    #[error("function identity does not match its registry key: {identity}")]
+    FunctionIdentityMismatch { identity: FunctionIdentity },
+    #[error("invalid semantic type in function {identity}")]
+    InvalidFunctionType { identity: FunctionIdentity },
+    #[error("semantic type references an unknown schema: {identity}")]
+    UnknownSemanticSchema { identity: SchemaIdentity },
+    #[error("duplicate canonical type for value {value}")]
+    DuplicateValueType { value: ValueId },
+}
+
+fn validate_function_identity(identity: &FunctionIdentity) -> Result<(), SchemaError> {
+    if identity.owner.is_empty() {
+        return Err(SchemaError::EmptyFunctionIdentity { kind: "owner" });
+    }
+    if identity.name.is_empty() {
+        return Err(SchemaError::EmptyFunctionIdentity { kind: "name" });
+    }
+    for component in [&identity.owner, &identity.name] {
+        if component.contains('/') || component.contains('\\') || component.contains("..") {
+            return Err(SchemaError::PathLikeFunctionIdentity {
+                value: component.to_string(),
+            });
+        }
+    }
+    if !identity.type_args.is_empty() {
+        return Err(SchemaError::UnsupportedFunctionTypeArguments {
+            identity: identity.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_function_declaration(declaration: &FunctionDeclaration) -> Result<(), SchemaError> {
+    let reserved_owner = "__mind_intrinsic";
+    match declaration.kind {
+        FunctionKind::Intrinsic if declaration.identity.owner != reserved_owner => {
+            Err(SchemaError::InvalidIntrinsicIdentity {
+                identity: declaration.identity.clone(),
+            })
+        }
+        FunctionKind::Local | FunctionKind::External
+            if declaration.identity.owner == reserved_owner =>
+        {
+            Err(SchemaError::InvalidIntrinsicIdentity {
+                identity: declaration.identity.clone(),
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_descriptor_budget<'a, I>(schemas: &SchemaRegistry, types: I) -> Result<(), SchemaError>
+where
+    I: IntoIterator<Item = &'a SemanticType>,
+{
+    let mut total = 0_u128;
+    for ty in types {
+        let cost = canonical_registry::validate_semantic_descriptor(ty, schemas)?;
+        total = total
+            .checked_add(cost)
+            .ok_or(SchemaError::FixedElementOverflow)?;
+        if total > schemas.limits().max_fixed_elements {
+            return Err(SchemaError::FixedElementLimitExceeded {
+                limit: schemas.limits().max_fixed_elements,
+            });
+        }
+    }
+    Ok(())
 }

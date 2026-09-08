@@ -718,11 +718,7 @@ fn collect_type_ann_strings(ann: &crate::ast::TypeAnn, st: &mut StringTable) {
 
 // ─── Main emitter ─────────────────────────────────────────────────────────────
 
-/// Emit an [`IRModule`] as MIC@3 binary bytes.
-///
-/// Output is deterministic: identical `IRModule` content always produces
-/// byte-identical output regardless of run order or HashSet iteration order.
-pub fn emit_mic3(module: &IRModule) -> Vec<u8> {
+pub(super) fn emit_mic3_legacy(module: &IRModule) -> Vec<u8> {
     let mut st = StringTable::new();
 
     // Pre-pass: collect all strings in traversal order (deterministic).
@@ -1137,7 +1133,9 @@ fn emit_instr<W: Write>(w: &mut W, instr: &Instr, st: &StringTable, ver: u8) {
                 }
             }
         }
-        Instr::Call { dst, name, args } => {
+        Instr::Call {
+            dst, name, args, ..
+        } => {
             w.write_all(&[OP_CALL]).unwrap();
             write_vid(w, *dst).unwrap();
             encode_string_idx(w, name, st).unwrap();

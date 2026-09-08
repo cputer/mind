@@ -55,6 +55,7 @@ fn module_with_fn(name: &str, body: Vec<Instr>, ret: ValueId) -> IRModule {
         ret_id: Some(ret),
         body,
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });

@@ -2240,11 +2240,11 @@ fn mask_narrow_let(ir: &mut IRModule, ann: &Option<TypeAnn>, val: ValueId) -> Va
     // artifact gains this instruction.
     if matches!(scalar_int64_cast_signed(ty), Some(false)) {
         let conv_id = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: conv_id,
-            name: "__mind_conv_u64".to_string(),
-            args: vec![val],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            conv_id,
+            "__mind_conv_u64".to_string(),
+            vec![val],
+        ));
         return conv_id;
     }
     val
@@ -3160,19 +3160,16 @@ fn lower_array_surface_lit(
         return ir.fresh();
     }
     let mut handle = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: handle,
-        name: "vec_new".to_string(),
-        args: vec![],
-    });
+    ir.instrs
+        .push(Instr::legacy_call(handle, "vec_new".to_string(), vec![]));
     for elem in elements {
         let val = lower_expr(elem, ir, env, struct_env, receiver_types, context);
         let next = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: next,
-            name: "vec_push".to_string(),
-            args: vec![handle, val],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            next,
+            "vec_push".to_string(),
+            vec![handle, val],
+        ));
         handle = next;
     }
     handle
@@ -3290,20 +3287,17 @@ fn lower_map_surface_lit(
         return ir.fresh();
     }
     let mut handle = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: handle,
-        name: "map_new".to_string(),
-        args: vec![],
-    });
+    ir.instrs
+        .push(Instr::legacy_call(handle, "map_new".to_string(), vec![]));
     for (key, value) in entries {
         let k = lower_expr(key, ir, env, struct_env, receiver_types, context);
         let v = lower_expr(value, ir, env, struct_env, receiver_types, context);
         let next = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: next,
-            name: "map_insert".to_string(),
-            args: vec![handle, k, v],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            next,
+            "map_insert".to_string(),
+            vec![handle, k, v],
+        ));
         handle = next;
     }
     handle
@@ -3366,21 +3360,18 @@ fn lower_set_surface_lit(
         return ir.fresh();
     }
     let mut handle = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: handle,
-        name: "map_new".to_string(),
-        args: vec![],
-    });
+    ir.instrs
+        .push(Instr::legacy_call(handle, "map_new".to_string(), vec![]));
     for elem in elements {
         let k = lower_expr(elem, ir, env, struct_env, receiver_types, context);
         let one = ir.fresh();
         ir.instrs.push(Instr::ConstI64(one, 1));
         let next = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: next,
-            name: "map_insert".to_string(),
-            args: vec![handle, k, one],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            next,
+            "map_insert".to_string(),
+            vec![handle, k, one],
+        ));
         handle = next;
     }
     handle
@@ -5227,11 +5218,11 @@ fn lower_expr(
 
             // addr = __mind_alloc(n)  — backing buffer for the bytes
             let addr = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: addr,
-                name: "__mind_alloc".to_string(),
-                args: vec![n_const],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                addr,
+                "__mind_alloc".to_string(),
+                vec![n_const],
+            ));
 
             // __mind_store_i8(addr + i, byte_i) for each UTF-8 byte.
             for (i, &b) in bytes.iter().enumerate() {
@@ -5252,11 +5243,11 @@ fn lower_expr(
                 let byte_val = ir.fresh();
                 ir.instrs.push(Instr::ConstI64(byte_val, b as i64));
                 let store_ret = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst: store_ret,
-                    name: "__mind_store_i8".to_string(),
-                    args: vec![byte_addr, byte_val],
-                });
+                ir.instrs.push(Instr::legacy_call(
+                    store_ret,
+                    "__mind_store_i8".to_string(),
+                    vec![byte_addr, byte_val],
+                ));
             }
 
             // Build the 3-field i64 String record (24 bytes), exactly as the
@@ -5264,19 +5255,19 @@ fn lower_expr(
             let rec_bytes = ir.fresh();
             ir.instrs.push(Instr::ConstI64(rec_bytes, 24));
             let rec = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: rec,
-                name: "__mind_alloc".to_string(),
-                args: vec![rec_bytes],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                rec,
+                "__mind_alloc".to_string(),
+                vec![rec_bytes],
+            ));
 
             // field 0 (addr) at offset 0
             let store0 = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: store0,
-                name: "__mind_store_i64".to_string(),
-                args: vec![rec, addr],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                store0,
+                "__mind_store_i64".to_string(),
+                vec![rec, addr],
+            ));
 
             // field 1 (len) at offset 8
             let off8 = ir.fresh();
@@ -5291,11 +5282,11 @@ fn lower_expr(
             let len_val = ir.fresh();
             ir.instrs.push(Instr::ConstI64(len_val, n));
             let store1 = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: store1,
-                name: "__mind_store_i64".to_string(),
-                args: vec![rec8, len_val],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                store1,
+                "__mind_store_i64".to_string(),
+                vec![rec8, len_val],
+            ));
 
             // field 2 (cap) at offset 16
             let off16 = ir.fresh();
@@ -5310,11 +5301,11 @@ fn lower_expr(
             let cap_val = ir.fresh();
             ir.instrs.push(Instr::ConstI64(cap_val, n));
             let store2 = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: store2,
-                name: "__mind_store_i64".to_string(),
-                args: vec![rec16, cap_val],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                store2,
+                "__mind_store_i64".to_string(),
+                vec![rec16, cap_val],
+            ));
 
             rec
         }
@@ -5856,11 +5847,11 @@ fn lower_expr(
             });
             // addr = __mind_alloc(bytes)
             let addr = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: addr,
-                name: "__mind_alloc".to_string(),
-                args: vec![bytes],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                addr,
+                "__mind_alloc".to_string(),
+                vec![bytes],
+            ));
             // Store each element at offset 8*i (lowered in source order, after
             // the alloc — same left-to-right evaluation as `StructLit`).
             for (i, element) in elements.iter().enumerate() {
@@ -5880,11 +5871,11 @@ fn lower_expr(
                     sum
                 };
                 let store_ret = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst: store_ret,
-                    name: "__mind_store_i64".to_string(),
-                    args: vec![field_addr, value],
-                });
+                ir.instrs.push(Instr::legacy_call(
+                    store_ret,
+                    "__mind_store_i64".to_string(),
+                    vec![field_addr, value],
+                ));
             }
             addr
         }),
@@ -6359,11 +6350,11 @@ fn lower_expr(
                                 sum
                             };
                             let loaded = fn_ir.fresh();
-                            fn_ir.instrs.push(Instr::Call {
-                                dst: loaded,
-                                name: "__mind_load_i64".to_string(),
-                                args: vec![elem_addr],
-                            });
+                            fn_ir.instrs.push(Instr::legacy_call(
+                                loaded,
+                                "__mind_load_i64".to_string(),
+                                vec![elem_addr],
+                            ));
                             #[cfg(feature = "std-surface")]
                             let loaded = {
                                 let ety = elem_tys.get(i).cloned().flatten();
@@ -6624,6 +6615,7 @@ fn lower_expr(
                 // of aggregates defined in THIS scope. Empty until the S3 population
                 // slice (so byte-neutral now); moving it here keeps the scope's
                 // types co-located with the scope's instructions.
+                semantic_types: None,
                 #[cfg(feature = "std-surface")]
                 value_types: fn_ir.value_types,
             });
@@ -6818,11 +6810,11 @@ fn lower_expr(
                             sum
                         };
                         let loaded = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: loaded,
-                            name: "__mind_load_i64".to_string(),
-                            args: vec![elem_addr],
-                        });
+                        ir.instrs.push(Instr::legacy_call(
+                            loaded,
+                            "__mind_load_i64".to_string(),
+                            vec![elem_addr],
+                        ));
                         #[cfg(feature = "std-surface")]
                         let loaded = {
                             let ety = elem_tys.get(i).cloned().flatten();
@@ -8093,11 +8085,7 @@ fn lower_expr(
             // the original name, so non-generic call lowering is byte-identical.
             let name = try_register_mono_instance(callee, args).unwrap_or_else(|| callee.clone());
             let dst = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst,
-                name,
-                args: arg_ids,
-            });
+            ir.instrs.push(Instr::legacy_call(dst, name, arg_ids));
             dst
         }
         // W1.5f: postfix `?` (`Node::Try`) — desugar to the SAME `match`
@@ -8271,11 +8259,7 @@ fn lower_expr(
                 Some(width) if width < 64 => {
                     let conv_id = ir.fresh();
                     let name = format!("__mind_conv_i{width}");
-                    ir.instrs.push(Instr::Call {
-                        dst: conv_id,
-                        name,
-                        args: vec![val],
-                    });
+                    ir.instrs.push(Instr::legacy_call(conv_id, name, vec![val]));
                     conv_id
                 }
                 // Narrowing to a known unsigned integer narrower than 64 bits
@@ -8291,11 +8275,7 @@ fn lower_expr(
                     Some(width) if width < 64 => {
                         let conv_id = ir.fresh();
                         let name = format!("__mind_conv_u{width}");
-                        ir.instrs.push(Instr::Call {
-                            dst: conv_id,
-                            name,
-                            args: vec![val],
-                        });
+                        ir.instrs.push(Instr::legacy_call(conv_id, name, vec![val]));
                         conv_id
                     }
                     // Cast to a floating-point target (`as f32` / `as f64`).
@@ -8319,11 +8299,11 @@ fn lower_expr(
                             } else {
                                 "__mind_conv_f64"
                             };
-                            ir.instrs.push(Instr::Call {
-                                dst: conv_id,
-                                name: name.to_string(),
-                                args: vec![val],
-                            });
+                            ir.instrs.push(Instr::legacy_call(
+                                conv_id,
+                                name.to_string(),
+                                vec![val],
+                            ));
                             conv_id
                         }
                         // Cast to the FULL-width integer slot (`as i64` / `as
@@ -8352,11 +8332,11 @@ fn lower_expr(
                                 } else {
                                     "__mind_conv_u64"
                                 };
-                                ir.instrs.push(Instr::Call {
-                                    dst: conv_id,
-                                    name: name.to_string(),
-                                    args: vec![val],
-                                });
+                                ir.instrs.push(Instr::legacy_call(
+                                    conv_id,
+                                    name.to_string(),
+                                    vec![val],
+                                ));
                                 conv_id
                             }
                             None => val,
@@ -8973,11 +8953,11 @@ fn lower_expr(
 
                 // addr = __mind_alloc(bytes)
                 let addr = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst: addr,
-                    name: "__mind_alloc".to_string(),
-                    args: vec![bytes],
-                });
+                ir.instrs.push(Instr::legacy_call(
+                    addr,
+                    "__mind_alloc".to_string(),
+                    vec![bytes],
+                ));
 
                 // Per-field store at offset 8*i.
                 for (i, f) in order.iter().enumerate() {
@@ -9009,11 +8989,11 @@ fn lower_expr(
                         sum
                     };
                     let store_ret = ir.fresh();
-                    ir.instrs.push(Instr::Call {
-                        dst: store_ret,
-                        name: "__mind_store_i64".to_string(),
-                        args: vec![field_addr, value],
-                    });
+                    ir.instrs.push(Instr::legacy_call(
+                        store_ret,
+                        "__mind_store_i64".to_string(),
+                        vec![field_addr, value],
+                    ));
                 }
 
                 return addr;
@@ -9026,11 +9006,11 @@ fn lower_expr(
             let bytes = ir.fresh();
             ir.instrs.push(Instr::ConstI64(bytes, total));
             let addr = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: addr,
-                name: "__mind_alloc".to_string(),
-                args: vec![bytes],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                addr,
+                "__mind_alloc".to_string(),
+                vec![bytes],
+            ));
             for (i, f) in order.iter().enumerate() {
                 #[cfg(feature = "std-surface")]
                 let value = lower_struct_field_value(
@@ -9073,11 +9053,11 @@ fn lower_expr(
                     }
                 }
                 let store_ret = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst: store_ret,
-                    name: store_helper_for_width(width).to_string(),
-                    args: vec![field_addr, value],
-                });
+                ir.instrs.push(Instr::legacy_call(
+                    store_ret,
+                    store_helper_for_width(width).to_string(),
+                    vec![field_addr, value],
+                ));
             }
             addr
         }),
@@ -9211,11 +9191,11 @@ fn lower_expr(
                 let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
                 let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
+                ir.instrs.push(Instr::legacy_call(
                     dst,
-                    name: "vec_get".to_string(),
-                    args: vec![base, index_id],
-                });
+                    "vec_get".to_string(),
+                    vec![base, index_id],
+                ));
                 // Re-materialise a narrow / `u64` element at its declared
                 // width/signedness so it carries into a downstream sign-sensitive
                 // op (`>> / < / %`). Without this the untyped i64 `vec_get` result
@@ -9245,11 +9225,11 @@ fn lower_expr(
                     rhs: index_id,
                 });
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
+                ir.instrs.push(Instr::legacy_call(
                     dst,
-                    name: "__mind_load_i8".to_string(),
-                    args: vec![addr],
-                });
+                    "__mind_load_i8".to_string(),
+                    vec![addr],
+                ));
                 return dst;
             }
             let base = lower_expr(receiver, ir, env, struct_env, receiver_types, context);
@@ -9308,11 +9288,11 @@ fn lower_expr(
                 let index_id = lower_expr(index, ir, env, struct_env, receiver_types, context);
                 let val_id = lower_expr(value, ir, env, struct_env, receiver_types, context);
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
+                ir.instrs.push(Instr::legacy_call(
                     dst,
-                    name: "vec_set".to_string(),
-                    args: vec![base, index_id, val_id],
-                });
+                    "vec_set".to_string(),
+                    vec![base, index_id, val_id],
+                ));
                 return dst;
             }
             // `v[i] = x` on a fixed `bytes[N]` buffer → `__mind_store_i8(base
@@ -9333,11 +9313,11 @@ fn lower_expr(
                     rhs: index_id,
                 });
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
+                ir.instrs.push(Instr::legacy_call(
                     dst,
-                    name: "__mind_store_i8".to_string(),
-                    args: vec![addr, val_id],
-                });
+                    "__mind_store_i8".to_string(),
+                    vec![addr, val_id],
+                ));
                 return dst;
             }
             // A plain fixed `[T; N]` (or a const-literal-initialized
@@ -9582,11 +9562,11 @@ fn lower_expr(
                             let size = ir.fresh();
                             ir.instrs.push(Instr::ConstI64(size, n));
                             let dst = ir.fresh();
-                            ir.instrs.push(Instr::Call {
+                            ir.instrs.push(Instr::legacy_call(
                                 dst,
-                                name: "__mind_calloc".to_string(),
-                                args: vec![size],
-                            });
+                                "__mind_calloc".to_string(),
+                                vec![size],
+                            ));
                             return dst;
                         }
                     }
@@ -9629,11 +9609,8 @@ fn lower_expr(
                             ));
                         }
                         let dst = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst,
-                            name: fname.to_string(),
-                            args: call_args,
-                        });
+                        ir.instrs
+                            .push(Instr::legacy_call(dst, fname.to_string(), call_args));
                         return dst;
                     }
                 }
@@ -9669,11 +9646,8 @@ fn lower_expr(
                             ));
                         }
                         let dst = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst,
-                            name: fname.to_string(),
-                            args: call_args,
-                        });
+                        ir.instrs
+                            .push(Instr::legacy_call(dst, fname.to_string(), call_args));
                         return dst;
                     }
                 }
@@ -9695,15 +9669,15 @@ fn lower_expr(
                             let x =
                                 lower_expr(&args[0], ir, env, struct_env, receiver_types, context);
                             let dst = ir.fresh();
-                            ir.instrs.push(Instr::Call {
+                            ir.instrs.push(Instr::legacy_call(
                                 dst,
-                                name: if is_str {
+                                if is_str {
                                     "map_contains_key_str".to_string()
                                 } else {
                                     "map_contains_key".to_string()
                                 },
-                                args: vec![recv_id, x],
-                            });
+                                vec![recv_id, x],
+                            ));
                             return dst;
                         }
                         "add" | "insert" if args.len() == 1 => {
@@ -9712,20 +9686,20 @@ fn lower_expr(
                             let one = ir.fresh();
                             ir.instrs.push(Instr::ConstI64(one, 1));
                             let dst = ir.fresh();
-                            ir.instrs.push(Instr::Call {
+                            ir.instrs.push(Instr::legacy_call(
                                 dst,
-                                name: "map_insert".to_string(),
-                                args: vec![recv_id, x, one],
-                            });
+                                "map_insert".to_string(),
+                                vec![recv_id, x, one],
+                            ));
                             return dst;
                         }
                         "len" | "length" if args.is_empty() => {
                             let dst = ir.fresh();
-                            ir.instrs.push(Instr::Call {
+                            ir.instrs.push(Instr::legacy_call(
                                 dst,
-                                name: "map_len".to_string(),
-                                args: vec![recv_id],
-                            });
+                                "map_len".to_string(),
+                                vec![recv_id],
+                            ));
                             return dst;
                         }
                         _ => {}
@@ -9755,11 +9729,11 @@ fn lower_expr(
                         call_args.push(lower_expr(a, ir, env, struct_env, receiver_types, context));
                     }
                     let dst = ir.fresh();
-                    ir.instrs.push(Instr::Call {
+                    ir.instrs.push(Instr::legacy_call(
                         dst,
-                        name: format!("string_{method}"),
-                        args: call_args,
-                    });
+                        format!("string_{method}"),
+                        call_args,
+                    ));
                     return dst;
                 }
             }
@@ -9771,11 +9745,11 @@ fn lower_expr(
                     call_args.push(lower_expr(a, ir, env, struct_env, receiver_types, context));
                 }
                 let dst = ir.fresh();
-                ir.instrs.push(Instr::Call {
+                ir.instrs.push(Instr::legacy_call(
                     dst,
-                    name: format!("string_{method}"),
-                    args: call_args,
-                });
+                    format!("string_{method}"),
+                    call_args,
+                ));
                 return dst;
             }
             // Resolve the receiver's struct type name `T` and, for the cheap
@@ -9844,11 +9818,11 @@ fn lower_expr(
                     sum
                 };
                 let result = ir.fresh();
-                ir.instrs.push(Instr::Call {
-                    dst: result,
-                    name: "__mind_load_i64".to_string(),
-                    args: vec![field_addr],
-                });
+                ir.instrs.push(Instr::legacy_call(
+                    result,
+                    "__mind_load_i64".to_string(),
+                    vec![field_addr],
+                ));
                 return result;
             }
 
@@ -9896,11 +9870,7 @@ fn lower_expr(
                     };
                     let fn_name = format!("{}_{}", bare_t.to_lowercase(), method_lc);
                     let dst = ir.fresh();
-                    ir.instrs.push(Instr::Call {
-                        dst,
-                        name: fn_name,
-                        args: call_args,
-                    });
+                    ir.instrs.push(Instr::legacy_call(dst, fn_name, call_args));
                     dst
                 }
                 None => {
@@ -9935,11 +9905,7 @@ fn lower_expr(
                                 ));
                             }
                             let dst = ir.fresh();
-                            ir.instrs.push(Instr::Call {
-                                dst,
-                                name: fn_name,
-                                args: call_args,
-                            });
+                            ir.instrs.push(Instr::legacy_call(dst, fn_name, call_args));
                             return dst;
                         }
                     }
@@ -10012,11 +9978,11 @@ fn lower_expr(
                         let rec = lower_expr(arg, ir, env, struct_env, receiver_types, context);
                         // addr = __mind_load_i64(rec + 0)
                         let addr = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: addr,
-                            name: "__mind_load_i64".to_string(),
-                            args: vec![rec],
-                        });
+                        ir.instrs.push(Instr::legacy_call(
+                            addr,
+                            "__mind_load_i64".to_string(),
+                            vec![rec],
+                        ));
                         // len = __mind_load_i64(rec + 8)
                         let off8 = ir.fresh();
                         ir.instrs.push(Instr::ConstI64(off8, 8));
@@ -10028,35 +9994,29 @@ fn lower_expr(
                             rhs: off8,
                         });
                         let len = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: len,
-                            name: "__mind_load_i64".to_string(),
-                            args: vec![len_addr],
-                        });
+                        ir.instrs.push(Instr::legacy_call(
+                            len,
+                            "__mind_load_i64".to_string(),
+                            vec![len_addr],
+                        ));
                         // print_bytes(addr, len) — result discarded.
                         let sink = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: sink,
-                            name: "print_bytes".to_string(),
-                            args: vec![addr, len],
-                        });
+                        ir.instrs.push(Instr::legacy_call(
+                            sink,
+                            "print_bytes".to_string(),
+                            vec![addr, len],
+                        ));
                     }
                     // Numeric (i64) arg: printI64(v); printNewline() — one value
                     // per line for unambiguous downstream parsing.
                     _ => {
                         let v = lower_expr(arg, ir, env, struct_env, receiver_types, context);
                         let sink = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: sink,
-                            name: "printI64".to_string(),
-                            args: vec![v],
-                        });
+                        ir.instrs
+                            .push(Instr::legacy_call(sink, "printI64".to_string(), vec![v]));
                         let nl = ir.fresh();
-                        ir.instrs.push(Instr::Call {
-                            dst: nl,
-                            name: "printNewline".to_string(),
-                            args: vec![],
-                        });
+                        ir.instrs
+                            .push(Instr::legacy_call(nl, "printNewline".to_string(), vec![]));
                     }
                 }
             }
@@ -10414,11 +10374,11 @@ fn lower_expr(
             // Pre-lower the collection (i64 vec handle) and its length once.
             let coll_id = lower_expr(collection, ir, env, struct_env, receiver_types, context);
             let len_id = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: len_id,
-                name: "vec_len".to_string(),
-                args: vec![coll_id],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                len_id,
+                "vec_len".to_string(),
+                vec![coll_id],
+            ));
             let zero_id = ir.fresh();
             ir.instrs.push(Instr::ConstI64(zero_id, 0));
 
@@ -10693,20 +10653,20 @@ fn emit_boxed_enum_record(
     });
     // addr = __mind_alloc(bytes)
     let addr = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: addr,
-        name: "__mind_alloc".to_string(),
-        args: vec![bytes],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        addr,
+        "__mind_alloc".to_string(),
+        vec![bytes],
+    ));
     // __mind_store_i64(addr + 0, tag)
     let tag_id = ir.fresh();
     ir.instrs.push(Instr::ConstI64(tag_id, tag));
     let store_tag = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: store_tag,
-        name: "__mind_store_i64".to_string(),
-        args: vec![addr, tag_id],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        store_tag,
+        "__mind_store_i64".to_string(),
+        vec![addr, tag_id],
+    ));
     // Store each field at `addr + 8*(i+1)`, then zero-fill the remaining slots
     // (so a narrower variant's unused fields are deterministically 0).
     for slot in 1..total_slots {
@@ -10727,11 +10687,11 @@ fn emit_boxed_enum_record(
             rhs: offset,
         });
         let store = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: store,
-            name: "__mind_store_i64".to_string(),
-            args: vec![field_addr, value],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            store,
+            "__mind_store_i64".to_string(),
+            vec![field_addr, value],
+        ));
     }
     addr
 }
@@ -11955,11 +11915,11 @@ fn lower_lettuple_stmt(
             sum
         };
         let loaded = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: loaded,
-            name: "__mind_load_i64".to_string(),
-            args: vec![elem_addr],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            loaded,
+            "__mind_load_i64".to_string(),
+            vec![elem_addr],
+        ));
         let ety = elem_tys.get(i).cloned().flatten();
         let loaded = mask_narrow_let(ir, &ety, loaded);
         record_narrow_let(nm, &ety);

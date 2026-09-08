@@ -377,6 +377,8 @@ fn variadic_printf_call_uses_vararg_hints() {
         dst,
         name: "printf".to_string(),
         args: vec![fmt, str_arg, int_arg],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 

@@ -151,6 +151,7 @@ mod tests {
                 ret_id: None,
                 body: Vec::new(),
                 reap_threshold: None,
+                semantic_types: None,
                 #[cfg(feature = "std-surface")]
                 value_types: std::collections::BTreeMap::new(),
             });

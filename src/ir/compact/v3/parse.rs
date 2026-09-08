@@ -30,32 +30,12 @@ use super::emit::{
     OP_VEC_REDUCE_ADD_I64, OP_VEC_STORE, OP_WHILE, byte_to_binop, byte_to_dtype, byte_to_padding,
     byte_to_sparse_layout,
 };
-use super::{MIC3_MAGIC, MIC3_MIN_READ_VERSION, MIC3_VERSION};
+use super::{MIC3_MAGIC, MIC3_MIN_READ_VERSION, MIC3_VERSION, ParsedMic3Prefix};
 use crate::ir::compact::v2::{uleb128_read, zigzag_decode};
 
 // ─── Error type ──────────────────────────────────────────────────────────────
 
-/// Error produced by [`parse_mic3`].
-#[derive(Debug, Clone)]
-pub struct Mic3Error {
-    pub message: String,
-}
-
-impl std::fmt::Display for Mic3Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "mic3: {}", self.message)
-    }
-}
-
-impl std::error::Error for Mic3Error {}
-
-impl From<std::io::Error> for Mic3Error {
-    fn from(e: std::io::Error) -> Self {
-        Self {
-            message: e.to_string(),
-        }
-    }
-}
+use super::error::Mic3Error;
 
 macro_rules! err {
     ($($t:tt)*) => {
@@ -307,10 +287,9 @@ fn read_named_vids<R: Read>(
 /// Step D (v0x03) — read one structurally-scoped aggregate `value_types` table
 /// (module-level or a `FnDef`'s). The exact inverse of `emit_value_types_table`.
 ///
-/// The read is UNCONDITIONAL on build features (only the CALLER's STORAGE of the
-/// result is `std-surface`-gated): the bytes are consumed and hostile-checked in
-/// EVERY build so a `not(std-surface)` parse of a `0x03` artifact stays in sync
-/// with the instruction stream rather than desyncing on the next opcode.
+/// The table is available only in `std-surface` builds. A bare build refuses a
+/// v0x03 artifact before decoding its body, because it cannot retain the
+/// aggregate metadata without silently changing the artifact on re-emit.
 ///
 /// Hostile controls (every one a HARD error, never last-wins / never silent):
 ///   * `read_count` bounds the entry count against the remaining input length
@@ -800,21 +779,15 @@ fn decode_instr<R: Read>(
                 body.push(decode_instr(r, strings, depth, limit, version)?);
             }
             // Step D (v0x03) — the per-function `value_types` sub-list is
-            // TAIL-APPENDED after the body. The READ is UNCONDITIONAL on build
-            // features and gated ONLY on the wire version: the bytes must be
-            // consumed + hostile-checked in EVERY build (including
-            // `not(std-surface)`) or a 0x03 artifact would desync the stream at
-            // the NEXT opcode. Only the STORAGE into the (feature-gated) field is
-            // conditional — a `not(std-surface)` build parses and discards it. A
-            // v0x02 stream has no sub-list at all (table stays empty).
+            // TAIL-APPENDED after the body. Bare builds have already refused
+            // v0x03 in the top-level version gate, so this read is reached only
+            // when the feature-gated storage is available. A v0x02 stream has no
+            // sub-list at all (table stays empty).
             let value_types = if version >= MIC3_VERSION {
                 read_value_types_table(r, limit)?
             } else {
                 std::collections::BTreeMap::new()
             };
-            // In a `not(std-surface)` build the parsed table has nowhere to live;
-            // it was read purely to advance the cursor. Bind it away so the
-            // otherwise-unused local does not warn.
             #[cfg(not(feature = "std-surface"))]
             let _ = value_types;
             Ok(Instr::FnDef {
@@ -825,13 +798,14 @@ fn decode_instr<R: Read>(
                 reap_threshold,
                 #[cfg(feature = "std-surface")]
                 value_types,
+                semantic_types: None,
             })
         }
         OP_CALL => {
             let dst = read_vid(r)?;
             let name = read_string(r, strings)?;
             let args = read_vid_vec(r, limit)?;
-            Ok(Instr::Call { dst, name, args })
+            Ok(Instr::legacy_call(dst, name, args))
         }
         OP_RETURN => {
             let value = read_opt_vid(r)?;
@@ -1117,11 +1091,14 @@ fn decode_instr<R: Read>(
 
 // ─── Top-level entry point ────────────────────────────────────────────────────
 
-/// Parse MIC@3 binary bytes into an [`IRModule`].
+/// Decode one MIC@3 body prefix and return the exact number of bytes consumed.
 ///
 /// Returns [`Mic3Error`] if the bytes are malformed or the magic / version do
-/// not match. No other format is accepted — detect `MIC3` magic before calling.
-pub fn parse_mic3(data: &[u8]) -> Result<IRModule, Mic3Error> {
+/// not match. In a bare build, version `0x03` is refused before body decoding
+/// because its aggregate metadata cannot be retained. Bytes after the body are
+/// deliberately left to the caller; use [`super::parse_mic3_body`] when trailing
+/// data must be rejected.
+pub fn parse_mic3_prefix(data: &[u8]) -> Result<ParsedMic3Prefix, Mic3Error> {
     // DoS guard: reject oversized input up front, before any allocation, so an
     // untrusted artifact cannot drive unbounded work. Mirrors the mic@1 / v2
     // parser `MAX_INPUT_SIZE` policy.
@@ -1159,13 +1136,15 @@ pub fn parse_mic3(data: &[u8]) -> Result<IRModule, Mic3Error> {
         ));
     }
 
-    // Version — the parser is backward-compatible: it reads every version in
+    // Version — std-surface builds read every version in
     // [MIC3_MIN_READ_VERSION, MIC3_VERSION]. A 0x01 artifact predates the
     // control-flow region-exit metadata (While.exit_ids / If.merges) and is
     // decoded with those fields empty; 0x02 reads them from the wire; 0x03 also
     // reads the Step D structurally-scoped `value_types` tables (per-FnDef
-    // sub-lists + the module tail). The emitter derives the version from content
-    // (`has_scoped_value_types`): 0x03 iff any table is non-empty, else 0x02.
+    // sub-lists + the module tail). Bare builds refuse 0x03 below because they
+    // have no storage for those tables. The emitter derives the version from
+    // content (`has_scoped_value_types`): 0x03 iff any table is non-empty, else
+    // 0x02.
     let version = read_u8(&mut r)?;
     if !(MIC3_MIN_READ_VERSION..=MIC3_VERSION).contains(&version) {
         return Err(err!(
@@ -1173,6 +1152,13 @@ pub fn parse_mic3(data: &[u8]) -> Result<IRModule, Mic3Error> {
             MIC3_MIN_READ_VERSION,
             MIC3_VERSION,
             version
+        ));
+    }
+
+    #[cfg(not(feature = "std-surface"))]
+    if version == MIC3_VERSION {
+        return Err(err!(
+            "MIC3 version 0x03 requires the std-surface feature to preserve aggregate metadata"
         ));
     }
 
@@ -1227,6 +1213,7 @@ pub fn parse_mic3(data: &[u8]) -> Result<IRModule, Mic3Error> {
 
     #[allow(unused_mut)]
     let mut module = IRModule {
+        canonical_types: None,
         instrs,
         next_id,
         exports,
@@ -1350,5 +1337,7 @@ pub fn parse_mic3(data: &[u8]) -> Result<IRModule, Mic3Error> {
         .unwrap_or(0);
     module.next_id = module.next_id.max(top_level_bound);
 
-    Ok(module)
+    let consumed = usize::try_from(r.position())
+        .map_err(|_| err!("decoded body position does not fit usize"))?;
+    Ok(ParsedMic3Prefix { module, consumed })
 }

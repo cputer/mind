@@ -30,6 +30,8 @@ fn call_lowers_to_func_call_with_private_decl() {
         dst,
         name: "__mind_alloc".to_string(),
         args: vec![n],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 
@@ -58,12 +60,16 @@ fn distinct_callees_each_get_one_decl_sorted() {
         dst: d1,
         name: "__mind_free".to_string(),
         args: vec![a],
+
+        resolved_callee: None,
     });
     let d2 = m.fresh();
     m.instrs.push(Instr::Call {
         dst: d2,
         name: "__mind_alloc".to_string(),
         args: vec![a],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(d2));
 
@@ -98,6 +104,8 @@ fn non_i64_call_arg_is_a_clear_error() {
         dst,
         name: "__mind_alloc".to_string(),
         args: vec![t], // tensor arg -> must be rejected
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
 

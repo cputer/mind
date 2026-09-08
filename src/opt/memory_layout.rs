@@ -481,6 +481,7 @@ mod tests {
     #[test]
     fn test_empty_module() {
         let module = IRModule {
+            canonical_types: None,
             instrs: vec![],
             next_id: 0,
             ..Default::default()

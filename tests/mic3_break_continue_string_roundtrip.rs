@@ -64,6 +64,7 @@ fn module_with_break_only_name() -> IRModule {
             },
         ],
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -157,6 +158,7 @@ fn break_continue_module_is_mic3_fixed_point() {
                     Instr::Return { value: Some(v) },
                 ],
                 reap_threshold: None,
+                semantic_types: None,
                 #[cfg(feature = "std-surface")]
                 value_types: std::collections::BTreeMap::new(),
             });

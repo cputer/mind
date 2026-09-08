@@ -112,16 +112,8 @@ fn ssa_undefined_operand_fails() {
     );
 }
 
-/// A function with a parameter AND body values that reuse ids from a *separate*
-/// per-function namespace must verify clean — the `scalar_arith.mind` shape that
-/// MIND-Fuzz flagged as a verifier false-positive.
-///
-/// Models `pub fn f(a: i64) -> i64 { let x = 5; return a + x; }`: param `a` is
-/// `%0`, the body materializes `Param %0`, `ConstI64 %1`, `BinOp %2 = %0 + %1`,
-/// then a top-level `%0`/`Output %0` follows the `FnDef` in the module's own
-/// (separate) namespace. The pre-fix verifier threaded a single shared
-/// `defined` set through the whole module and wrongly reported `%0` defined more
-/// than once.
+/// Function-body SSA ids are separate from the module namespace; this keeps a
+/// top-level `%0` valid after a function that also uses `%0`.
 #[test]
 fn ssa_fn_param_and_body_values_pass() {
     let mut m = IRModule::new();
@@ -147,6 +139,7 @@ fn ssa_fn_param_and_body_values_pass() {
             },
         ],
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -187,6 +180,7 @@ fn ssa_duplicate_result_id_in_fn_body_fails() {
             },
         ],
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -342,6 +336,7 @@ fn if_merge_module(
             },
         ],
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -582,6 +577,7 @@ fn while_carry_module(live_post: ValueId) -> IRModule {
             },
         ],
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });

@@ -337,6 +337,7 @@ fn while_mlir_lowering_emits_basic_blocks() {
         ret_id: Some(unit_id),
         body: fn_body,
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });

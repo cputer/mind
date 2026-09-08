@@ -136,6 +136,8 @@ fn canonicalization_keeps_value_used_only_as_call_arg() {
         dst: call_dst,
         name: "sink".to_string(),
         args: vec![arg],
+
+        resolved_callee: None,
     });
     module.instrs.push(Instr::Output(call_dst));
     module.next_id = module.next_id.max(call_dst.0 + 1);

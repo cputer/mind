@@ -63,6 +63,8 @@ fn fndef_body_self_reference_rejected() {
                 rhs: a,
             },
         ],
+
+        semantic_types: None,
     });
     // Module needs an Output to be well-formed.
     let out = m.fresh();
@@ -90,6 +92,8 @@ fn fndef_body_duplicate_def_rejected() {
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
         body: vec![Instr::ConstI64(dup, 1), Instr::ConstI64(dup, 2)],
+
+        semantic_types: None,
     });
     let out = m.fresh();
     m.instrs.push(Instr::ConstI64(out, 0));
@@ -125,6 +129,8 @@ fn fndef_body_forward_chain_still_passes() {
                 rhs: b1,
             },
         ],
+
+        semantic_types: None,
     });
     let out = m.fresh();
     m.instrs.push(Instr::ConstI64(out, 0));

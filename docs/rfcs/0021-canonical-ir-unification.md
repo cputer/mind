@@ -10,6 +10,33 @@
 | Supersedes-in-part | RFC 0016 §3.2/§5.4 (evidence anchor + carrier), RFC 0015 (enforcement seam) |
 | Depends | RFC 0001 (mic@1 determinism), RFC 0014 (per-substrate lowering), RFC 0016, RFC 0020 |
 
+## Current implementation boundary (2026-09-08)
+
+Canonical semantic metadata now has an in-memory carrier with one module registry
+for function declarations and co-located function/SSA types. Verification checks
+identity, signatures, local bodies, external declarations, typed calls and bounded
+aggregate shapes together. This is preparation for a future semantic wire format;
+the compiler still emits the established MIC@3 v0x02/v0x03 layouts.
+
+The checked emitter, trace hash and evidence/signing APIs return structured errors
+before emitting an artifact when canonical metadata is invalid or cannot be
+encoded by those layouts. Legacy infallible APIs remain restricted to legacy IR.
+No v0x04 tag assignment, codec support or additional backend capability is claimed.
+
+MIC@3 v0x03 input is admitted only by a `std-surface` reader, which has storage
+for its aggregate type tables. A bare reader refuses v0x03 at the version boundary
+before decoding the body; it must not accept and silently re-emit an artifact with
+those tables discarded. This is a profile admission rule, not a cross-profile
+byte-identity claim; v0x01/v0x02 compatibility remains unchanged.
+
+The decoder exposes its actual consumed byte count. Strict body parsing rejects
+trailing data; strict envelope parsing accepts one body and an optional valid MAP
+epilogue. Inspection, verification and evidence readers use that cursor boundary,
+including when a legacy body encoding is accepted but is not canonical on re-emit.
+The historical suffix-tolerant parser remains an explicit compatibility API.
+Ordinary legacy emission is unchanged; same-artifact round trips do not establish
+cross-chip execution identity or a performance improvement.
+
 ## 1. Problem — two IRs, and the governance layer is bolted to the wrong one
 
 A 2026-05-26 architecture audit (mind-architect + mind-auditor) found MIND carries

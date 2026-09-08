@@ -54,7 +54,7 @@
 
 use crate::deps::mini_sha256;
 use crate::ir::IRModule;
-use crate::ir::compact::emit_mic3;
+use crate::ir::compact::{Mic3EncodeError, emit_mic3, emit_mic3_checked};
 
 /// The RFC 0016 §3.2/§3.3 `trace_hash` for a compiled artifact's **IR link**:
 /// SHA-256 of the canonical mic@3 bytes of `ir`.
@@ -71,6 +71,12 @@ use crate::ir::compact::emit_mic3;
 /// over the same canonical bytes.
 pub fn ir_trace_hash(ir: &IRModule) -> [u8; 32] {
     mini_sha256(&emit_mic3(ir))
+}
+
+/// Fallible hash seam: unsupported B1 metadata returns an encoding error before
+/// an artifact or digest can escape.
+pub fn ir_trace_hash_checked(ir: &IRModule) -> Result<[u8; 32], Mic3EncodeError> {
+    emit_mic3_checked(ir).map(|body| mini_sha256(&body))
 }
 
 // The determinism classifier: whether `callee` can make the module's result
@@ -598,11 +604,8 @@ mod tests {
             let seed = nd.fresh();
             let r = nd.fresh();
             nd.instrs.push(Instr::ConstI64(seed, 0));
-            nd.instrs.push(Instr::Call {
-                dst: r,
-                name: nondet_call.to_string(),
-                args: vec![seed],
-            });
+            nd.instrs
+                .push(Instr::legacy_call(r, nondet_call.to_string(), vec![seed]));
             nd.instrs.push(Instr::Output(r));
             assert!(
                 !ir_declares_deterministic(&nd),
@@ -621,14 +624,11 @@ mod tests {
             ret_id: Some(rr),
             body: vec![
                 Instr::ConstI64(p, 0),
-                Instr::Call {
-                    dst: rr,
-                    name: "random".to_string(),
-                    args: vec![p],
-                },
+                Instr::legacy_call(rr, "random", vec![p]),
                 Instr::Return { value: Some(rr) },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
@@ -651,11 +651,7 @@ mod tests {
         m.instrs.push(Instr::Region {
             body: vec![
                 Instr::ConstI64(c, 0),
-                Instr::Call {
-                    dst: r,
-                    name: callee.to_string(),
-                    args: vec![c],
-                },
+                Instr::legacy_call(r, callee, vec![c]),
             ],
             result: r,
             enter_id: enter,
@@ -769,11 +765,8 @@ mod tests {
             let a = m.fresh();
             m.instrs.push(Instr::ConstI64(a, 0));
             let d = m.fresh();
-            m.instrs.push(Instr::Call {
-                dst: d,
-                name: sym.to_string(),
-                args: vec![a],
-            });
+            m.instrs
+                .push(Instr::legacy_call(d, sym.to_string(), vec![a]));
             m.instrs.push(Instr::Output(d));
             m
         }
@@ -823,11 +816,8 @@ mod tests {
         let a = m.fresh();
         m.instrs.push(Instr::ConstI64(a, 0));
         let d = m.fresh();
-        m.instrs.push(Instr::Call {
-            dst: d,
-            name: "strlen".to_string(),
-            args: vec![a],
-        });
+        m.instrs
+            .push(Instr::legacy_call(d, "strlen".to_string(), vec![a]));
         m.instrs.push(Instr::Output(d));
 
         assert_eq!(
@@ -846,11 +836,8 @@ mod tests {
         // Hard nondeterminism: both consumers must still fire.
         let mut n = IRModule::new();
         let t = n.fresh();
-        n.instrs.push(Instr::Call {
-            dst: t,
-            name: "now".to_string(),
-            args: vec![],
-        });
+        n.instrs
+            .push(Instr::legacy_call(t, "now".to_string(), vec![]));
         n.instrs.push(Instr::Output(t));
         assert_eq!(
             ir_first_hard_nondeterministic_call(&n).as_deref(),
@@ -876,11 +863,8 @@ mod tests {
         let s = top.fresh();
         let r = top.fresh();
         top.instrs.push(Instr::ConstI64(s, 0));
-        top.instrs.push(Instr::Call {
-            dst: r,
-            name: "now".to_string(),
-            args: vec![s],
-        });
+        top.instrs
+            .push(Instr::legacy_call(r, "now".to_string(), vec![s]));
         top.instrs.push(Instr::Output(r));
         assert_eq!(ir_first_nondeterministic_call(&top).as_deref(), Some("now"));
         assert!(!ir_declares_deterministic(&top));
@@ -899,10 +883,13 @@ mod tests {
                     dst: rr,
                     name: "now".to_string(),
                     args: vec![p],
+
+                    resolved_callee: None,
                 },
                 Instr::Return { value: Some(rr) },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
@@ -923,17 +910,17 @@ mod tests {
         let n = crate::ir::ValueId(93);
         m.instrs.extend(fd_instrs);
         m.instrs.push(Instr::ConstI64(size, 8));
-        m.instrs.push(Instr::Call {
-            dst: buf,
-            name: "__mind_alloc".to_string(),
-            args: vec![size],
-        });
+        m.instrs.push(Instr::legacy_call(
+            buf,
+            "__mind_alloc".to_string(),
+            vec![size],
+        ));
         m.instrs.push(Instr::ConstI64(off, -1));
-        m.instrs.push(Instr::Call {
-            dst: n,
-            name: "__mind_read".to_string(),
-            args: vec![fd, buf, size, off],
-        });
+        m.instrs.push(Instr::legacy_call(
+            n,
+            "__mind_read".to_string(),
+            vec![fd, buf, size, off],
+        ));
         m.instrs.push(Instr::Output(n));
         m
     }
@@ -1007,6 +994,8 @@ mod tests {
                     dst: fd,
                     name: "__mind_load_i64".to_string(),
                     args: vec![addr],
+
+                    resolved_callee: None,
                 },
             ],
             fd,
@@ -1069,15 +1058,20 @@ mod tests {
                     dst: buf,
                     name: "__mind_alloc".to_string(),
                     args: vec![size],
+
+                    resolved_callee: None,
                 },
                 Instr::Call {
                     dst: n,
                     name: "__mind_read".to_string(),
                     args: vec![fd, buf, size, size],
+
+                    resolved_callee: None,
                 },
                 Instr::Return { value: Some(n) },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
@@ -1157,6 +1151,7 @@ mod tests {
                 Instr::Return { value: Some(r) },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });

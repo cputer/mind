@@ -76,6 +76,8 @@ fn module_with_extern_call() -> IRModule {
         dst,
         name: "printf".to_string(),
         args: vec![fmt_ptr, val],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(dst));
     m

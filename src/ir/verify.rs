@@ -784,6 +784,10 @@ pub enum IrVerifyError {
     /// Operand validation failed (e.g., a negative axis or stride).
     #[error("invalid operand in instruction {instr_index}: {message}")]
     InvalidOperand { instr_index: usize, message: String },
+    /// B1 canonical semantic metadata is malformed, incomplete, or attached
+    /// to the wrong SSA/function scope.
+    #[error("canonical metadata: {0}")]
+    CanonicalMetadata(crate::ir::CanonicalMetadataError),
 
     /// Step D (AGGREGATE_TYPE_INVARIANT / Amendment 1) — a canonical
     /// `value_types` entry for a ValueId disagrees with the intrinsic type of the
@@ -995,6 +999,7 @@ fn check_nested_fndef_tables(instrs: &[Instr]) -> Result<(), IrVerifyError> {
 }
 
 pub fn verify_module(module: &IRModule) -> Result<(), IrVerifyError> {
+    crate::ir::verify_canonical_metadata(module).map_err(IrVerifyError::CanonicalMetadata)?;
     let mut defined: BTreeSet<ValueId> = BTreeSet::new();
     let mut saw_output = false;
     let mut max_seen = 0usize;
@@ -1481,6 +1486,8 @@ mod step_d_aggregate_type_tests {
             body,
             reap_threshold: None,
             value_types: std::collections::BTreeMap::new(),
+
+            semantic_types: None,
         }
     }
 
@@ -1621,6 +1628,8 @@ mod step_d_aggregate_type_tests {
             body: vec![const_dense(fv, DType::F64, 2)],
             reap_threshold: None,
             value_types: fn_table,
+
+            semantic_types: None,
         };
         let mut m = IRModule::new();
         let r = m.fresh();
@@ -1726,6 +1735,7 @@ mod step_d_aggregate_type_tests {
                 data: vec![0u64; 4],
             }],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });

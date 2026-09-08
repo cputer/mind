@@ -329,11 +329,11 @@ pub(super) fn store_fixed_array_field(
         });
         let stored = if f64_bits {
             let bits = ir.fresh();
-            ir.instrs.push(Instr::Call {
-                dst: bits,
-                name: "__mind_f64_to_bits".to_string(),
-                args: vec![item],
-            });
+            ir.instrs.push(Instr::legacy_call(
+                bits,
+                "__mind_f64_to_bits".to_string(),
+                vec![item],
+            ));
             bits
         } else {
             item
@@ -354,11 +354,11 @@ pub(super) fn store_fixed_array_field(
             sum
         };
         let unit = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: unit,
-            name: "__mind_store_i64".to_string(),
-            args: vec![element_addr, stored],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            unit,
+            "__mind_store_i64".to_string(),
+            vec![element_addr, stored],
+        ));
     }
 }
 
@@ -438,11 +438,11 @@ pub(super) fn lower_fixed_array_field_index_assign(
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));
     let checked_index = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: checked_index,
-        name: "__mind_oob_check".to_string(),
-        args: vec![index_id, length_id],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        checked_index,
+        "__mind_oob_check".to_string(),
+        vec![index_id, length_id],
+    ));
     let byte_width = ir.fresh();
     ir.instrs.push(Instr::ConstI64(byte_width, 8));
     let byte_offset = ir.fresh();
@@ -461,21 +461,21 @@ pub(super) fn lower_fixed_array_field_index_assign(
     });
     let stored = if fixed_array_cell_bits_ty(&element) {
         let bits = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: bits,
-            name: "__mind_f64_to_bits".to_string(),
-            args: vec![value_id],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            bits,
+            "__mind_f64_to_bits".to_string(),
+            vec![value_id],
+        ));
         bits
     } else {
         value_id
     };
     let store = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: store,
-        name: "__mind_store_i64".to_string(),
-        args: vec![element_addr, stored],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        store,
+        "__mind_store_i64".to_string(),
+        vec![element_addr, stored],
+    ));
     let unit = ir.fresh();
     ir.instrs.push(Instr::ConstI64(unit, 0));
     Some(unit)
@@ -589,11 +589,11 @@ pub(super) fn lower_fixed_array_field_index_access(
     ir.instrs
         .push(Instr::ConstI64(length_id, i64::from(length)));
     let checked_index = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: checked_index,
-        name: "__mind_oob_check".to_string(),
-        args: vec![index_id, length_id],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        checked_index,
+        "__mind_oob_check".to_string(),
+        vec![index_id, length_id],
+    ));
     let byte_width = ir.fresh();
     ir.instrs.push(Instr::ConstI64(byte_width, 8));
     let byte_offset = ir.fresh();
@@ -611,18 +611,18 @@ pub(super) fn lower_fixed_array_field_index_access(
         rhs: byte_offset,
     });
     let loaded = ir.fresh();
-    ir.instrs.push(Instr::Call {
-        dst: loaded,
-        name: "__mind_load_i64".to_string(),
-        args: vec![element_addr],
-    });
+    ir.instrs.push(Instr::legacy_call(
+        loaded,
+        "__mind_load_i64".to_string(),
+        vec![element_addr],
+    ));
     if fixed_array_cell_bits_ty(&element) {
         let decoded = ir.fresh();
-        ir.instrs.push(Instr::Call {
-            dst: decoded,
-            name: "__mind_bits_to_f64".to_string(),
-            args: vec![loaded],
-        });
+        ir.instrs.push(Instr::legacy_call(
+            decoded,
+            "__mind_bits_to_f64".to_string(),
+            vec![loaded],
+        ));
         Some(decoded)
     } else {
         Some(loaded)

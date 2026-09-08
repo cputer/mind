@@ -394,6 +394,7 @@ mod tests {
             ret_id: None,
             body,
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: Default::default(),
         }
@@ -532,11 +533,7 @@ mod tests {
     fn intrinsic_callee_is_rejected_but_user_callee_is_admitted() {
         // The aggregate ABI reaches the IR as intrinsic calls; pin BOTH directions
         // so a future intrinsic allowlist has to update this test deliberately.
-        let call = |name: &str| Instr::Call {
-            dst: ValueId(1),
-            name: name.into(),
-            args: vec![],
-        };
+        let call = |name: &str| Instr::legacy_call(ValueId(1), name, vec![]);
         assert_eq!(
             admits(&[call("__mind_alloc")]).unwrap_err().construct,
             "call.undefined_or_builtin"
@@ -615,6 +612,7 @@ mod tests {
             ret_id: None,
             body: vec![Instr::ConstF64(ValueId(0), 1.5)],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: Default::default(),
         };

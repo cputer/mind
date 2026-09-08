@@ -16,6 +16,13 @@ use std::collections::BTreeSet;
 
 use crate::ir::{BinOp, IRModule, Instr, ValueId, instruction_dst};
 
+pub(crate) fn has_populated_canonical(module: &IRModule) -> bool {
+    module
+        .canonical_types
+        .as_ref()
+        .is_some_and(|b| !b.is_empty())
+}
+
 /// Canonicalize the public MIND IR in-place.
 ///
 /// The pass is intentionally conservative: it keeps the existing SSA IDs,
@@ -29,6 +36,19 @@ use crate::ir::{BinOp, IRModule, Instr, ValueId, instruction_dst};
 ///
 /// Reference (REAP pruning): arXiv:2510.13999.
 pub fn canonicalize_module(module: &mut IRModule) {
+    // The legacy pass only understands the legacy SSA side tables.  A
+    // populated B1 bundle is a second, logical authority that this pass cannot
+    // remap when DCE removes or folds a definition.  Preserve it atomically
+    // until a metadata-aware canonicalization entry point is available;
+    // callers that need optimization must use the checked pass below.
+    if module
+        .canonical_types
+        .as_ref()
+        .is_some_and(|bundle| !bundle.is_empty())
+    {
+        return;
+    }
+
     // REAP dead-expert DCE: feature-gated on presence of `reap_threshold`.
     if module_has_reap_threshold(module) {
         prune_dead_experts(module);
@@ -46,6 +66,28 @@ pub fn canonicalize_module(module: &mut IRModule) {
 
     module.instrs = instrs;
     module.next_id = next_sequential_id(module);
+}
+
+/// Checked B1 boundary for callers that already carry canonical semantic
+/// metadata.  The current legacy optimizer has no metadata remapping support,
+/// so it validates the bundle and refuses the optimization explicitly.  This
+/// keeps a future caller from accidentally treating a legacy no-op as
+/// successful optimization of a typed module.
+pub fn canonicalize_module_checked(
+    module: &mut IRModule,
+) -> Result<(), crate::ir::CanonicalMetadataError> {
+    if module.canonical_types.is_some() {
+        crate::ir::verify_canonical_metadata(module)?;
+        if module
+            .canonical_types
+            .as_ref()
+            .is_some_and(|bundle| !bundle.is_empty())
+        {
+            return Err(crate::ir::CanonicalMetadataError::OptimizationUnsupported);
+        }
+    }
+    canonicalize_module(module);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

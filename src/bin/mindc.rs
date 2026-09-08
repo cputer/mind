@@ -21,6 +21,9 @@
 #[global_allocator]
 static GLOBAL_SMALL_HEAP: libmind::SmallHeapAlloc = libmind::SmallHeapAlloc;
 
+#[path = "mindc/mic3_output.rs"]
+mod mic3_output;
+
 use std::fs;
 use std::process;
 
@@ -838,7 +841,7 @@ fn mindc_main() {
         println!("{}", mic);
     }
 
-    emit_mic3_if_requested(&cli.compile, &products);
+    mic3_output::emit_mic3_if_requested(&cli.compile, &products);
     emit_evidence_if_requested(&cli.compile, &products);
 
     #[cfg(feature = "autodiff")]
@@ -1850,19 +1853,6 @@ fn emit_mlir_if_requested(cli: &CompileArgs, _products: &libmind::pipeline::Comp
     }
 }
 
-fn emit_mic3_if_requested(cli: &CompileArgs, products: &libmind::pipeline::CompileProducts) {
-    let path = match &cli.emit_mic3 {
-        Some(p) => p,
-        None => return,
-    };
-    let bytes = libmind::ir::compact::emit_mic3(&products.ir);
-    if let Err(err) = fs::write(path, &bytes) {
-        eprintln!("error[emit-mic3]: failed to write {path}: {err}");
-        process::exit(1);
-    }
-    eprintln!("Wrote mic@3 artifact: {path} ({} bytes)", bytes.len());
-}
-
 fn emit_evidence_if_requested(cli: &CompileArgs, products: &libmind::pipeline::CompileProducts) {
     let path = match &cli.emit_evidence {
         Some(p) => p,
@@ -2269,7 +2259,7 @@ fn json_escape(s: &str) -> String {
 /// Returns the process exit code: 0 = decoded (and, with `--diff`, identical);
 /// 1 = artifacts differ (`--diff`) or a malformed artifact; 2 = I/O error.
 fn run_inspect(artifact: &str, json: bool, diff: Option<&str>) -> i32 {
-    use libmind::ir::compact::{Determinism, mic3_evidence_report, parse_mic3};
+    use libmind::ir::compact::{Determinism, mic3_evidence_report, parse_mic3_envelope};
 
     let bytes = match fs::read(artifact) {
         Ok(b) => b,
@@ -2297,7 +2287,7 @@ fn run_inspect(artifact: &str, json: bool, diff: Option<&str>) -> i32 {
             // (e.g. both zero-length from an aborted build, or a self-diff of a
             // corrupt artifact) must still fail closed rather than report a
             // confident "identical: YES".
-            if let Err(err) = parse_mic3(&bytes) {
+            if let Err(err) = parse_mic3_envelope(&bytes) {
                 eprintln!("error[inspect]: {artifact} did not parse as mic@3: {err:?}");
                 if json {
                     println!(
@@ -2325,10 +2315,10 @@ fn run_inspect(artifact: &str, json: bool, diff: Option<&str>) -> i32 {
         let first_diff = (0..common)
             .find(|&i| bytes[i] != other_bytes[i])
             .unwrap_or(common);
-        let a_instrs = parse_mic3(&bytes)
+        let a_instrs = parse_mic3_envelope(&bytes)
             .map(|m| m.instrs.len() as i64)
             .unwrap_or(-1);
-        let b_instrs = parse_mic3(&other_bytes)
+        let b_instrs = parse_mic3_envelope(&other_bytes)
             .map(|m| m.instrs.len() as i64)
             .unwrap_or(-1);
         if json {
@@ -2372,7 +2362,7 @@ fn run_inspect(artifact: &str, json: bool, diff: Option<&str>) -> i32 {
     }
 
     // INSPECT MODE: decode + pretty-print one artifact.
-    let module = match parse_mic3(&bytes) {
+    let module = match parse_mic3_envelope(&bytes) {
         Ok(m) => m,
         Err(err) => {
             let reason = format!("{err:?}");
@@ -2463,7 +2453,7 @@ fn run_verify(
 ) -> i32 {
     use libmind::ir::compact::{
         CollapseVerifyStatus, Determinism, EvidenceError, MAX_MIC3_INPUT, Mic3NonCanonical,
-        TraceHashKind, mic3_canonical_check, mic3_evidence_report, parse_mic3,
+        TraceHashKind, mic3_canonical_check, mic3_evidence_report, parse_mic3_envelope,
     };
     use libmind::ir::{IrVerifyError, check_ssa_well_formed, verify_module};
 
@@ -2544,7 +2534,7 @@ fn run_verify(
     // authenticates — exactly as `fp_mode` is re-derived — the true mode is
     // authenticated, and a stored MAP field that disagrees is a tamper indicator.
     let (ssa_valid, ssa_reason, rederived_deterministic): (bool, Option<String>, Option<bool>) =
-        match parse_mic3(&bytes) {
+        match parse_mic3_envelope(&bytes) {
             Ok(module) => {
                 let det = libmind::ir::ir_declares_deterministic(&module);
                 match check_ssa_well_formed(&module) {

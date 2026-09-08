@@ -566,6 +566,7 @@ mod tests {
     #[test]
     fn const_f64_renders_as_float() {
         let module = IRModule {
+            canonical_types: None,
             instrs: vec![
                 Instr::ConstF64(ValueId(0), 3.5),
                 Instr::ConstF64(ValueId(1), 1.0),

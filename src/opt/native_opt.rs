@@ -78,10 +78,11 @@ pub fn opt_level_from_env() -> OptLevel {
 /// With [`OptLevel::Off`] this returns immediately, leaving the module — and therefore
 /// every emitted byte — unchanged. Higher levels dispatch a *pinned* pass schedule.
 pub fn optimize_mic3(module: &mut IRModule, level: OptLevel) {
+    if crate::opt::ir_canonical::has_populated_canonical(module) {
+        return;
+    }
     match level {
-        OptLevel::Off => {
-            // Strict no-op: do not touch `module`. Byte-identity is the contract.
-        }
+        OptLevel::Off => {}
         OptLevel::Basic => {
             // The passes rewrite `If`/`While` regions and bitwise/shift `BinOp`s, all of
             // which are `std-surface`-gated IR variants. Under the minimal (no-std-surface)
@@ -93,15 +94,14 @@ pub fn optimize_mic3(module: &mut IRModule, level: OptLevel) {
                 fold_mul_by_zero(&mut module.instrs);
                 fold_algebraic_identities(&mut module.instrs);
                 cse_binops(&mut module.instrs);
-                // Cleanup: the passes above orphan constants (an eliminated `*1`'s `1`) and
-                // expose new const-const folds. Re-run the audited canonical passes ONCE — a
+                // Cleanup: the passes above orphan constants and expose new const-const folds.
+                // Re-run the audited canonical passes ONCE — a
                 // bounded, deterministic finalize (not "loop until quiet"), reusing
                 // `prune_dead`/`constant_fold`/`reorder` rather than re-implementing DCE.
                 crate::opt::ir_canonical::canonicalize_module(module);
             }
             #[cfg(not(feature = "std-surface"))]
             {
-                // No `If`/`While`/bitwise IR in the minimal build → nothing to optimize.
                 let _ = module;
             }
         }

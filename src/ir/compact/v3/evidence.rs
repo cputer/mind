@@ -53,9 +53,10 @@
 //! # Back-compat guarantee
 //!
 //! `emit_mic3` (plain, no evidence) produces zero MAP bytes after the body.
-//! `parse_mic3` reads the MAP only when it encounters the `0x4D` sentinel.
-//! At EOF the MAP is empty, and the parsed `IRModule` is byte-identical to the
-//! output of the pre-RFC-0021-§4.2 encoder.
+//! [`parse_mic3_envelope`] accepts either the plain body or one body followed by
+//! a valid MAP epilogue and requires the whole artifact to be consumed. The
+//! legacy [`super::parse_mic3`] body-prefix API remains suffix-tolerant for
+//! compatibility.
 //!
 //! # Relationship to mic@2.1 MAP (v2/evidence.rs)
 //!
@@ -72,11 +73,15 @@ use crate::ir::IRModule;
 // `uleb128_read` (the LENIENT reader) is deliberately NOT imported here: every
 // length in the MAP epilogue is canonical-form-critical, so this module reads
 // them with `uleb128_read_minimal`, which rejects zero-padded encodings.
+use super::EvidenceEmitError;
+use super::boundary::{ArtifactPartsError, parse_artifact_parts};
 use crate::ir::compact::v2::{uleb128_read_minimal, uleb128_write, zigzag_decode, zigzag_encode};
 use crate::ir::compact::v3::collapse_receipt::{
     CollapseReceipt, decode_collapse_receipts, encode_collapse_receipts,
 };
+#[cfg(test)]
 use crate::ir::evidence::ir_trace_hash;
+use crate::ir::evidence::ir_trace_hash_checked;
 
 // Re-export the canonical evidence vocabulary from v2 — one set of types for
 // the whole codebase (RFC 0021 §3.2: "reuse, don't rebuild").
@@ -270,7 +275,19 @@ pub fn emit_mic3_with_evidence(
     determinism: Determinism,
     toolchain: &str,
 ) -> Vec<u8> {
-    let body = super::emit_mic3(ir);
+    emit_mic3_with_evidence_checked(ir, substrate, parent, determinism, toolchain)
+        .expect("legacy emit_mic3_with_evidence received unsupported canonical metadata")
+}
+
+/// Checked sibling of [`emit_mic3_with_evidence`].
+pub fn emit_mic3_with_evidence_checked(
+    ir: &IRModule,
+    substrate: &str,
+    parent: Option<[u8; 32]>,
+    determinism: Determinism,
+    toolchain: &str,
+) -> Result<Vec<u8>, EvidenceEmitError> {
+    let body = super::emit_mic3_checked(ir)?;
     // Dedup (Slice-0, task #70): `ir_trace_hash(ir)` is `mini_sha256(&emit_mic3(ir))`,
     // and `body` already holds those exact canonical mic@3 bytes — so hash the bytes
     // in hand instead of re-running `emit_mic3`. Byte-identical trace_hash (Article
@@ -288,7 +305,7 @@ pub fn emit_mic3_with_evidence(
         None,
         &[],
     );
-    out
+    Ok(out)
 }
 
 /// Emit a mic@3 artifact with an `evidence_chain.*` MAP that ALSO carries
@@ -329,14 +346,13 @@ pub fn emit_mic3_with_evidence_and_receipts(
     signing: Option<&SigningKey>,
     receipts: &[CollapseReceipt],
     app_entries: &[(String, String)],
-) -> Result<Vec<u8>, &'static str> {
+) -> Result<Vec<u8>, EvidenceEmitError> {
     // Validate application-namespace entries at the library boundary (not only at
     // the CLI): reserved-prefix / un-namespaced / duplicate / empty keys must never
     // reach the MAP or the signature preimage, or a non-CLI caller could break the
     // canonical "MAP is a set" invariant. Byte-neutral for the empty / valid case.
-    validate_app_entries(app_entries)
-        .map_err(|_| "invalid application-namespace evidence entry")?;
-    let body = super::emit_mic3(ir);
+    validate_app_entries(app_entries).map_err(|_| EvidenceEmitError::InvalidApplicationEntries)?;
+    let body = super::emit_mic3_checked(ir)?;
     let trace_hash = mini_sha256(&body);
     // Encode the canonical receipt blob; `None` (omit the key) when there is
     // nothing to attest, so the empty-receipt path stays byte-identical.
@@ -363,7 +379,10 @@ pub fn emit_mic3_with_evidence_and_receipts(
             );
             let scheme = scheme_for_key(key);
             let preimage = build_signature_preimage(&evidence_entries, &trace_hash, scheme);
-            Some(compute_signature_payload(key, &preimage)?)
+            Some(
+                compute_signature_payload(key, &preimage)
+                    .map_err(EvidenceEmitError::SchemeUnavailable)?,
+            )
         }
         None => None,
     };
@@ -408,7 +427,19 @@ pub fn emit_mic3_with_signed_evidence(
     toolchain: &str,
     seed: &[u8; 32],
 ) -> Vec<u8> {
-    // Ed25519 signing never depends on an optional feature ⇒ infallible.
+    emit_mic3_with_signed_evidence_checked(ir, substrate, parent, determinism, toolchain, seed)
+        .expect("legacy signed evidence emission received unsupported canonical metadata")
+}
+
+/// Checked sibling of [`emit_mic3_with_signed_evidence`].
+pub fn emit_mic3_with_signed_evidence_checked(
+    ir: &IRModule,
+    substrate: &str,
+    parent: Option<[u8; 32]>,
+    determinism: Determinism,
+    toolchain: &str,
+    seed: &[u8; 32],
+) -> Result<Vec<u8>, EvidenceEmitError> {
     emit_mic3_with_signed_evidence_scheme(
         ir,
         substrate,
@@ -417,7 +448,6 @@ pub fn emit_mic3_with_signed_evidence(
         toolchain,
         &SigningKey::Ed25519(*seed),
     )
-    .expect("ed25519 signing is always available")
 }
 
 /// Emit a mic@3 artifact with an `evidence_chain.*` MAP **and** a crypto-agile
@@ -448,9 +478,9 @@ pub fn emit_mic3_with_signed_evidence_scheme(
     determinism: Determinism,
     toolchain: &str,
     key: &SigningKey,
-) -> Result<Vec<u8>, &'static str> {
-    let body = super::emit_mic3(ir);
-    let trace_hash = ir_trace_hash(ir);
+) -> Result<Vec<u8>, EvidenceEmitError> {
+    let body = super::emit_mic3_checked(ir)?;
+    let trace_hash = mini_sha256(&body);
     // Sign the CANONICAL PROVENANCE PREIMAGE, not just the anchor: trace_hash ||
     // canonical serialization of every `evidence_chain.*` entry except the
     // trace_hash itself (which is derived from the body it anchors). Building the
@@ -473,7 +503,8 @@ pub fn emit_mic3_with_signed_evidence_scheme(
     // fails to verify (fail-closed).
     let scheme = scheme_for_key(key);
     let preimage = build_signature_preimage(&evidence_entries, &trace_hash, scheme);
-    let payload = compute_signature_payload(key, &preimage)?;
+    let payload =
+        compute_signature_payload(key, &preimage).map_err(EvidenceEmitError::SchemeUnavailable)?;
     let mut out = body;
     append_map_epilogue(
         &mut out,
@@ -706,35 +737,39 @@ pub fn mic3_canonical_check(bytes: &[u8]) -> Result<(), Mic3NonCanonical> {
     if bytes.len() > super::parse::MAX_MIC3_INPUT {
         return Err(Mic3NonCanonical::Oversize);
     }
-    // (1) Body. `parse_mic3` stops at the body/epilogue boundary, so re-emitting
-    // the module it recovers reproduces exactly the canonical body bytes.
-    let ir = super::parse_mic3(bytes).map_err(|_| Mic3NonCanonical::Unparseable)?;
-    let body = super::emit_mic3(&ir);
-    if body.len() > bytes.len() {
+    // (1) Decode exactly one body prefix and optional MAP. The body boundary is
+    // the parser cursor position, so a non-canonical body cannot move the
+    // boundary merely because its canonical re-emission has a different length.
+    let parts = parse_artifact_parts(bytes).map_err(|error| match error {
+        ArtifactPartsError::Body(_) => Mic3NonCanonical::Unparseable,
+        ArtifactPartsError::Trailing { offset } => Mic3NonCanonical::TrailingGarbage { offset },
+        ArtifactPartsError::Map(ParseMapError::ReservedKey(key)) => {
+            Mic3NonCanonical::ReservedKey(key)
+        }
+        ArtifactPartsError::Map(ParseMapError::DuplicateKey(key)) => {
+            Mic3NonCanonical::DuplicateKey(key)
+        }
+        ArtifactPartsError::Map(_) => Mic3NonCanonical::MalformedMap,
+    })?;
+    let body =
+        super::emit_mic3_checked(&parts.module).map_err(|_| Mic3NonCanonical::Unparseable)?;
+    let literal_body = &bytes[..parts.body_end];
+    if body.len() != literal_body.len() {
         return Err(Mic3NonCanonical::Body {
-            offset: bytes.len(),
+            offset: body.len().min(literal_body.len()),
         });
     }
-    if let Some(offset) = first_difference(&body, &bytes[..body.len()]) {
+    if let Some(offset) = first_difference(&body, literal_body) {
         return Err(Mic3NonCanonical::Body { offset });
     }
-    let rest = &bytes[body.len()..];
-    if rest.is_empty() {
-        // Plain (unattested) artifact: body is the whole file and it is canonical.
-        return Ok(());
-    }
-    if rest[0] != MAP_SENTINEL {
-        return Err(Mic3NonCanonical::TrailingGarbage { offset: body.len() });
-    }
 
-    // (2) MAP epilogue. `parse_map_epilogue` already rejects leftover bytes and
-    // non-minimal lengths; the re-encode below additionally pins key ORDER and
-    // value encoding, so emit and verify cannot drift.
-    let entries = parse_map_epilogue(rest).map_err(|e| match e {
-        ParseMapError::ReservedKey(k) => Mic3NonCanonical::ReservedKey(k),
-        ParseMapError::DuplicateKey(k) => Mic3NonCanonical::DuplicateKey(k),
-        _ => Mic3NonCanonical::MalformedMap,
-    })?;
+    let Some(entries) = parts.entries else {
+        return Ok(());
+    };
+    let rest = &bytes[parts.body_end..];
+
+    // (2) `parse_artifact_parts` already rejected leftover bytes and non-minimal
+    // lengths; the re-encode below additionally pins key ORDER and value bytes.
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for e in &entries {
         if !seen.insert(e.key.as_str()) {
@@ -792,10 +827,11 @@ fn encode_map_epilogue_canonical(entries: &[ParsedEntry]) -> Vec<u8> {
 /// `trace_hash` equals the SHA-256 of the canonical mic@3 bytes of the parsed
 /// module. Note the anchor is the **canonical form of the IR recovered from the
 /// artifact** (`ir_trace_hash` hashes the *re-emission* of the parsed module),
-/// not the artifact's literal bytes: a mutation that the decoder normalises away
-/// — a non-minimal ULEB encoding, or trailing bytes after the body — re-emits
-/// identically and still reports `trace_hash_valid = true`. Any byte flip that
-/// changes the recovered IR flips `trace_hash_valid` to `false`.
+/// not the artifact's literal body bytes: a non-minimal body ULEB that the body
+/// decoder normalises away can re-emit identically and still report
+/// `trace_hash_valid = true`. Arbitrary suffixes and malformed MAP bytes are
+/// rejected by the strict envelope seam. Any byte flip that changes the
+/// recovered IR flips `trace_hash_valid` to `false`.
 ///
 /// The signature does NOT close that gap either: the RFC 0021 preimage (built by
 /// the private `build_signature_preimage`) covers the trace_hash, the scheme tag
@@ -824,19 +860,10 @@ pub fn mic3_evidence_report(bytes: &[u8]) -> Result<EvidenceReport, EvidenceErro
         return Err(EvidenceError::Malformed("evidence_chain.trace_hash"));
     }
 
-    // Locate the MAP sentinel.
-    let body_end = find_map_sentinel(bytes).ok_or(EvidenceError::Missing)?;
-
-    // Parse the IR from the plain body prefix.
-    let ir = super::parse_mic3(&bytes[..body_end])
+    let parts = parse_artifact_parts(bytes)
         .map_err(|_| EvidenceError::Malformed("evidence_chain.trace_hash"))?;
-
-    // Parse the MAP epilogue.
-    let map_bytes = &bytes[body_end..];
-    let entries = parse_map_epilogue(map_bytes)
-        .map_err(|_| EvidenceError::Malformed("evidence_chain.trace_hash"))?;
-
-    decode_evidence_report(&ir, &entries)
+    let entries = parts.entries.ok_or(EvidenceError::Missing)?;
+    decode_evidence_report(&parts.module, &entries)
 }
 
 /// Extract the application-namespace metadata (Phase 17.8) from a mic@3 artifact.
@@ -851,9 +878,9 @@ pub fn mic3_app_metadata(bytes: &[u8]) -> Result<Vec<(String, String)>, Evidence
     if bytes.len() > super::parse::MAX_MIC3_INPUT {
         return Err(EvidenceError::Malformed("app_metadata"));
     }
-    let body_end = find_map_sentinel(bytes).ok_or(EvidenceError::Missing)?;
-    let entries = parse_map_epilogue(&bytes[body_end..])
-        .map_err(|_| EvidenceError::Malformed("app_metadata"))?;
+    let parts =
+        parse_artifact_parts(bytes).map_err(|_| EvidenceError::Malformed("app_metadata"))?;
+    let entries = parts.entries.ok_or(EvidenceError::Missing)?;
     let mut out: Vec<(String, String)> = entries
         .iter()
         // Read-back mirrors `validate_app_entries`: only well-formed application
@@ -925,13 +952,13 @@ pub fn mic3_collapse_verify(bytes: &[u8]) -> Result<CollapseVerifyStatus, Eviden
     if bytes.len() > super::parse::MAX_MIC3_INPUT {
         return Err(EvidenceError::Malformed(KEY_COLLAPSE_RECEIPTS));
     }
+    let parts =
+        parse_artifact_parts(bytes).map_err(|_| EvidenceError::Malformed(KEY_COLLAPSE_RECEIPTS))?;
     // No MAP epilogue ⇒ no receipts (an unattested / plain artifact).
-    let body_end = match find_map_sentinel(bytes) {
-        Some(e) => e,
+    let entries = match parts.entries {
+        Some(entries) => entries,
         None => return Ok(CollapseVerifyStatus::Absent),
     };
-    let entries = parse_map_epilogue(&bytes[body_end..])
-        .map_err(|_| EvidenceError::Malformed(KEY_COLLAPSE_RECEIPTS))?;
 
     let blob = match find_entry(&entries, KEY_COLLAPSE_RECEIPTS) {
         Some(ParsedValue::Bytes(b)) => b.clone(),
@@ -950,13 +977,10 @@ pub fn mic3_collapse_verify(bytes: &[u8]) -> Result<CollapseVerifyStatus, Eviden
         return Ok(CollapseVerifyStatus::NonCanonical);
     }
 
-    // Parse the body ONCE and collect its ConstI64 pool for the body-binding
-    // check. A parse failure here means the whole artifact is malformed — the
-    // trace_hash path reports it authoritatively; here we fail closed.
-    let ir = super::parse_mic3(&bytes[..body_end])
-        .map_err(|_| EvidenceError::Malformed(KEY_COLLAPSE_RECEIPTS))?;
+    // Collect the ConstI64 pool from the body already decoded by the shared
+    // strict-envelope seam.
     let mut body_consts: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
-    collect_const_i64(&ir.instrs, &mut body_consts);
+    collect_const_i64(&parts.module.instrs, &mut body_consts);
 
     for rec in &receipts {
         // (1) Self-consistency: recorded constant == O(1) re-derivation.
@@ -1071,9 +1095,9 @@ pub fn mic3_signature_status(bytes: &[u8]) -> Result<SignatureStatus, EvidenceEr
     if bytes.len() > super::parse::MAX_MIC3_INPUT {
         return Err(EvidenceError::Malformed(KEY_SIG_ED25519));
     }
-    let body_end = find_map_sentinel(bytes).ok_or(EvidenceError::Missing)?;
-    let entries = parse_map_epilogue(&bytes[body_end..])
-        .map_err(|_| EvidenceError::Malformed(KEY_SIG_ED25519))?;
+    let parts =
+        parse_artifact_parts(bytes).map_err(|_| EvidenceError::Malformed(KEY_SIG_ED25519))?;
+    let entries = parts.entries.ok_or(EvidenceError::Missing)?;
 
     // Bind the signature to the ACTUAL body (defense-in-depth for callers that
     // check the signature layer in isolation, without also calling
@@ -1082,9 +1106,8 @@ pub fn mic3_signature_status(bytes: &[u8]) -> Result<SignatureStatus, EvidenceEr
     // body tamper that leaves the stored hash in place would otherwise let the
     // (genuine, over-the-old-hash) signature still report Valid here.
     if entries.iter().any(|e| e.key.starts_with("signature.")) {
-        let ir = super::parse_mic3(&bytes[..body_end])
+        let recomputed = ir_trace_hash_checked(&parts.module)
             .map_err(|_| EvidenceError::Malformed(KEY_TRACE_HASH))?;
-        let recomputed = ir_trace_hash(&ir);
         let stored = find_bytes32(&entries, KEY_TRACE_HASH)?;
         if recomputed != stored {
             return Ok(SignatureStatus::Invalid);
@@ -1597,35 +1620,10 @@ pub(crate) enum ParsedValue {
 /// scanning the body (which could contain `0x4D` bytes legitimately), we use
 /// a different approach: try to parse the body by scanning from the front
 /// and recording where the cursor stops.
+#[cfg(test)]
 pub(crate) fn find_map_sentinel(bytes: &[u8]) -> Option<usize> {
-    // Attempt to find the body/epilogue boundary by trying parse_mic3 on
-    // progressive slices — but that is expensive and fragile.  Instead, we
-    // use the simpler observation: the MAP sentinel byte `0x4D` immediately
-    // follows the last byte that `parse_mic3` consumed from `bytes`.
-    //
-    // Since `parse_mic3` takes a `&[u8]` and uses a `Cursor` internally, we
-    // cannot query the cursor position after parsing.  The approach is:
-    // 1. Parse the IR from the full byte slice. If that fails, there is no MAP.
-    // 2. Re-emit the parsed IR as mic@3 (body only). The body length is the
-    //    length of that re-emission (deterministic, fixed-point property).
-    // 3. The byte at that offset in the original bytes is the MAP sentinel if
-    //    it equals `MAP_SENTINEL` and the remaining bytes pass MAP validation.
-    //
-    // This is O(body) work — acceptable for a per-artifact call path.
-
-    let ir = super::parse_mic3(bytes).ok()?;
-    let body = super::emit_mic3(&ir);
-    let body_end = body.len();
-
-    if body_end >= bytes.len() {
-        // No bytes beyond the body — no MAP epilogue.
-        return None;
-    }
-    if bytes[body_end] == MAP_SENTINEL {
-        Some(body_end)
-    } else {
-        None
-    }
+    let parts = parse_artifact_parts(bytes).ok()?;
+    parts.entries.map(|_| parts.body_end)
 }
 
 /// Parse the MAP epilogue bytes (starting with the sentinel byte) into a list
@@ -1830,7 +1828,8 @@ fn decode_evidence_report(
     };
 
     // Recompute via the same FIPS-180-4 seam as ir_trace_hash.
-    let recomputed = ir_trace_hash(ir);
+    let recomputed =
+        ir_trace_hash_checked(ir).map_err(|_| EvidenceError::Malformed(KEY_TRACE_HASH))?;
     let trace_hash_valid = recomputed == stored_hash;
 
     // Strict-FP mode re-derived from the SAME re-parsed body the hash attests:
@@ -2000,15 +1999,12 @@ mod tests {
                 Instr::Return { value: Some(r) },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
         m.instrs.push(Instr::ConstI64(v, 5));
-        m.instrs.push(Instr::Call {
-            dst,
-            name: "add_one".into(),
-            args: vec![v],
-        });
+        m.instrs.push(Instr::legacy_call(dst, "add_one", vec![v]));
         m.instrs.push(Instr::Output(dst));
         m
     }
@@ -2078,10 +2074,12 @@ mod tests {
                     reap_threshold: None,
                     #[cfg(feature = "std-surface")]
                     value_types: std::collections::BTreeMap::new(),
+                    semantic_types: None,
                 },
                 Instr::Return { value: Some(op) },
             ],
             reap_threshold: Some(0.75),
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
@@ -2265,11 +2263,8 @@ mod tests {
         let seed = ir.fresh();
         let r = ir.fresh();
         ir.instrs.push(Instr::ConstI64(seed, 0));
-        ir.instrs.push(Instr::Call {
-            dst: r,
-            name: "random".to_string(),
-            args: vec![seed],
-        });
+        ir.instrs
+            .push(Instr::legacy_call(r, "random".to_string(), vec![seed]));
         ir.instrs.push(Instr::Output(r));
 
         let bytes =

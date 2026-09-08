@@ -15,9 +15,13 @@
 use crate::types::ConvPadding;
 use crate::types::DType;
 use crate::types::ShapeDim;
+use crate::types::{CanonicalModuleTypes, FunctionIdentity, FunctionSemanticTypes};
 
 use std::fmt;
 
+pub(crate) mod canonical_verify;
+#[cfg(test)]
+mod canonical_verify_tests;
 pub mod compact;
 mod evidence;
 pub(crate) mod fp_mode;
@@ -26,6 +30,7 @@ mod print;
 mod verify;
 
 pub use crate::opt::ir_canonical::canonicalize_module;
+pub use canonical_verify::{CanonicalMetadataError, verify_canonical_metadata};
 pub use evidence::{
     ir_declares_deterministic, ir_first_hard_nondeterministic_call, ir_first_nondeterministic_call,
     ir_trace_hash,
@@ -34,16 +39,9 @@ pub use fp_mode::{FpMode, fp_contract_mode};
 pub use print::format_ir_module;
 pub use verify::{IrVerifyError, SsaRule, SsaViolation, check_ssa_well_formed, verify_module};
 
-/// Whole-project enum registry — every enum DECLARED anywhere in a project,
-/// collected once by the project builder and made visible to BOTH the parser
-/// (so a cross-module `Enum.Variant` dot reference normalises to the canonical
-/// `Enum::Variant`) and the lowering (so the variant tags / payload records are
-/// known even when the defining `EnumDef` lives in a sibling source file).
-///
-/// A single-file compile outside a project never populates this — it stays the
-/// empty default, so emitted mic@1/mic@3 bytes (and the keystone's
-/// cross-substrate identity) are unaffected. Set/cleared with the same
-/// set-before / clear-after discipline as the cross-module project table.
+/// Whole-project enum registry shared by parsing and lowering. Single-file
+/// compilation leaves it empty; project builds set and clear it with the
+/// cross-module registry.
 #[derive(Debug, Clone, Default)]
 pub struct GlobalEnums {
     /// Enum type names declared across the project. The parser checks this to
@@ -242,11 +240,12 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// Load an [`IRModule`] from MIC text bytes.
+/// Load an [`IRModule`] from mic@1 text or a MIC@3 artifact.
 ///
 /// This is the stable runtime-facing entry point used by `mind-runtime` and
 /// other backends to consume pre-compiled IR without re-running the surface
-/// parser. The accepted format is **mic@1** (textual IR with explicit node IDs).
+/// parser. MIC@3 accepts a body with an optional well-formed MAP epilogue;
+/// signature and evidence verification remain separate operations.
 ///
 /// `mic@2` and `MIC-B` are also detected, but those formats produce a
 /// different [`Graph`](compact::v2::Graph) type and must be loaded through
@@ -263,7 +262,11 @@ pub fn load(data: &[u8]) -> Result<IRModule, LoadError> {
         }
         compact::MicFormat::Mic2 => Err(LoadError::Mic2NotSupportedByLoad),
         compact::MicFormat::MicB => Err(LoadError::MicBNotSupportedByLoad),
-        compact::MicFormat::Mic3 => compact::parse_mic3(data).map_err(LoadError::Mic3),
+        compact::MicFormat::Mic3 => compact::parse_mic3_envelope(data).map_err(|error| {
+            LoadError::Mic3(compact::Mic3Error {
+                message: error.to_string(),
+            })
+        }),
         compact::MicFormat::Unknown => {
             // Not a recognised binary magic (mic@3 / MIC-B). If the bytes are
             // not valid UTF-8 either, the input is malformed binary, not a
@@ -467,15 +470,9 @@ pub enum Instr {
         body: Vec<Instr>,
         /// Threshold from `[reap_threshold(t)]` attribute, if present.
         reap_threshold: Option<f64>,
-        /// Step D — the canonical aggregate-type table for THIS function's SSA
-        /// scope. Function bodies are a SEPARATE SSA namespace (lowering resets
-        /// the value counter per `FnDef`, see `src/eval/lower.rs`), so a body
-        /// ValueId and the module-level `IRModule.value_types` key space are
-        /// distinct — a fn-local aggregate is typed HERE, never in the module
-        /// table. Empty until the S3 population slice; NOT serialized until the
-        /// S2b v0x03 wire slice (so an all-empty module stays byte-for-byte
-        /// v0x02). `BTreeMap` for deterministic order; std-surface-gated to match
-        /// `IRModule.value_types`.
+        /// Co-located canonical function identity and SSA types; pending v0x04 encoding.
+        semantic_types: Option<Box<FunctionSemanticTypes>>,
+        /// Scope-local aggregate table, serialized in MIC@3 v0x03 when nonempty.
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap<ValueId, ArrayType>,
     },
@@ -484,6 +481,8 @@ pub enum Instr {
         dst: ValueId,
         name: String,
         args: Vec<ValueId>,
+        /// B1 resolver-owned identity; `None` is a legacy unresolved call.
+        resolved_callee: Option<Box<FunctionIdentity>>,
     },
     /// Return from function
     Return {
@@ -1249,6 +1248,8 @@ pub struct IRModule {
     /// Manifest C ABI requests are merged afterward. The C emitter validates
     /// every requested name against lowered functions before emitting wrappers.
     pub exports: std::collections::HashSet<String>,
+    /// B1 semantic authority; populated bundles require checked emission.
+    pub canonical_types: Option<Box<CanonicalModuleTypes>>,
     /// RFC 0005 P0e Step 1 — struct schema registry. Maps a struct name
     /// to its canonical field-name order (as declared in `Node::StructDef`).
     /// Populated by the lowering pass when it visits a `StructDef` and
@@ -1391,6 +1392,7 @@ impl IRModule {
             instrs: Vec::new(),
             next_id: 0,
             exports: std::collections::HashSet::new(),
+            canonical_types: None,
             #[cfg(feature = "std-surface")]
             struct_defs: std::collections::BTreeMap::new(),
             #[cfg(feature = "std-surface")]

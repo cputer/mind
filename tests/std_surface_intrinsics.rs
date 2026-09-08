@@ -305,6 +305,8 @@ fn memory_intrinsics_lower_inline_with_exact_width_and_store_zero_status() {
             dst,
             name: name.to_string(),
             args: vec![ptr],
+
+            resolved_callee: None,
         });
         m.instrs.push(Instr::Output(dst));
 
@@ -361,6 +363,8 @@ fn memory_intrinsics_lower_inline_with_exact_width_and_store_zero_status() {
             dst,
             name: name.to_string(),
             args: vec![ptr, value],
+
+            resolved_callee: None,
         });
         m.instrs.push(Instr::Output(dst));
 

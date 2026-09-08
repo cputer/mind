@@ -17,6 +17,8 @@ mod tests;
 
 pub use canonical_registry::{SchemaRegistry, SchemaRegistryBuilder};
 pub use canonical_types::{
-    AliasIdentity, CanonicalField, CanonicalSchema, FieldDraft, RegistryLimits, ScalarType,
-    SchemaDraft, SchemaError, SchemaId, SchemaIdentity, SemanticType, TypeExpr,
+    AliasIdentity, CanonicalField, CanonicalModuleTypes, CanonicalSchema, FieldDraft,
+    FunctionDeclaration, FunctionIdentity, FunctionKind, FunctionSemanticTypes, FunctionSignature,
+    RegistryLimits, ScalarType, SchemaDraft, SchemaError, SchemaId, SchemaIdentity, SemanticType,
+    TypeExpr,
 };

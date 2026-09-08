@@ -56,6 +56,7 @@ fn fndef_lowers_to_func_func_with_i64_signature() {
         ret_id: Some(ret),
         body,
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -85,6 +86,7 @@ fn fndef_appears_before_main_in_emitted_text() {
         ret_id: Some(ret),
         body,
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -129,6 +131,7 @@ fn fndef_and_call_to_it_compose_cleanly() {
         ret_id: Some(s),
         body,
         reap_threshold: None,
+        semantic_types: None,
         #[cfg(feature = "std-surface")]
         value_types: std::collections::BTreeMap::new(),
     });
@@ -140,6 +143,8 @@ fn fndef_and_call_to_it_compose_cleanly() {
         dst: r,
         name: "double".to_string(),
         args: vec![c],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(r));
 
@@ -173,6 +178,8 @@ fn external_intrinsic_still_gets_private_fwd_decl() {
         dst: r,
         name: "__mind_alloc".to_string(),
         args: vec![n],
+
+        resolved_callee: None,
     });
     m.instrs.push(Instr::Output(r));
 

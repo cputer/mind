@@ -77,8 +77,9 @@
 //!
 //! When an artifact is emitted with evidence, a MAP epilogue immediately follows
 //! the last IR body byte.  Its format is documented in [`evidence`].  A reader
-//! that does not understand the epilogue can still parse the IR body by passing
-//! `bytes[..body_end]` to [`parse_mic3`].
+//! that does not understand the epilogue can still parse the IR body prefix via
+//! [`parse_mic3_prefix`]. A whole-artifact consumer uses
+//! [`parse_mic3_envelope`].
 //!
 //! ```text
 //! 0x4D                      -- MAP sentinel ('M')
@@ -132,78 +133,38 @@
 //! | 0x26 | Relu |
 //! | 0x27 | ReluGrad |
 
+mod boundary;
+mod canonical_boundary;
 pub mod collapse_receipt;
 pub mod ed25519;
 mod emit;
+mod error;
 pub mod evidence;
+mod format;
 pub mod mldsa;
 mod parse;
 pub mod slhdsa;
 
+pub use boundary::{
+    Mic3EnvelopeError, ParsedMic3Prefix, parse_mic3, parse_mic3_body, parse_mic3_envelope,
+};
+pub use canonical_boundary::{emit_mic3, emit_mic3_checked};
 pub use collapse_receipt::{CollapseReceipt, CollapseReceiptError};
-pub use emit::emit_mic3;
+pub use error::{EvidenceEmitError, Mic3EncodeError, Mic3Error};
 pub use evidence::{
     CollapseVerifyStatus, Mic3NonCanonical, SignatureStatus, SigningKey, VerifiedScheme,
-    emit_mic3_with_evidence, emit_mic3_with_evidence_and_receipts, emit_mic3_with_signed_evidence,
+    emit_mic3_with_evidence, emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked,
+    emit_mic3_with_signed_evidence, emit_mic3_with_signed_evidence_checked,
     emit_mic3_with_signed_evidence_scheme, mic3_app_metadata, mic3_canonical_check,
     mic3_collapse_verify, mic3_evidence_report, mic3_signature_status, validate_app_entries,
 };
-pub use parse::{MAX_MIC3_INPUT, Mic3Error, parse_mic3};
+pub use format::{MIC3_MAGIC, MIC3_MIN_READ_VERSION, MIC3_VERSION, MIC3_VERSION_BASE};
+pub use parse::{MAX_MIC3_INPUT, parse_mic3_prefix};
 // Re-export the evidence vocabulary at the v3 level for convenience.
 pub use crate::ir::compact::v2::{Determinism, EvidenceError, EvidenceReport, TraceHashKind};
 
-/// Magic header bytes for MIC@3 binary format.
-pub const MIC3_MAGIC: [u8; 4] = *b"MIC3";
-
-/// MIC@3 format version byte (the version this build *emits*).
-///
-/// # Version history
-///
-/// * `0x01` — original layout. `While.exit_ids` and `If.merges` (the
-///   control-flow region-exit / merge metadata) were *not* serialised, so a
-///   parsed artifact lost them (`exit_ids: Vec::new()` / `merges: Vec::new()`).
-///   Consumer-side `mindc verify` therefore reported false define-before-use
-///   errors on control-flow programs whose post-region instructions referenced
-///   those exit ids (#24).
-/// * `0x02` — appends `While.exit_ids` (a ValueId list) after `init_ids`, and
-///   `If.merges` (a `(merge_id, then_val, else_val)` triple list) after
-///   `branch_bindings`, so control-flow artifacts are independently
-///   SSA-verifiable. This changes the mic@3 bytes for any program containing a
-///   `While` with non-empty `exit_ids` or an `If` with non-empty `merges`, and
-///   therefore changes `trace_hash` for those programs — the intended effect of
-///   making the canonical content *complete* (RFC 0021 step-5).
-/// * `0x03` — Step D. Appends the structurally-scoped aggregate `value_types`
-///   tables (RFC-canonical array typing): a per-`FnDef` sub-list tail-appended
-///   after each function's body, and a module-level table appended after the
-///   `repr_c_structs` registry (the last `0x02` section). The version is
-///   *content-derived*: `IRModule::has_scoped_value_types` chooses
-///   `0x03` iff any scope carries a non-empty table, else the byte-for-byte
-///   `0x02` layout ([`MIC3_VERSION_BASE`]). Every table is empty in a
-///   pipeline-produced module today (populated only by the later semantic
-///   slice), so real programs keep emitting `0x02` unchanged. A `0x03` module
-///   with all tables empty is not canonical (it would have derived `0x02`); the
-///   parser therefore normalizes an all-empty `0x03` stream back to `0x02` on
-///   re-emit (WIRE_NON_CANONICAL_VERSION_NORMALIZES).
-///
-/// The parser ([`parse_mic3`]) accepts `0x01`, `0x02`, and `0x03`: a `0x01`
-/// artifact is read with empty `exit_ids` / `merges` (the historical
-/// behaviour); a `0x02` artifact reads those but no type tables; a `0x03`
-/// artifact reads the type tables too. The emitter writes [`MIC3_VERSION_BASE`]
-/// or [`MIC3_VERSION`] per the content predicate above.
-pub const MIC3_VERSION: u8 = 0x03;
-
-/// The additive-append BASE version — the layout emitted when a module carries
-/// no scoped aggregate `value_types` table (the overwhelmingly common case).
-/// Its bytes are exactly the historical `0x02` layout, so any real program
-/// (which never populates a type table before the semantic slice) is
-/// byte-for-byte unchanged from before Step D. See [`MIC3_VERSION`] for the
-/// version-derivation contract.
-pub const MIC3_VERSION_BASE: u8 = 0x02;
-
-/// Lowest MIC@3 format version this build can *read*. The parser is
-/// backward-compatible down to this version; the emitter writes
-/// [`MIC3_VERSION_BASE`] or [`MIC3_VERSION`] per the content predicate.
-pub const MIC3_MIN_READ_VERSION: u8 = 0x01;
+#[cfg(test)]
+mod boundary_tests;
 
 #[cfg(test)]
 mod tests {
@@ -595,20 +556,17 @@ mod tests {
                 Instr::Return { value: Some(ret) },
             ],
             reap_threshold: Some(0.5),
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
         m.instrs.push(Instr::ConstI64(v0, 3));
-        m.instrs.push(Instr::Call {
-            dst: call_dst,
-            name: "my_fn".into(),
-            args: vec![v0],
-        });
+        m.instrs
+            .push(Instr::legacy_call(call_dst, "my_fn", vec![v0]));
         m.instrs.push(Instr::Output(call_dst));
 
         let parsed = roundtrip(&m);
         assert_eq!(parsed.instrs.len(), m.instrs.len());
-        // Verify FnDef body is preserved
         if let Instr::FnDef {
             body,
             name,
@@ -659,12 +617,14 @@ mod tests {
                     reap_threshold: None,
                     #[cfg(feature = "std-surface")]
                     value_types: std::collections::BTreeMap::new(),
+                    semantic_types: None,
                 },
                 Instr::Return {
                     value: Some(outer_p),
                 },
             ],
             reap_threshold: None,
+            semantic_types: None,
             #[cfg(feature = "std-surface")]
             value_types: std::collections::BTreeMap::new(),
         });
@@ -1643,9 +1603,7 @@ mod tests {
             m
         }
 
-        /// The same two regions nested inside a `FnDef` body. mic@3 emits fn
-        /// bodies recursively (`emit_instr` recurses through `OP_FN_DEF`), so
-        /// the metadata is on the wire there too.
+        /// The same two regions nested inside a recursively emitted `FnDef`.
         fn r11_in_fn_body(while_meta: RegionMeta, if_meta: RegionMeta) -> IRModule {
             let mut m = IRModule::new();
             let ids = r11_ids(&mut m);
@@ -1663,6 +1621,7 @@ mod tests {
                     },
                 ],
                 reap_threshold: None,
+                semantic_types: None,
                 value_types: std::collections::BTreeMap::new(),
             });
             m.instrs.push(Instr::ConstI64(ids.cond, 0));
@@ -1947,6 +1906,7 @@ mod tests {
                 ret_id: None,
                 body,
                 reap_threshold: None,
+                semantic_types: None,
                 value_types: vt,
             }
         }

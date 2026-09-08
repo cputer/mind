@@ -66,11 +66,14 @@ pub use emit::{MicEmitter, emit_mic};
 pub use parse::{MicParseError, parse_mic};
 pub use v2::{MicFormat, detect_format};
 pub use v3::{
-    CollapseReceipt, CollapseReceiptError, CollapseVerifyStatus, MAX_MIC3_INPUT, Mic3Error,
-    Mic3NonCanonical, emit_mic3, emit_mic3_with_evidence, emit_mic3_with_evidence_and_receipts,
-    emit_mic3_with_signed_evidence, emit_mic3_with_signed_evidence_scheme, mic3_app_metadata,
-    mic3_canonical_check, mic3_collapse_verify, mic3_evidence_report, mic3_signature_status,
-    parse_mic3, validate_app_entries,
+    CollapseReceipt, CollapseReceiptError, CollapseVerifyStatus, EvidenceEmitError, MAX_MIC3_INPUT,
+    Mic3EncodeError, Mic3EnvelopeError, Mic3Error, Mic3NonCanonical, ParsedMic3Prefix, emit_mic3,
+    emit_mic3_checked, emit_mic3_with_evidence, emit_mic3_with_evidence_and_receipts,
+    emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence,
+    emit_mic3_with_signed_evidence_checked, emit_mic3_with_signed_evidence_scheme,
+    mic3_app_metadata, mic3_canonical_check, mic3_collapse_verify, mic3_evidence_report,
+    mic3_signature_status, parse_mic3, parse_mic3_body, parse_mic3_envelope, parse_mic3_prefix,
+    validate_app_entries,
 };
 pub use v3::{
     Determinism, EvidenceError, EvidenceReport, SignatureStatus, SigningKey, TraceHashKind,

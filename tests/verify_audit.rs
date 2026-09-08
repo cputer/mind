@@ -227,6 +227,8 @@ fn fndef_body_use_before_def_rejected() {
             lhs: phantom, // not defined in body
             rhs: phantom,
         }],
+
+        semantic_types: None,
     });
     // Need output for the module
     let out = scalar_const(&mut m, 0);
@@ -258,6 +260,8 @@ fn fndef_body_with_valid_defs_passes() {
                 rhs: body_b,
             },
         ],
+
+        semantic_types: None,
     });
     let out = scalar_const(&mut m, 0);
     m.instrs.push(Instr::Output(out));
