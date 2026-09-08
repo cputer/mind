@@ -71,19 +71,14 @@ The benchmark script (`benchmark_mojo_compilation.py`) will:
    - Speedup > 1.0: Mojo is faster
    - Speedup = 1.0: Equal performance
 
-### Verified Output (February 2026)
+### Result status
 
-```
-COMPILATION TIME COMPARISON: MIND v0.2.1 vs Mojo 0.26.1
-================================================================================
-
-Benchmark            MIND (µs)       Mojo (ms)       Ratio
---------------------------------------------------------------------------------
-scalar_math          1.77            810             458,000×
-matmul               2.95            827             280,000×
-mlp                  6.15            829             135,000×
-================================================================================
-```
+The repository contains the Mojo programs, harness, and a raw
+`mojo_results.json` file (about 899–928 ms per workload). That file does not
+retain complete version/host provenance, and the old ratios put a frontend-only
+MIND number beside a full `mojo build` number; those ratios are withdrawn as
+verified claims. Run the harness only when both sides' timing scope, version,
+host, and raw output are retained.
 
 ## Important Notes
 
@@ -178,15 +173,16 @@ Share results by:
 
 ## Context: Why This Matters
 
-Verified February 2026 results:
-> "MIND frontend is 135,000-458,000× faster than Mojo 0.26.1 full compilation"
-
-**Scope note**: MIND measures frontend only (parse + typecheck + IR). Mojo `mojo build` performs full LLVM compilation to native binary. Different scopes of work.
+The February 2026 Mojo comparison has no committed matched result. A raw
+`mojo_results.json` is present, but it is insufficient to establish a current
+comparison.
+MIND's 1.8–15.5 µs numbers are T1 frontend measurements; `mojo build` is a
+full native build, so a ratio between them is not a tier-matched claim.
 
 **Goal**: Honest, reproducible comparison to inform technical due diligence.
 
 ---
 
-**Status**: Verified (Mojo 0.26.1, February 2026)
+**Status**: Harness and workload definitions available; comparable result pending
 **Maintained by**: MIND benchmarking team
 **Last updated**: 2026-02-17

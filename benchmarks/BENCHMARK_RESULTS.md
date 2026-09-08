@@ -78,70 +78,32 @@ python benchmark_pytorch_compile.py
 
 ## Compilation Speed
 
-### MIND v0.2.1 vs PyTorch 2.10 GPU torch.compile (February 2026 - Verified)
+The standalone MIND values in this report are T1 frontend measurements. The
+committed PyTorch record (`pytorch_comparison/pytorch_results.json`) is
+PyTorch 2.9.1+cpu with `cuda_available:false`; it compares an in-process
+PyTorch call with a MIND CLI subprocess and records 30.8–52.6× wall-clock
+ratios. Those are cross-harness observations, not tier-matched speedups.
 
-**Methodology:** PyTorch using GPU `torch.compile` full cold-start (Triton/Inductor caches cleared), MIND in-process via Criterion benchmarks
+The historical GPU and JAX cold-start tables had no matching committed
+evidence, and the raw Mojo timings lack matched provenance; those tables have
+been removed from the verified-results section.
+No current external ratio is published until a result artifact records both
+sides' timing scope and environment.
 
-**Scope Note:** MIND measures frontend only (parse + typecheck + IR). PyTorch measures full compilation pipeline (FX graph + Inductor + Triton/cuBLAS kernel generation).
-
-| Benchmark | PyTorch 2.10 GPU | MIND v0.2.1 (frontend) | Ratio |
-|-----------|-----------------|------------------------|-------|
-| scalar_math | 99 ms | 1.77 µs | **56,000×** |
-| small_matmul | 162 ms | 2.95 µs | **55,000×** |
-| medium_matmul | 109 ms | 2.95 µs | **37,000×** |
-| large_matmul | 105 ms | 2.95 µs | **36,000×** |
-| simple_mlp | 752 ms | 6.15 µs | **122,000×** |
-| conv2d | 878 ms | ~5 µs | **176,000×** |
-| large_network | 752 ms | 15.49 µs | **48,500×** |
-
-**MIND frontend compiles 35,000-176,000× faster than PyTorch 2.10 GPU torch.compile full pipeline.**
-
-*Environment: Ubuntu 24.04, Ampere-class GPU, CUDA 12.8, PyTorch 2.10.0+cu128*
-
-### MIND v0.2.1 vs Mojo 0.26.1 (February 2026 - Verified)
-
-**Methodology:** Mojo `mojo build` full LLVM compilation to native binary, MIND in-process via Criterion benchmarks
-
-**Scope Note:** MIND measures frontend only (parse + typecheck + IR). Mojo measures full LLVM compilation to a native binary.
-
-| Benchmark | Mojo 0.26.1 | MIND v0.2.1 (frontend) | Ratio |
-|-----------|-------------|------------------------|-------|
-| scalar_math | 810 ms | 1.77 µs | **458,000×** |
-| matmul | 827 ms | 2.95 µs | **280,000×** |
-| mlp | 829 ms | 6.15 µs | **135,000×** |
-
-**MIND frontend compiles 135,000-458,000× faster than Mojo 0.26.1 full compilation.**
-
-*Environment: Ubuntu 24.04, Mojo 0.26.1.0, pixi*
-
-### MIND v0.2.1 vs JAX 0.9 Cold-Start XLA Compilation (February 2026 - Verified)
-
-**Methodology:** JAX `jax.jit()` cold-start XLA compilation with cache disabled (`JAX_ENABLE_COMPILATION_CACHE=0`, `jax.clear_caches()`), MIND in-process via Criterion benchmarks
-
-**Scope Note:** MIND measures frontend only (parse + typecheck + IR). JAX measures full XLA compilation (HLO lowering + optimization + code generation).
-
-| Benchmark | JAX 0.9 Cold-Start | MIND v0.2.1 (frontend) | Ratio |
-|-----------|-------------------|------------------------|-------|
-| scalar_math | 37.5 ms | 1.77 µs | **21,200×** |
-| small_matmul | 127.2 ms | 2.95 µs | **43,100×** |
-| medium_matmul | 139.7 ms | 2.95 µs | **47,400×** |
-| large_matmul | 280.6 ms | 2.95 µs | **95,100×** |
-| simple_mlp | 360.5 ms | 6.15 µs | **58,600×** |
-
-**MIND frontend compiles 21,200-95,100× faster than JAX 0.9 cold-start XLA compilation.**
-
-*Environment: Ubuntu 24.04, Ampere-class GPU, CUDA 12.8, JAX 0.9.0.1*
-
-### Historical: Subprocess Comparison (January 19, 2026)
+### Historical: Cross-harness comparison (January 19, 2026)
 
 *Note: Subprocess overhead adds ~1.3ms to MIND measurements. These numbers are kept for reference.*
 
-| Benchmark | PyTorch (inductor) | MIND (subprocess) | Speedup |
+| Benchmark | PyTorch (inductor) | MIND (subprocess) | Recorded ratio |
 |-----------|-------------------|-------------------|---------|
-| scalar_math | 42.8 ms | 1.4 ms | **31× faster** |
-| small_matmul | 61.5 ms | 1.3 ms | **46× faster** |
-| medium_matmul | 48.4 ms | 1.3 ms | **37× faster** |
-| large_matmul | 52.4 ms | 1.4 ms | **39× faster** |
+| scalar_math | 42.8 ms | 1.4 ms | **31×** |
+| small_matmul | 61.5 ms | 1.3 ms | **46×** |
+| medium_matmul | 48.4 ms | 1.3 ms | **37×** |
+| large_matmul | 52.4 ms | 1.4 ms | **39×** |
+
+These are recorded wall-clock ratios from different harnesses, not a
+tier-matched speedup claim. The current raw artifact is CPU-only; see
+`pytorch_comparison/pytorch_results.json`.
 
 ### Reference Criterion Benchmarks - Linux (February 17, 2026)
 

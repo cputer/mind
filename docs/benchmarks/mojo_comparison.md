@@ -1,6 +1,6 @@
 # MIND vs Mojo: Compilation Performance Comparison
 
-**Status**: Verified (Mojo 0.26.1 benchmarks completed February 2026)
+**Status**: Harness documented; raw timings committed, no current like-for-like result
 **Date**: 2026-02-17
 **Purpose**: Fair, reproducible comparison of compilation performance
 
@@ -14,20 +14,22 @@ We've created equivalent benchmarks to compare MIND's compilation speed against 
 
 ✅ **Mojo benchmark programs** (equivalent to MIND's benchmarks)
 ✅ **Automated benchmark harness** (Python script)
-✅ **Fair comparison methodology** (documented below)
-✅ **MIND baseline results** (already measured)
+✅ **Comparison methodology** (documented below)
+✅ **MIND baseline results** (T1 frontend measurements)
 
-❌ **Actual Mojo results** (requires Mojo SDK installation)
+❌ **Current comparable Mojo results** (raw timings lack matched provenance)
 
 ---
 
 ## Why This Comparison Matters
 
-### Current MIND Claims
+### Current evidence status
 
-From `docs/benchmarks/compiler_performance.md`:
-
-> "MIND frontend is 35,000-176,000× faster than PyTorch 2.10 GPU torch.compile()"
+The historical cross-framework ratios formerly quoted by this document are not
+current claims. The committed PyTorch comparison is CPU-only and cross-harness;
+the JAX records use different timing scopes; and the committed Mojo raw timings
+lack matched provenance. See the raw comparison artifacts and `docs/benchmarking.md`
+before publishing any ratio.
 
 **Investor Question**: *"But what about Mojo? That's the real competitor."*
 
@@ -61,7 +63,7 @@ fn compute() -> Int:
 ```
 
 **MIND Result**: 1.77 µs (v0.2.1 Criterion)
-**Mojo Result**: 810 ms (Mojo 0.26.1 `mojo build`)
+**Mojo Result**: raw timing exists; matched provenance unavailable
 
 ---
 
@@ -85,7 +87,7 @@ let result = a @ b
 ```
 
 **MIND Result**: 2.95 µs (v0.2.1 Criterion)
-**Mojo Result**: 827 ms (Mojo 0.26.1 `mojo build`)
+**Mojo Result**: raw timing exists; matched provenance unavailable
 
 ---
 
@@ -94,7 +96,7 @@ let result = a @ b
 **Dimensions**: `[128, 256] × [256, 512] = [128, 512]`
 
 **MIND Result**: 2.95 µs (v0.2.1 Criterion)
-**Mojo Result**: ~827 ms (Mojo 0.26.1 `mojo build`)
+**Mojo Result**: raw timing exists; matched provenance unavailable
 
 ---
 
@@ -103,7 +105,7 @@ let result = a @ b
 **Dimensions**: `[512, 1024] × [1024, 512] = [512, 512]`
 
 **MIND Result**: 2.95 µs (v0.2.1 Criterion)
-**Mojo Result**: ~829 ms (Mojo 0.26.1 `mojo build`)
+**Mojo Result**: raw timing exists; matched provenance unavailable
 
 ---
 
@@ -332,6 +334,6 @@ Investors will ask:
 
 ---
 
-**Status**: Verified — Mojo 0.26.1 benchmarks completed February 2026
+**Status**: Harness documented; raw timings committed, no current like-for-like result
 **Owner**: MIND benchmarking team
 **Contact**: Open GitHub issue for questions

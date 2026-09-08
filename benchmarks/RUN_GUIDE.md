@@ -99,10 +99,10 @@ cd benchmarks
 
 ### Option 3: Run on Windows with CUDA (Optional, Not Required)
 
-If you want **GPU benchmarks** (not necessary for patent):
-- PyTorch/JAX will use CUDA automatically
-- Results will be faster but **same speedup ratios**
-- Compilation time measurements are what matters
+If you want **GPU benchmarks** (not necessary for the frontend baseline):
+- PyTorch/JAX will use CUDA automatically when available
+- Record the selected device and timing scope in the result artifact
+- Do not assume CPU observations transfer to GPU or preserve their ratios
 
 ---
 
@@ -121,7 +121,7 @@ pytorch_time = measure_torch_compile(model)  # Real measurement
 mind_time = 1.77  # From benches/simple_benchmarks.rs (v0.2.1 Criterion)
 
 # Calculate speedup
-speedup = pytorch_time / mind_time  # e.g., 100,000×
+observed_ratio = pytorch_time / mind_time  # label the timing scopes
 ```
 
 #### Why This Works
@@ -146,9 +146,11 @@ benchmark_results_20251223_HHMMSS/
 └── determinism_results.json   ← (if MIND CLI built)
 ```
 
-### Real Numbers for Patent
-- PyTorch speedup: **35,000-176,000×** (verified GPU measurement)
-- JAX speedup: **21,200-95,100×** (verified cold-start measurement)
+### Current comparison evidence
+- PyTorch: the committed record is CPU-only (`cuda_available:false`) and records 30.8–52.6× cross-harness wall-clock ratios; it is not a GPU or tier-matched claim.
+- JAX: raw process and cold-start records are retained, but no tier-matched speedup is published.
+- Mojo: no committed like-for-like result artifact is available.
+- Any patent or product claim requires a committed artifact with the timing scope and environment stated.
 - Autograd memory reduction: **~2-5×** (actual measurement)
 - Determinism: **10/10 identical hashes** (if CLI built)
 

@@ -23,17 +23,11 @@ This directory contains benchmark results and performance analysis for the MIND 
 See **[BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)** for detailed methodology and results.
 See **[FINAL_PATENT_RESULTS.md](FINAL_PATENT_RESULTS.md)** for patent benchmark documentation.
 
-## Comparison with PyTorch 2.10 GPU (Verified February 2026)
+## External comparison evidence
 
-| Benchmark | MIND v0.2.1 (frontend) | PyTorch 2.10 GPU (full pipeline) | Ratio |
-|-----------|------------------------|----------------------------------|-------|
-| scalar_math | 1.77 µs | 99 ms | 56,000× |
-| small_matmul | 2.95 µs | 162 ms | 55,000× |
-| simple_mlp | 6.15 µs | 752 ms | 122,000× |
-| conv2d | ~5 µs | 878 ms | 176,000× |
-| large_network | 15.49 µs | 752 ms | 48,500× |
+The committed PyTorch record is [`pytorch_results.json`](pytorch_comparison/pytorch_results.json): PyTorch 2.9.1+cpu with `cuda_available:false`, compared with the MIND CLI subprocess over 10 samples. It records 30.8–52.6× wall-clock ratios, but the harnesses use different invocation scopes, so this is not a tier-matched speedup. No committed GPU result exists.
 
-**Note**: Different scopes of work. MIND measures frontend compilation. PyTorch measures full torch.compile() pipeline including Triton/cuBLAS kernel generation. Mojo measures full LLVM compilation to native binary.
+The historical GPU and JAX cold-start ratios are retained only in old source material and are not publishable benchmark claims without matching artifacts. `mojo/mojo_results.json` contains raw timings, but lacks the complete matched provenance needed for a current ratio.
 
 ## Patent Benchmarks
 
@@ -48,12 +42,12 @@ See **[FINAL_PATENT_RESULTS.md](FINAL_PATENT_RESULTS.md)** for patent benchmark 
 
 | Benchmark | Status | Patent Claims | Description |
 |-----------|--------|---------------|-------------|
-| **[PyTorch Comparison](pytorch_comparison/)** | ✅ Ready | Claims 1-5, 11-15 | Compilation time vs torch.compile() |
+| **[PyTorch Comparison](pytorch_comparison/)** | ⚠️ CPU artifact | Claims 1-5, 11-15 | Recorded cross-harness comparison |
 | **[Determinism Proof](determinism/)** | ✅ Ready | Claims 16-20 | Bit-level reproducibility verification |
 | **[Autograd Comparison](autograd_comparison/)** | ✅ Ready | Claims 6-10 | Gradient computation speed & memory |
-| **[JAX Comparison](jax_comparison/)** | ✅ Ready | Claims 1-5 | Compilation time vs jax.jit() |
+| **[JAX Comparison](jax_comparison/)** | ⚠️ Raw records | Claims 1-5 | No tier-matched ratio published |
 | **[Inference Speed](inference/)** | ✅ Ready | Supporting | Runtime execution comparison |
-| **[Mojo Comparison](mojo/)** | ✅ Complete | Claims 1-5 | Compilation time vs Mojo |
+| **[Mojo Comparison](mojo/)** | ⚠️ Raw artifact | Claims 1-5 | No matched ratio published |
 
 ### Individual Benchmark Commands
 
@@ -97,16 +91,9 @@ open target/criterion/report/index.html
 
 ## Benchmark Results Summary
 
-### Compilation Speed Comparisons (v0.2.1, February 2026)
+### Compilation speed evidence
 
-| Framework | Compilation Time | Scope | MIND Ratio |
-|-----------|-----------------|-------|------------|
-| **MIND v0.2.1** | **1.8-15.5 µs** | Frontend only | **1× (baseline)** |
-| PyTorch 2.10 GPU | 99-878 ms | Full pipeline (Inductor + Triton/cuBLAS) | 35,000-176,000× |
-| Mojo 0.26.1 | 810-829 ms | Full LLVM compilation (`mojo build`) | 135,000-458,000× |
-| JAX 0.9 | 37.5-360.5 ms | Cold-start XLA compilation (`jax.jit()`) | 21,200-95,100× |
-
-**Important**: These frameworks perform different amounts of work. Ratios reflect frontend vs full pipeline/compilation comparison.
+The standalone MIND figures above are T1 frontend measurements. The committed external PyTorch record is CPU-only and cross-harness; it records 30.8–52.6× wall-clock ratios, not a tier-matched speedup. The JAX record and the raw Mojo artifact lack a current tier-matched comparison, so no external ratio is published here.
 
 ### Key Findings
 

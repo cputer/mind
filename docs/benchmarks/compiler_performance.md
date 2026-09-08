@@ -194,40 +194,9 @@ tensor.matmul(a, b)
 
 ---
 
-## Competitive Positioning
+## External comparison evidence
 
-### vs. PyTorch 2.10 GPU (torch.compile)
-
-| Framework | Scalar Compile | MatMul Compile | MLP Compile | Notes |
-|-----------|---------------|----------------|-------------|-------|
-| **MIND v0.7.1** | **1.77 µs** | **2.95 µs** | **6.15 µs** | Frontend: parse → typecheck → IR |
-| PyTorch 2.10 GPU | 99 ms | 105-162 ms | 752 ms | `torch.compile()` cold-start (caches cleared) |
-
-**Speed advantage: MIND frontend is 35,000-176,000× faster** than PyTorch 2.10 GPU torch.compile() full pipeline.
-
-> Honest caveat: this compares MIND's **compile-time frontend** against PyTorch's **GPU runtime / cold-start compilation** — different operations, not a runtime-speed comparison.
-
-**Scope note:** MIND measures frontend only (parse + typecheck + IR lowering). PyTorch measures the full compilation pipeline (FX capture + Inductor + Triton/cuBLAS codegen). Different amounts of work — the comparison demonstrates architectural advantage for the frontend stage.
-
-### vs. Mojo 0.26.1
-
-| Framework | Compilation Model | Scalar | MatMul | MLP |
-|-----------|------------------|--------|--------|-----|
-| **MIND v0.7.1** | **AOT (Rust, hand-written parser)** | **1.77 µs** | **2.95 µs** | **6.15 µs** |
-| Mojo 0.26.1 | JIT + AOT (LLVM) | 810 ms | 827 ms | 829 ms |
-
-**Speed advantage: MIND frontend is 135,000-458,000× faster** than Mojo 0.26.1 full build compilation.
-
-### vs. JAX 0.9 (Cold-Start XLA)
-
-| Framework | Compilation Model | Scalar | MatMul | MLP |
-|-----------|------------------|--------|--------|-----|
-| **MIND v0.7.1** | **AOT (Rust, hand-written parser)** | **1.77 µs** | **2.95 µs** | **6.15 µs** |
-| JAX 0.9 | JIT (XLA/LLVM) | 37.5 ms | 127.2-280.6 ms | 360.5 ms |
-
-**Speed advantage: MIND frontend is 21,200-95,100× faster** than JAX 0.9 cold-start XLA compilation (cache disabled).
-
-**Scope note:** MIND measures frontend only. Mojo/JAX measure full compilation pipelines. MIND's Rust-native pipeline with static shape inference and zero-allocation parsing eliminates all overhead from parser combinators, Python interop, and LLVM frontend passes.
+The T1 MIND measurements in this document must not be divided by external T2 measurements. The committed PyTorch record is CPU-only (`pytorch_results.json`) and compares an in-process PyTorch call with a MIND CLI subprocess; it records 30.8–52.6× wall-clock ratios and is labelled as cross-harness evidence. The JAX record uses a different invocation scope, and the raw Mojo artifact lacks matched provenance. The historical GPU/cold-start/full-build ratios are therefore withdrawn as current claims.
 
 ---
 
@@ -263,8 +232,8 @@ tensor.matmul(a, b)
 ## Key Takeaways for Investors/Technical DD
 
 ### 1. **Compilation Speed is a Core Strength**
-- MIND compiles typical ML operations in **<5 microseconds**
-- **35,000-176,000× faster** than PyTorch 2.10 GPU full pipeline (frontend vs full pipeline)
+- MIND's T1 frontend compiles the listed typical ML operations in **<5 microseconds**
+- The committed PyTorch record reports 30.8–52.6× wall-clock ratios under a CPU-only, cross-harness run; this is not a tier-matched speedup.
 - **338,000+ compilations per second** sustained throughput
 - Enables **interactive development** and **rapid iteration**
 

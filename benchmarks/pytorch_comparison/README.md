@@ -4,7 +4,7 @@ This benchmark compares **MIND compilation time** vs **PyTorch torch.compile()**
 
 ## What We Measure
 
-- **PyTorch 2.10+**: `torch.compile()` compilation overhead (GPU cold-start, caches cleared)
+- **PyTorch 2.10+**: `torch.compile()` compilation overhead on the selected device (caches cleared)
 - **MIND**: `compile_source()` time (parse → type-check → IR lowering)
 
 ## Quick Start
@@ -32,18 +32,17 @@ python benchmark_pytorch_compile.py
 | `simple_mlp` | 784 → 256 → 10 MLP | Multi-layer network | `(1, 784)` |
 | `conv2d` | ResNet-50 style Conv2D | Conv2D layer | `(1, 64, 56, 56)` |
 
-## Verified Results (February 2026)
+## Committed evidence
 
-MIND v0.2.1 frontend compiles in **1.8-15.5 µs** (Criterion in-process, scales with program complexity).
+[`pytorch_results.json`](pytorch_results.json) records PyTorch 2.9.1+cpu with
+`cuda_available:false`. Its 10-sample rows record PyTorch means of 42.8–79.3 ms
+and MIND CLI subprocess means of 1.31–1.51 ms, with derived wall-clock ratios
+of 30.8–52.6×. PyTorch is measured in-process while MIND is spawned as a CLI,
+so these are cross-harness observations rather than a tier-matched speedup.
 
-PyTorch 2.10 GPU `torch.compile()` takes **99-878 ms** (cold-start, caches cleared) due to:
-- FX graph capture
-- Inductor optimization
-- Triton/cuBLAS kernel generation + C++ compilation
-
-**Verified ratio: 35,000-176,000× faster** MIND frontend compilation.
-
-**Scope note:** MIND measures frontend only (parse + typecheck + IR). PyTorch measures full compilation pipeline. Different amounts of work.
+No committed GPU result supports the former PyTorch 2.10 GPU headline. The
+standalone MIND 1.8–15.5 µs Criterion values are T1 frontend measurements and
+must not be divided by the process measurements above.
 
 ## Output Format
 
@@ -106,4 +105,5 @@ This benchmark supports MIND patent claims about compilation speed advantages:
 - **Claims 1-5**: Core compilation system
 - **Claims 11-15**: Fast compilation compared to prior art
 
-**Goal**: Demonstrate that MIND achieves orders-of-magnitude faster frontend compilation than PyTorch 2.10 GPU full pipeline.
+**Goal**: Record reproducible, explicitly scoped comparisons. A GPU frontend
+speedup claim requires a committed GPU artifact with matched timing scope.

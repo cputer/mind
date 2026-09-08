@@ -187,8 +187,8 @@ def main():
 
     print(f"  {'─' * 60}")
     if ratios:
-        print(f"\n  {BOLD}MIND frontend is {statistics.median(ratios):,.0f}× faster{RESET} (median)")
-        print(f"  Range: {min(ratios):,.0f}× to {max(ratios):,.0f}×")
+        print(f"\n  {BOLD}Observed cross-harness ratio: {statistics.median(ratios):,.0f}×{RESET} (median)")
+        print(f"  Range: {min(ratios):,.0f}× to {max(ratios):,.0f}×; not a tier-matched speedup")
 
     print()
     print(f"  {YELLOW}⚠  IMPORTANT CAVEAT{RESET}")

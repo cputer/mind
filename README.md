@@ -380,21 +380,21 @@ The [`/docs/benchmarks.md`](docs/benchmarks.md) report covers baseline compiler/
 
 ### Compilation Speed
 
-#### Verified Benchmarks (frozen bench-gate baseline, carried through v0.7.1)
+#### Frontend benchmark baseline and external comparison evidence
 
 *The frontend bench-gate baseline was locked in April 2026 and carries
 forward unchanged to v0.7.1; later parser additions ship within the
 bench-gate threshold documented at [`.bench-baseline-2026-05-17-phase10-6.txt`](./.bench-baseline-2026-05-17-phase10-6.txt).*
 
 
-| vs Framework | Compilation Time | MIND Ratio |
-|--------------|-----------------|------------|
-| **MIND v0.7.1** | **1.8-15.5 µs** | **1× (baseline)** |
-| PyTorch 2.10 GPU torch.compile | 99-878 ms | **35,000-176,000× faster** |
-| JAX 0.9 cold-start XLA (jax.jit) | 37.5-360.5 ms | **21,200-95,100× faster** |
-| Mojo 0.26.1 (mojo build) | 810-829 ms | **135,000-458,000× faster** |
+| Comparison record | Recorded conditions | Result |
+|-------------------|---------------------|--------|
+| **MIND v0.7.1** | T1 frontend, in-process Criterion | **1.8–15.5 µs** |
+| PyTorch comparison | PyTorch 2.9.1+cpu, `cuda_available:false`; MIND CLI subprocess; 10 samples | Recorded wall-clock ratios **30.8–52.6×**; invocation scopes differ, so this is not a tier-matched speedup |
+| JAX comparison | JAX 0.9.0.1; JAX in-process and MIND CLI subprocess | No tier-matched speedup published; see the raw JSON |
+| Mojo comparison | `mojo_results.json` has raw timings, but no complete matched provenance | No ratio published |
 
-**Scope note:** these ratios compare MIND's **compile-time frontend** (parse + typecheck + IR) against the other frameworks' GPU runtime / cold-start compilation — i.e. different operations, not a runtime-speed comparison. The defensible head-to-head speed comparison is MIND's frontend vs. the prior Rust-combinator frontend (the ~15× speedup below).
+The PyTorch row is reproduced from [`pytorch_results.json`](benchmarks/pytorch_comparison/pytorch_results.json). The historical GPU, cold-start, and full-build ratios previously shown here have no matching committed evidence and are not current benchmark claims.
 
 | Benchmark | MIND v0.7.1 | Compilations/sec |
 |-----------|-------------|------------------|

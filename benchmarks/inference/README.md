@@ -47,7 +47,7 @@ conv2d_inference          1.6K samples/sec     XXX samples/sec      X.XX×
 
 ### Compilation Benchmarks (PyTorch, JAX, Mojo)
 - Measure time to **compile** code
-- MIND frontend is 21,200-458,000× faster
+- Historical external ratios are not current claims because their artifacts and timing scopes do not match the MIND T1 baseline
 - One-time cost
 
 ### Inference Benchmarks (This)
@@ -65,17 +65,15 @@ conv2d_inference          1.6K samples/sec     XXX samples/sec      X.XX×
 ### MIND Advantage
 Even if inference speeds are equal:
 - MIND compiles in **1.8-15.5 µs** (frontend)
-- PyTorch compiles in **99-878 ms** (GPU cold-start)
-- Break-even after just **a few runs**
+- External compile timing is not a matched, committed result
+- Break-even requires measured, tier-matched compile and inference inputs
 
 Example:
 ```
 Model compilation + 1000 inferences:
 
-PyTorch:  878ms + (1000 × 1ms) = 1.878s
-MIND:     15.5µs + (1000 × 1ms) = 1.016s
-
-MIND is ~1.8× faster total time (dominated by inference)!
+These illustrative totals require measured, tier-matched compile and inference
+inputs; the repository does not publish them as a result.
 ```
 
 ## Technical Details
@@ -108,9 +106,9 @@ MIND is ~1.8× faster total time (dominated by inference)!
 
 | Metric | MIND | PyTorch |
 |--------|------|---------|
-| **Compilation** | 1.8-15.5 µs (frontend) | 99-878 ms (GPU cold-start) |
+| **Compilation** | 1.8-15.5 µs (frontend T1) | No matched external result |
 | **Inference** | ~Equal | ~Equal |
-| **Total (1000 runs)** | ~1 s | ~1.9 s |
+| **Total (1000 runs)** | No measured total | No measured total |
 
 **Conclusion**: MIND wins on total time due to near-instant compilation.
 
@@ -136,10 +134,11 @@ After running, results are saved to:
 
 This benchmark complements the compilation benchmarks:
 
-**Compilation Benchmarks**: MIND frontend is 21,200-458,000× faster than competing pipelines
+**Compilation Benchmarks**: raw external records are retained with explicit scope; no cross-tier ratio is published
 **Inference Benchmarks**: MIND and PyTorch are similar (both use LLVM/BLAS)
 
-**Overall**: MIND provides massive time savings in real-world workflows where compilation happens frequently (development, experimentation, hyperparameter tuning).
+**Overall**: Total workflow savings require measured, tier-matched compile and
+inference results for the same workload.
 
 ## Patent Relevance
 

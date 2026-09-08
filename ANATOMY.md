@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1670 | **Est. tokens:** ~3193410
-**Generated:** 2026-09-08 03:24 UTC
+**Files:** 1670 | **Est. tokens:** ~3192746
+**Generated:** 2026-09-08 04:00 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29348 |
+| `./` | 33 | ~29384 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -37,18 +37,18 @@
 | `bench/fft/` | 8 | ~8060 |
 | `benches/` | 28 | ~84219 |
 | `benches/common/` | 1 | ~668 |
-| `benchmarks/` | 13 | ~28417 |
+| `benchmarks/` | 13 | ~27981 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7733 |
 | `benchmarks/determinism/` | 3 | ~4601 |
-| `benchmarks/inference/` | 4 | ~4008 |
-| `benchmarks/jax_comparison/` | 5 | ~4642 |
-| `benchmarks/mojo/` | 8 | ~4300 |
-| `benchmarks/pytorch_comparison/` | 5 | ~4828 |
+| `benchmarks/inference/` | 4 | ~4040 |
+| `benchmarks/jax_comparison/` | 5 | ~4629 |
+| `benchmarks/mojo/` | 8 | ~4276 |
+| `benchmarks/pytorch_comparison/` | 5 | ~4858 |
 | `config/` | 2 | ~3329 |
 | `docs/` | 36 | ~101682 |
 | `docs/backends/` | 1 | ~1482 |
-| `docs/benchmarks/` | 3 | ~9315 |
+| `docs/benchmarks/` | 3 | ~9026 |
 | `docs/design/` | 4 | ~11498 |
 | `docs/gates/` | 1 | ~3910 |
 | `docs/mindcraft/` | 3 | ~7086 |
@@ -219,7 +219,7 @@
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
-- `README.md` (~6596 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~6632 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
 - `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
@@ -341,10 +341,10 @@
 - `std_surface.rs` (~1067 tok, large) — Copyright 2025 STARGA Inc.
 ### `benchmarks/`
 
-- `BENCHMARK_RESULTS.md` (~4996 tok, huge) — MIND Benchmark Results
+- `BENCHMARK_RESULTS.md` (~4520 tok, huge) — MIND Benchmark Results
 - `MIC_MAP_BENCHMARK_README.md` (~675 tok, large) — MIC/MAP Patent Reference Benchmark
-- `README.md` (~1188 tok, large) — MIND Performance Benchmarks
-- `RUN_GUIDE.md` (~1465 tok, large) — MIND Patent Benchmarks - Environment Guide
+- `README.md` (~1122 tok, large) — MIND Performance Benchmarks
+- `RUN_GUIDE.md` (~1563 tok, huge) — MIND Patent Benchmarks - Environment Guide
 ### `benchmarks/autograd_comparison/`
 
 - `README.md` (~1153 tok, large) — Autograd Comparison: MIND vs PyTorch
@@ -376,13 +376,13 @@
 - `format_benchmark.py` (~2434 tok, huge)
 ### `benchmarks/inference/`
 
-- `README.md` (~1108 tok, large) — Inference Speed Benchmark
+- `README.md` (~1140 tok, large) — Inference Speed Benchmark
 - `benchmark_inference.py` (~2423 tok, huge)
 - `inference_results.json` (~473 tok, medium) — Keys: system_info, benchmarks
 - `requirements.txt` (~4 tok, tiny) — torch>=1.0.0
 ### `benchmarks/jax_comparison/`
 
-- `README.md` (~1062 tok, large) — JAX Compilation Benchmark
+- `README.md` (~1049 tok, large) — JAX Compilation Benchmark
 - `benchmark_jax_compile.py` (~2719 tok, huge)
 - `jax_coldstart_results.json` (~376 tok, medium) — Keys: environment, results
 - `jax_results.json` (~478 tok, medium) — Keys: system_info, benchmarks
@@ -394,7 +394,7 @@
 - `mic_map_benchmark_v2.py` (~5563 tok, huge)
 ### `benchmarks/mojo/`
 
-- `README.md` (~1295 tok, large) — Mojo Compilation Benchmarks
+- `README.md` (~1271 tok, large) — Mojo Compilation Benchmarks
 - `benchmark_mojo_compilation.py` (~1533 tok, huge)
 - `large_matmul.mojo` (~205 tok, medium) — """
 - `medium_matmul.mojo` (~205 tok, medium) — """
@@ -405,7 +405,7 @@
 ### `benchmarks/pytorch_comparison/`
 
 - `=2.0` (~0 tok, tiny)
-- `README.md` (~814 tok, large) — PyTorch Compilation Benchmark
+- `README.md` (~844 tok, large) — PyTorch Compilation Benchmark
 - `benchmark_pytorch_compile.py` (~3420 tok, huge)
 - `pytorch_results.json` (~590 tok, large) — Keys: system_info, benchmarks
 - `requirements.txt` (~4 tok, tiny) — torch>=2.0.0
@@ -413,7 +413,7 @@
 
 - `resnet.md` (~74 tok, small) — ResNet Benchmarks (Preliminary)
 - `run_all_benchmarks.sh` (~824 tok, large) — Master script to run all MIND patent benchmarks
-- `scientific_benchmark.py` (~1639 tok, huge)
+- `scientific_benchmark.py` (~1647 tok, huge)
 - `scientific_benchmark_raw.py` (~2485 tok, huge)
 ### `config/`
 
@@ -440,8 +440,8 @@
 ### `docs/benchmarks/`
 
 - `RESULTS-mind-vs-rust-2026-06-09.md` (~2174 tok, huge) — MIND vs Rust — integer-GEMM, apples-to-apples (2026-06-09)
-- `compiler_performance.md` (~4721 tok, huge) — MIND Compiler Performance Benchmarks
-- `mojo_comparison.md` (~2420 tok, huge) — MIND vs Mojo: Compilation Performance Comparison
+- `compiler_performance.md` (~4347 tok, huge) — MIND Compiler Performance Benchmarks
+- `mojo_comparison.md` (~2505 tok, huge) — MIND vs Mojo: Compilation Performance Comparison
 ### `docs/`
 
 - `byte-store-migration.md` (~3357 tok, huge) — Byte-Store Migration — closing `#306`
