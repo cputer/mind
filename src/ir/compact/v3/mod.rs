@@ -176,6 +176,8 @@ pub use crate::ir::compact::v2::{Determinism, EvidenceError, EvidenceReport, Tra
 #[cfg(test)]
 mod boundary_tests;
 
+mod evidence_size;
+
 #[cfg(test)]
 mod v04_tests;
 

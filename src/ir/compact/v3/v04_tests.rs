@@ -2,7 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 use super::{
-    Determinism, MIC3_VERSION_V04, Mic3EncodeError, SignatureStatus, emit_mic3, emit_mic3_checked,
+    Determinism, EvidenceEmitError, MAX_MIC3_INPUT, MIC3_VERSION_V04, Mic3EncodeError,
+    SignatureStatus, emit_mic3, emit_mic3_checked, emit_mic3_with_evidence_and_receipts,
     emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence_checked, mic3_canonical_check,
     mic3_evidence_report, mic3_signature_status, parse_mic3_body, parse_mic3_prefix,
 };
@@ -132,6 +133,32 @@ fn module_value_only() -> IRModule {
     module
 }
 
+fn module_with_export_name_len(length: usize) -> IRModule {
+    let mut module = module_value_only();
+    module.exports.insert("x".repeat(length));
+    module
+}
+
+fn largest_body_at_most(limit: usize) -> (IRModule, Vec<u8>) {
+    let mut low = 0usize;
+    let mut high = MAX_MIC3_INPUT - 1;
+    while low < high {
+        let candidate = low + (high - low + 1) / 2;
+        let module = module_with_export_name_len(candidate);
+        if let Ok(bytes) = emit_mic3_checked(&module) {
+            if bytes.len() <= limit {
+                low = candidate;
+                continue;
+            }
+        }
+        high = candidate - 1;
+    }
+    let module = module_with_export_name_len(low);
+    let bytes = emit_mic3_checked(&module).expect("largest admitted body");
+    assert!(bytes.len() <= limit);
+    (module, bytes)
+}
+
 fn descriptor_only_module(reverse: bool) -> IRModule {
     let left = SchemaDraft::new(
         SchemaIdentity::new("ownerA", "Node"),
@@ -255,6 +282,122 @@ fn v04_checked_evidence_and_signature_consumers_validate_complete_artifacts() {
         "signed v0x04 artifact must verify"
     );
     mic3_canonical_check(&signed).expect("signed v0x04 evidence must be canonical");
+}
+
+#[test]
+fn checked_evidence_caps_complete_artifact_before_map_append() {
+    let small_body = emit_mic3_checked(&module_value_only()).expect("small v0x04 body");
+    let small_unsigned = emit_mic3_with_evidence_checked(
+        &module_value_only(),
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+    )
+    .expect("small unsigned evidence");
+    let small_signed = emit_mic3_with_signed_evidence_checked(
+        &module_value_only(),
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+        &[7; 32],
+    )
+    .expect("small signed evidence");
+    let unsigned_map_len = small_unsigned.len() - small_body.len();
+    let signed_map_len = small_signed.len() - small_body.len();
+
+    // Leave a small, measured margin for the signed MAP: this produces a real
+    // near-limit artifact whose complete bytes still pass every reader.
+    let positive_limit = MAX_MIC3_INPUT - signed_map_len - 128;
+    let (near_module, near_body) = largest_body_at_most(positive_limit);
+    assert!(near_body.len() > MAX_MIC3_INPUT - signed_map_len - 256);
+    let near_unsigned = emit_mic3_with_evidence_checked(
+        &near_module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+    )
+    .expect("near-limit unsigned evidence");
+    let near_signed = emit_mic3_with_signed_evidence_checked(
+        &near_module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+        &[7; 32],
+    )
+    .expect("near-limit signed evidence");
+    assert!(near_unsigned.len() <= MAX_MIC3_INPUT);
+    assert!(near_signed.len() <= MAX_MIC3_INPUT);
+    assert!(near_signed.len() > MAX_MIC3_INPUT - signed_map_len - 256);
+    assert!(
+        mic3_evidence_report(&near_signed)
+            .expect("near-limit report")
+            .trace_hash_valid
+    );
+    assert!(matches!(
+        mic3_signature_status(&near_signed),
+        Ok(SignatureStatus::Valid(_))
+    ));
+    mic3_canonical_check(&near_unsigned).expect("near-limit unsigned canonical");
+    mic3_canonical_check(&near_signed).expect("near-limit signed canonical");
+
+    // Keep the body itself admitted, then make only the envelope too large. Both
+    // public checked emitters must refuse before returning a partially appended
+    // artifact; legacy wrappers retain their existing infallible contract.
+    let (oversized_module, oversized_body) = largest_body_at_most(MAX_MIC3_INPUT - 1);
+    assert!(oversized_body.len() < MAX_MIC3_INPUT);
+    let unsigned_error = emit_mic3_with_evidence_checked(
+        &oversized_module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+    )
+    .expect_err("oversized unsigned envelope must refuse");
+    assert!(matches!(
+        unsigned_error,
+        EvidenceEmitError::ArtifactTooLarge { .. }
+    ));
+    let signed_error = emit_mic3_with_signed_evidence_checked(
+        &oversized_module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+        &[7; 32],
+    )
+    .expect_err("oversized signed envelope must refuse");
+    assert!(matches!(
+        signed_error,
+        EvidenceEmitError::ArtifactTooLarge { .. }
+    ));
+    let receipts_error = emit_mic3_with_evidence_and_receipts(
+        &oversized_module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-cap-test",
+        None,
+        &[],
+        &[],
+    )
+    .expect_err("oversized receipt envelope must refuse");
+    assert!(matches!(
+        receipts_error,
+        EvidenceEmitError::ArtifactTooLarge { .. }
+    ));
+    assert!(unsigned_map_len < signed_map_len);
+}
+
+#[test]
+fn evidence_size_accounting_refuses_usize_overflow() {
+    assert_eq!(
+        super::evidence_size::checked_len_add(usize::MAX, 1),
+        Err(EvidenceEmitError::ArtifactSizeOverflow)
+    );
 }
 
 #[test]

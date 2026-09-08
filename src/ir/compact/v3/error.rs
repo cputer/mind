@@ -43,6 +43,13 @@ pub enum EvidenceEmitError {
     Body(Mic3EncodeError),
     InvalidApplicationEntries,
     SchemeUnavailable(&'static str),
+    /// The complete body-plus-MAP artifact exceeds the reader admission limit.
+    ArtifactTooLarge {
+        size: usize,
+        limit: usize,
+    },
+    /// Computing the complete artifact length overflowed `usize`.
+    ArtifactSizeOverflow,
 }
 
 impl std::fmt::Display for EvidenceEmitError {
@@ -53,6 +60,13 @@ impl std::fmt::Display for EvidenceEmitError {
                 f.write_str("invalid application-namespace evidence entry")
             }
             Self::SchemeUnavailable(message) => f.write_str(message),
+            Self::ArtifactTooLarge { size, limit } => {
+                write!(
+                    f,
+                    "mic@3 evidence artifact is too large: {size} bytes exceeds {limit}"
+                )
+            }
+            Self::ArtifactSizeOverflow => f.write_str("mic@3 evidence artifact size overflow"),
         }
     }
 }

@@ -75,6 +75,7 @@ use crate::ir::IRModule;
 // them with `uleb128_read_minimal`, which rejects zero-padded encodings.
 use super::EvidenceEmitError;
 use super::boundary::{ArtifactPartsError, parse_artifact_parts};
+use super::evidence_size::{MapEntryValue, checked_len_add, map_encoded_len};
 use crate::ir::compact::v2::{uleb128_read_minimal, uleb128_write, zigzag_decode, zigzag_encode};
 use crate::ir::compact::v3::collapse_receipt::{
     CollapseReceipt, decode_collapse_receipts, encode_collapse_receipts,
@@ -304,7 +305,7 @@ pub fn emit_mic3_with_evidence_checked(
         None,
         None,
         &[],
-    );
+    )?;
     Ok(out)
 }
 
@@ -398,7 +399,7 @@ pub fn emit_mic3_with_evidence_and_receipts(
         payload.as_ref(),
         blob_ref,
         app_entries,
-    );
+    )?;
     Ok(out)
 }
 
@@ -516,7 +517,7 @@ pub fn emit_mic3_with_signed_evidence_scheme(
         Some(&payload),
         None,
         &[],
-    );
+    )?;
     Ok(out)
 }
 
@@ -1539,7 +1540,7 @@ fn append_map_epilogue(
     signature: Option<&SignaturePayload>,
     collapse_blob: Option<&[u8]>,
     app_entries: &[(String, String)],
-) {
+) -> Result<(), EvidenceEmitError> {
     // Collect the canonical evidence_chain.* entries (single source of truth,
     // shared with the signature preimage so what is signed == what is emitted).
     let mut entries = build_evidence_entries(
@@ -1576,6 +1577,16 @@ fn append_map_epilogue(
     // Lexicographic sort — this is the canonical-encoding invariant.
     entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
 
+    // Readers admit the complete artifact; checked arithmetic rejects oversize or overflow before mutating `out`.
+    let epilogue_len = map_encoded_len(&entries)?;
+    let artifact_len = checked_len_add(out.len(), epilogue_len)?;
+    if artifact_len > super::parse::MAX_MIC3_INPUT {
+        return Err(EvidenceEmitError::ArtifactTooLarge {
+            size: artifact_len,
+            limit: super::parse::MAX_MIC3_INPUT,
+        });
+    }
+
     out.write_all(&[MAP_SENTINEL]).unwrap();
     uleb128_write(out, entries.len() as u64).unwrap();
 
@@ -1585,13 +1596,7 @@ fn append_map_epilogue(
         out.write_all(kb).unwrap();
         push_map_value(out, val);
     }
-}
-
-/// Ephemeral value type used only during MAP construction.
-enum MapEntryValue<'a> {
-    Str(&'a str),
-    Int(i64),
-    Bytes(&'a [u8]),
+    Ok(())
 }
 
 // ─── Internal MAP parse ───────────────────────────────────────────────────────
