@@ -14,7 +14,14 @@
 
 //! MIC@3 binary format — compact, deterministic binary encoding of [`IRModule`](crate::ir::IRModule).
 //!
-//! # Wire layout (IR body)
+//! Checked emission uses the distinct draft `0x04` grammar when canonical semantic
+//! metadata is populated. That grammar carries owner-qualified declarations,
+//! scoped types and resolved callees; it does not reuse the legacy layout below.
+//! Its current scalar-core scope and limits are documented in
+//! `docs/mic3-v04-draft.md`. The opcode table here describes legacy encodings;
+//! unsupported instruction families are refused by the draft writer and reader.
+//!
+//! # Legacy wire layout (IR body)
 //!
 //! ```text
 //! [0..4)  magic  "MIC3"
@@ -36,7 +43,7 @@
 //! [v0x03 only] varint module value_types count, N × value_types entry
 //! ```
 //!
-//! # Structurally-scoped aggregate types (version `0x03`+, Step D)
+//! # Structurally-scoped aggregate types (legacy version `0x03`, Step D)
 //!
 //! `0x03` appends the canonical array-typing tables. The version is
 //! *content-derived* (`IRModule::has_scoped_value_types`): `0x03`
@@ -54,7 +61,7 @@
 //! table is appended after `repr_c_structs`. A `0x02` (or `0x01`) artifact omits
 //! both; the parser reads them as empty for those versions.
 //!
-//! # Control-flow region-exit metadata (version `0x02`+)
+//! # Control-flow region-exit metadata (legacy versions `0x02`/`0x03`)
 //!
 //! `While` and `If` carry side-metadata that exposes fresh SSA ids into the
 //! enclosing scope (the `^while_after` / `^if_after` block arguments).  These

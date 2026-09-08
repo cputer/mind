@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1700 | **Est. tokens:** ~3281128
-**Generated:** 2026-09-08 19:52 UTC
+**Files:** 1700 | **Est. tokens:** ~3281336
+**Generated:** 2026-09-08 20:04 UTC
 
 ## Token Budget Guide
 
@@ -52,7 +52,7 @@
 | `docs/design/` | 4 | ~11498 |
 | `docs/gates/` | 1 | ~3910 |
 | `docs/mindcraft/` | 3 | ~7086 |
-| `docs/rfcs/` | 35 | ~167199 |
+| `docs/rfcs/` | 35 | ~167282 |
 | `docs/specs/` | 2 | ~976 |
 | `examples/` | 28 | ~49880 |
 | `examples/bimap_currency/` | 3 | ~780 |
@@ -111,7 +111,7 @@
 | `src/ir/` | 8 | ~90766 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
-| `src/ir/compact/v3/` | 13 | ~72951 |
+| `src/ir/compact/v3/` | 13 | ~73076 |
 | `src/ir/compact/v3/v04/` | 3 | ~13618 |
 | `src/lint/` | 2 | ~4001 |
 | `src/lint/rules/` | 6 | ~10017 |
@@ -510,7 +510,7 @@
 - `0018-bare-metal-substrate.md` (~3799 tok, huge) — RFC 0018: Bare-Metal Substrate Lowering Tier
 - `0019-deterministic-agent-substrate.md` (~4131 tok, huge) — RFC 0019: Deterministic Agent Substrate
 - `0020-mind-bench-reproducibility-harness.md` (~4083 tok, huge) — RFC 0020: mind-bench Public Reproducibility Harness
-- `0021-canonical-ir-unification.md` (~4914 tok, huge) — RFC 0021: Canonical IR Unification — one IR, provenance as a versioned epilogue
+- `0021-canonical-ir-unification.md` (~4997 tok, huge) — RFC 0021: Canonical IR Unification — one IR, provenance as a versioned epilogue
 - `0022-deterministic-io-substrate.md` (~2120 tok, huge) — RFC 0022: Deterministic I/O Substrate — fastest async I/O with bit-identical replay
 - `0024-loop-collapse.md` (~7579 tok, huge) — RFC 0024: Loop Collapse — prove-or-fail closed-form replacement of counted loops (`#[collapse]`)
 - `0025-mind-intent-contracts.md` (~3605 tok, huge) — RFC 0025: MIND Intent — Intent Contracts (goal + constraints → verifiable Contract IR)
@@ -1176,7 +1176,7 @@
 - `error.rs` (~729 tok, large) — Copyright 2025 STARGA Inc.
 - `format.rs` (~911 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `mldsa.rs` (~2688 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~20143 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~20268 tok, huge) — Copyright 2025 STARGA Inc.
 - `parse.rs` (~13043 tok, huge) — Copyright 2025 STARGA Inc.
 - `slhdsa.rs` (~3201 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/v3/v04/`

@@ -15,13 +15,17 @@
 Canonical semantic metadata now has an in-memory carrier with one module registry
 for function declarations and co-located function/SSA types. Verification checks
 identity, signatures, local bodies, external declarations, typed calls and bounded
-aggregate shapes together. This is preparation for a future semantic wire format;
-the compiler still emits the established MIC@3 v0x02/v0x03 layouts.
+aggregate shapes together. Checked emission now selects a distinct draft v0x04
+body when this semantic metadata is populated. The initial codec supports scalar
+core instructions, owner-qualified declarations and recursive type descriptors;
+standard-surface instructions and populated legacy aggregate tables are refused.
+See [the draft grammar and limits](../mic3-v04-draft.md). This implementation is
+not a frozen protocol or a claim of complete source-to-backend propagation.
 
 The checked emitter, trace hash and evidence/signing APIs return structured errors
-before emitting an artifact when canonical metadata is invalid or cannot be
-encoded by those layouts. Legacy infallible APIs remain restricted to legacy IR.
-No v0x04 tag assignment, codec support or additional backend capability is claimed.
+when metadata is invalid or outside the supported encoding. Legacy infallible APIs
+remain restricted to legacy IR, preserving established v0x02/v0x03 emission.
+Additional backend capability and operational release signing remain separate work.
 
 MIC@3 v0x03 input is admitted only by a `std-surface` reader, which has storage
 for its aggregate type tables. A bare reader refuses v0x03 at the version boundary
