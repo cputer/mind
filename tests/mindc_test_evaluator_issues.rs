@@ -379,6 +379,100 @@ fn message_form_false() {
     assert_line(&out, "1 passed; 1 failed");
 }
 
+// ---------------------------------------------------------------------------
+// Struct field assignment — fail closed until interpreter mutation semantics
+// are explicitly defined (the native lowering path is a separate contract).
+// ---------------------------------------------------------------------------
+
+const STRUCT_FIELD_ASSIGNMENT_REFUSAL: &str = r#"
+struct Point {
+    x: i64,
+}
+
+fn read_point() -> i64 {
+    let p: Point = Point { x: 1 };
+    return p.x;
+}
+
+fn store_direct() -> i64 {
+    let mut p: Point = Point { x: 1 };
+    p.x = 9;
+    return p.x;
+}
+
+fn store_helper() -> i64 {
+    return store_direct();
+}
+
+#[test]
+fn struct_read_only_helper_still_passes() {
+    assert read_point() == 1, "read-only struct helper"
+}
+
+#[test]
+fn struct_store_direct_refuses() {
+    let got = store_direct();
+    assert got == 9, "store must not silently retain the old value"
+}
+
+#[test]
+fn struct_store_called_helper_refuses() {
+    let got = store_helper();
+    assert got == 9, "store in a called helper must not silently disappear"
+}
+"#;
+
+#[test]
+fn struct_field_assignment_refuses_in_direct_and_called_helpers() {
+    let (code, out) = run_mindc_test(
+        "struct_field_assignment_refusal",
+        STRUCT_FIELD_ASSIGNMENT_REFUSAL,
+    );
+    assert_ne!(code, 0, "field mutation must not report green:\n{out}");
+    assert_line(&out, "struct_read_only_helper_still_passes ... ok");
+    assert_line(&out, "struct_store_direct_refuses ... FAILED");
+    assert_line(&out, "struct_store_called_helper_refuses ... FAILED");
+    assert_line(
+        &out,
+        "struct field assignment `.x` is unsupported by the interpreter; mutation semantics are not defined",
+    );
+    assert_line(&out, "1 passed; 2 failed");
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn struct_field_assignment_refuses_inside_loop() {
+    let src = r#"
+struct Point {
+    x: i64,
+}
+
+fn store_loop() -> i64 {
+    let mut p: Point = Point { x: 1 };
+    let mut i: i64 = 0;
+    while i < 1 {
+        p.x = 9;
+        i = i + 1;
+    }
+    return p.x;
+}
+
+#[test]
+fn struct_store_loop_refuses() {
+    let got = store_loop();
+    assert got == 9, "store in a loop must not silently disappear"
+}
+"#;
+    let (code, out) = run_mindc_test("struct_field_assignment_loop_refusal", src);
+    assert_ne!(code, 0, "loop field mutation must not report green:\n{out}");
+    assert_line(&out, "struct_store_loop_refuses ... FAILED");
+    assert_line(
+        &out,
+        "struct field assignment `.x` is unsupported by the interpreter; mutation semantics are not defined",
+    );
+    assert_line(&out, "0 passed; 1 failed");
+}
+
 /// `assert(cond, "msg")` — the parenthesised comma form — parses as a 2-tuple
 /// CONDITION. It graded `ok` regardless of `cond` before the fix. Now it fails
 /// closed, for a TRUE and a FALSE `cond` alike, with a message that names the

@@ -2087,9 +2087,14 @@ pub(crate) fn eval_value_expr_mode(
         // expression. Evaluating it as an expression returns the
         // assigned value (matches C-style semantics).
         Node::IndexAssign { value, .. } => eval_value_expr_mode(value, env, tensor_env, mode),
-        // Phase 10.6: field assignment is also a statement; the
-        // expression-position evaluation returns the assigned value.
-        Node::FieldAssign { value, .. } => eval_value_expr_mode(value, env, tensor_env, mode),
+        // The tree evaluator has no defined struct-mutation semantics yet.
+        // Refuse the statement instead of evaluating only its RHS: the latter
+        // makes a later field read observe the old value while the test can
+        // still be reported green.
+        Node::FieldAssign { field, .. } => Err(EvalError::UnsupportedMsg(format!(
+            "struct field assignment `.{field}` is unsupported by the interpreter; "
+                "mutation semantics are not defined"
+        ))),
         // Phase 10.7: `match`. Evaluate the scrutinee and take the first arm
         // whose pattern matches — `Wildcard`, `Ident` (binds the value), or
         // `Literal` (Int/Float/Str equality). Enum-variant patterns need a
@@ -3368,6 +3373,45 @@ mod tests {
             Value::Int(n) => assert_eq!(n, 7, "`&mut x` should read x's value"),
             other => panic!("expected Int(7), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn eval_field_assignment_refuses_without_mutating_or_returning_rhs() {
+        let src = r#"
+struct Point { x: i64 }
+
+fn mutate() -> i64 {
+    let mut p: Point = Point { x: 1 };
+    p.x = 9;
+    return p.x;
+}
+
+mutate()
+"#;
+        let module = parser::parse(src).expect("field-assignment fixture parses");
+        let mut env = HashMap::new();
+        let err = eval_module_value_with_env(&module, &mut env, Some(src)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "unsupported: struct field assignment `.x` is unsupported by the interpreter; mutation semantics are not defined"
+        );
+    }
+
+    #[test]
+    fn eval_module_level_field_assignment_refuses() {
+        let src = r#"
+struct Point { x: i64 }
+let mut p: Point = Point { x: 1 };
+p.x = 9;
+"#;
+        let module = parser::parse(src).expect("module field-assignment fixture parses");
+        let mut env = HashMap::new();
+        let err = eval_module_value_with_env(&module, &mut env, Some(src)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("struct field assignment `.x` is unsupported by the interpreter"),
+            "unexpected refusal: {err}"
+        );
     }
 
     #[cfg(feature = "std-surface")]
