@@ -31,6 +31,7 @@
 
 use libmind::ast::{Field, FnDefData, Literal, Module, Node, Param, Span, StructLitField, TypeAnn};
 use libmind::eval::lower::lower_to_ir;
+use libmind::eval::materialization::MaterializationRefusal;
 use libmind::ir::Instr;
 use libmind::parser::parse;
 
@@ -80,6 +81,15 @@ fn count_calls_deep(instrs: &[Instr], callee: &str) -> usize {
         }
     }
     n
+}
+
+fn assert_unsupported_field_operation(refusal: MaterializationRefusal, expected: &'static str) {
+    match refusal {
+        MaterializationRefusal::UnsupportedLoweringOperation { operation, .. } => {
+            assert_eq!(operation, expected);
+        }
+        other => panic!("expected UnsupportedLoweringOperation, got {other:?}"),
+    }
 }
 
 // ─── Case (3) — struct-typed parameter ───────────────────────────────
@@ -208,7 +218,6 @@ fn step2_fn_return_receiver_resolves_field_access() {
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `anything`")]
 fn step2_fn_with_non_struct_return_fails_closed() {
     // fn raw() -> i64 { return 7 }
     // let v = raw().anything   // not actually a field access on a struct
@@ -252,13 +261,13 @@ fn step2_fn_with_non_struct_return_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("non-struct return field must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 // ─── Case (1) — chained access (infrastructure check) ────────────────
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `b`")]
 fn step2_chained_access_on_scalar_fails_closed() {
     // struct Pair { a: i64, b: i64 }
     // let p = Pair { a: 1, b: 2 }
@@ -314,11 +323,11 @@ fn step2_chained_access_on_scalar_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("scalar chained field must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `a`")]
 fn fixed_array_scalar_rebind_clears_element_type() {
     let module = parse(
         r#"
@@ -336,11 +345,11 @@ fn invalid() -> i64 {
     // A same-scope scalar rebind must remove the old array-element type.
     // Keeping it would authorize a field load from scalar storage and emit
     // successful wrong code instead of refusing the invalid receiver.
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("scalar fixed-array rebind must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `a`")]
 fn scalar_local_shadow_does_not_recover_module_struct_const_type() {
     let module = parse(
         r#"
@@ -358,11 +367,11 @@ fn invalid() -> i64 {
     // `module_const_type("P")` must not resurrect Pair after the local scalar
     // binding occupied that name; treating integer 3 as a record address would
     // be successful wrong code or an invalid memory read.
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("scalar local shadow must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `a`")]
 fn scalar_param_shadow_does_not_recover_module_array_const_type() {
     let module = parse(
         r#"
@@ -378,7 +387,8 @@ fn invalid(ITEMS: i64) -> i64 {
 
     // The occupied parameter binding must block both direct and fixed-array
     // fallback to the same-named module constant.
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("scalar parameter shadow must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 // ─── Smoke: Step 1 + Step 2 don't double-resolve ─────────────────────

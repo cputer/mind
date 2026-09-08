@@ -23,6 +23,7 @@
 
 use libmind::ast::{Field, FnDefData, Literal, Module, Node, Span, StructLitField, TypeAnn};
 use libmind::eval::lower::lower_to_ir;
+use libmind::eval::materialization::MaterializationRefusal;
 use libmind::ir::Instr;
 
 fn sp() -> Span {
@@ -59,6 +60,15 @@ fn count_calls(instrs: &[Instr], name: &str) -> usize {
         .iter()
         .filter(|i| matches!(i, Instr::Call { name: n, .. } if n == name))
         .count()
+}
+
+fn assert_unsupported_field_operation(refusal: MaterializationRefusal, expected: &'static str) {
+    match refusal {
+        MaterializationRefusal::UnsupportedLoweringOperation { operation, .. } => {
+            assert_eq!(operation, expected);
+        }
+        other => panic!("expected UnsupportedLoweringOperation, got {other:?}"),
+    }
 }
 
 /// Build a module with a 3-field struct + literal binding + N field reads.
@@ -213,7 +223,6 @@ fn field_access_nonzero_field_uses_addr_plus_offset() {
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `anything`")]
 fn field_access_unknown_receiver_fails_closed() {
     // This hand-built invalid AST bypasses the type checker. Lowering must
     // refuse it rather than manufacture a successful zero-valued read.
@@ -235,11 +244,11 @@ fn field_access_unknown_receiver_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("unknown receiver must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering field `c_does_not_exist`")]
 fn field_access_unknown_struct_field_fails_closed() {
     // Known struct var, but the requested field is not in the StructDef.
     // Refuse it rather than emit a load at a guessed offset or return zero.
@@ -274,11 +283,11 @@ fn field_access_unknown_struct_field_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("unknown struct field must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field read");
 }
 
 #[test]
-#[should_panic(expected = "unresolved receiver while lowering assignment to field `anything`")]
 fn field_assign_unknown_receiver_fails_closed() {
     // Field writes use the same resolver as reads. An unresolved write must
     // not be discarded while returning a zero placeholder.
@@ -300,7 +309,8 @@ fn field_assign_unknown_receiver_fails_closed() {
         ],
     };
 
-    let _ = lower_to_ir(&module).expect("lowering");
+    let refusal = lower_to_ir(&module).expect_err("unknown assignment receiver must fail closed");
+    assert_unsupported_field_operation(refusal, "struct field assignment");
 }
 
 #[test]
