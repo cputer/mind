@@ -11,7 +11,7 @@ at a walked `Node::Lit(Literal::Ident(name))` iff
                                            OR bundled-std exports  [D3]
        || name == "bytes"
        || name.contains("::")            — qualified path, never bare-undef
-       || cm_symbol_exported(name) )     — vacuous in the single-file model
+       || cse(name) )                   — vacuous in the single-file model
 
 CRUCIAL grounded difference from E2003/E2012 (live-verified below): the
 BARE_BUILTINS set, "__mind_"/"tensor." prefixes, "gen_deref", and the E2024
@@ -626,7 +626,7 @@ def ident_resolvable_source_guard():
         "self.syms.name_resolvable(name)",
         '"bytes"',
         'contains("::")',
-        "cm_symbol_exported_res(name)",
+        "|| cse(name)",
     ):
         if arm not in body:
             print(f"FAIL: ident_resolvable arm {arm!r} missing — rule drifted")
