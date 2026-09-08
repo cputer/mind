@@ -37,6 +37,22 @@ pub enum MaterializationRefusal {
     TempSlotsLimit { attempted: u64, limit: u64 },
     #[error("compiler materialization accounting overflow")]
     CounterOverflow,
+    #[error(
+        "unsupported lowering operation `{operation}` at source span {start}..{end}: the inline struct-field ABI has no representation"
+    )]
+    UnsupportedLoweringOperation {
+        operation: &'static str,
+        start: usize,
+        end: usize,
+    },
+    #[error(
+        "invalid lowering receiver `{operation}` at source span {start}..{end}: no SSA binding exists"
+    )]
+    InvalidLoweringReceiver {
+        operation: &'static str,
+        start: usize,
+        end: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +357,61 @@ mod tests {
             },
         )
         .expect("typed float boundary");
+    }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn nested_struct_array_receiver_refuses_without_lowering_panic() {
+        let module = crate::parser::parse(
+            "struct Item { value: i64 }\n\
+             struct Batch { items: [Item; 2] }\n\
+             fn read(b: Batch) -> i64 {\n\
+                 let mut i: i64 = 0\n\
+                 let mut total: i64 = 0\n\
+                 while i < 2 {\n\
+                     total = total + b.items[i].value\n\
+                     i = i + 1\n\
+                 }\n\
+                 return total\n\
+             }",
+        )
+        .expect("generic nested struct-array source");
+        let result =
+            crate::eval::lower::lower_to_ir_with_limits(&module, MaterializationLimits::default());
+        match result {
+            Err(MaterializationRefusal::UnsupportedLoweringOperation {
+                operation,
+                start: 160,
+                end: 176,
+            }) => assert_eq!(operation, "struct field read"),
+            other => panic!("unexpected refusal: {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "std-surface")]
+    #[test]
+    fn unsupported_struct_array_refusal_does_not_depend_on_budget_capacity() {
+        let module = crate::parser::parse(
+            "struct Item { value: i64 }\n\
+             struct Batch { items: [Item; 2] }\n\
+             fn read(b: Batch) -> i64 { return b.items[0].value }",
+        )
+        .expect("generic nested struct-array source");
+        let result = crate::eval::lower::lower_to_ir_with_limits(
+            &module,
+            MaterializationLimits {
+                payload_bytes: u64::MAX,
+                ir_items: u64::MAX,
+                temp_slots: u64::MAX,
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(MaterializationRefusal::UnsupportedLoweringOperation {
+                operation,
+                ..
+            }) if operation == "struct field read"
+        ));
     }
 
     #[cfg(feature = "std-surface")]

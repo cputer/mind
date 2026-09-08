@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1672 | **Est. tokens:** ~3201776
-**Generated:** 2026-09-08 05:09 UTC
+**Files:** 1672 | **Est. tokens:** ~3202723
+**Generated:** 2026-09-08 05:26 UTC
 
 ## Token Budget Guide
 
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 27 | ~120315 |
+| `src/eval/` | 27 | ~121262 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -1084,12 +1084,12 @@
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9338 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
-- `field_access.rs` (~4796 tok, huge) — Copyright 2026 STARGA Inc.
+- `field_access.rs` (~4730 tok, huge) — Copyright 2026 STARGA Inc.
 - `fixed_array.rs` (~1478 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct.rs` (~5296 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct.rs` (~5689 tok, huge) — Copyright 2026 STARGA Inc.
 - `interp_mem.rs` (~3817 tok, huge) — Copyright 2025 STARGA Inc.
 - `ir_interp.rs` (~4212 tok, huge) — Copyright 2025 STARGA Inc.
-- `materialization.rs` (~4386 tok, huge) — Copyright 2026 STARGA Inc.
+- `materialization.rs` (~5006 tok, huge) — Copyright 2026 STARGA Inc.
 - `mlir_build.rs` (~10897 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_export.rs` (~12220 tok, huge) — Copyright 2025 STARGA Inc.
 - `mlir_gpu.rs` (~301 tok, medium) — Copyright 2025 STARGA Inc.

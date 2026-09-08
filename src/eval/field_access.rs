@@ -7,8 +7,9 @@
 
 use super::fixed_array_struct::{
     fixed_array_cell_bits_ty, fixed_array_cell_supported_in, fixed_array_cell_type,
-    load_helper_for_width, lower_struct_field_value, store_fixed_array_field,
-    store_helper_for_width, struct_field_type, struct_layout,
+    load_helper_for_width, lower_struct_field_value, refuse_invalid_field_receiver,
+    refuse_unrepresentable_field, store_fixed_array_field, store_helper_for_width,
+    struct_field_type, struct_layout,
 };
 use super::{
     HashMap, LoweringContext, MAP_SENTINEL, MAP_STR_SENTINEL, SET_SENTINEL, SET_STR_SENTINEL,
@@ -181,9 +182,7 @@ pub(super) fn lower_field_access(
             let addr = match var_name_opt {
                 Some(var_name) => match env.get(&var_name) {
                     Some(id) => *id,
-                    None => panic!(
-                        "resolved struct receiver `{var_name}` has no SSA binding while lowering field `{field}` — refusing to emit const 0"
-                    ),
+                    None => refuse_invalid_field_receiver(ir, context, "struct field read", span),
                 },
                 None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
             };
@@ -307,9 +306,7 @@ pub(super) fn lower_field_access(
                 loaded
             }
         }
-        None => panic!(
-            "unresolved receiver while lowering field `{field}` at {span:?} — refusing to emit const 0 (a silent miscompile)"
-        ),
+        None => refuse_unrepresentable_field(ir, context, "struct field read", span),
     }
 }
 
@@ -372,9 +369,9 @@ pub(super) fn lower_field_assign(
             let addr = match var_name_opt {
                 Some(var_name) => match env.get(&var_name) {
                     Some(id) => *id,
-                    None => panic!(
-                        "resolved struct receiver `{var_name}` has no SSA binding while lowering assignment to field `{field}` — refusing to emit const 0"
-                    ),
+                    None => {
+                        refuse_invalid_field_receiver(ir, context, "struct field assignment", span)
+                    }
                 },
                 None => lower_expr(receiver, ir, env, struct_env, receiver_types, context),
             };
@@ -426,8 +423,6 @@ pub(super) fn lower_field_assign(
             // (unit) id is the value this expression yields.
             store_ret
         }
-        None => panic!(
-            "unresolved receiver while lowering assignment to field `{field}` at {span:?} — refusing to emit const 0 (a silent dropped store)"
-        ),
+        None => refuse_unrepresentable_field(ir, context, "struct field assignment", span),
     }
 }

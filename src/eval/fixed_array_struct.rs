@@ -113,6 +113,50 @@ pub(crate) fn fixed_array_field_unsupported(ir: &IRModule, struct_name: &str, fi
     !fixed_array_cell_supported_in(element, ir)
 }
 
+/// Stop lowering after a field operation reaches a representation that the
+/// inline scalar-cell ABI cannot describe. The runnable ABI gate normally
+/// reports this after lowering, but nested array-of-struct accesses can leave
+/// the receiver unresolved before that pass. Use the terminal structured
+/// refusal path so callers get an E6002 diagnostic and no partial artifact,
+/// rather than the historical unresolved-receiver panic or fabricated zero.
+#[cfg(feature = "std-surface")]
+pub(super) fn refuse_unrepresentable_field(
+    ir: &mut IRModule,
+    context: &mut super::LoweringContext,
+    operation: &'static str,
+    span: &ast::Span,
+) -> ValueId {
+    // Preserve the first terminal failure even if an enclosing expression
+    // visits another field before the invocation returns its refusal.
+    context.refusal.get_or_insert(
+        crate::eval::materialization::MaterializationRefusal::UnsupportedLoweringOperation {
+            operation,
+            start: span.start(),
+            end: span.end(),
+        },
+    );
+    ir.fresh()
+}
+
+#[cfg(feature = "std-surface")]
+pub(super) fn refuse_invalid_field_receiver(
+    ir: &mut IRModule,
+    context: &mut super::LoweringContext,
+    operation: &'static str,
+    span: &ast::Span,
+) -> ValueId {
+    // Preserve the first terminal failure even if an enclosing expression
+    // visits another field before the invocation returns its refusal.
+    context.refusal.get_or_insert(
+        crate::eval::materialization::MaterializationRefusal::InvalidLoweringReceiver {
+            operation,
+            start: span.start(),
+            end: span.end(),
+        },
+    );
+    ir.fresh()
+}
+
 #[cfg(feature = "std-surface")]
 pub(super) fn struct_field_alignment(ty: &TypeAnn) -> i64 {
     if matches!(ty, TypeAnn::Array { .. }) {
@@ -271,11 +315,6 @@ pub(super) fn store_fixed_array_field(
     }
     let f64_bits = matches!(element, TypeAnn::ScalarF64)
         || matches!(element, TypeAnn::Named(name) if name == "f64");
-    if matches!(element, TypeAnn::ScalarF32)
-        || matches!(element, TypeAnn::Named(name) if name == "f32")
-    {
-        panic!("fixed f32 struct fields are not supported by the inline scalar-cell ABI");
-    }
     if !context.charge_fixed_field_store(length, f64_bits) {
         return;
     }
@@ -509,11 +548,17 @@ pub(super) fn lower_fixed_array_field_index_access(
     // a second time. The plain-ident path reuses its already-bound address;
     // chained receivers are lowered once through the normal FieldAccess path.
     let owner_id = match owner_name {
-        Some(name) => *env.get(&name).unwrap_or_else(|| {
-            panic!(
-                "resolved struct receiver `{name}` has no SSA binding while lowering indexed field `{field}`"
-            )
-        }),
+        Some(name) => {
+            let Some(owner_id) = env.get(&name).copied() else {
+                return Some(refuse_invalid_field_receiver(
+                    ir,
+                    context,
+                    "indexed struct field read",
+                    span,
+                ));
+            };
+            owner_id
+        }
         None => lower_expr(owner, ir, env, struct_env, receiver_types, context),
     };
     if context.failed() {
