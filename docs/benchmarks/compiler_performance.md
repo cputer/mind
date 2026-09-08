@@ -196,7 +196,7 @@ tensor.matmul(a, b)
 
 ## External comparison evidence
 
-The T1 MIND measurements in this document must not be divided by external T2 measurements. The committed PyTorch record is CPU-only (`pytorch_results.json`) and compares an in-process PyTorch call with a MIND CLI subprocess; it records 30.8–52.6× wall-clock ratios and is labelled as cross-harness evidence. The JAX record uses a different invocation scope, and the raw Mojo artifact lacks matched provenance. The historical GPU/cold-start/full-build ratios are therefore withdrawn as current claims.
+The T1 MIND measurements in this document must not be divided by external T2 measurements. The committed PyTorch record is CPU-only (`pytorch_results.json`) and compares an in-process PyTorch call with a MIND CLI subprocess; it records 30.8–52.6× wall-clock ratios and is labelled as cross-harness evidence. The committed JAX cold-start record retains JAX `37.523–360.513 ms` and T1 MIND `1.77/2.95/6.15 µs` observations, but they are cross-tier; the raw Mojo artifact lacks matched provenance. The historical ratios are therefore withdrawn as current claims.
 
 ---
 

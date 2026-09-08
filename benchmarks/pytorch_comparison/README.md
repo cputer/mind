@@ -5,7 +5,7 @@ This benchmark compares **MIND compilation time** vs **PyTorch torch.compile()**
 ## What We Measure
 
 - **PyTorch 2.10+**: `torch.compile()` compilation overhead on the selected device (caches cleared)
-- **MIND**: `compile_source()` time (parse → type-check → IR lowering)
+- **MIND**: CLI subprocess time in this harness. The separately recorded `compile_source()` Criterion baseline measures only parse → type-check → IR lowering.
 
 ## Quick Start
 

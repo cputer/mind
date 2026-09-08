@@ -84,11 +84,12 @@ PyTorch 2.9.1+cpu with `cuda_available:false`; it compares an in-process
 PyTorch call with a MIND CLI subprocess and records 30.8–52.6× wall-clock
 ratios. Those are cross-harness observations, not tier-matched speedups.
 
-The historical GPU and JAX cold-start tables had no matching committed
-evidence, and the raw Mojo timings lack matched provenance; those tables have
-been removed from the verified-results section.
-No current external ratio is published until a result artifact records both
-sides' timing scope and environment.
+The former PyTorch GPU table has no matching committed GPU artifact. The JAX
+cold-start record is committed and contains JAX `37.523–360.513 ms` mean timings
+with T1 MIND `1.77/2.95/6.15 µs` values, but those are cross-tier historical
+observations rather than a current speedup claim. The raw Mojo timings lack
+matched provenance. No tier-matched external speedup is established by these
+records until an artifact records both sides' timing scope and environment.
 
 ### Historical: Cross-harness comparison (January 19, 2026)
 

@@ -27,7 +27,12 @@ See **[FINAL_PATENT_RESULTS.md](FINAL_PATENT_RESULTS.md)** for patent benchmark 
 
 The committed PyTorch record is [`pytorch_results.json`](pytorch_comparison/pytorch_results.json): PyTorch 2.9.1+cpu with `cuda_available:false`, compared with the MIND CLI subprocess over 10 samples. It records 30.8–52.6× wall-clock ratios, but the harnesses use different invocation scopes, so this is not a tier-matched speedup. No committed GPU result exists.
 
-The historical GPU and JAX cold-start ratios are retained only in old source material and are not publishable benchmark claims without matching artifacts. `mojo/mojo_results.json` contains raw timings, but lacks the complete matched provenance needed for a current ratio.
+The former PyTorch GPU ratio has no matching committed GPU artifact. The JAX
+cold-start record is committed and contains JAX `37.523–360.513 ms` mean timings
+with T1 MIND `1.77/2.95/6.15 µs` values, but those are cross-tier historical
+observations rather than a current speedup claim. `mojo/mojo_results.json`
+contains raw timings, but lacks the complete matched provenance needed for a
+current ratio.
 
 ## Patent Benchmarks
 
@@ -93,7 +98,7 @@ open target/criterion/report/index.html
 
 ### Compilation speed evidence
 
-The standalone MIND figures above are T1 frontend measurements. The committed external PyTorch record is CPU-only and cross-harness; it records 30.8–52.6× wall-clock ratios, not a tier-matched speedup. The JAX record and the raw Mojo artifact lack a current tier-matched comparison, so no external ratio is published here.
+The standalone MIND figures above are T1 frontend measurements. The committed external PyTorch record is CPU-only and cross-harness; it records 30.8–52.6× wall-clock ratios, not a tier-matched speedup. The JAX record and raw Mojo artifact preserve historical observations, but neither establishes a current tier-matched comparison, so no external speedup is published here.
 
 ### Key Findings
 

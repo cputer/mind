@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1670 | **Est. tokens:** ~3192746
-**Generated:** 2026-09-08 04:00 UTC
+**Files:** 1670 | **Est. tokens:** ~3192991
+**Generated:** 2026-09-08 04:09 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29384 |
+| `./` | 33 | ~29437 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -37,18 +37,18 @@
 | `bench/fft/` | 8 | ~8060 |
 | `benches/` | 28 | ~84219 |
 | `benches/common/` | 1 | ~668 |
-| `benchmarks/` | 13 | ~27981 |
+| `benchmarks/` | 13 | ~28066 |
 | `benchmarks/autograd_comparison/` | 8 | ~9411 |
 | `benchmarks/cupy_comparison/` | 6 | ~7733 |
 | `benchmarks/determinism/` | 3 | ~4601 |
-| `benchmarks/inference/` | 4 | ~4040 |
-| `benchmarks/jax_comparison/` | 5 | ~4629 |
+| `benchmarks/inference/` | 4 | ~4049 |
+| `benchmarks/jax_comparison/` | 5 | ~4689 |
 | `benchmarks/mojo/` | 8 | ~4276 |
-| `benchmarks/pytorch_comparison/` | 5 | ~4858 |
+| `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3329 |
 | `docs/` | 36 | ~101682 |
 | `docs/backends/` | 1 | ~1482 |
-| `docs/benchmarks/` | 3 | ~9026 |
+| `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
 | `docs/gates/` | 1 | ~3910 |
 | `docs/mindcraft/` | 3 | ~7086 |
@@ -219,7 +219,7 @@
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
-- `README.md` (~6632 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~6685 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
 - `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
@@ -341,9 +341,9 @@
 - `std_surface.rs` (~1067 tok, large) — Copyright 2025 STARGA Inc.
 ### `benchmarks/`
 
-- `BENCHMARK_RESULTS.md` (~4520 tok, huge) — MIND Benchmark Results
+- `BENCHMARK_RESULTS.md` (~4559 tok, huge) — MIND Benchmark Results
 - `MIC_MAP_BENCHMARK_README.md` (~675 tok, large) — MIC/MAP Patent Reference Benchmark
-- `README.md` (~1122 tok, large) — MIND Performance Benchmarks
+- `README.md` (~1168 tok, large) — MIND Performance Benchmarks
 - `RUN_GUIDE.md` (~1563 tok, huge) — MIND Patent Benchmarks - Environment Guide
 ### `benchmarks/autograd_comparison/`
 
@@ -376,13 +376,13 @@
 - `format_benchmark.py` (~2434 tok, huge)
 ### `benchmarks/inference/`
 
-- `README.md` (~1140 tok, large) — Inference Speed Benchmark
+- `README.md` (~1149 tok, large) — Inference Speed Benchmark
 - `benchmark_inference.py` (~2423 tok, huge)
 - `inference_results.json` (~473 tok, medium) — Keys: system_info, benchmarks
 - `requirements.txt` (~4 tok, tiny) — torch>=1.0.0
 ### `benchmarks/jax_comparison/`
 
-- `README.md` (~1049 tok, large) — JAX Compilation Benchmark
+- `README.md` (~1109 tok, large) — JAX Compilation Benchmark
 - `benchmark_jax_compile.py` (~2719 tok, huge)
 - `jax_coldstart_results.json` (~376 tok, medium) — Keys: environment, results
 - `jax_results.json` (~478 tok, medium) — Keys: system_info, benchmarks
@@ -405,7 +405,7 @@
 ### `benchmarks/pytorch_comparison/`
 
 - `=2.0` (~0 tok, tiny)
-- `README.md` (~844 tok, large) — PyTorch Compilation Benchmark
+- `README.md` (~866 tok, large) — PyTorch Compilation Benchmark
 - `benchmark_pytorch_compile.py` (~3420 tok, huge)
 - `pytorch_results.json` (~590 tok, large) — Keys: system_info, benchmarks
 - `requirements.txt` (~4 tok, tiny) — torch>=2.0.0
@@ -440,7 +440,7 @@
 ### `docs/benchmarks/`
 
 - `RESULTS-mind-vs-rust-2026-06-09.md` (~2174 tok, huge) — MIND vs Rust — integer-GEMM, apples-to-apples (2026-06-09)
-- `compiler_performance.md` (~4347 tok, huge) — MIND Compiler Performance Benchmarks
+- `compiler_performance.md` (~4363 tok, huge) — MIND Compiler Performance Benchmarks
 - `mojo_comparison.md` (~2505 tok, huge) — MIND vs Mojo: Compilation Performance Comparison
 ### `docs/`
 

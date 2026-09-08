@@ -110,7 +110,7 @@ inputs; the repository does not publish them as a result.
 | **Inference** | ~Equal | ~Equal |
 | **Total (1000 runs)** | No measured total | No measured total |
 
-**Conclusion**: MIND wins on total time due to near-instant compilation.
+Total-time comparisons require both end-to-end compilation and inference measurements for the same workload.
 
 ## Troubleshooting
 

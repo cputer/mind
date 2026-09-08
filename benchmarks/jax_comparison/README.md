@@ -42,6 +42,10 @@ Criterion values, so its millisecond-to-microsecond ratios are also not
 like-for-like. The raw values remain available for reproduction; no JAX ratio
 is published as a current claim.
 
+For traceability, the committed cold-start record retains JAX `37.523–360.513
+ms` mean timings on `cuda:0` and T1 MIND `1.77/2.95/6.15 µs` values. Those values
+remain historical cross-tier observations and are not divided into a speedup.
+
 ## Output Format
 
 ```

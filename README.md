@@ -394,7 +394,7 @@ bench-gate threshold documented at [`.bench-baseline-2026-05-17-phase10-6.txt`](
 | JAX comparison | JAX 0.9.0.1; JAX in-process and MIND CLI subprocess | No tier-matched speedup published; see the raw JSON |
 | Mojo comparison | `mojo_results.json` has raw timings, but no complete matched provenance | No ratio published |
 
-The PyTorch row is reproduced from [`pytorch_results.json`](benchmarks/pytorch_comparison/pytorch_results.json). The historical GPU, cold-start, and full-build ratios previously shown here have no matching committed evidence and are not current benchmark claims.
+The PyTorch row is reproduced from [`pytorch_results.json`](benchmarks/pytorch_comparison/pytorch_results.json); the former GPU headline has no matching committed GPU artifact. The JAX cold-start record is committed in [`jax_coldstart_results.json`](benchmarks/jax_comparison/jax_coldstart_results.json), but its T1 MIND values and JAX full-compilation values are cross-tier observations, not a current speedup claim. Mojo has raw timings but no complete matched provenance.
 
 | Benchmark | MIND v0.7.1 | Compilations/sec |
 |-----------|-------------|------------------|
