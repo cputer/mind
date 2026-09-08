@@ -2136,7 +2136,9 @@ fn collect_global_enum_item(
     #[cfg(feature = "std-surface")]
     if let crate::ast::Node::FnDef(fd, _) = item {
         if let Some(rt) = &fd.ret_type {
-            enums.fn_returns.insert(fd.name.clone(), rt.clone());
+            enums
+                .fn_returns
+                .insert(fd.name.clone(), aliases.resolve(rt));
         }
     }
     // Descend into a `module { … }` wrapper (a transparent `Node::Block`).

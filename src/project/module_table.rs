@@ -287,6 +287,10 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
         }
     }
     flatten(&ast.items, &mut items);
+    // Exported signatures retain the defining module's structural types.
+    // Resolve aliases here, while their owner scope is available, so a
+    // consumer cannot mistake `Items` for an unknown scalar annotation.
+    let aliases = crate::eval::type_aliases::LocalTypeAliases::new(&ast.items);
 
     let mut exported: Vec<String> = Vec::new();
     let mut exported_fns: Vec<ExportedFn> = Vec::new();
@@ -312,8 +316,8 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
                 if exported_set.contains(name) {
                     exported_fns.push(ExportedFn {
                         name: name.clone(),
-                        param_types: params.iter().map(|p| p.ty.clone()).collect(),
-                        ret_type: ret_type.clone(),
+                        param_types: params.iter().map(|p| aliases.resolve(&p.ty)).collect(),
+                        ret_type: ret_type.as_ref().map(|ty| aliases.resolve(ty)),
                     });
                 }
             }
@@ -330,8 +334,8 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
                     exported.push(name.clone());
                     exported_fns.push(ExportedFn {
                         name: name.clone(),
-                        param_types: params.iter().map(|p| p.ty.clone()).collect(),
-                        ret_type: ret_type.clone(),
+                        param_types: params.iter().map(|p| aliases.resolve(&p.ty)).collect(),
+                        ret_type: ret_type.as_ref().map(|ty| aliases.resolve(ty)),
                     });
                 }
                 Node::StructDef { name, .. } => exported.push(name.clone()),
@@ -512,6 +516,27 @@ mod tests {
         assert_eq!(ex.exported_fns[1].name, "vec_new");
         assert!(ex.exported_fns[1].param_types.is_empty());
         assert!(ex.exported_fns[1].ret_type.is_some());
+    }
+
+    #[test]
+    fn exported_fn_signatures_resolve_owner_aliases() {
+        let src = "struct Item { value: i64 }\n\
+                   type Items = [Item; 2]\n\
+                   pub fn make() -> Items { [Item { value: 7 }, Item { value: 9 }] }\n";
+        let ast = parse(src).expect("parse");
+        let ex = collect_module_exports("crate.items", &ast);
+        let make = ex
+            .exported_fns
+            .iter()
+            .find(|f| f.name == "make")
+            .expect("make signature");
+        assert_eq!(
+            make.ret_type,
+            Some(TypeAnn::Array {
+                element: Box::new(TypeAnn::Named("Item".to_string())),
+                length: 2,
+            })
+        );
     }
 
     #[test]

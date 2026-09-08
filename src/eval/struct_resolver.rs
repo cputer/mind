@@ -52,7 +52,7 @@ type FieldTypes = BTreeMap<(String, String), String>;
 /// to infer a record element.
 struct ResolverReturns<'a> {
     direct: &'a HashMap<String, String>,
-    array_elements: &'a HashMap<String, String>,
+    array_elements: &'a HashMap<String, TypeAnn>,
 }
 
 /// The side-table produced by [`build_field_access_types`]. Maps each
@@ -101,7 +101,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
     let mut struct_defs: Vec<String> = Vec::new();
     let mut field_types: FieldTypes = FieldTypes::new();
     let mut fn_returns: HashMap<String, String> = HashMap::new();
-    let mut fn_array_returns: HashMap<String, String> = HashMap::new();
+    let mut fn_array_returns: HashMap<String, TypeAnn> = HashMap::new();
     let mut ambiguous_array_returns: HashSet<String> = HashSet::new();
     let mut local_fn_names: HashSet<String> = HashSet::new();
     for item in &module.items {
@@ -132,12 +132,13 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                 if let Some(t) = unwrap_to_named(ret) {
                     fn_returns.insert(name.clone(), t.to_string());
                 }
-                if let Some(t) = declared_array_element_named(ret) {
+                let resolved_ret = crate::eval::type_aliases::resolve_active(ret);
+                if declared_array_element_named(&resolved_ret).is_some() {
                     insert_unique_array_return(
                         &mut fn_array_returns,
                         &mut ambiguous_array_returns,
                         name,
-                        t,
+                        resolved_ret,
                     );
                 }
             }
@@ -213,24 +214,46 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     .or_insert_with(|| t.to_string());
             }
             if !local_fn_names.contains(fname) {
-                if let Some(t) = declared_array_element_named(rt) {
+                let resolved_rt = crate::eval::type_aliases::resolve_active(rt);
+                if declared_array_element_named(&resolved_rt).is_some() {
                     insert_unique_array_return(
                         &mut fn_array_returns,
                         &mut ambiguous_array_returns,
                         fname,
-                        t,
+                        resolved_rt,
                     );
                 }
             }
         }
     });
 
+    #[cfg(all(feature = "std-surface", feature = "cross-module-imports"))]
+    for (fname, _params, ret) in crate::type_checker::cm_all_imported_fn_signatures() {
+        if local_fn_names.contains(&fname) {
+            continue;
+        }
+        if let Some(rt) = ret {
+            let resolved_rt = crate::eval::type_aliases::resolve_active(&rt);
+            if declared_array_element_named(&resolved_rt).is_some() {
+                insert_unique_array_return(
+                    &mut fn_array_returns,
+                    &mut ambiguous_array_returns,
+                    &fname,
+                    resolved_rt,
+                );
+            }
+        }
+    }
+
     // Filter fn_returns to only those whose return-type is a real struct.
     fn_returns.retain(|_, t| struct_defs.iter().any(|s| s == t));
     for name in ambiguous_array_returns {
         fn_array_returns.remove(&name);
     }
-    fn_array_returns.retain(|_, t| struct_defs.iter().any(|s| s == t));
+    fn_array_returns.retain(|_, t| {
+        declared_array_element_named(t)
+            .is_some_and(|name| struct_defs.iter().any(|known| known == name))
+    });
     let returns = ResolverReturns {
         direct: &fn_returns,
         array_elements: &fn_array_returns,
@@ -622,22 +645,22 @@ fn declared_array_element_named(ty: &TypeAnn) -> Option<&str> {
 }
 
 fn insert_unique_array_return(
-    returns: &mut HashMap<String, String>,
+    returns: &mut HashMap<String, TypeAnn>,
     ambiguous: &mut HashSet<String>,
     name: &str,
-    element: &str,
+    schema: TypeAnn,
 ) {
     if ambiguous.contains(name) {
         return;
     }
     match returns.get(name) {
-        Some(previous) if previous != element => {
+        Some(previous) if previous != &schema => {
             returns.remove(name);
             ambiguous.insert(name.to_string());
         }
         Some(_) => {}
         None => {
-            returns.insert(name.to_string(), element.to_string());
+            returns.insert(name.to_string(), schema);
         }
     }
 }
@@ -723,7 +746,10 @@ fn infer_array_element_struct(
                 })
                 .then_some(first)
         }
-        Node::Call { callee, .. } => returns.array_elements.get(callee).cloned(),
+        Node::Call { callee, .. } => returns
+            .array_elements
+            .get(callee)
+            .and_then(|schema| declared_array_element_named(schema).map(str::to_owned)),
         Node::Paren(inner, _) | Node::Ref { inner, .. } => {
             infer_array_element_struct(inner, vars, returns, field_types)
         }
@@ -787,5 +813,28 @@ fn infer_struct(
             returns.direct.get(&fn_name).cloned()
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn array_schema(length: u32) -> TypeAnn {
+        TypeAnn::Array {
+            element: Box::new(TypeAnn::Named("Item".to_string())),
+            length,
+        }
+    }
+
+    #[test]
+    fn array_return_schema_rejects_same_element_with_different_length() {
+        let mut returns = HashMap::new();
+        let mut ambiguous = HashSet::new();
+        insert_unique_array_return(&mut returns, &mut ambiguous, "make_items", array_schema(1));
+        insert_unique_array_return(&mut returns, &mut ambiguous, "make_items", array_schema(2));
+        assert!(returns.is_empty());
+        assert!(ambiguous.contains("make_items"));
+        assert!(declared_array_element_named(&TypeAnn::ScalarI64).is_none());
     }
 }
