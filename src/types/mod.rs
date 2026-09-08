@@ -21,6 +21,7 @@
 //! assert_eq!(ty.shape.len(), 2);
 //! ```
 
+pub mod canonical;
 pub mod infer;
 pub mod intern;
 pub mod value;
