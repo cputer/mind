@@ -386,6 +386,21 @@ fn execute_tests(
     eval_support: Arc<BTreeMap<PathBuf, EvalSupport>>,
     opts: &TestOptions,
 ) -> Result<TestRunSummary, TestError> {
+    let runner: Arc<TestRunner> = Arc::new(run_one_test);
+    let sink: Arc<ResultSink> = Arc::new(print_result);
+    execute_tests_with(entries, eval_support, opts, runner, sink)
+}
+
+type TestRunner = dyn Fn(&TestEntry, Option<&EvalSupport>) -> TestResult + Send + Sync;
+type ResultSink = dyn Fn(&TestResult, &ReporterKind) + Send + Sync;
+
+fn execute_tests_with(
+    entries: Vec<TestEntry>,
+    eval_support: Arc<BTreeMap<PathBuf, EvalSupport>>,
+    opts: &TestOptions,
+    runner: Arc<TestRunner>,
+    sink: Arc<ResultSink>,
+) -> Result<TestRunSummary, TestError> {
     let thread_count = if opts.threads == 0 {
         std::thread::available_parallelism()
             .map(|n| n.get())
@@ -411,6 +426,7 @@ fn execute_tests(
         let q = Arc::clone(&queue);
         let r = Arc::clone(&results);
         let support = Arc::clone(&eval_support);
+        let run = Arc::clone(&runner);
         let handle = std::thread::spawn(move || {
             loop {
                 let entry = {
@@ -422,7 +438,7 @@ fn execute_tests(
                     None => break,
                 };
 
-                let result = run_one_test(&entry.entry, support.get(&entry.entry.source_file));
+                let result = run(&entry.entry, support.get(&entry.entry.source_file));
 
                 r.lock().unwrap().push(IndexedTestResult {
                     ordinal: entry.ordinal,
@@ -458,7 +474,7 @@ fn execute_tests(
         .count() as u32;
 
     for result in &all_results {
-        print_result(result, &reporter);
+        sink(result, &reporter);
     }
 
     Ok(TestRunSummary {
@@ -812,66 +828,84 @@ fn print_summary(summary: &TestRunSummary, opts: &TestOptions) {
 
 #[cfg(test)]
 mod deterministic_report_tests {
-    use super::{IndexedTestResult, TestResult, TestStatus, json_result_line, order_results};
-    use std::sync::{Arc, Barrier, mpsc};
-    use std::thread;
+    use super::{TestResult, TestStatus, json_result_line};
+    use std::sync::{Arc, Barrier, Mutex, mpsc};
     use std::time::Duration;
 
     #[test]
-    fn forced_reverse_completion_is_drained_in_discovery_order_even_with_duplicate_names() {
+    fn coordinator_drains_forced_reverse_completion_before_emitting_duplicate_names() {
+        use super::{EvalSupport, ReporterKind, TestEntry, TestOptions, execute_tests_with};
+        use std::collections::BTreeMap;
+
         let both_started = Arc::new(Barrier::new(2));
         let (release_first_tx, release_first_rx) = mpsc::channel();
-        let (completed_tx, completed_rx) = mpsc::channel();
-
+        let release_first_rx = Arc::new(Mutex::new(release_first_rx));
         let first_barrier = Arc::clone(&both_started);
-        let first_sender = completed_tx.clone();
-        let first = thread::spawn(move || {
+        let first_release = Arc::clone(&release_first_rx);
+        let runner = Arc::new(move |entry: &TestEntry, _support: Option<&EvalSupport>| {
             first_barrier.wait();
-            release_first_rx.recv().expect("release first result");
-            first_sender
-                .send(IndexedTestResult {
-                    ordinal: 0,
-                    result: TestResult {
-                        name: "same_name".to_string(),
-                        status: TestStatus::Failed {
-                            message: "first\nfailed".to_string(),
-                        },
-                        duration: Duration::ZERO,
+            if entry.source_line == 1 {
+                first_release
+                    .lock()
+                    .expect("release first lock")
+                    .recv()
+                    .expect("release first result");
+                TestResult {
+                    name: entry.name.clone(),
+                    status: TestStatus::Failed {
+                        message: "first\nfailed \"with\" escapes \\ and unicode ☃".to_string(),
                     },
-                })
-                .expect("send first result");
+                    duration: Duration::ZERO,
+                }
+            } else {
+                release_first_tx.send(()).expect("release first result");
+                TestResult {
+                    name: entry.name.clone(),
+                    status: TestStatus::Passed,
+                    duration: Duration::ZERO,
+                }
+            }
         });
 
-        let second_barrier = Arc::clone(&both_started);
-        let second = thread::spawn(move || {
-            second_barrier.wait();
-            completed_tx
-                .send(IndexedTestResult {
-                    ordinal: 1,
-                    result: TestResult {
-                        name: "same_name".to_string(),
-                        status: TestStatus::Passed,
-                        duration: Duration::ZERO,
-                    },
-                })
-                .expect("send second result");
-            release_first_tx.send(()).expect("release first result");
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let emitted_sink = Arc::clone(&emitted);
+        let sink = Arc::new(move |result: &TestResult, reporter: &ReporterKind| {
+            emitted_sink
+                .lock()
+                .expect("emitted lock")
+                .push(match reporter {
+                    ReporterKind::Json => json_result_line(result),
+                    ReporterKind::Human => format!("test {}", result.name),
+                });
         });
+        let entry = |line| TestEntry {
+            name: "same_name".to_string(),
+            source_file: format!("source{line}.mind").into(),
+            source_line: line,
+            source_text: String::new(),
+        };
+        let opts = TestOptions {
+            threads: 2,
+            reporter: ReporterKind::Json,
+            ..TestOptions::default()
+        };
+        let summary = execute_tests_with(
+            vec![entry(1), entry(2)],
+            Arc::new(BTreeMap::new()),
+            &opts,
+            runner,
+            sink,
+        )
+        .expect("coordinator execution");
 
-        let completed = vec![
-            completed_rx.recv().expect("reverse completion result"),
-            completed_rx.recv().expect("first completion result"),
-        ];
-        first.join().expect("first worker");
-        second.join().expect("second worker");
-
-        let ordered = order_results(completed);
-        assert_eq!(ordered.len(), 2);
-        assert!(matches!(ordered[0].status, TestStatus::Failed { .. }));
-        assert_eq!(ordered[1].status, TestStatus::Passed);
-        let lines: Vec<String> = ordered.iter().map(json_result_line).collect();
-        assert!(lines[0].contains(r#""result":"failed""#));
-        assert!(lines[1].contains(r#""result":"passed""#));
+        assert_eq!((summary.passed, summary.failed), (1, 1));
+        let lines = emitted.lock().expect("emitted lock").clone();
+        assert_eq!(lines.len(), 2);
+        let first: serde_json::Value = serde_json::from_str(&lines[0]).expect("first JSON row");
+        let second: serde_json::Value = serde_json::from_str(&lines[1]).expect("second JSON row");
+        assert_eq!(first["result"], "failed");
+        assert_eq!(second["result"], "passed");
+        assert_eq!(first["name"], "same_name");
     }
 
     #[test]
