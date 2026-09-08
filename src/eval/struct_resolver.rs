@@ -569,6 +569,27 @@ fn walk_expr(
                 );
             }
         }
+        // A counted `for` body has the same lexical scope as `while` and
+        // `for-each`. Preserve the existing receiver metadata for field
+        // accesses in the body; otherwise lowering can only see the loop
+        // node and a fixed-array field write may evade its capability gate.
+        Node::For {
+            start, end, body, ..
+        } => {
+            walk_expr(start, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(end, vars, fn_returns, struct_defs, field_types, types);
+            let mut local = vars.clone();
+            for stmt in body {
+                walk_stmt(
+                    stmt,
+                    &mut local,
+                    fn_returns,
+                    struct_defs,
+                    field_types,
+                    types,
+                );
+            }
+        }
         // Other nodes either don't contain expressions or are
         // declaration-shaped (StructDef, EnumDef, …) — nothing to walk.
         _ => {}

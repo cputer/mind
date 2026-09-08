@@ -355,6 +355,64 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
         "mutation refusal emitted an artifact"
     );
 
+    // The same unsupported owner can be used only through a loop body. This
+    // exercises the parameter path without a local constructor and both
+    // standalone runnable emitters.
+    let loop_mutation = root.join("loop_mutation.mind");
+    std::fs::write(
+        &loop_mutation,
+        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { for i in 0..1 { s.xs[i] = 3 } return 0 }\n",
+    )
+    .expect("write loop mutation control");
+    for (flag, output) in [
+        ("--emit-obj", root.join("loop-mutation.o")),
+        ("--emit-shared", root.join("loop-mutation.so")),
+    ] {
+        let out = run(
+            &[
+                flag,
+                output.to_str().unwrap(),
+                loop_mutation.to_str().unwrap(),
+            ],
+            None,
+        );
+        let rendered = text(&out);
+        assert_eq!(out.status.code(), Some(1), "loop mutation: {rendered}");
+        assert!(
+            rendered.contains("lower::fixed_struct_array_cell")
+                && !rendered.contains("panicked at"),
+            "loop mutation did not fail structurally: {rendered}"
+        );
+        assert!(!output.exists(), "loop mutation emitted an artifact");
+    }
+
+    // Container expressions must recurse into their elements as well; an
+    // unsupported read nested in an array literal cannot become a generic
+    // MLIR failure or a successful artifact.
+    let array_read = root.join("array_read.mind");
+    std::fs::write(
+        &array_read,
+        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { let values = [s.xs[1]]; return 0 }\n",
+    )
+    .expect("write array read control");
+    for (flag, output) in [
+        ("--emit-obj", root.join("array-read.o")),
+        ("--emit-shared", root.join("array-read.so")),
+    ] {
+        let out = run(
+            &[flag, output.to_str().unwrap(), array_read.to_str().unwrap()],
+            None,
+        );
+        let rendered = text(&out);
+        assert_eq!(out.status.code(), Some(1), "array read: {rendered}");
+        assert!(
+            rendered.contains("lower::fixed_struct_array_cell")
+                && !rendered.contains("panicked at"),
+            "array read did not fail structurally: {rendered}"
+        );
+        assert!(!output.exists(), "array read emitted an artifact");
+    }
+
     #[cfg(feature = "cross-module-imports")]
     {
         // Imported schemas use the defining module's qualified owner. The

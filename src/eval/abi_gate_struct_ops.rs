@@ -79,6 +79,13 @@ pub(super) fn check_fixed_struct_array_operations(
                 .body
                 .iter()
                 .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
+            N::ImplBlock { methods, .. } => methods
+                .iter()
+                .for_each(|method| walk(method, ir, receiver_types, src, file, out, seen)),
+            N::Closure(data, _) => data
+                .body
+                .iter()
+                .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
             N::StructLit { name, fields, span } => {
                 for field in fields {
                     report(name, &field.name, *span, ir, src, file, out, seen);
@@ -110,6 +117,7 @@ pub(super) fn check_fixed_struct_array_operations(
             N::Let { value, .. } | N::Const { value, .. } => {
                 walk(value, ir, receiver_types, src, file, out, seen)
             }
+            N::LetTuple { value, .. } => walk(value, ir, receiver_types, src, file, out, seen),
             N::Assign { value, .. }
             | N::Return {
                 value: Some(value), ..
@@ -117,6 +125,29 @@ pub(super) fn check_fixed_struct_array_operations(
             N::Call { args, .. } => args
                 .iter()
                 .for_each(|a| walk(a, ir, receiver_types, src, file, out, seen)),
+            N::CallGrad { loss, .. }
+            | N::CallTensorSum { x: loss, .. }
+            | N::CallTensorMean { x: loss, .. }
+            | N::CallReshape { x: loss, .. }
+            | N::CallExpandDims { x: loss, .. }
+            | N::CallSqueeze { x: loss, .. }
+            | N::CallTranspose { x: loss, .. }
+            | N::CallIndex { x: loss, .. }
+            | N::CallSlice { x: loss, .. }
+            | N::CallSliceStride { x: loss, .. }
+            | N::CallTensorRelu { x: loss, .. }
+            | N::CallGather { x: loss, .. } => walk(loss, ir, receiver_types, src, file, out, seen),
+            N::CallTensorConv2d { x, w, .. } => {
+                walk(x, ir, receiver_types, src, file, out, seen);
+                walk(w, ir, receiver_types, src, file, out, seen);
+            }
+            N::CallDot { a, b, .. }
+            | N::CallMatMul { a, b, .. }
+            | N::TensorMatmul { lhs: a, rhs: b, .. }
+            | N::TensorElemwise { lhs: a, rhs: b, .. } => {
+                walk(a, ir, receiver_types, src, file, out, seen);
+                walk(b, ir, receiver_types, src, file, out, seen);
+            }
             N::MethodCall { receiver, args, .. } => {
                 walk(receiver, ir, receiver_types, src, file, out, seen);
                 args.iter()
@@ -138,6 +169,19 @@ pub(super) fn check_fixed_struct_array_operations(
                 walk(index, ir, receiver_types, src, file, out, seen);
                 walk(value, ir, receiver_types, src, file, out, seen);
             }
+            N::Tuple { elements, .. }
+            | N::ArrayLit { elements, .. }
+            | N::SetLit { elements, .. } => {
+                elements
+                    .iter()
+                    .for_each(|e| walk(e, ir, receiver_types, src, file, out, seen));
+            }
+            N::MapLit { entries, .. } => {
+                for (key, value) in entries {
+                    walk(key, ir, receiver_types, src, file, out, seen);
+                    walk(value, ir, receiver_types, src, file, out, seen);
+                }
+            }
             N::Block { stmts, .. } => stmts
                 .iter()
                 .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
@@ -157,10 +201,42 @@ pub(super) fn check_fixed_struct_array_operations(
                         .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
                 }
             }
-            N::Paren(inner, _) | N::Neg { operand: inner, .. } | N::Ref { inner, .. } => {
-                walk(inner, ir, receiver_types, src, file, out, seen)
+            N::For {
+                start, end, body, ..
+            } => {
+                walk(start, ir, receiver_types, src, file, out, seen);
+                walk(end, ir, receiver_types, src, file, out, seen);
+                body.iter()
+                    .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
             }
+            N::ForEach {
+                collection, body, ..
+            } => {
+                walk(collection, ir, receiver_types, src, file, out, seen);
+                body.iter()
+                    .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
+            }
+            N::Paren(inner, _)
+            | N::Neg { operand: inner, .. }
+            | N::Not { operand: inner, .. }
+            | N::BitNot { operand: inner, .. }
+            | N::Ref { inner, .. }
+            | N::Try { inner, .. } => walk(inner, ir, receiver_types, src, file, out, seen),
             N::As { expr, .. } => walk(expr, ir, receiver_types, src, file, out, seen),
+            N::SliceRange {
+                receiver,
+                start,
+                end,
+                ..
+            } => {
+                walk(receiver, ir, receiver_types, src, file, out, seen);
+                walk(start, ir, receiver_types, src, file, out, seen);
+                walk(end, ir, receiver_types, src, file, out, seen);
+            }
+            N::Print { args, .. } => args
+                .iter()
+                .for_each(|a| walk(a, ir, receiver_types, src, file, out, seen)),
+            N::Assert { cond, .. } => walk(cond, ir, receiver_types, src, file, out, seen),
             N::Binary { left, right, .. } | N::Logical { left, right, .. } => {
                 walk(left, ir, receiver_types, src, file, out, seen);
                 walk(right, ir, receiver_types, src, file, out, seen);
@@ -187,6 +263,10 @@ pub(super) fn check_fixed_struct_array_operations(
                 body.iter()
                     .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen));
             }
+            #[cfg(feature = "std-surface")]
+            N::Region { body, .. } => body
+                .iter()
+                .for_each(|s| walk(s, ir, receiver_types, src, file, out, seen)),
             _ => {}
         }
     }

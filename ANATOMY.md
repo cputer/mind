@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1670 | **Est. tokens:** ~3191710
-**Generated:** 2026-09-08 03:15 UTC
+**Files:** 1670 | **Est. tokens:** ~3193410
+**Generated:** 2026-09-08 03:24 UTC
 
 ## Token Budget Guide
 
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 27 | ~118570 |
+| `src/eval/` | 27 | ~119699 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 382 | ~743550 |
+| `tests/` | 382 | ~744121 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1078,7 +1078,7 @@
 ### `src/eval/`
 
 - `abi_gate.rs` (~12059 tok, huge) — Runnable-artifact ABI gate (release-readiness P1.1).
-- `abi_gate_struct_ops.rs` (~1943 tok, huge) — Copyright 2026 STARGA Inc.
+- `abi_gate_struct_ops.rs` (~2859 tok, huge) — Copyright 2026 STARGA Inc.
 - `assert_check.rs` (~989 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
 - `closures.rs` (~9338 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1106,7 +1106,7 @@
 ### `src/eval/`
 
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
-- `struct_resolver.rs` (~8148 tok, huge) — Copyright 2025 STARGA Inc.
+- `struct_resolver.rs` (~8361 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
 - `type_aliases.rs` (~1498 tok, large) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1581,7 +1581,7 @@
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct_field_run.rs` (~4067 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct_field_run.rs` (~4638 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
