@@ -108,7 +108,7 @@ fn cross_module_field_access_runs() {
 
     // Build an isolated 2-file project so the project builder populates the
     // whole-project struct registry (the path that exercises the gap).
-    let root = std::env::temp_dir().join("mind_xmod_field_access_run");
+    let root = common::scratch_dir("cross-module-field-access-run").join("field-access");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("src")).expect("mkdir project");
     std::fs::write(root.join("Mind.toml"), MANIFEST).expect("write manifest");
@@ -199,10 +199,7 @@ fn cross_module_return_alias_scope_and_shape_controls() {
         return;
     }
 
-    let root = std::env::temp_dir().join(format!(
-        "mind_xmod_return_alias_controls_{}",
-        std::process::id()
-    ));
+    let root = common::scratch_dir("cross-module-field-access-run").join("return-alias");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("src")).expect("create return-alias project src");
     std::fs::write(

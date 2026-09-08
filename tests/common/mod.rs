@@ -62,10 +62,10 @@ pub fn mindc_bin() -> PathBuf {
 /// The directory carries the target name and the pid; the FILE names inside are
 /// left alone so an artifact's identity is unchanged.
 ///
-/// deferred: 147 shared-root artifact paths across 125 `tests/**.rs` files are
-/// still unrouted (measured, not estimated). The two wedge gates are routed:
+/// deferred: the remaining shared-root artifact paths and their per-file
+/// counts are recorded by the gate below. The two wedge gates are routed:
 /// `cross_substrate_identity` (9 sites) and `phase_g_keystone_bootstrap` (8).
-/// That count is NOT maintained in this sentence: the gate in
+/// The gate in
 /// `tests/harness_scratch_isolation.rs` records the backlog as a SET with
 /// per-file counts and fails in BOTH directions, so a new shared path is red
 /// and a row that outlived its debt is red. Upgrade path: route a file through

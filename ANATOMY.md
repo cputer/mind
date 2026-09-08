@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1675 | **Est. tokens:** ~3212367
-**Generated:** 2026-09-08 11:28 UTC
+**Files:** 1675 | **Est. tokens:** ~3212336
+**Generated:** 2026-09-08 11:39 UTC
 
 ## Token Budget Guide
 
@@ -128,10 +128,10 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~752161 |
+| `tests/` | 384 | ~752144 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
-| `tests/common/` | 3 | ~12322 |
+| `tests/common/` | 3 | ~12308 |
 | `tests/conformance/cpu_baseline/` | 12 | ~390 |
 | `tests/conformance/gpu_profile/` | 2 | ~11 |
 | `tests/cross_substrate_identity/` | 2 | ~4113 |
@@ -1401,7 +1401,7 @@
 ### `tests/common/`
 
 - `gate.rs` (~4999 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~2639 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~2625 tok, huge) — Copyright 2025 STARGA Inc.
 - `xsi_gate.rs` (~4684 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/`
 
@@ -1438,7 +1438,7 @@
 - `cross_module.rs` (~1332 tok, large) — Copyright 2025 STARGA Inc.
 - `cross_module_cdylib_compose.rs` (~4092 tok, huge) — Copyright 2025 STARGA Inc.
 - `cross_module_enum_run.rs` (~1089 tok, large) — Copyright 2025 STARGA Inc.
-- `cross_module_field_access_run.rs` (~2946 tok, huge) — Copyright 2025 STARGA Inc.
+- `cross_module_field_access_run.rs` (~2940 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/cross_substrate_identity/`
 
 - `README.md` (~1280 tok, large) — cross_substrate_identity — the internal mind-bench reproducibility gate
@@ -1710,7 +1710,7 @@
 - `genref_phase_jb.rs` (~3790 tok, huge) — Copyright 2025 STARGA Inc.
 - `grad_wrt_resolve.rs` (~730 tok, large) — Copyright 2025 STARGA Inc.
 - `harness_portability.rs` (~1260 tok, large) — Copyright 2025 STARGA Inc.
-- `harness_scratch_isolation.rs` (~3415 tok, huge) — Copyright 2025 STARGA Inc.
+- `harness_scratch_isolation.rs` (~3404 tok, huge) — Copyright 2025 STARGA Inc.
 - `hpack_driver.py` (~3027 tok, huge) — # Official-vector driver for std/hpack.mind (pure-MIND HPACK decoding,
 - `http2_frame_driver.py` (~4195 tok, huge) — # Reference-vector driver for std/http2_frame.mind (pure-MIND HTTP/2 framing,
 - `if_expr.rs` (~429 tok, medium) — Copyright 2025 STARGA Inc.
