@@ -12,7 +12,7 @@
 
 //! RFC 0008 Phase B integration tests for `mindc test`.
 //!
-//! Gate: `cargo test --release --features "mlir-build std-surface cross-module-imports" mindc_test_phase_b`
+//! Gate: `cargo test --release --features "mlir-build std-surface cross-module-imports" --test mindc_test_phase_b`
 
 use std::path::PathBuf;
 

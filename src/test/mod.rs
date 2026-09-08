@@ -43,7 +43,7 @@
 //! The worker pool is bounded to `opts.threads` (or available parallelism when
 //! zero). Tasks are distributed via a `std::sync::Mutex<VecDeque<TestEntry>>`.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -594,6 +594,7 @@ fn grade_returned_value(
 #[cfg(any(feature = "cross-module-imports", feature = "std-surface"))]
 fn resolve_std_import_fns(module: &crate::ast::Module) -> Result<Vec<Node>, String> {
     use crate::project::stdlib::STDLIB_MIND_SOURCES;
+    use std::collections::VecDeque;
 
     fn import_key(item: &Node) -> Option<String> {
         if let Node::Import { path, .. } = item {

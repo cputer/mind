@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1677 | **Est. tokens:** ~3214496
-**Generated:** 2026-09-08 12:18 UTC
+**Files:** 1677 | **Est. tokens:** ~3214504
+**Generated:** 2026-09-08 12:35 UTC
 
 ## Token Budget Guide
 
@@ -123,13 +123,13 @@
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
-| `src/test/` | 4 | ~13781 |
+| `src/test/` | 4 | ~13787 |
 | `src/type_checker/` | 12 | ~51264 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~752144 |
+| `tests/` | 384 | ~752146 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1269,7 +1269,7 @@
 ### `src/test/`
 
 - `imports.rs` (~4153 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `mod.rs` (~6600 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~6606 tok, huge) — Copyright 2025 STARGA Inc.
 - `runner.rs` (~2689 tok, huge) — Copyright 2025 STARGA Inc.
 - `top_level.rs` (~339 tok, medium) — Copyright 2025-2026 STARGA Inc.
 ### `src/type_checker/`
@@ -1790,7 +1790,7 @@
 - `mindc_test_evaluator_issues.rs` (~5202 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_imports.rs` (~4547 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_nested_modules.rs` (~1901 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `mindc_test_phase_b.rs` (~3572 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_test_phase_b.rs` (~3574 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.
 ### `tests/mindcraft/`
 
