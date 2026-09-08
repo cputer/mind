@@ -312,9 +312,14 @@ fn validate_identity_parts(owner: &str, name: &str) -> Result<(), SchemaError> {
     if name.is_empty() {
         return Err(SchemaError::EmptyIdentity { kind: "name" });
     }
-    if owner.contains('/') || owner.contains('\\') {
+    if !identity_component_is_valid(owner) {
         return Err(SchemaError::PathLikeIdentity {
             value: owner.to_owned(),
+        });
+    }
+    if !identity_component_is_valid(name) {
+        return Err(SchemaError::PathLikeIdentity {
+            value: name.to_owned(),
         });
     }
     Ok(())

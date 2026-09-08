@@ -6,7 +6,7 @@
 use crate::ir::canonical_verify::instruction_metadata_present;
 use crate::ir::{IRModule, verify_canonical_metadata};
 
-use super::{Mic3EncodeError, emit::emit_mic3_legacy};
+use super::{Mic3EncodeError, emit::emit_mic3_legacy, v04::emit_v04};
 
 /// Legacy v0x02/v0x03 emission; populated B1 metadata must use the checked boundary.
 pub fn emit_mic3(module: &IRModule) -> Vec<u8> {
@@ -29,16 +29,16 @@ pub fn emit_mic3_checked(module: &IRModule) -> Result<Vec<u8>, Mic3EncodeError> 
         ));
     }
     if module.canonical_types.is_some() {
-        verify_canonical_metadata(module)
-            .map_err(|error| Mic3EncodeError::InvalidCanonicalMetadata(error.to_string()))?;
         if module
             .canonical_types
             .as_ref()
             .is_some_and(|bundle| !bundle.is_empty())
             || instruction_metadata_present(&module.instrs)
         {
-            return Err(Mic3EncodeError::UnsupportedCanonicalMetadata);
+            return emit_v04(module);
         }
+        verify_canonical_metadata(module)
+            .map_err(|error| Mic3EncodeError::InvalidCanonicalMetadata(error.to_string()))?;
     }
     Ok(emit_mic3_legacy(module))
 }

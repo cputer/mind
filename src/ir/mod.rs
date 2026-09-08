@@ -470,7 +470,8 @@ pub enum Instr {
         body: Vec<Instr>,
         /// Threshold from `[reap_threshold(t)]` attribute, if present.
         reap_threshold: Option<f64>,
-        /// Co-located canonical function identity and SSA types; pending v0x04 encoding.
+        /// Co-located canonical function identity and SSA types; the checked draft
+        /// v0x04 codec preserves this authority.
         semantic_types: Option<Box<FunctionSemanticTypes>>,
         /// Scope-local aggregate table, serialized in MIC@3 v0x03 when nonempty.
         #[cfg(feature = "std-surface")]

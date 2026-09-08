@@ -254,34 +254,41 @@ pub fn verify_canonical_metadata(module: &IRModule) -> Result<(), CanonicalMetad
 /// A caller must not be able to put semantic data on an instruction and then
 /// fall back to the legacy metadata-free serializer.
 pub(crate) fn instruction_metadata_present(instrs: &[Instr]) -> bool {
-    instrs.iter().any(|instr| match instr {
-        Instr::FnDef {
-            semantic_types,
-            body,
-            ..
-        } => semantic_types.is_some() || instruction_metadata_present(body),
-        Instr::Call {
-            resolved_callee, ..
-        } => resolved_callee.is_some(),
-        #[cfg(feature = "std-surface")]
-        Instr::If {
-            cond_instrs,
-            then_instrs,
-            else_instrs,
-            ..
-        } => {
-            instruction_metadata_present(cond_instrs)
-                || instruction_metadata_present(then_instrs)
-                || instruction_metadata_present(else_instrs)
+    let mut streams = vec![instrs];
+    while let Some(stream) = streams.pop() {
+        for instr in stream {
+            match instr {
+                Instr::FnDef {
+                    semantic_types,
+                    body,
+                    ..
+                } => {
+                    if semantic_types.is_some() {
+                        return true;
+                    }
+                    streams.push(body);
+                }
+                Instr::Call {
+                    resolved_callee, ..
+                } if resolved_callee.is_some() => return true,
+                #[cfg(feature = "std-surface")]
+                Instr::If {
+                    cond_instrs,
+                    then_instrs,
+                    else_instrs,
+                    ..
+                } => streams.extend([cond_instrs.as_slice(), then_instrs, else_instrs]),
+                #[cfg(feature = "std-surface")]
+                Instr::While {
+                    cond_instrs, body, ..
+                } => streams.extend([cond_instrs.as_slice(), body]),
+                #[cfg(feature = "std-surface")]
+                Instr::Region { body, .. } => streams.push(body),
+                _ => {}
+            }
         }
-        #[cfg(feature = "std-surface")]
-        Instr::While {
-            cond_instrs, body, ..
-        } => instruction_metadata_present(cond_instrs) || instruction_metadata_present(body),
-        #[cfg(feature = "std-surface")]
-        Instr::Region { body, .. } => instruction_metadata_present(body),
-        _ => false,
-    })
+    }
+    false
 }
 
 fn verify_stream(

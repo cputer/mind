@@ -215,7 +215,7 @@ fn checked_limits_reject_extent_depth_and_fixed_elements() {
 }
 
 #[test]
-fn duplicate_fields_and_path_owners_are_rejected() {
+fn duplicate_fields_and_path_like_identity_components_are_rejected() {
     let mut duplicate = SchemaRegistryBuilder::default();
     assert!(matches!(
         duplicate.add_schema(record(
@@ -232,6 +232,24 @@ fn duplicate_fields_and_path_owners_are_rejected() {
             Vec::new(),
         )),
         Err(SchemaError::PathLikeIdentity { .. })
+    ));
+
+    for identity in [
+        SchemaIdentity::new("pkg", "nested/Bad"),
+        SchemaIdentity::new("pkg..shadow", "Bad"),
+        SchemaIdentity::new("pkg", "Bad..shadow"),
+    ] {
+        let mut path = SchemaRegistryBuilder::default();
+        assert!(matches!(
+            path.add_schema(record(identity, Vec::new())),
+            Err(SchemaError::PathLikeIdentity { .. })
+        ));
+    }
+
+    let mut empty_field = SchemaRegistryBuilder::default();
+    assert!(matches!(
+        empty_field.add_schema(record(id("pkg", "Bad"), vec![scalar("", ScalarType::I64)],)),
+        Err(SchemaError::EmptyField { .. })
     ));
 }
 

@@ -13,9 +13,9 @@
 //! Canonical semantic record and aggregate descriptors.
 //!
 //! This is the foundation for the canonical aggregate representation.  It is
-//! deliberately a transient, standalone registry: no lowering or MIC reader
-//! populates it yet.  The builder resolves aliases while defining ownership is
-//! still explicit, then freezes a deterministic schema table for later slices.
+//! deliberately a standalone registry. The draft checked v0x04 MIC reader can
+//! reconstruct it; resolver and lowering attachment remain separate. The builder
+//! resolves aliases while ownership is explicit, then freezes a deterministic table.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -646,7 +646,7 @@ fn validate_function_identity(identity: &FunctionIdentity) -> Result<(), SchemaE
         return Err(SchemaError::EmptyFunctionIdentity { kind: "name" });
     }
     for component in [&identity.owner, &identity.name] {
-        if component.contains('/') || component.contains('\\') || component.contains("..") {
+        if !identity_component_is_valid(component) {
             return Err(SchemaError::PathLikeFunctionIdentity {
                 value: component.to_string(),
             });
@@ -658,6 +658,15 @@ fn validate_function_identity(identity: &FunctionIdentity) -> Result<(), SchemaE
         });
     }
     Ok(())
+}
+
+/// Shared wire-safe identity component predicate. Components remain exact UTF-8
+/// strings: this rejects path-like spellings without applying normalization.
+pub(crate) fn identity_component_is_valid(component: &str) -> bool {
+    !component.is_empty()
+        && !component.contains('/')
+        && !component.contains('\\')
+        && !component.contains("..")
 }
 
 fn validate_function_declaration(declaration: &FunctionDeclaration) -> Result<(), SchemaError> {

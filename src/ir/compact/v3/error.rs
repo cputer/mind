@@ -7,9 +7,13 @@ pub enum Mic3EncodeError {
     /// Co-located instruction metadata has no module-level authority, or the
     /// carrier fails the B1 semantic consistency checks.
     InvalidCanonicalMetadata(String),
-    /// B1 metadata is valid in memory, but MIC@3 v0x01-v0x03 cannot represent
-    /// it. The v0x04 codec is a later slice.
+    /// B1 metadata is valid in memory, but no available checked codec can
+    /// represent it. Retained for callers that distinguish this failure.
     UnsupportedCanonicalMetadata,
+    /// The draft v0x04 core codec cannot preserve this IR surface yet.
+    UnsupportedV04Surface(String),
+    /// The draft v0x04 artifact exceeds a fixed admission limit.
+    V04ResourceLimit(String),
 }
 
 impl std::fmt::Display for Mic3EncodeError {
@@ -20,6 +24,12 @@ impl std::fmt::Display for Mic3EncodeError {
             }
             Self::UnsupportedCanonicalMetadata => {
                 f.write_str("canonical semantic metadata requires unsupported MIC@3 v0x04")
+            }
+            Self::UnsupportedV04Surface(message) => {
+                write!(f, "MIC@3 v0x04 surface is not supported: {message}")
+            }
+            Self::V04ResourceLimit(message) => {
+                write!(f, "MIC@3 v0x04 resource limit exceeded: {message}")
             }
         }
     }

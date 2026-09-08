@@ -144,6 +144,7 @@ mod format;
 pub mod mldsa;
 mod parse;
 pub mod slhdsa;
+mod v04;
 
 pub use boundary::{
     Mic3EnvelopeError, ParsedMic3Prefix, parse_mic3, parse_mic3_body, parse_mic3_envelope,
@@ -158,13 +159,18 @@ pub use evidence::{
     emit_mic3_with_signed_evidence_scheme, mic3_app_metadata, mic3_canonical_check,
     mic3_collapse_verify, mic3_evidence_report, mic3_signature_status, validate_app_entries,
 };
-pub use format::{MIC3_MAGIC, MIC3_MIN_READ_VERSION, MIC3_VERSION, MIC3_VERSION_BASE};
+pub use format::{
+    MIC3_MAGIC, MIC3_MIN_READ_VERSION, MIC3_VERSION, MIC3_VERSION_BASE, MIC3_VERSION_V04,
+};
 pub use parse::{MAX_MIC3_INPUT, parse_mic3_prefix};
 // Re-export the evidence vocabulary at the v3 level for convenience.
 pub use crate::ir::compact::v2::{Determinism, EvidenceError, EvidenceReport, TraceHashKind};
 
 #[cfg(test)]
 mod boundary_tests;
+
+#[cfg(test)]
+mod v04_tests;
 
 #[cfg(test)]
 mod tests {

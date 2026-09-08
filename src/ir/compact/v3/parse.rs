@@ -1109,6 +1109,9 @@ pub fn parse_mic3_prefix(data: &[u8]) -> Result<ParsedMic3Prefix, Mic3Error> {
             MAX_MIC3_INPUT
         ));
     }
+    if data.starts_with(&MIC3_MAGIC) && data.get(4) == Some(&super::MIC3_VERSION_V04) {
+        return super::v04::parse_v04_prefix(data);
+    }
     // Every wire element occupies at least one byte; the input length is a hard
     // ceiling on any untrusted element count, used to bound pre-allocation.
     let limit = data.len();

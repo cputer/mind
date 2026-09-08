@@ -3,10 +3,10 @@
 
 use super::evidence::MAP_SENTINEL;
 use super::{
-    Determinism, EvidenceEmitError, Mic3EncodeError, Mic3EnvelopeError, Mic3NonCanonical,
-    emit_mic3, emit_mic3_checked, emit_mic3_with_evidence_and_receipts,
-    emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence_checked, mic3_canonical_check,
-    parse_mic3, parse_mic3_body, parse_mic3_envelope, parse_mic3_prefix,
+    Determinism, Mic3EnvelopeError, Mic3NonCanonical, emit_mic3, emit_mic3_checked,
+    emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked,
+    emit_mic3_with_signed_evidence_checked, mic3_canonical_check, parse_mic3, parse_mic3_body,
+    parse_mic3_envelope, parse_mic3_prefix,
 };
 use crate::ir::evidence::{ir_trace_hash, ir_trace_hash_checked};
 use crate::ir::{IRModule, Instr, ValueId};
@@ -28,6 +28,7 @@ fn unsupported_b1_module() -> IRModule {
         .set_module_value_type(ValueId(0), SemanticType::Scalar(ScalarType::I64))
         .expect("module value type");
     let mut module = IRModule::new();
+    module.next_id = 1;
     module.instrs.push(Instr::ConstI64(ValueId(0), 42));
     module.canonical_types = Some(Box::new(canonical));
     module
@@ -228,29 +229,20 @@ fn current_lenient_body_boundary_is_exact_while_map_boundaries_are_minimal() {
 }
 
 #[test]
-fn checked_body_hash_and_evidence_seams_reject_unsupported_b1_metadata() {
+fn checked_body_hash_and_evidence_seams_carry_v04_metadata() {
     let module = unsupported_b1_module();
-    assert_eq!(
-        emit_mic3_checked(&module),
-        Err(Mic3EncodeError::UnsupportedCanonicalMetadata)
-    );
-    assert_eq!(
-        ir_trace_hash_checked(&module),
-        Err(Mic3EncodeError::UnsupportedCanonicalMetadata)
-    );
-    assert_eq!(
+    let body = emit_mic3_checked(&module).expect("v0x04 body");
+    assert_eq!(body[4], super::MIC3_VERSION_V04);
+    ir_trace_hash_checked(&module).expect("v0x04 trace hash");
+    for artifact in [
         emit_mic3_with_evidence_checked(
             &module,
             "cpu",
             None,
             Determinism::Deterministic,
             "test-toolchain",
-        ),
-        Err(EvidenceEmitError::Body(
-            Mic3EncodeError::UnsupportedCanonicalMetadata
-        ))
-    );
-    assert_eq!(
+        )
+        .expect("v0x04 evidence"),
         emit_mic3_with_signed_evidence_checked(
             &module,
             "cpu",
@@ -258,12 +250,8 @@ fn checked_body_hash_and_evidence_seams_reject_unsupported_b1_metadata() {
             Determinism::Deterministic,
             "test-toolchain",
             &[7; 32],
-        ),
-        Err(EvidenceEmitError::Body(
-            Mic3EncodeError::UnsupportedCanonicalMetadata
-        ))
-    );
-    assert_eq!(
+        )
+        .expect("signed v0x04 evidence"),
         emit_mic3_with_evidence_and_receipts(
             &module,
             "cpu",
@@ -273,15 +261,12 @@ fn checked_body_hash_and_evidence_seams_reject_unsupported_b1_metadata() {
             None,
             &[],
             &[],
-        ),
-        Err(EvidenceEmitError::Body(
-            Mic3EncodeError::UnsupportedCanonicalMetadata
-        ))
-    );
-    let error = crate::conformance::run_value_oracle("42", &module)
-        .expect_err("conformance must propagate unsupported metadata");
-    assert!(
-        error.contains("requires unsupported MIC@3 v0x04"),
-        "{error}"
-    );
+        )
+        .expect("v0x04 evidence with receipts"),
+    ] {
+        parse_mic3_envelope(&artifact).expect("v0x04 evidence envelope");
+        mic3_canonical_check(&artifact).expect("v0x04 canonical evidence");
+    }
+    crate::conformance::run_value_oracle("42", &module)
+        .expect("conformance carries v0x04 metadata");
 }

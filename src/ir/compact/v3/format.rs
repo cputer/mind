@@ -45,6 +45,10 @@ pub const MIC3_MAGIC: [u8; 4] = *b"MIC3";
 /// [`MIC3_VERSION_BASE`] or [`MIC3_VERSION`] per the content predicate above.
 pub const MIC3_VERSION: u8 = 0x03;
 
+/// Draft canonical semantic-metadata layout. Emission is selected only by the
+/// checked boundary; legacy content continues to derive v0x02/v0x03.
+pub const MIC3_VERSION_V04: u8 = 0x04;
+
 /// The additive-append BASE version — the layout emitted when a module carries
 /// no scoped aggregate `value_types` table (the overwhelmingly common case).
 /// Its bytes are exactly the historical `0x02` layout, so any real program

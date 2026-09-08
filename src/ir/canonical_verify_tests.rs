@@ -285,7 +285,7 @@ fn declared_intrinsic_identity_is_the_only_intrinsic_bypass() {
 }
 
 #[test]
-fn populated_metadata_is_rejected_at_legacy_mic_boundary() {
+fn populated_metadata_selects_the_checked_v04_boundary() {
     let registry = SchemaRegistryBuilder::default()
         .finish()
         .expect("empty schema registry");
@@ -294,13 +294,18 @@ fn populated_metadata_is_rejected_at_legacy_mic_boundary() {
         .set_module_value_type(ValueId(0), SemanticType::Scalar(ScalarType::I64))
         .expect("canonical module value");
     let mut module = IRModule::new();
+    module.next_id = 1;
     module.instrs.push(Instr::ConstI64(ValueId(0), 1));
     module.canonical_types = Some(Box::new(bundle));
     let result = crate::ir::compact::v3::emit_mic3_checked(&module);
-    assert!(matches!(
-        result,
-        Err(crate::ir::compact::v3::Mic3EncodeError::UnsupportedCanonicalMetadata)
-    ));
+    let bytes = result.expect("canonical metadata is encoded by v0x04");
+    assert_eq!(bytes[4], crate::ir::compact::v3::MIC3_VERSION_V04);
+    let parsed =
+        crate::ir::compact::v3::parse_mic3_body(&bytes).expect("v0x04 metadata round-trip");
+    assert_eq!(
+        crate::ir::compact::v3::emit_mic3_checked(&parsed).expect("v0x04 re-emission"),
+        bytes
+    );
 }
 
 #[test]
