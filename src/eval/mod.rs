@@ -29,8 +29,9 @@ use crate::exec;
 
 #[cfg(feature = "cpu-buffers")]
 use value::Buffer;
-
 pub mod abi_gate;
+#[cfg(feature = "std-surface")]
+mod abi_gate_struct_ops;
 mod assert_check;
 pub mod autodiff;
 pub mod closures;
