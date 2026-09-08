@@ -95,6 +95,11 @@ pub enum CanonicalMetadataError {
         function: String,
         value: ValueId,
     },
+    #[cfg(feature = "std-surface")]
+    MissingCanonicalLegacyType {
+        function: String,
+        value: ValueId,
+    },
 }
 
 impl std::fmt::Display for CanonicalMetadataError {
@@ -183,6 +188,13 @@ impl std::fmt::Display for CanonicalMetadataError {
                     "legacy aggregate type conflicts with canonical type for {value} in {function}"
                 )
             }
+            #[cfg(feature = "std-surface")]
+            Self::MissingCanonicalLegacyType { function, value } => {
+                write!(
+                    f,
+                    "legacy aggregate type for {value} has no canonical type in {function}"
+                )
+            }
         }
     }
 }
@@ -215,7 +227,9 @@ pub fn verify_canonical_metadata(module: &IRModule) -> Result<(), CanonicalMetad
         }
     }
     #[cfg(feature = "std-surface")]
-    verify_legacy_scope_compatibility(&module.value_types, bundle.module_values(), "<module>")?;
+    if authority_present {
+        verify_legacy_scope_compatibility(&module.value_types, bundle.module_values(), "<module>")?;
+    }
     let mut identities = BTreeSet::new();
     let mut local_definitions = BTreeSet::new();
     verify_stream(
@@ -387,7 +401,9 @@ fn verify_stream(
                     }
                 }
                 #[cfg(feature = "std-surface")]
-                verify_legacy_scope_compatibility(value_types, semantic.values(), &identity)?;
+                if authority_present {
+                    verify_legacy_scope_compatibility(value_types, semantic.values(), &identity)?;
+                }
                 verify_stream(
                     body,
                     bundle,
@@ -516,7 +532,10 @@ fn verify_legacy_scope_compatibility(
 ) -> Result<(), CanonicalMetadataError> {
     for (value, legacy_type) in legacy {
         let Some(canonical_type) = canonical.get(value) else {
-            continue;
+            return Err(CanonicalMetadataError::MissingCanonicalLegacyType {
+                function: function.to_string(),
+                value: *value,
+            });
         };
         if !legacy_matches_canonical(legacy_type, canonical_type) {
             return Err(CanonicalMetadataError::LegacyTypeConflict {

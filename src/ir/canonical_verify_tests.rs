@@ -579,3 +579,144 @@ fn canonical_and_legacy_aggregate_tables_cannot_disagree() {
         }) if function == "<module>"
     ));
 }
+
+#[cfg(feature = "std-surface")]
+fn legacy_i64_array() -> crate::ir::ArrayType {
+    crate::ir::ArrayType {
+        elem_dtype: DType::I64,
+        size: crate::ir::ArraySize::Fixed(1),
+    }
+}
+
+#[cfg(feature = "std-surface")]
+fn canonical_i64_array() -> SemanticType {
+    SemanticType::FixedArray {
+        element: Box::new(SemanticType::Scalar(ScalarType::I64)),
+        extent: 1,
+    }
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn populated_module_authority_requires_matching_legacy_array_rows() {
+    let registry = SchemaRegistryBuilder::default().finish().expect("registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    bundle
+        .set_module_value_type(ValueId(0), canonical_i64_array())
+        .expect("canonical array");
+    let mut module = IRModule::new();
+    module.instrs.extend([Instr::ConstI64(ValueId(0), 1)]);
+    module.value_types.insert(ValueId(0), legacy_i64_array());
+    module.canonical_types = Some(Box::new(bundle));
+    assert_eq!(verify_canonical_metadata(&module), Ok(()));
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn populated_module_authority_rejects_an_unmatched_legacy_array_row() {
+    let registry = SchemaRegistryBuilder::default().finish().expect("registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    bundle
+        .set_module_value_type(ValueId(1), SemanticType::Scalar(ScalarType::I64))
+        .expect("canonical scalar");
+    let mut module = IRModule::new();
+    module.instrs.extend([
+        Instr::ConstI64(ValueId(0), 1),
+        Instr::ConstI64(ValueId(1), 2),
+    ]);
+    module.value_types.insert(ValueId(0), legacy_i64_array());
+    module.canonical_types = Some(Box::new(bundle));
+    assert!(matches!(
+        verify_canonical_metadata(&module),
+        Err(CanonicalMetadataError::MissingCanonicalLegacyType {
+            function,
+            value: ValueId(0)
+        }) if function == "<module>"
+    ));
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn populated_function_authority_checks_reused_value_zero() {
+    let identity = FunctionIdentity::new("module", "array_fn");
+    let registry = SchemaRegistryBuilder::default().finish().expect("registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    bundle
+        .add_declaration(FunctionDeclaration::new(
+            identity.clone(),
+            FunctionKind::Local,
+            FunctionSignature::new(Vec::new(), None),
+        ))
+        .expect("function declaration");
+    let mut semantic = FunctionSemanticTypes::new(identity);
+    semantic
+        .set_value_type(ValueId(0), canonical_i64_array())
+        .expect("canonical array");
+    let mut module = IRModule::new();
+    module.instrs.push(Instr::FnDef {
+        name: "array_fn".to_string(),
+        params: Vec::new(),
+        ret_id: None,
+        body: vec![Instr::ConstI64(ValueId(0), 1)],
+        reap_threshold: None,
+        value_types: [(ValueId(0), legacy_i64_array())].into_iter().collect(),
+        semantic_types: Some(Box::new(semantic)),
+    });
+    module.canonical_types = Some(Box::new(bundle));
+    assert_eq!(verify_canonical_metadata(&module), Ok(()));
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn populated_function_authority_rejects_an_unmatched_legacy_array_row() {
+    let identity = FunctionIdentity::new("module", "array_fn");
+    let registry = SchemaRegistryBuilder::default().finish().expect("registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    bundle
+        .add_declaration(FunctionDeclaration::new(
+            identity.clone(),
+            FunctionKind::Local,
+            FunctionSignature::new(Vec::new(), None),
+        ))
+        .expect("function declaration");
+    let mut semantic = FunctionSemanticTypes::new(identity);
+    semantic
+        .set_value_type(ValueId(1), SemanticType::Scalar(ScalarType::I64))
+        .expect("canonical scalar");
+    let mut module = IRModule::new();
+    module.instrs.push(Instr::FnDef {
+        name: "array_fn".to_string(),
+        params: Vec::new(),
+        ret_id: None,
+        body: vec![
+            Instr::ConstI64(ValueId(0), 1),
+            Instr::ConstI64(ValueId(1), 2),
+        ],
+        reap_threshold: None,
+        value_types: [(ValueId(0), legacy_i64_array())].into_iter().collect(),
+        semantic_types: Some(Box::new(semantic)),
+    });
+    module.canonical_types = Some(Box::new(bundle));
+    assert!(matches!(
+        verify_canonical_metadata(&module),
+        Err(CanonicalMetadataError::MissingCanonicalLegacyType {
+            function,
+            value: ValueId(0)
+        }) if function == "module::array_fn"
+    ));
+}
+
+#[cfg(feature = "std-surface")]
+#[test]
+fn legacy_array_rows_remain_valid_without_canonical_authority() {
+    let mut legacy = IRModule::new();
+    legacy.instrs.push(Instr::ConstI64(ValueId(0), 1));
+    legacy.value_types.insert(ValueId(0), legacy_i64_array());
+    assert_eq!(verify_canonical_metadata(&legacy), Ok(()));
+
+    let mut empty = legacy;
+    empty.canonical_types = Some(Box::new(CanonicalModuleTypes::new(
+        SchemaRegistryBuilder::default().finish().expect("registry"),
+    )));
+    assert_eq!(verify_canonical_metadata(&empty), Ok(()));
+}
