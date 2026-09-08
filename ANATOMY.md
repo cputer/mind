@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1675 | **Est. tokens:** ~3208324
-**Generated:** 2026-09-08 09:33 UTC
+**Files:** 1675 | **Est. tokens:** ~3209021
+**Generated:** 2026-09-08 10:16 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3329 |
-| `docs/` | 36 | ~101916 |
+| `docs/` | 36 | ~102347 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~749990 |
+| `tests/` | 384 | ~750256 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -421,7 +421,7 @@
 - `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
-- `ARRAY_SEMANTICS.md` (~7655 tok, huge) — MIND array semantics — normative architecture record
+- `ARRAY_SEMANTICS.md` (~8086 tok, huge) — MIND array semantics — normative architecture record
 - `ENGINE_CONSUMER_LIST.md` (~9442 tok, huge) — Engine consumer list — the evidence pack for every hand-written semantics engine
 - `INDEPENDENCE_ROADMAP.md` (~18728 tok, huge) — MIND Rust-Independence Roadmap
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
@@ -1344,7 +1344,7 @@
 - `CONFORMANCE_TESTS.md` (~1563 tok, huge) — MIND Conformance Test Corpus
 - `_ref_mic3_dump.rs` (~1821 tok, huge) — Committed self-host reference generator (A9b): reconstruct
 - `_self_host_loop_advance_support.py` (~1643 tok, huge) — Shared fixtures for the self-host loop advancement controls.
-- `aggregate_const_run.rs` (~1293 tok, large) — Copyright 2026 STARGA Inc.
+- `aggregate_const_run.rs` (~1559 tok, huge) — Copyright 2026 STARGA Inc.
 - `aggshape_reject.rs` (~1842 tok, huge) — Copyright 2025 STARGA Inc.
 - `alias_miscompile_run.rs` (~1287 tok, large) — Copyright 2025 STARGA Inc.
 - `array_ctor_push_get_run.rs` (~861 tok, large) — Copyright 2025 STARGA Inc.

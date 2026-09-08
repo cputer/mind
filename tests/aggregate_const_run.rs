@@ -16,6 +16,8 @@ const SOURCE: &str = r#"
 struct Pair { a: i64, b: i64 }
 struct Wrapper { pair: Pair }
 struct Encoding { w0: i64, w1: i64 }
+struct Item { value: i64 }
+struct Bag { xs: [i64; 1] }
 
 const ITEM: Pair = Pair { a: 11, b: 13 };
 const ITEMS: [Pair; 2] = [Pair { a: 11, b: 13 }, Pair { a: 17, b: 19 }];
@@ -88,15 +90,45 @@ fn local_struct_control() -> i64 {
     let p = Pair { a: 11, b: 13 };
     return p.a;
 }
+
+fn set99(x: Item) -> i64 {
+    x.value = 99;
+    return x.value;
+}
+
+// Copying the fixed-array container preserves the identity of its record
+// elements. The mutation is observed through the original container.
+fn record_alias_identity() -> i64 {
+    let original = Item { value: 42 };
+    let a: [Item; 1] = [original];
+    let b = a;
+    set99(b[0]);
+    return a[0].value;
+}
+
+// A struct value is identity-bearing, so copying a struct that owns a fixed
+// array keeps field mutations visible through the original owner.
+fn bag_alias_identity() -> i64 {
+    let b = Bag { xs: [1] };
+    let c = b;
+    c.xs[0] = 5;
+    return b.xs[0];
+}
+
+// Replacing an element changes the copied container only; it does not mutate
+// the original record reference stored at the same position.
+fn array_container_copy() -> i64 {
+    let original = Item { value: 42 };
+    let a: [Item; 1] = [original];
+    let mut b = a;
+    b[0] = Item { value: 99 };
+    return a[0].value;
+}
 "#;
 
 #[test]
 fn aggregate_constants_and_dynamic_fixed_arrays_run() {
-    let mindc = common::mindc_bin();
-    if !mindc.exists() {
-        common::gate::skipped("aggregate_const_run", "release mindc not built");
-        return;
-    }
+    let mindc = common::require_mindc();
 
     let dir = tempfile::tempdir().expect("aggregate scratch");
     let source = dir.path().join("main.mind");
@@ -152,5 +184,8 @@ fn aggregate_constants_and_dynamic_fixed_arrays_run() {
         assert_eq!(onearg(b"dynamic_structs", 40), 43);
         assert_eq!(noarg(b"dynamic_evaluation_order"), 1212);
         assert_eq!(noarg(b"local_struct_control"), 11);
+        assert_eq!(noarg(b"record_alias_identity"), 99);
+        assert_eq!(noarg(b"bag_alias_identity"), 5);
+        assert_eq!(noarg(b"array_container_copy"), 42);
     }
 }
