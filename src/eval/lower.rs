@@ -16,20 +16,14 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::{Cell, UnsafeCell};
 use std::collections::HashMap as StdHashMap;
 
-/// This file's per-compile side tables (`env`, `struct_env`, `receiver_types`,
-/// per-fn envs) on the type checker's deterministic `FxHasher` instead of the
-/// std SipHash `RandomState` — the same swap (and the same byte-identity
-/// argument) already accepted for the type checker's hot maps: every probe of
-/// these maps is a by-key lookup, the single `env.iter()` walk feeds another
-/// map (order-irrelevant), and the run-to-run determinism gates already prove
-/// no emitted byte depends on iteration order (today's `RandomState` order is
-/// random per process, and the 15-canary gate is green). Same keys ⇒ same
-/// values ⇒ same output bytes; only the per-lookup hash cost changes. Maps
-/// shared with readonly files (`abi_gate.rs` via `bind_let` /
-/// `is_monomorphizable`, `struct_resolver.rs`'s builder return) keep their
-/// fully-qualified `std::collections::HashMap` types untouched.
+/// Per-compilation side tables use the type checker's deterministic hasher.
+/// Emission must remain independent of map iteration order. Maps shared with
+/// ABI and struct resolution retain their explicit standard-library types.
 type HashMap<K, V, S = crate::type_checker::FxBuild> = StdHashMap<K, V, S>;
 
+#[cfg(feature = "ffi-c-user")]
+#[path = "callable_exports.rs"]
+mod callable_exports;
 use crate::ast;
 use crate::ast::Literal;
 use crate::ast::TensorElemOp;
@@ -1224,54 +1218,6 @@ pub fn lower_to_ir_with_limits(
     context.refusal.map_or(Ok(ir), Err)
 }
 
-/// Return source-exported declarations that are known not to be callable.
-///
-/// The language export surface includes type declarations for cross-module
-/// type resolution, while the C ABI export surface is function-only. Keep the
-/// distinction at AST→IR lowering so `IRModule::exports` contains no wrappers
-/// for aliases/structs/constants; unknown names remain in the set and are
-/// rejected by the C-export emitter instead of disappearing silently.
-#[cfg(feature = "ffi-c-user")]
-fn source_non_callable_exports(items: &[ast::Node]) -> std::collections::BTreeSet<String> {
-    let mut explicit = std::collections::BTreeSet::new();
-    let mut callable = std::collections::BTreeSet::new();
-    let mut non_callable = std::collections::BTreeSet::new();
-
-    fn collect(
-        items: &[ast::Node],
-        explicit: &mut std::collections::BTreeSet<String>,
-        callable: &mut std::collections::BTreeSet<String>,
-        non_callable: &mut std::collections::BTreeSet<String>,
-    ) {
-        for item in items {
-            match item {
-                ast::Node::Export { names, .. } => explicit.extend(names.iter().cloned()),
-                ast::Node::FnDef(fd, _) => {
-                    callable.insert(fd.name.clone());
-                }
-                ast::Node::StructDef { name, .. }
-                | ast::Node::EnumDef { name, .. }
-                | ast::Node::TypeAlias { name, .. }
-                | ast::Node::Const { name, .. }
-                | ast::Node::ExternConst { name, .. } => {
-                    non_callable.insert(name.clone());
-                }
-                ast::Node::Block { stmts, .. } => {
-                    collect(stmts, explicit, callable, non_callable);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    collect(items, &mut explicit, &mut callable, &mut non_callable);
-    explicit
-        .intersection(&non_callable)
-        .filter(|name| !callable.contains(*name))
-        .cloned()
-        .collect()
-}
-
 fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRModule {
     // PURE-SCALAR FAST LANE. For a module whose every item passes
     // `is_pure_scalar_arith_item` (the `scalar_math` compile-speed floor:
@@ -1995,17 +1941,8 @@ fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRM
         });
     }
 
-    // Source-level exports may include aliases, structs, enums, or constants
-    // for cross-module type/value resolution. They are not C-callable ABI
-    // entries, so remove only declarations proven to be non-functions here;
-    // an unknown name stays in `ir.exports` for the C-export boundary to reject
-    // loudly rather than being mistaken for a type alias.
     #[cfg(feature = "ffi-c-user")]
-    if !ir.exports.is_empty() {
-        for name in source_non_callable_exports(&module.items) {
-            ir.exports.remove(&name);
-        }
-    }
+    callable_exports::retain_c_abi_exports(&module.items, &mut ir);
 
     ir
 }

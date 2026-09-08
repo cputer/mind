@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1673 | **Est. tokens:** ~3205624
-**Generated:** 2026-09-08 08:36 UTC
+**Files:** 1674 | **Est. tokens:** ~3206143
+**Generated:** 2026-09-08 09:04 UTC
 
 ## Token Budget Guide
 
@@ -101,12 +101,12 @@
 | `src/diagnostics/` | 3 | ~14085 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 27 | ~121262 |
+| `src/eval/` | 28 | ~121858 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 6 | ~78139 |
+| `src/ir/` | 6 | ~78062 |
 | `src/ir/compact/` | 3 | ~15292 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
@@ -1082,6 +1082,7 @@
 - `abi_gate_struct_ops.rs` (~2859 tok, huge) — Copyright 2026 STARGA Inc.
 - `assert_check.rs` (~989 tok, large) — Copyright 2025 STARGA Inc.
 - `autodiff.rs` (~14268 tok, huge) — Copyright 2025 STARGA Inc.
+- `callable_exports.rs` (~596 tok, large) — Copyright 2026 STARGA Inc.
 - `closures.rs` (~9338 tok, huge) — Copyright 2025 STARGA Inc.
 - `conv2d_grad.rs` (~2397 tok, huge) — Copyright 2025 STARGA Inc.
 - `field_access.rs` (~4730 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1159,7 +1160,7 @@
 - `evidence.rs` (~13353 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17860 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17783 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4413 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21113 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
