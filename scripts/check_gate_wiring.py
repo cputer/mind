@@ -113,11 +113,9 @@ GATED_EVENTS = ("push", "pull_request")
 # publication path lives in its own helper. These are reviewed support/test
 # modules for existing gates, not new product surfaces; each remains below the
 # 800-line source ceiling and the stable runner commands stay unchanged.
-# 257 -> 258 adds self_host_alias_controls_smoke.py, a reviewed focused gate
-# for the alias environment's collision, scope-isolation, and typed-join cases.
-# It is wired into CI and remains below the unchanged 800-line source ceiling.
-# 258 -> 259 adds pqc_hybrid_ci.sh, the required two-feature gate that derives
-# the exact hybrid test names from libtest and refuses a zero/partial execution.
+# 257 -> 258 adds self_host_alias_controls_smoke.py for alias collisions,
+# scope isolation and typed joins, below the unchanged 800-line source ceiling.
+# 258 -> 259 adds the required, non-vacuous two-feature pqc_hybrid_ci.sh gate.
 HARNESS_CEILING = 259
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
