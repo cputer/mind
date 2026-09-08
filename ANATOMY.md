@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1695 | **Est. tokens:** ~3259040
-**Generated:** 2026-09-08 18:56 UTC
+**Files:** 1700 | **Est. tokens:** ~3280906
+**Generated:** 2026-09-08 19:39 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29656 |
+| `./` | 33 | ~29722 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3329 |
-| `docs/` | 36 | ~102529 |
+| `docs/` | 37 | ~103769 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -108,10 +108,11 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 8 | ~88950 |
+| `src/ir/` | 8 | ~90544 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
-| `src/ir/compact/v3/` | 12 | ~67884 |
+| `src/ir/compact/v3/` | 13 | ~72951 |
+| `src/ir/compact/v3/v04/` | 3 | ~13618 |
 | `src/lint/` | 2 | ~4001 |
 | `src/lint/rules/` | 6 | ~10017 |
 | `src/mlir/` | 3 | ~6625 |
@@ -127,7 +128,7 @@
 | `src/test/` | 4 | ~14244 |
 | `src/type_checker/` | 14 | ~52067 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 8 | ~17587 |
+| `src/types/` | 8 | ~17868 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
 | `tests/` | 386 | ~758264 |
@@ -221,7 +222,7 @@
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
-- `README.md` (~6806 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~6872 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
 - `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
@@ -467,8 +468,9 @@
 - `gpu.md` (~387 tok, medium) — GPU backend profile
 - `install.md` (~1012 tok, large) — Installing mindc
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
-- `ir-stability.md` (~1565 tok, huge) — IR stability contract
+- `ir-stability.md` (~1658 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
+- `mic3-v04-draft.md` (~1147 tok, large) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -1145,8 +1147,8 @@
 - `intrinsics.rs` (~10409 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
-- `canonical_verify.rs` (~5795 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_verify_tests.rs` (~5051 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_verify.rs` (~6022 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_verify_tests.rs` (~6407 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/`
 
 - `emit.rs` (~4693 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1166,23 +1168,31 @@
 ### `src/ir/compact/v3/`
 
 - `boundary.rs` (~910 tok, large) — Copyright 2025 STARGA Inc.
-- `boundary_tests.rs` (~2523 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_boundary.rs` (~414 tok, medium) — Copyright 2025 STARGA Inc.
+- `boundary_tests.rs` (~2450 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_boundary.rs` (~409 tok, medium) — Copyright 2025 STARGA Inc.
 - `collapse_receipt.rs` (~5109 tok, huge) — Copyright 2025 STARGA Inc.
 - `ed25519.rs` (~6051 tok, huge) — Copyright 2025 STARGA Inc.
 - `emit.rs` (~12388 tok, huge) — Copyright 2025 STARGA Inc.
-- `error.rs` (~602 tok, large) — Copyright 2025 STARGA Inc.
-- `format.rs` (~863 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `error.rs` (~729 tok, large) — Copyright 2025 STARGA Inc.
+- `format.rs` (~911 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `mldsa.rs` (~2688 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~20128 tok, huge) — Copyright 2025 STARGA Inc.
-- `parse.rs` (~13007 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~20143 tok, huge) — Copyright 2025 STARGA Inc.
+- `parse.rs` (~13043 tok, huge) — Copyright 2025 STARGA Inc.
 - `slhdsa.rs` (~3201 tok, huge) — Copyright 2025 STARGA Inc.
+### `src/ir/compact/v3/v04/`
+
+- `decode.rs` (~6205 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `encode.rs` (~6147 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `mod.rs` (~1266 tok, large) — Copyright 2025-2026 STARGA Inc.
+### `src/ir/compact/v3/`
+
+- `v04_tests.rs` (~4919 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/ir/`
 
 - `evidence.rs` (~13387 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13664 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7690 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17726 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17737 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4421 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21216 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
@@ -1313,9 +1323,9 @@
 ### `src/types/`
 
 - `canonical.rs` (~214 tok, medium) — Copyright 2025 STARGA Inc.
-- `canonical_registry.rs` (~5071 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_tests.rs` (~3383 tok, huge)
-- `canonical_types.rs` (~5488 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_registry.rs` (~5107 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_tests.rs` (~3544 tok, huge)
+- `canonical_types.rs` (~5572 tok, huge) — Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.

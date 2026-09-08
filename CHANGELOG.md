@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — draft canonical MIC3 `0x04` core codec
+- Checked binary emission and loading preserve owner-qualified schema and
+  function registries, resolved callees, and semantic values in their module or
+  function scope. The initial codec supports scalar instructions and metadata
+  descriptors for records and arrays; aggregate and tensor instructions remain
+  outside this stage.
+- Strings, identities, explicit wire tags, and compatibility-section counts have
+  one layout across build profiles. Unsupported content, inconsistent metadata,
+  noncanonical encodings, and inputs exceeding resource limits are refused.
+- Legacy `0x02`/`0x03` output is retained. The new revision remains a draft:
+  resolver/lowering population, pure-MIND codec parity, native consumption, and
+  protocol release are separate unfinished steps. See
+  [the draft scope](docs/mic3-v04-draft.md).
+
 ### Fixed — canonical semantic metadata cannot disappear at serialization boundaries
 - The reference IR carries owner-qualified aggregate schemas, function identities,
   and semantic types scoped to their defining function or module. Resolved calls

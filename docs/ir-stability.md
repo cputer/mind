@@ -58,10 +58,11 @@ and will not change in incompatible ways without a major-version bump:
   `ir::ir_trace_hash` hashes its canonical `mic@3` bytes — `trace_hash =
   SHA-256(canonical mic@3 bytes)`, re-anchored from mic@1 text on 2026-05-31
   after a collision audit found mic@1 text can drop function-body semantics;
-  mic@3 binary commits the full `IRModule`, so it supersedes the original RFC
+  mic@3 binary commits its supported IR fields, so it supersedes the original RFC
   0016 GAP-1 mic@1-text rule). RFC 0021 unifies on the
   `IRModule` data shape with two canonical serialisations: `mic@1` for text and
-  **`mic@3` for binary** (magic `MIC3`, round-trip equivalent to `mic@1`). The
+  **`mic@3` for binary** (magic `MIC3`). Binary and text surfaces have different
+  supported metadata; checked APIs refuse metadata loss. The
   provenance MAP attaches to `mic@3` as a `0x4D`-sentinel epilogue using the
   same key/value form as the `mic@2.1` MAP — exposed via
   `mindc --emit-mic3` / `--emit-evidence` (steps 1–3 shipped, `src/ir/compact/v3/`).
@@ -80,6 +81,10 @@ and will not change in incompatible ways without a major-version bump:
 
 ## What is experimental
 
+- The unreleased canonical `0x04` binary revision preserves supplied semantic
+  metadata for a core instruction subset. Its wire format is draft; source
+  lowering, standard-surface transport, pure-MIND parity, and native consumption
+  are separate dependencies. See [the current scope](mic3-v04-draft.md).
 - The structured `IrVerifyError` body (only the existence/absence of an
   error is stable; specific messages may change).
 - New optimisation passes added to `opt::ir_canonical`.

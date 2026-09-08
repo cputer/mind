@@ -320,12 +320,16 @@ The `IRModule` data shape has two canonical serialisations:
   supported binary IR fields; supersedes the original RFC 0016 GAP-1
   mic@1-text rule).
 
-The unreleased reference compiler also carries owner-qualified aggregate and
-function types in memory. Checked serialization, trace hashing, and evidence
-emission reject this metadata when the current wire format cannot retain it.
-Existing wire layouts remain unchanged; the semantic wire extension and its
-cross-profile round trips are still in development. Binary loading validates
-the complete body/MAP boundary. Loading an envelope does not verify its signer.
+The unreleased reference compiler carries owner-qualified aggregate schemas,
+function identities, resolved callees, and semantic types within each SSA scope.
+The checked binary API can preserve this metadata in the draft `0x04` core
+codec, including record and array descriptors attached to scalar instructions.
+It refuses unsupported instructions or metadata instead of discarding them.
+Source lowering and native execution do not yet populate or consume this full
+semantic contract. Existing `0x02`/`0x03` output remains unchanged. See the
+[draft codec scope](docs/mic3-v04-draft.md) for supported operations and limits.
+Binary loading validates the complete body/MAP boundary; loading an envelope
+does not verify its signer.
 
 Compile-time evidence-chain attestation ships via `mindc --emit-evidence`
 (RFC 0016 Phase A + B, opt-in). `mic@2`/`mic@2.1` are preserved back-compat
