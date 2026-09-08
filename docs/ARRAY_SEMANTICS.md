@@ -166,7 +166,7 @@ The checker rejects an explicit `[T; N]` binding whose array literal has a diffe
 - EVIDENCE = probe "missing type information … array load base" (mutable/local `[f64;N]` falls to the untyped std.vec heap); §2.
 
 ### Q8 — Fixed-array call ABI — **PARTIAL**
-- CURRENT_RUST_MLIR = fixed-array arguments lower and run for scalar elements and record elements on the supported parameter path. In particular, `tests/aggregate_const_run.rs` executes a `[Pair; 2]` literal across a call boundary and reads the second record. An array returned by a call and then indexed for a record field, and a struct-owned fixed array of records, currently refuse with E6009 during shared emission. The f64 call boundary remains unverified here.
+- CURRENT_RUST_MLIR = fixed-array arguments lower and run for scalar elements and record elements on the supported parameter path. In particular, `tests/aggregate_const_run.rs` executes a `[Pair; 2]` literal across a call boundary and reads the second record. A declared `[Item; N]` record-array return can now be indexed through a call and read by field; scalar/unknown return shapes still refuse, and a struct-owned fixed array of records still refuses with E6009 during shared emission. The f64 call boundary remains unverified here.
 - CURRENT_SELFHOST = **UNSUPPORTED**. `fixed_arg_i64`/`fixed_arg_f64` COMPILE_FAIL "unsupported construct".
 - CURRENT_EVALUATOR = field mutation through a record array is explicitly
   unsupported; no full aggregate call parity is claimed.
@@ -187,7 +187,7 @@ The checker rejects an explicit `[T; N]` binding whose array literal has a diffe
 - CURRENT_SELFHOST = not measured by this record; the native target remains a separate, review-only implementation with no promoted parity claim.
 - CURRENT_EVALUATOR = field mutation is explicitly unsupported; the evaluator must not be described as implementing this identity contract.
 - CANONICAL_DECISION = **record-identity-preserving container copy**. Fixed arrays are value containers: replacing an element in a copied container does not change the original container. Record elements are identity-bearing values, so copying a container copies record references; a field mutation through either copy is visible through the other. No recursive deep copy is implied. This contract is expressed through value results and never exposes an address as an integer, hash, or serialized field.
-- GAP = the contract is fixed, but implementation coverage is partial: Rust/MLIR has the measured local and supported call cases; array-return receivers and struct-owned record arrays refuse with E6009, the evaluator rejects field mutation, and native parity is not established.
+- GAP = the contract is fixed, but implementation coverage is partial: Rust/MLIR has the measured local, parameter, and declared record-array return read cases; struct-owned record arrays refuse with E6009, the evaluator rejects field mutation, and native parity is not established.
 - EVIDENCE = `tests/aggregate_const_run.rs` (`record_alias_identity` → 99, `bag_alias_identity` → 5, `array_container_copy` → 42, `dynamic_evaluation_order` → 1212); the test executes a real shared artifact and retains the existing repeated-artifact identity check.
 
 ### Q11 — Runtime OOB — **THREE-way fork (confirmed)**
@@ -296,10 +296,11 @@ runtime. If it would, the encoding is insufficient. `TIER_A_DTYPE_IN_CANONICAL_I
   measured discriminators in §Q10; evaluator field mutation is unsupported and
   native parity is not claimed. §Q10.
 - **C. Fixed-array call-boundary bounds.** The boundary is **PARTIAL**: the
-  `[Pair; 2]` parameter/literal call in `tests/aggregate_const_run.rs` lowers
-  and runs, while array-return receivers and struct-owned record arrays refuse
-  with E6009. `N` survives on the supported callee-signature path; unsupported
-  aggregate shapes are explicit refusals rather than a claim of full coverage.
+  `[Pair; 2]` parameter/literal call and a declared `[Item; 2]` record-array
+  return indexed by field in `tests/aggregate_const_run.rs` lower and run,
+  while struct-owned record arrays refuse with E6009. `N` survives on the
+  supported callee-signature path; unsupported aggregate shapes are explicit
+  refusals rather than a claim of full coverage.
   §Q8.
 - **D. Dynamic dtype-loss point.** `DYNAMIC_ARRAY_DTYPE_FIRST_LOST_LAYER=
   AST_TO_IR_LOWERING`: `T` is consumed by `is_array_surface_type` at the dispatch
@@ -350,7 +351,7 @@ FIXED_ARRAY_ALIASING=CONTAINER_COPY_PRESERVES_RECORD_IDENTITY
 FIXED_ARRAY_ALIASING_RUST_MLIR=MEASURED_LOCAL_AND_SUPPORTED_CALL_CASES
 FIXED_ARRAY_ALIASING_EVALUATOR=FIELD_MUTATION_UNSUPPORTED
 FIXED_ARRAY_ALIASING_NATIVE=PARITY_UNCLAIMED
-FIXED_ARRAY_CALL_ABI=PARTIAL_[Pair;2]_SUPPORTED_ARRAY_RETURN_AND_RECORD_FIELD_SHAPES_E6009
+FIXED_ARRAY_CALL_ABI=PARTIAL_[Pair;2]_AND_RETURNED_RECORD_ARRAY_READS_SUPPORTED_BAG_RECORD_FIELDS_E6009
 ARRAY_OOB_SEMANTIC_FORK=CONFIRMED_THREE_WAY
 ARRAY_OOB_CONTRACT=DETERMINISTIC_BOUNDS_TRAP
 SILENT_STORE_DROP_TARGET=IMPOSSIBLE_OR_FAIL_CLOSED
@@ -408,8 +409,8 @@ clamp `lowering.rs:4534-4556`). D dtype-aware canonical dynamic-array IR (the §
 invariant; never the dtype-blind vec path). E early backend differential-execution
 gate (merge-blocking). F mutable/local f64 on the typed IR (un-drop IndexAssign).
 G dynamic indexed load/store. H function ABI / cross-module / return (implement
-the remaining fixed-array call shapes (array-return receivers and struct-owned
-record arrays) that still refuse today). I exact float-literal
+the remaining fixed-array call shape (struct-owned record arrays, which still
+refuse today). I exact float-literal
 codec (before the NaN/Inf battery). J full bit-exact battery. K self-host +
 evaluator parity. L tensor consistency. M regression/keystone/mic3/criterion. N a
 flattened-matrix numerical-research canary.

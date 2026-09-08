@@ -30,7 +30,7 @@
 
 #![cfg(feature = "std-surface")]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::ast::{Literal, Module, Node, Span, TypeAnn};
 
@@ -46,6 +46,14 @@ use crate::ast::{Literal, Module, Node, Span, TypeAnn};
 /// deterministic for byte-identity (the map is lookup-only at
 /// resolution time, but we keep the deterministic container regardless).
 type FieldTypes = BTreeMap<(String, String), String>;
+
+/// Direct struct returns and full array returns have distinct meanings. Keep
+/// the array schema separate so a physical i64/tensor carrier is never used
+/// to infer a record element.
+struct ResolverReturns<'a> {
+    direct: &'a HashMap<String, String>,
+    array_elements: &'a HashMap<String, String>,
+}
 
 /// The side-table produced by [`build_field_access_types`]. Maps each
 /// `FieldAccess` node's span to the **struct-type name of its receiver**
@@ -65,12 +73,16 @@ pub type FieldAccessTypes = HashMap<Span, String>;
 ///   `fn name → return-type-struct-name` from `FnDef.ret_type`
 ///   annotations that name a known `StructDef`. Resolution looks up
 ///   the callee and uses that.
-/// - (3) **Struct parameter** `fn read(c: Cfg) { c.max }`: when we
+/// - (3) **Returned fixed-array element** `foo()[i].x`: a separate first-pass
+///   map records only an exact declared `TypeAnn::Array` whose element is a
+///   known struct. Scalar, unknown, and ambiguous return schemas stay absent,
+///   so the physical i64/tensor carrier cannot authorize a field read.
+/// - (4) **Struct parameter** `fn read(c: Cfg) { c.max }`: when we
 ///   descend into a fn body, the per-fn binding map seeds with the
 ///   parameter list (any `Param` whose `ty` is `Named(T)` for a known
 ///   `StructDef` gets `param_name → T`).
 ///
-/// - (4) **Nested struct-typed field** `a.b.c` where field `b` is itself
+/// - (5) **Nested struct-typed field** `a.b.c` where field `b` is itself
 ///   a struct: the per-field type table (built from `StructDef.fields[i].ty`)
 ///   lets `infer_struct` chain `a → S`, `(S, b) → Inner`, so `.c`
 ///   resolves against `Inner`. Both reads (`o.inner.v`) and writes
@@ -89,6 +101,9 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
     let mut struct_defs: Vec<String> = Vec::new();
     let mut field_types: FieldTypes = FieldTypes::new();
     let mut fn_returns: HashMap<String, String> = HashMap::new();
+    let mut fn_array_returns: HashMap<String, String> = HashMap::new();
+    let mut ambiguous_array_returns: HashSet<String> = HashSet::new();
+    let mut local_fn_names: HashSet<String> = HashSet::new();
     for item in &module.items {
         match item {
             Node::StructDef { name, fields, .. } => {
@@ -107,6 +122,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
             }
             Node::FnDef(fd, _) if fd.ret_type.is_some() => {
                 let name = &fd.name;
+                local_fn_names.insert(name.clone());
                 let ret = fd.ret_type.as_ref().unwrap();
                 // Peel `&T` / `&mut T` / `[T]` / `&[T]` to the inner
                 // `Named(T)` so a `-> &Cfg` return type resolves its
@@ -116,6 +132,17 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                 if let Some(t) = unwrap_to_named(ret) {
                     fn_returns.insert(name.clone(), t.to_string());
                 }
+                if let Some(t) = declared_array_element_named(ret) {
+                    insert_unique_array_return(
+                        &mut fn_array_returns,
+                        &mut ambiguous_array_returns,
+                        name,
+                        t,
+                    );
+                }
+            }
+            Node::FnDef(fd, _) => {
+                local_fn_names.insert(fd.name.clone());
             }
             _ => {}
         }
@@ -185,11 +212,29 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     .entry(fname.clone())
                     .or_insert_with(|| t.to_string());
             }
+            if !local_fn_names.contains(fname) {
+                if let Some(t) = declared_array_element_named(rt) {
+                    insert_unique_array_return(
+                        &mut fn_array_returns,
+                        &mut ambiguous_array_returns,
+                        fname,
+                        t,
+                    );
+                }
+            }
         }
     });
 
     // Filter fn_returns to only those whose return-type is a real struct.
     fn_returns.retain(|_, t| struct_defs.iter().any(|s| s == t));
+    for name in ambiguous_array_returns {
+        fn_array_returns.remove(&name);
+    }
+    fn_array_returns.retain(|_, t| struct_defs.iter().any(|s| s == t));
+    let returns = ResolverReturns {
+        direct: &fn_returns,
+        array_elements: &fn_array_returns,
+    };
     // Likewise keep only field types that name a real struct — scalar
     // fields and slices-of-scalar drop out, so `infer_struct`'s
     // FieldAccess arm only ever returns a known struct name.
@@ -211,7 +256,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                 walk_expr(
                     value,
                     &var_to_struct,
-                    &fn_returns,
+                    &returns,
                     &struct_defs,
                     &field_types,
                     &mut types,
@@ -221,7 +266,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     ann.as_ref(),
                     Some(value),
                     &struct_defs,
-                    &fn_returns,
+                    &returns,
                     &field_types,
                     &mut var_to_struct,
                 );
@@ -230,12 +275,12 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                 walk_expr(
                     value,
                     &var_to_struct,
-                    &fn_returns,
+                    &returns,
                     &struct_defs,
                     &field_types,
                     &mut types,
                 );
-                if let Some(t) = infer_struct(value, &var_to_struct, &fn_returns, &field_types) {
+                if let Some(t) = infer_struct(value, &var_to_struct, &returns, &field_types) {
                     if struct_defs.iter().any(|s| s == &t) {
                         var_to_struct.insert(name.clone(), t);
                     }
@@ -251,7 +296,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                         Some(&p.ty),
                         None,
                         &struct_defs,
-                        &fn_returns,
+                        &returns,
                         &field_types,
                         &mut fn_vars,
                     );
@@ -260,7 +305,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
                     walk_stmt(
                         stmt,
                         &mut fn_vars,
-                        &fn_returns,
+                        &returns,
                         &struct_defs,
                         &field_types,
                         &mut types,
@@ -273,7 +318,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
             other => walk_expr(
                 other,
                 &var_to_struct,
-                &fn_returns,
+                &returns,
                 &struct_defs,
                 &field_types,
                 &mut types,
@@ -288,7 +333,7 @@ pub fn build_field_access_types(module: &Module) -> FieldAccessTypes {
 fn walk_stmt(
     stmt: &Node,
     fn_vars: &mut HashMap<String, String>,
-    fn_returns: &HashMap<String, String>,
+    returns: &ResolverReturns,
     struct_defs: &[String],
     field_types: &FieldTypes,
     types: &mut FieldAccessTypes,
@@ -297,33 +342,33 @@ fn walk_stmt(
         Node::Let {
             name, ann, value, ..
         } => {
-            walk_expr(value, fn_vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(value, fn_vars, returns, struct_defs, field_types, types);
             update_binding(
                 name,
                 ann.as_ref(),
                 Some(value),
                 struct_defs,
-                fn_returns,
+                returns,
                 field_types,
                 fn_vars,
             );
         }
         Node::Assign { name, value, .. } => {
-            walk_expr(value, fn_vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(value, fn_vars, returns, struct_defs, field_types, types);
             update_binding(
                 name,
                 None,
                 Some(value),
                 struct_defs,
-                fn_returns,
+                returns,
                 field_types,
                 fn_vars,
             );
         }
         Node::Return { value: Some(v), .. } => {
-            walk_expr(v, fn_vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(v, fn_vars, returns, struct_defs, field_types, types);
         }
-        other => walk_expr(other, fn_vars, fn_returns, struct_defs, field_types, types),
+        other => walk_expr(other, fn_vars, returns, struct_defs, field_types, types),
     }
 }
 
@@ -332,7 +377,7 @@ fn walk_stmt(
 fn walk_expr(
     expr: &Node,
     vars: &HashMap<String, String>,
-    fn_returns: &HashMap<String, String>,
+    returns: &ResolverReturns,
     struct_defs: &[String],
     field_types: &FieldTypes,
     types: &mut FieldAccessTypes,
@@ -341,30 +386,26 @@ fn walk_expr(
         Node::FieldAccess { receiver, span, .. } => {
             // Recurse first so nested FieldAccess entries get recorded
             // before we look up the outer one.
-            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
-            if let Some(t) = infer_struct(receiver, vars, fn_returns, field_types) {
+            walk_expr(receiver, vars, returns, struct_defs, field_types, types);
+            if let Some(t) = infer_struct(receiver, vars, returns, field_types) {
                 if struct_defs.iter().any(|s| s == &t) {
                     types.insert(*span, t);
                 }
             }
         }
         Node::Binary { left, right, .. } => {
-            walk_expr(left, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(right, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(left, vars, returns, struct_defs, field_types, types);
+            walk_expr(right, vars, returns, struct_defs, field_types, types);
         }
         Node::Logical { left, right, .. } => {
-            walk_expr(left, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(right, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(left, vars, returns, struct_defs, field_types, types);
+            walk_expr(right, vars, returns, struct_defs, field_types, types);
         }
         Node::Neg { operand, .. } | Node::Not { operand, .. } | Node::BitNot { operand, .. } => {
-            walk_expr(operand, vars, fn_returns, struct_defs, field_types, types)
+            walk_expr(operand, vars, returns, struct_defs, field_types, types)
         }
-        Node::Paren(inner, _) => {
-            walk_expr(inner, vars, fn_returns, struct_defs, field_types, types)
-        }
-        Node::Ref { inner, .. } => {
-            walk_expr(inner, vars, fn_returns, struct_defs, field_types, types)
-        }
+        Node::Paren(inner, _) => walk_expr(inner, vars, returns, struct_defs, field_types, types),
+        Node::Ref { inner, .. } => walk_expr(inner, vars, returns, struct_defs, field_types, types),
         // A cast `<expr> as <ty>` is transparent to field-access resolution:
         // walk the operand so any FieldAccess nested under the cast (e.g. the
         // `jv_n_int(f.h) as u64` tail of std/json's `get_u64`) records its
@@ -375,13 +416,13 @@ fn walk_expr(
         // type is scalar-only surface and never a struct value, so only the
         // operand is walked; `infer_struct` correctly keeps returning `None`
         // for the cast expression itself.
-        Node::As { expr, .. } => walk_expr(expr, vars, fn_returns, struct_defs, field_types, types),
+        Node::As { expr, .. } => walk_expr(expr, vars, returns, struct_defs, field_types, types),
         Node::Assert { cond, .. } => {
-            walk_expr(cond, vars, fn_returns, struct_defs, field_types, types)
+            walk_expr(cond, vars, returns, struct_defs, field_types, types)
         }
         Node::Call { args, .. } => {
             for a in args {
-                walk_expr(a, vars, fn_returns, struct_defs, field_types, types);
+                walk_expr(a, vars, returns, struct_defs, field_types, types);
             }
         }
         Node::MethodCall {
@@ -390,9 +431,9 @@ fn walk_expr(
             span,
             ..
         } => {
-            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(receiver, vars, returns, struct_defs, field_types, types);
             for a in args {
-                walk_expr(a, vars, fn_returns, struct_defs, field_types, types);
+                walk_expr(a, vars, returns, struct_defs, field_types, types);
             }
             // RFC 0005 method-as-field brick — record the receiver's
             // struct type at the MethodCall's own span so the lowering
@@ -402,7 +443,7 @@ fn walk_expr(
             // on the node span and looks up the field offset in
             // `ir.struct_defs[T]`. Purely additive — method calls are absent
             // from the keystone and all of std, so no emitted bytes change.
-            if let Some(t) = infer_struct(receiver, vars, fn_returns, field_types) {
+            if let Some(t) = infer_struct(receiver, vars, returns, field_types) {
                 if struct_defs.iter().any(|s| s == &t) {
                     types.insert(*span, t);
                 }
@@ -412,14 +453,7 @@ fn walk_expr(
             // Inner Let/Assign in a block can shadow — use a snapshot.
             let mut local = vars.clone();
             for stmt in stmts {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
         }
         Node::If {
@@ -428,47 +462,33 @@ fn walk_expr(
             else_branch,
             ..
         } => {
-            walk_expr(cond, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(cond, vars, returns, struct_defs, field_types, types);
             let mut local = vars.clone();
             for stmt in then_branch {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
             if let Some(else_b) = else_branch {
                 let mut local = vars.clone();
                 for stmt in else_b {
-                    walk_stmt(
-                        stmt,
-                        &mut local,
-                        fn_returns,
-                        struct_defs,
-                        field_types,
-                        types,
-                    );
+                    walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
                 }
             }
         }
         Node::StructLit { fields, .. } => {
             for f in fields {
-                walk_expr(&f.value, vars, fn_returns, struct_defs, field_types, types);
+                walk_expr(&f.value, vars, returns, struct_defs, field_types, types);
             }
         }
         Node::ArrayLit { elements, .. } => {
             for element in elements {
-                walk_expr(element, vars, fn_returns, struct_defs, field_types, types);
+                walk_expr(element, vars, returns, struct_defs, field_types, types);
             }
         }
         Node::IndexAccess {
             receiver, index, ..
         } => {
-            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(index, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(receiver, vars, returns, struct_defs, field_types, types);
+            walk_expr(index, vars, returns, struct_defs, field_types, types);
         }
         Node::IndexAssign {
             receiver,
@@ -476,9 +496,9 @@ fn walk_expr(
             value,
             ..
         } => {
-            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(index, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(value, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(receiver, vars, returns, struct_defs, field_types, types);
+            walk_expr(index, vars, returns, struct_defs, field_types, types);
+            walk_expr(value, vars, returns, struct_defs, field_types, types);
         }
         // RFC 0005 P0g — `receiver.field = value`. Two records are needed
         // for a nested write (`o.inner.v = x`):
@@ -498,27 +518,20 @@ fn walk_expr(
             value,
             ..
         } => {
-            walk_expr(receiver, vars, fn_returns, struct_defs, field_types, types);
-            if let Some(t) = infer_struct(receiver, vars, fn_returns, field_types) {
+            walk_expr(receiver, vars, returns, struct_defs, field_types, types);
+            if let Some(t) = infer_struct(receiver, vars, returns, field_types) {
                 if struct_defs.iter().any(|s| s == &t) {
                     types.insert(*span, t);
                 }
             }
-            walk_expr(value, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(value, vars, returns, struct_defs, field_types, types);
         }
         // RFC 0010 Phase J-A: region body — same walk as Block.
         #[cfg(feature = "std-surface")]
         Node::Region { body, .. } => {
             let mut local = vars.clone();
             for stmt in body {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
         }
         // A `while` loop body is a scope, like a Block/If branch. Without this
@@ -528,17 +541,10 @@ fn walk_expr(
         // `ConstI64(0)` placeholder (a SILENT wrong-value read). Snapshot `vars`
         // so an in-loop `let` shadow does not leak past the loop.
         Node::While { cond, body, .. } => {
-            walk_expr(cond, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(cond, vars, returns, struct_defs, field_types, types);
             let mut local = vars.clone();
             for stmt in body {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
         }
         // A `for x in coll` body is likewise a scope. The element binding `x`
@@ -549,24 +555,10 @@ fn walk_expr(
         Node::ForEach {
             collection, body, ..
         } => {
-            walk_expr(
-                collection,
-                vars,
-                fn_returns,
-                struct_defs,
-                field_types,
-                types,
-            );
+            walk_expr(collection, vars, returns, struct_defs, field_types, types);
             let mut local = vars.clone();
             for stmt in body {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
         }
         // A counted `for` body has the same lexical scope as `while` and
@@ -576,18 +568,11 @@ fn walk_expr(
         Node::For {
             start, end, body, ..
         } => {
-            walk_expr(start, vars, fn_returns, struct_defs, field_types, types);
-            walk_expr(end, vars, fn_returns, struct_defs, field_types, types);
+            walk_expr(start, vars, returns, struct_defs, field_types, types);
+            walk_expr(end, vars, returns, struct_defs, field_types, types);
             let mut local = vars.clone();
             for stmt in body {
-                walk_stmt(
-                    stmt,
-                    &mut local,
-                    fn_returns,
-                    struct_defs,
-                    field_types,
-                    types,
-                );
+                walk_stmt(stmt, &mut local, returns, struct_defs, field_types, types);
             }
         }
         // Other nodes either don't contain expressions or are
@@ -625,6 +610,38 @@ fn array_element_struct(ty: &TypeAnn, struct_defs: &[String]) -> Option<String> 
         .then(|| name.to_string())
 }
 
+/// Return the element name only for an exact declared fixed-array return.
+fn declared_array_element_named(ty: &TypeAnn) -> Option<&str> {
+    let TypeAnn::Array { element, .. } = ty else {
+        return None;
+    };
+    match element.as_ref() {
+        TypeAnn::Named(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+fn insert_unique_array_return(
+    returns: &mut HashMap<String, String>,
+    ambiguous: &mut HashSet<String>,
+    name: &str,
+    element: &str,
+) {
+    if ambiguous.contains(name) {
+        return;
+    }
+    match returns.get(name) {
+        Some(previous) if previous != element => {
+            returns.remove(name);
+            ambiguous.insert(name.to_string());
+        }
+        Some(_) => {}
+        None => {
+            returns.insert(name.to_string(), element.to_string());
+        }
+    }
+}
+
 fn fixed_array_element_key(name: &str) -> String {
     // NUL cannot occur in a parsed identifier, so this internal side-table key
     // cannot alias a user binding.
@@ -641,7 +658,7 @@ fn update_binding(
     ann: Option<&TypeAnn>,
     value: Option<&Node>,
     struct_defs: &[String],
-    fn_returns: &HashMap<String, String>,
+    returns: &ResolverReturns,
     field_types: &FieldTypes,
     out: &mut HashMap<String, String>,
 ) {
@@ -657,12 +674,12 @@ fn update_binding(
         None
     };
     let direct = value
-        .and_then(|node| infer_struct(node, out, fn_returns, field_types))
+        .and_then(|node| infer_struct(node, out, returns, field_types))
         .or(declared_struct);
     let element = ann
         .and_then(|ty| array_element_struct(ty, struct_defs))
         .or_else(|| {
-            value.and_then(|node| infer_array_element_struct(node, out, fn_returns, field_types))
+            value.and_then(|node| infer_array_element_struct(node, out, returns, field_types))
         });
 
     out.remove(name);
@@ -684,7 +701,7 @@ fn update_binding(
 fn infer_array_element_struct(
     expr: &Node,
     vars: &HashMap<String, String>,
-    fn_returns: &HashMap<String, String>,
+    returns: &ResolverReturns,
     field_types: &FieldTypes,
 ) -> Option<String> {
     match expr {
@@ -698,16 +715,17 @@ fn infer_array_element_struct(
                 })
             }),
         Node::ArrayLit { elements, .. } if !elements.is_empty() => {
-            let first = infer_struct(&elements[0], vars, fn_returns, field_types)?;
+            let first = infer_struct(&elements[0], vars, returns, field_types)?;
             elements
                 .iter()
                 .all(|item| {
-                    infer_struct(item, vars, fn_returns, field_types).as_deref() == Some(&first)
+                    infer_struct(item, vars, returns, field_types).as_deref() == Some(&first)
                 })
                 .then_some(first)
         }
+        Node::Call { callee, .. } => returns.array_elements.get(callee).cloned(),
         Node::Paren(inner, _) | Node::Ref { inner, .. } => {
-            infer_array_element_struct(inner, vars, fn_returns, field_types)
+            infer_array_element_struct(inner, vars, returns, field_types)
         }
         _ => None,
     }
@@ -718,7 +736,7 @@ fn infer_array_element_struct(
 fn infer_struct(
     expr: &Node,
     vars: &HashMap<String, String>,
-    fn_returns: &HashMap<String, String>,
+    returns: &ResolverReturns,
     field_types: &FieldTypes,
 ) -> Option<String> {
     match expr {
@@ -727,11 +745,11 @@ fn infer_struct(
         Node::Lit(Literal::Ident(v), _) => vars.get(v).cloned().or_else(|| {
             crate::ir::module_const_type(v).and_then(|ty| unwrap_to_named(&ty).map(str::to_string))
         }),
-        Node::Call { callee, .. } => fn_returns.get(callee).cloned(),
-        Node::Paren(inner, _) => infer_struct(inner, vars, fn_returns, field_types),
-        Node::Ref { inner, .. } => infer_struct(inner, vars, fn_returns, field_types),
+        Node::Call { callee, .. } => returns.direct.get(callee).cloned(),
+        Node::Paren(inner, _) => infer_struct(inner, vars, returns, field_types),
+        Node::Ref { inner, .. } => infer_struct(inner, vars, returns, field_types),
         Node::IndexAccess { receiver, .. } => {
-            infer_array_element_struct(receiver, vars, fn_returns, field_types)
+            infer_array_element_struct(receiver, vars, returns, field_types)
         }
         // Chained access — `a.b` resolves to the struct type of field `b`
         // when that field is itself struct-typed. We first resolve the
@@ -746,7 +764,7 @@ fn infer_struct(
         Node::FieldAccess {
             receiver, field, ..
         } => {
-            let recv_struct = infer_struct(receiver, vars, fn_returns, field_types)?;
+            let recv_struct = infer_struct(receiver, vars, returns, field_types)?;
             field_types.get(&(recv_struct, field.clone())).cloned()
         }
         // BLOCKER 2 — UFCS method call bound to a `let`. `let s2 = s.grow(b)`
@@ -757,16 +775,16 @@ fn infer_struct(
         // (`let s2 = buf_grow(s, b)`) already resolves through the `Node::Call`
         // arm above. We resolve the receiver's struct `T`, form the same
         // `{T.to_lowercase()}_{method}` name the lowering arm emits, and look
-        // up its return type in `fn_returns`. A zero-arg accessor that names a
+        // up its return type in the direct-return map. A zero-arg accessor that names a
         // field of `T` (`s.len()`) is a scalar field read, not a struct value,
         // so it correctly returns `None` (the UFCS target `{t}_len` will not be
         // a registered struct-returning free function).
         Node::MethodCall {
             receiver, method, ..
         } => {
-            let recv_struct = infer_struct(receiver, vars, fn_returns, field_types)?;
+            let recv_struct = infer_struct(receiver, vars, returns, field_types)?;
             let fn_name = format!("{}_{}", recv_struct.to_lowercase(), method);
-            fn_returns.get(&fn_name).cloned()
+            returns.direct.get(&fn_name).cloned()
         }
         _ => None,
     }

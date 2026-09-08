@@ -16,7 +16,7 @@ const SOURCE: &str = r#"
 struct Pair { a: i64, b: i64 }
 struct Wrapper { pair: Pair }
 struct Encoding { w0: i64, w1: i64 }
-struct Item { value: i64 }
+struct Item { value: i64, tag: i64 }
 struct Bag { xs: [i64; 1] }
 
 const ITEM: Pair = Pair { a: 11, b: 13 };
@@ -45,6 +45,18 @@ fn returned_struct_assert_receiver() -> i64 {
     let e = encode_items(ITEMS);
     assert e.w0 == 11, "w0";
     return e.w1;
+}
+
+fn make_items() -> [Item; 2] {
+    return [Item { value: 17, tag: 3 }, Item { value: 42, tag: 9 }];
+}
+
+// A declared full array return keeps its record element schema through the
+// call. Exercise a second element and both fields, including the local binding
+// path that reuses the same declared return type.
+fn returned_record_array_fields() -> i64 {
+    let items = make_items();
+    return items[1].value + make_items()[0].tag;
 }
 
 fn parenthesized_array_receiver() -> i64 {
@@ -176,6 +188,7 @@ fn aggregate_constants_and_dynamic_fixed_arrays_run() {
         assert_eq!(noarg(b"declared_before_const"), 37);
         assert_eq!(noarg(b"struct_array_param"), 19);
         assert_eq!(noarg(b"returned_struct_assert_receiver"), 19);
+        assert_eq!(noarg(b"returned_record_array_fields"), 45);
         assert_eq!(noarg(b"parenthesized_array_receiver"), 19);
         assert_eq!(noarg(b"array_alias_receiver"), 19);
         assert_eq!(noarg(b"lexical_array_shadow_control"), 11);

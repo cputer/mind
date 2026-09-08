@@ -88,9 +88,10 @@ Two E6xxx assignments distinguish host capability from compiler lowering:
 - `E6002`: the requested backend is unavailable on the current host or build.
 - `E6009`: a language-valid aggregate cannot be materialized into the runnable
   artifact representation, including a deterministic materialization limit.
-  This includes nested `[Struct; N]` element-field receivers, which do not yet
-  have a runnable representation, while fixed-array struct fields with `i64` or
-  `f64` scalar cells do.
+  This includes struct-owned fixed-array record element-field receivers, which
+  do not yet have a runnable representation, while a declared fixed-array
+  return may be indexed for a record field on the supported Rust/MLIR path and
+  fixed-array struct fields with `i64` or `f64` scalar cells do.
 - `E6010`: a `Mind.toml [exports] c_abi` entry is invalid. This is a user
   configuration error and does not indicate backend capability.
 

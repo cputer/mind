@@ -276,6 +276,60 @@ fn unsupported_struct_array_cells_are_refused_before_lowering() {
 }
 
 #[test]
+fn returned_record_array_resolver_controls_refuse_without_artifacts() {
+    let mindc = common::require_mindc();
+    let dir = tempfile::tempdir().expect("returned-record-array control scratch");
+    let cases = [
+        (
+            "scalar-return",
+            "struct Item { value: i64 }\nfn make_scalar() -> i64 { return 7; }\nfn main() -> i64 { return make_scalar()[0].value; }\n",
+            "E6009",
+        ),
+        (
+            "unknown-return",
+            "struct Item { value: i64 }\nfn main() -> i64 { return missing_items()[0].value; }\n",
+            "E2003",
+        ),
+        (
+            "bag-record-array",
+            "struct Item { value: i64 }\nstruct Bag { items: [Item; 1] }\nfn main(b: Bag) -> i64 { return b.items[0].value; }\n",
+            "E6009",
+        ),
+    ];
+    for (name, source_text, expected_code) in cases {
+        let source = dir.path().join(format!("{name}.mind"));
+        let shared = dir.path().join(format!("{name}.so"));
+        std::fs::write(&source, source_text).expect("write resolver control");
+        let out = Command::new(&mindc)
+            .args([
+                source.to_str().unwrap(),
+                "--emit-shared",
+                shared.to_str().unwrap(),
+            ])
+            .output()
+            .expect("run returned-record-array resolver control");
+        let rendered = format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success(),
+            "{name} unexpectedly compiled: {rendered}"
+        );
+        assert!(
+            rendered.contains(expected_code),
+            "{name} lost its structured refusal ({expected_code}): {rendered}"
+        );
+        assert!(
+            !rendered.contains("panicked at"),
+            "{name} panicked: {rendered}"
+        );
+        assert!(!shared.exists(), "{name} emitted an artifact");
+    }
+}
+
+#[test]
 fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
     let mindc = common::mindc_bin();
     if !mindc.exists() {
