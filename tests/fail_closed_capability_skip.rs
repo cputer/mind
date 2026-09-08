@@ -79,7 +79,7 @@ const CAP_TARGET_BACKEND: &str = "error[backend][E6002]: no backend available fo
 /// An ordinary user error that used to occupy the cause namespace and now sits
 /// outside it (`E6xxx`): an invalid `Mind.toml [exports] c_abi` entry. It must
 /// neither forge a capability verdict nor veto one.
-const REAL_MANIFEST_EXPORT: &str = "error[manifest][E6001]: invalid Mind.toml [exports] c_abi entry `bad name`: \
+const REAL_MANIFEST_EXPORT: &str = "error[manifest][E6010]: invalid Mind.toml [exports] c_abi entry `bad name`: \
      not a C identifier\n";
 
 /// A capability-SOUNDING refusal with no cause code at all — the pre-fix wire
@@ -263,7 +263,7 @@ fn an_ordinary_manifest_error_is_never_a_capability_skip() {
     // refusal CAUSE.
     use libmind::diagnostics::capability as cap;
     match gate::classify(false, REAL_MANIFEST_EXPORT, false) {
-        Outcome::Failed(s) => assert!(s.contains("E6001"), "{s}"),
+        Outcome::Failed(s) => assert!(s.contains("E6010"), "{s}"),
         other => panic!("an invalid manifest entry must fail closed, got {other:?}"),
     }
     assert!(
@@ -275,7 +275,7 @@ fn an_ordinary_manifest_error_is_never_a_capability_skip() {
     // wire; grading it a tolerated skip was the fail-open this gate exists for.
     let beside = format!("{REAL_MANIFEST_EXPORT}{CAP_FEATURE}");
     match gate::classify(false, &beside, false) {
-        Outcome::Failed(s) => assert!(s.contains("E6001"), "{s}"),
+        Outcome::Failed(s) => assert!(s.contains("E6010"), "{s}"),
         other => panic!(
             "a real manifest error sharing the wire with a capability gap must \
              fail closed, got {other:?}"

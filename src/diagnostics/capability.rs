@@ -591,8 +591,8 @@ mod tests {
     #[test]
     fn an_ordinary_diagnostic_cannot_forge_a_verdict_but_does_veto_one() {
         // The manifest-export error's twin, renumbered out of the cause
-        // namespace (`E6001`): an invalid `Mind.toml` entry is a user error.
-        let manifest = "error[manifest][E6001]: invalid Mind.toml [exports] c_abi entry \
+        // namespace (`E6010`): an invalid `Mind.toml` entry is a user error.
+        let manifest = "error[manifest][E6010]: invalid Mind.toml [exports] c_abi entry \
                         `bad name`: not a C identifier\n";
         // It is not a refusal CAUSE, so it can never forge a capability verdict.
         assert!(cause_codes(manifest).is_empty(), "{manifest}");

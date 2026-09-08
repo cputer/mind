@@ -79,8 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that cannot be represented by the runnable lowering ABI. Refusal is nonzero and
   leaves no partial artifact.
 - `InvalidManifestExport` remains an ordinary user error outside the capability
-  namespace. Source scans retain exclusive ownership of `E50xx`, and focused tests
-  pin `E6002` and `E6009` as separate diagnostic contracts.
+  namespace and now uses additive code `E6010`; Core v1 `E6001` remains the
+  out-of-bounds index code. Source scans retain exclusive ownership of `E50xx`,
+  and focused tests pin the three E6xxx meanings at their compiler boundaries.
 
 
 ### Fixed — the release workflow could publish binaries from a commit CI had never checked

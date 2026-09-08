@@ -91,6 +91,8 @@ Two E6xxx assignments distinguish host capability from compiler lowering:
   This includes nested `[Struct; N]` element-field receivers, which do not yet
   have a runnable representation, while fixed-array struct fields with `i64` or
   `f64` scalar cells do.
+- `E6010`: a `Mind.toml [exports] c_abi` entry is invalid. This is a user
+  configuration error and does not indicate backend capability.
 
 Both refusals exit nonzero. `E6009` is emitted before a runnable artifact is
 published and is not a type error.

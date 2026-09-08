@@ -34,6 +34,12 @@ use crate::type_checker;
 /// added later and therefore owns a fresh additive catalog entry.
 pub const MATERIALIZATION_REFUSAL_CODE: &str = "E6009";
 
+/// Core v1 diagnostic for invalid `Mind.toml [exports] c_abi` entries.
+///
+/// `E6001` is reserved for the catalog's out-of-bounds index error, so this
+/// compiler-only validation uses the next unused additive E6xxx assignment.
+pub const INVALID_MANIFEST_EXPORT_CODE: &str = "E6010";
+
 #[cfg(feature = "autodiff")]
 use crate::autodiff;
 #[cfg(any(feature = "mlir-lowering", feature = "mlir-build"))]
@@ -187,7 +193,7 @@ impl CompileError {
             // capability skip printed on the same stderr.
             CompileError::InvalidManifestExport { name, reason } => vec![Diagnostic::error(
                 "manifest",
-                "E6001",
+                INVALID_MANIFEST_EXPORT_CODE,
                 format!("invalid Mind.toml [exports] c_abi entry `{name}`: {reason}"),
             )],
             #[cfg(feature = "autodiff")]
