@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1671 | **Est. tokens:** ~3198251
-**Generated:** 2026-09-08 04:49 UTC
+**Files:** 1672 | **Est. tokens:** ~3201776
+**Generated:** 2026-09-08 05:09 UTC
 
 ## Token Budget Guide
 
@@ -89,7 +89,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 10 | ~46138 |
+| `src/` | 10 | ~47039 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -101,7 +101,7 @@
 | `src/diagnostics/` | 3 | ~14133 |
 | `src/distributed/` | 6 | ~7725 |
 | `src/doc/` | 3 | ~11002 |
-| `src/eval/` | 27 | ~119708 |
+| `src/eval/` | 27 | ~120315 |
 | `src/eval/stdlib/` | 2 | ~8586 |
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 382 | ~744538 |
+| `tests/` | 383 | ~746555 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1109,7 +1109,7 @@
 - `string_equality.rs` (~5380 tok, huge) — Copyright 2025 STARGA Inc.
 - `struct_resolver.rs` (~8361 tok, huge) — Copyright 2025 STARGA Inc.
 - `traits.rs` (~4150 tok, huge) — Copyright 2025 STARGA Inc.
-- `type_aliases.rs` (~1507 tok, huge) — Copyright 2025 STARGA Inc.
+- `type_aliases.rs` (~2114 tok, huge) — Copyright 2025 STARGA Inc.
 - `value.rs` (~2228 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/exec/`
 
@@ -1238,7 +1238,7 @@
 ### `src/`
 
 - `python.rs` (~1082 tok, large) — Copyright 2025 STARGA Inc.
-- `qualified_enums.rs` (~4415 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `qualified_enums.rs` (~5316 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/runtime/`
 
 - `gpu.rs` (~288 tok, medium) — Experimental GPU backend contract for MIND.
@@ -2264,6 +2264,7 @@
 - `try_operator_run.rs` (~1058 tok, large) — Copyright 2025 STARGA Inc.
 - `tuple_destructure_run.rs` (~1112 tok, large) — Copyright 2025 STARGA Inc.
 - `turboquant_kernel_run.rs` (~1318 tok, large) — Copyright 2025 STARGA Inc.
+- `type_alias_narrow_lowering_run.rs` (~2017 tok, huge) — Copyright 2025 STARGA Inc.
 - `type_ann_check.rs` (~330 tok, medium) — Copyright 2025 STARGA Inc.
 - `type_ann_parse.rs` (~583 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/type_checker/`
