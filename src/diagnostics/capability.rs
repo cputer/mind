@@ -76,19 +76,17 @@
 //! # The reservation is MECHANICAL, in both directions
 //!
 //! That argument holds only while the namespace is ACTUALLY reserved, and it
-//! was not: two ordinary diagnostics were minted inside it —
-//! `pipeline::CompileError::BackendUnavailable` took `E5001`, and
-//! `InvalidManifestExport` took the code after it — and the
-//! inclusion-direction test (every cause code is inside the namespace) could
-//! not see either. (The second code is not spelled out here on purpose: the
+//! was not: two ordinary diagnostics were minted inside it — backend
+//! unavailability and `InvalidManifestExport` — and the inclusion-direction
+//! test (every cause code is recognized by the classifier) could not see
+//! either. (The manifest code is not spelled out here on purpose: the
 //! scan below reads prose as well as literals, so naming a code the registry
 //! does not own would re-open the very hole this paragraph describes.)
 //!
-//! The consequence was this module's own failure mode, inverted: `mindc
-//! x.mind --target gpu` refused with `error[backend][E5001]`, an unregistered
-//! token INSIDE the scanned namespace, so a genuine host-capability gap read
-//! as an unknown cause, vetoed its own skip, and graded as a compiler
-//! regression on every host without that backend.
+//! The consequence was this module's own failure mode, inverted: a GPU build
+//! refusal carried an unregistered token inside the scanned namespace, so a
+//! genuine host-capability gap read as an unknown cause, vetoed its own skip,
+//! and graded as a compiler regression on every host without that backend.
 //!
 //! Both occupants are resolved at the root rather than tolerated. The
 //! backend-unavailable refusal IS a host-capability cause and is registered as
@@ -113,7 +111,7 @@
 /// target lowers to canonical IR here, but final emission needs the matching
 /// `mind-runtime` backend library. A host/build capability fact, never a
 /// defect — see `pipeline::CompileError::BackendUnavailable`.
-pub const TARGET_BACKEND_UNAVAILABLE: &str = "E5001";
+pub const TARGET_BACKEND_UNAVAILABLE: &str = "E6002";
 
 /// The installed MIND runtime library required by a non-CPU backend is absent:
 /// neither `MIND_LIB_DIR` nor `~/.mind/lib` holds it. Native CPU executables use
@@ -280,8 +278,9 @@ pub fn code_token(code: &str) -> String {
 ///
 /// The classifier below is defined over exactly this list, so adding a
 /// capability cause is one edit and forgetting one fails closed: an
-/// unregistered cause is still IN the reserved namespace, so it is seen, read
-/// as unknown, and vetoes the skip.
+/// unregistered implementation cause is still IN the reserved namespace, so
+/// it is seen, read as unknown, and vetoes the skip. Stable catalog exceptions
+/// are registered explicitly.
 pub const CAPABILITY_CODES: [&str; 4] = [
     TARGET_BACKEND_UNAVAILABLE,
     RUNTIME_LIBRARY_ABSENT,
@@ -289,14 +288,13 @@ pub const CAPABILITY_CODES: [&str; 4] = [
     NATIVE_TOOLCHAIN_ABSENT,
 ];
 
-/// The prefix reserved for CAUSE codes — the codes that answer "why was this
-/// refused", as opposed to the ordinary diagnostic codes (`E1001`, `E2002`,
-/// `E0308`) that answer "what is wrong with the program".
+/// The prefix reserved for implementation cause codes. The Core v1 catalog's
+/// stable backend-unavailable code (`E6002`) is the sole versioned exception.
 ///
 /// Scanning the namespace rather than a hand-listed set is what makes an
 /// omission safe in BOTH directions (see the module docs). Both directions are
-/// pinned mechanically: `every_cause_code_is_in_the_reserved_namespace` keeps
-/// every cause INSIDE the namespace, and
+/// pinned mechanically: `every_cause_code_is_recognized_by_the_classifier`
+/// keeps every cause visible to the classifier, and
 /// `the_reserved_namespace_holds_only_registered_causes` keeps every code
 /// inside the namespace owned by a cause.
 pub const CAUSE_CODE_PREFIX: &str = "E50";
@@ -304,6 +302,9 @@ pub const CAUSE_CODE_PREFIX: &str = "E50";
 /// Is `token` (the text between one `[` and the next `]`) a reserved cause
 /// code: [`CAUSE_CODE_PREFIX`] followed by at least one digit and nothing else?
 fn is_cause_code(token: &str) -> bool {
+    if token == TARGET_BACKEND_UNAVAILABLE {
+        return true;
+    }
     match token.strip_prefix(CAUSE_CODE_PREFIX) {
         Some(digits) => !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
         None => false,
@@ -499,13 +500,13 @@ mod tests {
     }
 
     #[test]
-    fn every_cause_code_is_in_the_reserved_namespace() {
-        // `code()` is an exhaustive match, so a new cause must choose a code;
-        // this keeps that code inside the namespace the classifier scans.
+    fn every_cause_code_is_recognized_by_the_classifier() {
+        // `code()` is an exhaustive match, so a new cause must choose a code.
+        // Most causes live in E50xx; E6002 is the stable Core v1 exception.
         for reason in FallbackReason::ALL {
             assert!(
                 is_cause_code(reason.code()),
-                "cause {reason:?} carries {}, outside the reserved {CAUSE_CODE_PREFIX} namespace",
+                "cause {reason:?} carries an unrecognized code {}",
                 reason.code()
             );
         }
@@ -579,7 +580,7 @@ mod tests {
         // fact. Before the code was registered it was an unknown token INSIDE
         // the scanned namespace, so it vetoed its own skip and every converted
         // call site graded it a compiler regression.
-        let stderr = "error[backend][E5001]: no backend available for target gpu\n";
+        let stderr = "error[backend][E6002]: no backend available for target gpu\n";
         assert!(
             stderr.contains(TARGET_BACKEND_UNAVAILABLE),
             "fixture drifted from the compiler's own code"
@@ -653,13 +654,11 @@ mod tests {
 
     // --- the exclusion direction, enforced over the crate's own sources ------
     //
-    // `every_cause_code_is_in_the_reserved_namespace` proves only that causes
-    // are INSIDE the namespace. Nothing proved the converse, and two ordinary
-    // diagnostics had already moved in (the backend-unavailable refusal and the
-    // manifest-export error) — one of them a real capability gap that the
-    // classifier therefore graded as a regression. The
-    // scan below closes that direction: a code literal in the namespace that no
-    // cause owns fails the build.
+    // `every_cause_code_is_recognized_by_the_classifier` proves only that each
+    // cause is visible. Nothing proved the namespace's converse, and two
+    // ordinary diagnostics had already moved in. The scan below closes that
+    // direction: a code literal in the namespace that no cause owns fails the
+    // build.
 
     /// Every `E50<digits>` token in `text`, wherever it appears — a string
     /// literal, a doc comment or ordinary prose. Deliberately not restricted to

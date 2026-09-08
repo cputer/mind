@@ -117,7 +117,7 @@ pub(crate) fn fixed_array_field_unsupported(ir: &IRModule, struct_name: &str, fi
 /// inline scalar-cell ABI cannot describe. The runnable ABI gate normally
 /// reports this after lowering, but nested array-of-struct accesses can leave
 /// the receiver unresolved before that pass. Use the terminal structured
-/// refusal path so callers get an E6002 diagnostic and no partial artifact,
+/// refusal path so callers get an E6009 diagnostic and no partial artifact,
 /// rather than the historical unresolved-receiver panic or fabricated zero.
 #[cfg(feature = "std-surface")]
 pub(super) fn refuse_unrepresentable_field(

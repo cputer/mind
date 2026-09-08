@@ -74,7 +74,7 @@ const REAL_PROJECT_BUILD: &str = "error[build][E5005]: entry module was not nati
 /// cause until the namespace reservation was made mechanical — so the
 /// classifier read it as an unknown cause, vetoed its own skip, and graded a
 /// capability gap as a compiler regression on every backend-less host.
-const CAP_TARGET_BACKEND: &str = "error[backend][E5001]: no backend available for target gpu\n";
+const CAP_TARGET_BACKEND: &str = "error[backend][E6002]: no backend available for target gpu\n";
 
 /// An ordinary user error that used to occupy the cause namespace and now sits
 /// outside it (`E6xxx`): an invalid `Mind.toml [exports] c_abi` entry. It must

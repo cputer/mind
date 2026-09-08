@@ -21,9 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to called helpers, and scalar parameters clear stale tensor metadata.
 
 ### Fixed — aggregate constants preserve struct values (#247)
-- Struct-valued constants and fixed arrays of structs now lower their real
-  record handles instead of substituting zero, including indexed/nested field
-  reads and constants declared after their first function use.
+- Struct-valued constants and supported fixed arrays of structs now lower their
+  real record handles instead of substituting zero. Runnable struct fields are
+  currently limited to fixed arrays of `i64` or `f64`. A nested
+  `[Struct; N]` element-field receiver such as `items[i].field`, and narrow
+  aggregate shapes outside the inline scalar-cell ABI, are refused before
+  artifact publication.
 - Dynamic fixed arrays use ordered value-semantic `ArrayStore` construction,
   including fixed-array call arguments. Unresolved field reads and writes fail
   closed instead of producing or discarding a zero placeholder.
@@ -67,36 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper/loop/`-> bool`/root-cause shapes. `docs/ENGINE_CONSUMER_LIST.md` §6's "wire
   `Node::Assert`, retire `eval_asserts_in_stmts`" disposition is now the shipped state.
 
-### Fixed — the capability classifier's "reserved" cause-code namespace was not reserved
-- `src/diagnostics/capability.rs` classifies a refusal by reading every code in the reserved
-  `E50xx` namespace off the wire and merging fail-closed, on the stated premise that an
-  ordinary diagnostic can neither forge a capability verdict nor veto one. Two ordinary
-  diagnostics were already inside the namespace, so the premise did not hold: `mindc x.mind
-  --target gpu` refused with `error[backend][E5001]`, an unregistered in-namespace token,
-  which the classifier read as an unknown refusal cause and used to VETO its own skip —
-  grading a genuine host-capability gap as a compiler regression on every host without that
-  backend, the exact inversion the module exists to prevent. Only the inclusion direction
-  (every cause code is inside the namespace) had a test.
-- Both occupants are resolved at the root. `CompileError::BackendUnavailable` IS a
-  host-capability cause and is now registered as one
-  (`FallbackReason::TargetBackendUnavailable`), listed in `CAPABILITY_CODES`, and emitted
-  from the registry rather than from a code literal, so the refusal and the classifier cannot
-  disagree. `CompileError::InvalidManifestExport` is an ordinary user error and moved to the
-  new `E6xxx` manifest range, out of the cause namespace.
-- The exclusion direction is now MECHANICAL: `the_reserved_namespace_holds_only_registered_causes`
-  walks `$CARGO_MANIFEST_DIR/src` (scope derived, not a hand-copied file list) and fails the
-  build on any `E50<digits>` token — literal or prose — that no `FallbackReason` owns, with a
-  positive control proving the scan still sees an intruder and a non-vacuity assertion that it
-  read files and found codes. `FallbackReason::ALL` replaces the hand-copied variant lists, and
-  `the_capability_list_agrees_with_the_registry` pins `CAPABILITY_CODES` against
-  `is_capability()` in both directions.
-- `FallbackReason::merge` is now a precedence maximum over an exhaustive `precedence()` match
-  instead of a pairwise special case, so it is commutative and associative (a workspace verdict
-  cannot depend on which member printed first) and a new cause cannot be added without placing
-  itself in the order. Existing verdicts are unchanged.
-- Pinned end to end: the real `mindc --target gpu` refusal now grades `CapabilitySkip` (and
-  still fails under `MIND_BENCH_REQUIRE=1`), while the manifest-export twin grades `Failed` and
-  cannot veto a genuine gap sharing its stderr.
+### Fixed — capability and materialization diagnostics use distinct stable codes
+- Backend unavailability is a host-capability cause and now emits the Core v1
+  catalog assignment `E6002`. The capability classifier recognizes this stable
+  catalog exception alongside its reserved `E50xx` implementation-cause namespace.
+- Compiler-side materialization refusal now emits the fresh additive assignment
+  `E6009`. This includes deterministic resource-limit refusal and aggregate shapes
+  that cannot be represented by the runnable lowering ABI. Refusal is nonzero and
+  leaves no partial artifact.
+- `InvalidManifestExport` remains an ordinary user error outside the capability
+  namespace. Source scans retain exclusive ownership of `E50xx`, and focused tests
+  pin `E6002` and `E6009` as separate diagnostic contracts.
 
 
 ### Fixed — the release workflow could publish binaries from a commit CI had never checked

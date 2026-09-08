@@ -28,6 +28,12 @@ use crate::parser;
 use crate::runtime::types::BackendTarget;
 use crate::type_checker;
 
+/// Core v1 diagnostic for deterministic compiler-side materialization refusal.
+///
+/// `E6002` remains the stable backend-unavailable code. Materialization was
+/// added later and therefore owns a fresh additive catalog entry.
+pub const MATERIALIZATION_REFUSAL_CODE: &str = "E6009";
+
 #[cfg(feature = "autodiff")]
 use crate::autodiff;
 #[cfg(any(feature = "mlir-lowering", feature = "mlir-build"))]
@@ -152,7 +158,11 @@ impl CompileError {
                 vec![Diagnostic::error("ir-verify", "E3001", e.to_string())]
             }
             CompileError::Materialization(e) => {
-                vec![Diagnostic::error("materialization", "E6002", e.to_string())]
+                vec![Diagnostic::error(
+                    "materialization",
+                    MATERIALIZATION_REFUSAL_CODE,
+                    e.to_string(),
+                )]
             }
             CompileError::MissingFunctionName => vec![Diagnostic::error(
                 "autodiff",

@@ -10,6 +10,8 @@ MIND Core normalizes public-facing errors so tooling can parse them reliably.
   differentiation of Core IR modules.
 - **MLIR lowering errors**: failures while translating canonical IR into MLIR
   (behind the `mlir-lowering` feature).
+- **Runtime and artifact-production errors**: execution failures, unavailable
+  backends, and deterministic compiler-side materialization refusals.
 
 ## Diagnostic formats
 
@@ -57,6 +59,7 @@ Every diagnostic carries a stable code for the Core v1 pipeline phase:
 - IR verification: `E3xxx`
 - Autodiff: `E4xxx`
 - MLIR lowering: `E5xxx`
+- Runtime and artifact production: `E6xxx`
 
 Shape validation for Core v1 operators is also surfaced during type checking:
 
@@ -80,6 +83,18 @@ These are type-checking refusals before artifact emission. See
 `module { ... }` blocks are transparent declaration lists and share that
 namespace. Separate project files may declare structs with the same name.
 
+Two E6xxx assignments distinguish host capability from compiler lowering:
+
+- `E6002`: the requested backend is unavailable on the current host or build.
+- `E6009`: a language-valid aggregate cannot be materialized into the runnable
+  artifact representation, including a deterministic materialization limit.
+  This includes nested `[Struct; N]` element-field receivers, which do not yet
+  have a runnable representation, while fixed-array struct fields with `i64` or
+  `f64` scalar cells do.
+
+Both refusals exit nonzero. `E6009` is emitted before a runnable artifact is
+published and is not a type error.
+
 See [`docs/versioning.md`](versioning.md) for how these classes fit the stability
 contract.
 
@@ -87,7 +102,7 @@ contract.
 > server (`mind-ai`) returns short transport-layer codes in its
 > `=<seq> err code=... msg="..."` responses (e.g. `E005` unknown command;
 > `E101`–`E104` resource-budget rejections). These are protocol responses, not
-> compiler diagnostics, and do not overlap the four-digit `E1xxx`–`E5xxx`
+> compiler diagnostics, and do not overlap the four-digit `E1xxx`–`E6xxx`
 > pipeline codes above. The MAP resource budgets are documented in
 > [`docs/security.md`](security.md#map-protocol-resource-budgets).
 
