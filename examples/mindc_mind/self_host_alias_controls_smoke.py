@@ -3,7 +3,8 @@
 Each case is compiled twice: by the current pure-MIND stage1 executable and by
 the independently built Rust/evaluator shared library.  The generated native
 ELFs must both run to the expected exit value and agree byte-for-byte.  The
-cases target exact-name lookup, immutable branch frames, and width joins.
+cases target exact-name lookup, immutable branch frames, width joins, and
+declared-width value-if initializers.
 """
 
 import ctypes
@@ -115,6 +116,25 @@ CASES = [
         "    return y;\n"
         "}\nfn main() -> i64 { return compute(0); }\n",
         5,
+    ),
+    (
+        "alias_value_if_declared_width_predicate",
+        "type Byte = i8;\n"
+        "fn compute(c: i64) -> i64 {\n"
+        "    let y: Byte = if c == 1 { 300 } else { 300 };\n"
+        "    if y > 255 { return 1; }\n"
+        "    return 0;\n"
+        "}\nfn main() -> i64 { return compute(1); }\n",
+        0,
+    ),
+    (
+        "builtin_value_if_declared_width_predicate",
+        "fn compute(c: i64) -> i64 {\n"
+        "    let y: i8 = if c == 1 { 300 } else { 300 };\n"
+        "    if y > 255 { return 1; }\n"
+        "    return 0;\n"
+        "}\nfn main() -> i64 { return compute(1); }\n",
+        0,
     ),
 ]
 

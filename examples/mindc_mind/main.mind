@@ -42248,6 +42248,14 @@ pub fn selftest_native_elf_hb_from_tokens(tokens: Vec, src_addr: i64, hash_addr:
         return es_new();
     }
     let _ap: i64 = alias_annotate_params(src_addr, alias_status, ordered, n_fns, 0);
+    // Apply the immutable alias environment to every reachable function body
+    // before native lowering.  Parameter metadata alone resolves ABI widths;
+    // local alias bindings (including value-if initializers) need the same
+    // exact-span walk so their declaration width reaches nb_width_of_ann.
+    let alias_rc: i64 = alias_annotate_call_module(src_addr, alias_status, frt, items_addr, items_len, 0);
+    if alias_rc == alias_env_refusal() {
+        return es_new();
+    }
     // RI-C: does any REACHABLE (pruned) fn reference argv? Gates the entry argc/argv
     // capture so an argv-free program is byte-identical EVEN when std.cli (whose
     // args_from_os mentions the intrinsic) is seeded ahead of it — the scan is scoped
@@ -44417,11 +44425,28 @@ pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: i64, stm
         }
         let name: i64 = ast_child0(stmt);
         let ty: i64 = ast_child1(stmt);
+        let alias_ty: i64 = if ty == 0 {
+            0
+        } else {
+            let ak: i64 = alias_find_latest(aliases, src, ast_span_lo(ty), ast_span_hi(ty));
+            if ak >= 0 { 1 } else { 0 }
+        };
         let code: i64 = if ty == 0 {
             64
         } else {
             alias_type_code(src, aliases, ty)
         };
+        // Cache the resolved declaration width on the type leaf before native
+        // counting/lowering.  The ordinary nb_width_of_ann path already reads
+        // this slot for direct i8/i16/i32 spellings; alias-typed lets must seed
+        // the same slot or a value-if initializer remains wide even though its
+        // binding is narrow.  This is deliberately declaration-wide and applies
+        // to every alias spelling, including signed and unsigned chains.
+        if alias_ty == 1 {
+            if alias_is_narrow_code(code) == 1 {
+                __mind_store_i64(ty + 56, code);
+            }
+        }
         let next_env: i64 = alias_env_bind(env, src, name, code);
         return alias_annotate_call_stmts(src, aliases, frt, next_env, stmts, n, i + 1);
     }
