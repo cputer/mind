@@ -140,6 +140,14 @@ name = "fail_closed_cli_run"
 required-features = ["std-surface", "mlir-build"]
 
 [[test]]
+# Drives the `mindc` binary through native linked-project build/run paths. Keep
+# the target structurally absent when its compiler and cross-module surfaces are
+# unavailable; compiling it with a cfg that removes every test would report a
+# false-green zero-test pass.
+name = "build_run_runnable_blocker_gate"
+required-features = ["std-surface", "mlir-build", "cross-module-imports"]
+
+[[test]]
 name = "public_cpu_native_link"
 required-features = ["mlir-build"]
 

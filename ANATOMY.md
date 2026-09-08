@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1675 | **Est. tokens:** ~3206555
-**Generated:** 2026-09-08 09:10 UTC
+**Files:** 1675 | **Est. tokens:** ~3208324
+**Generated:** 2026-09-08 09:33 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29437 |
+| `./` | 33 | ~29535 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~748319 |
+| `tests/` | 384 | ~749990 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -214,7 +214,7 @@
 - `CODE_OF_CONDUCT.md` (~29 tok, tiny) — Code of Conduct
 - `COMPLETE_FILE_STRUCTURE.md` (~26 tok, tiny) — Repository Structure (Snapshot)
 - `CONTRIBUTING.md` (~2260 tok, huge) — Contributing to MIND
-- `Cargo.toml` (~3537 tok, huge) — [package]
+- `Cargo.toml` (~3635 tok, huge) — [package]
 - `GITHUB_SETUP_INSTRUCTIONS.md` (~240 tok, medium) — GitHub Setup (Quick)
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
@@ -1378,7 +1378,7 @@
 - `bool_literal_value_run.rs` (~740 tok, large) — Copyright 2025 STARGA Inc.
 - `bug6_tuple_destructure_u64_run.rs` (~1360 tok, large) — Copyright 2025 STARGA Inc.
 - `bug_f4_closure_shadow_run.rs` (~1567 tok, huge) — Copyright 2025 STARGA Inc.
-- `build_run_runnable_blocker_gate.rs` (~1164 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
+- `build_run_runnable_blocker_gate.rs` (~2835 tok, huge) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `bytes_buffer_run.rs` (~669 tok, large) — Copyright 2025 STARGA Inc.
 - `bytes_fixed_into_vec_run.rs` (~1764 tok, huge) — Copyright 2025 STARGA Inc.
 - `bytes_zero_run.rs` (~843 tok, large) — Copyright 2025 STARGA Inc.
