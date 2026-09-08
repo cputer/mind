@@ -91,6 +91,53 @@ fn imported_function_executes() {
 }
 
 #[test]
+fn nested_archive_entry_uses_invocation_manifest_for_import_execution() {
+    let root = common::scratch_dir("mindc-test-imports")
+        .join(format!("archive_root_no_git_{}", std::process::id()));
+    fs::create_dir_all(root.join("src")).expect("create source dir");
+    fs::create_dir_all(root.join("docs/mindc-repros")).expect("create nested repro dir");
+    assert!(
+        !root.join(".git").exists(),
+        "archive fixture must have no git marker"
+    );
+    fs::write(
+        root.join("Mind.toml"),
+        "[package]\nname = \"archive_imports\"\nversion = \"0.1.0\"\n\n[build]\nentry = \"main.mind\"\n",
+    )
+    .expect("write archive manifest");
+    fs::write(root.join("main.mind"), "fn main() -> i32 { return 0; }\n")
+        .expect("write archive entry");
+    fs::write(root.join("src/arithmetic.mind"), MODULE).expect("write imported module");
+    fs::write(
+        root.join("docs/mindc-repros/nested_imports.mind"),
+        r#"
+import arithmetic;
+
+#[test]
+fn imported_const_executes() {
+    assert arithmetic.UNIT == 8, "imported const";
+}
+
+#[test]
+fn imported_function_executes() {
+    assert arithmetic.times(arithmetic.UNIT, 5) == 40, "imported function";
+}
+"#,
+    )
+    .expect("write nested archive test");
+
+    let output = Command::new(common::mindc_bin())
+        .args(["test", "docs/mindc-repros/nested_imports.mind"])
+        .current_dir(&root)
+        .output()
+        .expect("run nested archive import test");
+    let text = output_text(&output);
+    assert!(output.status.success(), "{text}");
+    assert!(text.contains("running 2 tests"), "{text}");
+    assert!(text.contains("2 passed; 0 failed"), "{text}");
+}
+
+#[test]
 fn unexported_imported_const_is_refused() {
     let root = project(
         "eval_import_private_const",

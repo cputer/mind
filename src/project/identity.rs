@@ -49,9 +49,26 @@ pub fn find_project_root_for_file(entry_dir: &Path) -> Option<PathBuf> {
 
 /// Fallible companion used by build and project-scope callers.
 pub(crate) fn find_project_root_for_file_checked(entry_dir: &Path) -> Result<Option<PathBuf>> {
+    let invocation_dir = std::env::current_dir().ok();
+    find_project_root_for_file_checked_at(entry_dir, invocation_dir.as_deref())
+}
+
+/// Resolve an explicit entry against a caller-supplied invocation directory.
+///
+/// A source tree extracted from a git archive has no `.git` boundary. In that
+/// one case, an invocation made from a directory containing `Mind.toml` may
+/// still govern a nested entry, but only when the canonical entry directory
+/// remains below that invocation directory. Passing `None` preserves the
+/// historical standalone behavior and disables this archive-only fallback.
+pub(crate) fn find_project_root_for_file_checked_at(
+    entry_dir: &Path,
+    invocation_dir: Option<&Path>,
+) -> Result<Option<PathBuf>> {
     let Some(entry_dir) = canonical_dir(entry_dir)? else {
         return Ok(None);
     };
+
+    let invocation_dir = invocation_dir.map(canonical_dir).transpose()?.flatten();
 
     let mut git_root: Option<PathBuf> = None;
     let mut probe = entry_dir.clone();
@@ -83,9 +100,103 @@ pub(crate) fn find_project_root_for_file_checked(entry_dir: &Path) -> Result<Opt
         None => {
             if entry_dir.join("Mind.toml").exists() {
                 Ok(Some(entry_dir))
+            } else if let Some(invocation_root) = invocation_dir {
+                // The invocation root is the explicit trust boundary for an
+                // archive checkout. Do not climb to an unrelated parent, and
+                // canonicalise the manifest so a symlink cannot import a file
+                // from outside that boundary.
+                let manifest = invocation_root.join("Mind.toml");
+                let manifest_inside = manifest
+                    .canonicalize()
+                    .map(|path| path.starts_with(&invocation_root))
+                    .unwrap_or(false);
+                if entry_dir.starts_with(&invocation_root) && manifest_inside {
+                    Ok(Some(invocation_root))
+                } else {
+                    Ok(None)
+                }
             } else {
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_project_root_for_file_checked_at;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn manifest(root: &std::path::Path) {
+        fs::write(
+            root.join("Mind.toml"),
+            "[package]\nname = \"archive\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn archive_invocation_root_adopts_nested_entry_without_git() {
+        let td = TempDir::new().unwrap();
+        manifest(td.path());
+        let entry = td.path().join("docs").join("mindc-repros");
+        fs::create_dir_all(&entry).unwrap();
+
+        let got = find_project_root_for_file_checked_at(&entry, Some(td.path()))
+            .unwrap()
+            .expect("invocation-root manifest governs nested archive entry");
+        assert_eq!(got, fs::canonicalize(td.path()).unwrap());
+    }
+
+    #[test]
+    fn archive_invocation_root_does_not_adopt_entry_outside_boundary() {
+        let td = TempDir::new().unwrap();
+        manifest(td.path());
+        let outside = TempDir::new().unwrap();
+        let entry = outside.path().join("docs");
+        fs::create_dir_all(&entry).unwrap();
+
+        assert!(
+            find_project_root_for_file_checked_at(&entry, Some(td.path()))
+                .unwrap()
+                .is_none(),
+            "a manifest cannot govern an entry outside the invocation root"
+        );
+    }
+
+    #[test]
+    fn archive_invocation_does_not_adopt_unrelated_parent_manifest() {
+        let td = TempDir::new().unwrap();
+        manifest(td.path());
+        let invocation = td.path().join("project");
+        let entry = invocation.join("docs");
+        fs::create_dir_all(&entry).unwrap();
+
+        assert!(
+            find_project_root_for_file_checked_at(&entry, Some(&invocation))
+                .unwrap()
+                .is_none(),
+            "a parent manifest outside the invocation root must remain unrelated"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn archive_invocation_rejects_entry_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let td = TempDir::new().unwrap();
+        manifest(td.path());
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(outside.path().join("docs")).unwrap();
+        symlink(outside.path(), td.path().join("docs")).unwrap();
+
+        assert!(
+            find_project_root_for_file_checked_at(&td.path().join("docs"), Some(td.path()))
+                .unwrap()
+                .is_none(),
+            "a symlinked entry outside the invocation root must be refused"
+        );
     }
 }
