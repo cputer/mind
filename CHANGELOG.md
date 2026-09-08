@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — canonical semantic metadata cannot disappear at serialization boundaries
+- The reference IR carries owner-qualified aggregate schemas, function identities,
+  and semantic types scoped to their defining function or module. Resolved calls
+  are checked against that registry before emission.
+- Checked serialization, trace hashing, and evidence emission refuse metadata the
+  current wire format cannot represent. Binary loading validates the consumed
+  body and MAP envelope, including trailing data; bare readers refuse version
+  `0x03` aggregate tables they cannot retain.
+- These changes preserve existing wire layouts. A new semantic wire revision,
+  cross-profile semantic round trips, and native aggregate execution remain in
+  development.
+
 ### Fixed — project imports and lexical scope in `mindc test`
 - Tests inside transparent module blocks are discovered in source order.
   Duplicate module-level test names are refused, and function-local test
