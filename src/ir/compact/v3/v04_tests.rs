@@ -2,9 +2,11 @@
 // Licensed under the Apache License, Version 2.0.
 
 use super::{
-    MIC3_VERSION_V04, Mic3EncodeError, emit_mic3, emit_mic3_checked, parse_mic3_body,
-    parse_mic3_prefix,
+    Determinism, MIC3_VERSION_V04, Mic3EncodeError, SignatureStatus, emit_mic3, emit_mic3_checked,
+    emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence_checked, mic3_canonical_check,
+    mic3_evidence_report, mic3_signature_status, parse_mic3_body, parse_mic3_prefix,
 };
+use crate::ir::evidence::ir_trace_hash_checked;
 use crate::ir::{IRModule, Instr, ValueId};
 use crate::types::{
     CanonicalModuleTypes, FieldDraft, FunctionDeclaration, FunctionIdentity, FunctionKind,
@@ -214,6 +216,48 @@ fn v04_roundtrip_preserves_owner_signature_call_and_three_value_zero_scopes() {
 }
 
 #[test]
+fn v04_checked_evidence_and_signature_consumers_validate_complete_artifacts() {
+    let module = module_value_only();
+    let body = emit_mic3_checked(&module).expect("v0x04 body");
+    assert_eq!(body[4], MIC3_VERSION_V04);
+
+    let evidence = emit_mic3_with_evidence_checked(
+        &module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-test",
+    )
+    .expect("v0x04 evidence");
+    let report = mic3_evidence_report(&evidence).expect("v0x04 evidence report");
+    assert!(report.trace_hash_valid, "v0x04 trace hash must validate");
+    mic3_canonical_check(&evidence).expect("v0x04 evidence must be canonical");
+
+    let signed = emit_mic3_with_signed_evidence_checked(
+        &module,
+        "cpu",
+        None,
+        Determinism::Deterministic,
+        "v04-test",
+        &[7; 32],
+    )
+    .expect("signed v0x04 evidence");
+    let signed_report = mic3_evidence_report(&signed).expect("signed v0x04 report");
+    assert!(
+        signed_report.trace_hash_valid,
+        "signed v0x04 trace hash must validate"
+    );
+    assert!(
+        matches!(
+            mic3_signature_status(&signed),
+            Ok(SignatureStatus::Valid(_))
+        ),
+        "signed v0x04 artifact must verify"
+    );
+    mic3_canonical_check(&signed).expect("signed v0x04 evidence must be canonical");
+}
+
+#[test]
 fn missing_type_in_one_function_refuses_while_other_zero_scopes_remain_typed() {
     let module = scoped_module(true);
     let bundle = module.canonical_types.as_ref().expect("bundle");
@@ -235,6 +279,40 @@ fn missing_type_in_one_function_refuses_while_other_zero_scopes_remain_typed() {
         error.to_string().contains("parameter %0") && error.to_string().contains("ownerA::step"),
         "{error}"
     );
+}
+
+#[test]
+fn incomplete_v04_metadata_refuses_through_checked_consumers() {
+    let module = scoped_module(true);
+    assert!(matches!(
+        ir_trace_hash_checked(&module),
+        Err(Mic3EncodeError::InvalidCanonicalMetadata(_))
+    ));
+    assert!(matches!(
+        emit_mic3_with_evidence_checked(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-test",
+        ),
+        Err(crate::ir::compact::v3::EvidenceEmitError::Body(
+            Mic3EncodeError::InvalidCanonicalMetadata(_)
+        ))
+    ));
+    assert!(matches!(
+        emit_mic3_with_signed_evidence_checked(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-test",
+            &[7; 32],
+        ),
+        Err(crate::ir::compact::v3::EvidenceEmitError::Body(
+            Mic3EncodeError::InvalidCanonicalMetadata(_)
+        ))
+    ));
 }
 
 #[test]
@@ -293,6 +371,60 @@ fn module_value_zero_const_i64_has_a_fixed_draft_golden() {
         parsed.instrs.as_slice(),
         [Instr::ConstI64(ValueId(0), 42)]
     ));
+}
+
+#[test]
+fn every_truncated_canonical_body_is_refused() {
+    for module in [
+        module_value_only(),
+        scoped_module(false),
+        descriptor_only_module(false),
+    ] {
+        let bytes = emit_mic3_checked(&module).expect("complete canonical fixture");
+        parse_mic3_body(&bytes).expect("complete fixture must parse");
+        for cut in 0..bytes.len() {
+            assert!(
+                parse_mic3_body(&bytes[..cut]).is_err(),
+                "truncated canonical body accepted at {cut}/{}",
+                bytes.len()
+            );
+        }
+        parse_mic3_body(&bytes).expect("refusals must not poison the next decode");
+    }
+}
+
+#[test]
+fn single_bit_wire_mutations_refuse_or_roundtrip_exactly() {
+    let mut mutations = 0;
+    let mut refused = 0;
+    for module in [
+        module_value_only(),
+        scoped_module(false),
+        descriptor_only_module(false),
+    ] {
+        let bytes = emit_mic3_checked(&module).expect("complete canonical fixture");
+        for offset in 0..bytes.len() {
+            for bit in 0..8 {
+                let mut changed = bytes.clone();
+                changed[offset] ^= 1 << bit;
+                mutations += 1;
+                match parse_mic3_body(&changed) {
+                    Ok(parsed) => assert_eq!(
+                        emit_mic3_checked(&parsed).expect("admitted body must remain encodable"),
+                        changed,
+                        "accepted mutation changed bytes at offset {offset}, bit {bit}"
+                    ),
+                    Err(_) => refused += 1,
+                }
+            }
+        }
+        parse_mic3_body(&bytes).expect("mutations must not poison the next decode");
+    }
+    assert!(mutations > 128, "the mutation corpus must execute");
+    assert!(
+        refused > 0,
+        "malformed wire variants must actually be refused"
+    );
 }
 
 #[test]
