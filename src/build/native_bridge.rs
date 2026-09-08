@@ -207,7 +207,6 @@ pub fn run_native_backend_bridge(paths: &[String], out: &Option<String>, emit: &
     // including uncalled functions. The current bridge does not admit calls into
     // the seed standard library: unresolved edges and seed-name collisions refuse.
     // The seed compiler's own refusal is a second fence, with no backend fallback.
-    // enforced-by: RI-D1-PROFILE
     let fence_source = crate::build::native_image::compose_user_region(&user_sources);
 
     // ADMISSION over the merged program. The fence must reason about the same
@@ -274,6 +273,7 @@ pub fn run_native_backend_bridge(paths: &[String], out: &Option<String>, emit: &
     // Whole-module admission over that single lowering. The image is not pruned,
     // so an uncalled out-of-profile body still becomes bytes in the
     // artifact; reachability informs diagnostics, it does not narrow admission.
+    // enforced-by: RI-D1-PROFILE
     match crate::ir::frozen_profile::profile_frozen_admits(&merged_ir) {
         Ok(()) => {}
         Err(rejection) => {

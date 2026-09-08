@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1719 | **Est. tokens:** ~3332369
-**Generated:** 2026-09-08 23:17 UTC
+**Files:** 1719 | **Est. tokens:** ~3332519
+**Generated:** 2026-09-08 23:44 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 172 | ~441734 |
+| `examples/mindc_mind/` | 172 | ~441747 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -81,7 +81,7 @@
 | `scripts/` | 30 | ~114764 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
-| `scripts/sdlc/` | 2 | ~2756 |
+| `scripts/sdlc/` | 2 | ~2845 |
 | `sdk/ts/mic-map/` | 6 | ~16202 |
 | `sdk/ts/mic-map/dist/` | 36 | ~29044 |
 | `sdk/ts/mic-map/scripts/` | 1 | ~499 |
@@ -119,7 +119,7 @@
 | `src/ops/` | 3 | ~4764 |
 | `src/opt/` | 9 | ~53642 |
 | `src/package/` | 2 | ~1877 |
-| `src/parser/` | 4 | ~24395 |
+| `src/parser/` | 4 | ~24443 |
 | `src/phf/` | 1 | ~4955 |
 | `src/project/` | 16 | ~47539 |
 | `src/runtime/` | 3 | ~1485 |
@@ -800,7 +800,7 @@
 - `selfhost_so_provenance_smoke.py` (~2391 tok, huge) — Gate: `resolve_so()` must QUALIFY the `.so` it returns and REFUSE a stale one.
 - `sha256_hash_smoke.py` (~1284 tok, large) — # Copyright 2025 STARGA Inc.
 - `smoke_wiring_lint.py` (~8534 tok, huge) — smoke_wiring_lint.py — machine-checked contract for WHERE each
-- `stdlib_manifest_lint.py` (~2418 tok, huge) — stdlib_manifest_lint.py — machine-checked contract for WHICH std/*.mind
+- `stdlib_manifest_lint.py` (~2431 tok, huge) — stdlib_manifest_lint.py — machine-checked contract for WHICH std/*.mind
 - `struct_fields_smoke.py` (~1076 tok, large)
 - `struct_lit_smoke.py` (~2240 tok, huge)
 - `tc_differential_fuzz.py` (~13332 tok, huge) — tcdiff — differential fuzzer for the self-host source-position tc-rule ports.
@@ -938,7 +938,7 @@
 - `run_gate.py` (~8072 tok, huge) — run_gate.py — the shared gate runner that makes a VACUOUS PASS structurally fail.
 ### `scripts/sdlc/`
 
-- `enforcement_bijection.py` (~1415 tok, large) — A test must never outlive the rule it asserts.
+- `enforcement_bijection.py` (~1504 tok, huge) — A test must never outlive the rule it asserts.
 - `lost_by_merge.py` (~1341 tok, large) — Fail a merge that silently DROPPED a line both parents agreed on.
 ### `scripts/`
 
@@ -1257,7 +1257,7 @@
 
 - `eval_imports.rs` (~1324 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `expand_bimap.rs` (~16544 tok, huge) — An `#[bimap]` attribute on an `enum` declares a one-to-one correspondence
-- `import_list_tests.rs` (~2716 tok, huge) — Completeness of the parser-owned import list.
+- `import_list_tests.rs` (~2764 tok, huge) — Completeness of the parser-owned import list.
 - `trivia.rs` (~3811 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/phf/`
 

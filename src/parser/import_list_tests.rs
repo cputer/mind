@@ -90,7 +90,10 @@ fn an_import_in_an_else_branch_is_recorded() {
     );
 }
 
+// `while` is a `std-surface` grammar arm; the no-feature parser deliberately
+// rejects it, so this container control belongs to the matching feature profile.
 #[test]
+#[cfg(feature = "std-surface")]
 fn an_import_in_a_while_body_is_recorded() {
     assert_records(
         "while body",

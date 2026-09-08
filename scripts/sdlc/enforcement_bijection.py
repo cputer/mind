@@ -44,7 +44,15 @@ def scan() -> tuple[dict, dict]:
     for p in ROOT.rglob("*"):
         if not p.is_file() or p.suffix not in EXTS:
             continue
-        if any(part in SKIP_DIRS for part in p.parts):
+        rel_path = p.relative_to(ROOT)
+        # `src/build` is source code, while the other `build` directories are
+        # generated output. Keep the source module visible to this lint without
+        # traversing unrelated build products.
+        if any(
+            part in SKIP_DIRS
+            and not (part == "build" and rel_path.parts[:2] == ("src", "build"))
+            for part in rel_path.parts
+        ):
             continue
         try:
             txt = p.read_text(encoding="utf-8", errors="replace")
@@ -52,7 +60,7 @@ def scan() -> tuple[dict, dict]:
             continue
         if "enforce" not in txt:            # cheap pre-filter
             continue
-        rel = str(p.relative_to(ROOT))
+        rel = str(rel_path)
         for m in ENFORCED_BY.finditer(txt):
             enforced.setdefault(m.group(1), []).append(rel)
         for m in ENFORCES.finditer(txt):

@@ -5,14 +5,14 @@ modules each consumer links.
 enforces: STDLIB-MANIFEST
 
 This lint IS the test for the STDLIB-MANIFEST rule: delete the manifest read in
-`mindc.rs::frozen_std_seed_modules` (or let any consumer's membership drift) and
+`native_bridge.rs::frozen_std_seed_modules` (or let any consumer's membership drift) and
 check 3 / check 6 below go red. The `enforced-by:` sites are the readers.
 
 WHY THIS EXISTS
 ---------------
 "Which std modules go into the native backend's std blob" was asserted by
 SEVENTEEN hand-copied literal lists — `STD_MODULES` in
-`src/bin/mindc.rs::run_native_backend_bridge` plus sixteen `_STDLIB_MODULES` /
+`src/build/native_bridge.rs::run_native_backend_bridge` plus sixteen `_STDLIB_MODULES` /
 `STD_MODULES` copies across `examples/mindc_mind/*.py` — with nothing executable
 asserting they agreed. The bridge's own comment admitted it:
 
@@ -38,7 +38,7 @@ WHAT IS CHECKED
      manifest header — a positive pin on the seed SET and its ORDER, so a reseed
      event cannot land as a quiet one-line edit.
   3. the Rust bridge reads the manifest and carries no literal list of its own.
-  4. `mindc.rs::FROZEN_STD_SEED_COUNT` == `_stdlib_manifest.FROZEN_STD_SEED_COUNT`
+  4. `native_bridge.rs::FROZEN_STD_SEED_COUNT` == `_stdlib_manifest.FROZEN_STD_SEED_COUNT`
      == the manifest's actual seed count.
   5. `STDLIB_MIND_SOURCES` <-> the manifest's `bundled` column, BOTH directions.
   6. every REMAINING hand-copied `_STDLIB_MODULES` / `STD_MODULES` literal in
@@ -68,7 +68,7 @@ sys.path.insert(0, str(_HERE))
 
 import _stdlib_manifest  # noqa: E402
 
-_BRIDGE_RS = _REPO / "src" / "bin" / "mindc.rs"
+_BRIDGE_RS = _REPO / "src" / "build" / "native_bridge.rs"
 _STDLIB_RS = _REPO / "src" / "project" / "stdlib.rs"
 _STD_DIR = _REPO / "std"
 
@@ -147,12 +147,12 @@ def main(argv):
         rust_count = int(m.group(1))
         if rust_count != len(manifest_seed):
             errors.append(
-                f"mindc.rs FROZEN_STD_SEED_COUNT={rust_count} but the manifest declares "
+                f"native_bridge.rs FROZEN_STD_SEED_COUNT={rust_count} but the manifest declares "
                 f"{len(manifest_seed)} seed modules"
             )
         if rust_count != _stdlib_manifest.FROZEN_STD_SEED_COUNT:
             errors.append(
-                f"mindc.rs FROZEN_STD_SEED_COUNT={rust_count} but "
+                f"native_bridge.rs FROZEN_STD_SEED_COUNT={rust_count} but "
                 f"_stdlib_manifest.FROZEN_STD_SEED_COUNT="
                 f"{_stdlib_manifest.FROZEN_STD_SEED_COUNT}"
             )
