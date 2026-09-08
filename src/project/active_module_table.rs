@@ -20,6 +20,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::module_table::ModuleTable;
 
+type ResolvedImportMap = BTreeMap<(String, Vec<String>), String>;
+type QualifiedImportMap = BTreeMap<(String, usize, usize, String, bool), String>;
+
 thread_local! {
     static ACTIVE: RefCell<Option<ModuleTable>> = const { RefCell::new(None) };
     /// Legacy whole-project checks intentionally expose the supplied files as
@@ -28,13 +31,13 @@ thread_local! {
     /// Import spellings resolved during manifest-bounded source capture.
     /// Keys include the importing owner so a unique basename cannot leak
     /// across modules or override an exact qualified path.
-    static ACTIVE_RESOLVED_IMPORTS: RefCell<Option<BTreeMap<(String, Vec<String>), String>>> =
+    static ACTIVE_RESOLVED_IMPORTS: RefCell<Option<ResolvedImportMap>> =
         const { RefCell::new(None) };
     /// Evaluator parsing keeps the owner qualifier for namespace references,
     /// while the ordinary AST intentionally folds `mod.name` to `name`.
     /// Keep those references span-scoped during evaluator setup so qualified
     /// access can be admitted without making an ambiguous bare name visible.
-    static ACTIVE_QUALIFIED_IMPORTS: RefCell<Option<BTreeMap<(String, usize, usize, String, bool), String>>> =
+    static ACTIVE_QUALIFIED_IMPORTS: RefCell<Option<QualifiedImportMap>> =
         const { RefCell::new(None) };
 }
 
@@ -74,7 +77,7 @@ pub(crate) fn resolve_import(owner: Option<&str>, path: &[String]) -> Option<Str
 /// `Some(empty)` means the owner was captured but has no local imports; `None`
 /// means this is a legacy table installation without captured project scope.
 fn captured_import_targets_from_map(
-    map: Option<&BTreeMap<(String, Vec<String>), String>>,
+    map: Option<&ResolvedImportMap>,
     owner: Option<&str>,
 ) -> Option<BTreeSet<String>> {
     let owner = owner?;
@@ -326,17 +329,17 @@ impl Guard {
 /// map on every exit path. Kept separate from the export-table guard so the
 /// pre-existing table API remains unchanged for non-project callers.
 pub(crate) struct ResolvedImportsGuard {
-    previous: Option<BTreeMap<(String, Vec<String>), String>>,
+    previous: Option<ResolvedImportMap>,
 }
 
 /// Installs the validated namespace references for one evaluator module and
 /// restores the previous set on every exit path.
 pub(crate) struct QualifiedImportsGuard {
-    previous: Option<BTreeMap<(String, usize, usize, String, bool), String>>,
+    previous: Option<QualifiedImportMap>,
 }
 
 impl QualifiedImportsGuard {
-    pub(crate) fn install(refs: BTreeMap<(String, usize, usize, String, bool), String>) -> Self {
+    pub(crate) fn install(refs: QualifiedImportMap) -> Self {
         let previous = ACTIVE_QUALIFIED_IMPORTS.with(|cell| cell.borrow_mut().replace(refs));
         Self { previous }
     }
@@ -349,7 +352,7 @@ impl Drop for QualifiedImportsGuard {
 }
 
 impl ResolvedImportsGuard {
-    pub(crate) fn install(imports: BTreeMap<(String, Vec<String>), String>) -> Self {
+    pub(crate) fn install(imports: ResolvedImportMap) -> Self {
         let previous = ACTIVE_RESOLVED_IMPORTS.with(|cell| cell.borrow_mut().replace(imports));
         Self { previous }
     }

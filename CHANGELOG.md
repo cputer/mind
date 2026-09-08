@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol release are separate unfinished steps. See
   [the draft scope](docs/mic3-v04-draft.md).
 
+### Added — native project entry and import composition
+- Native executable builds discover the manifest entry, capture and validate the
+  local module closure once, and enforce the resolver's export boundaries before
+  emission. An imported sibling cannot supply a missing entry `main`.
+- Supported scalar and control-flow imports execute through the pure-MIND ELF
+  emitter. Pinned single-file artifacts retain their bytes. Duplicate bare
+  definitions, unsupported emit kinds, and unresolved imports fail before
+  artifact publication.
+- Imported aliases, structs, and enums are temporarily refused, including private
+  or unused declarations. This prevents merged lowering from replacing one
+  module's type with another's and silently narrowing a result. Removing this
+  restriction requires preserving source owners through lowering; this change
+  does not enable native aggregate or full-language execution.
+
 ### Fixed — canonical semantic metadata cannot disappear at serialization boundaries
 - The reference IR carries owner-qualified aggregate schemas, function identities,
   and semantic types scoped to their defining function or module. Resolved calls

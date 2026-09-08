@@ -23,6 +23,9 @@ mod artifact;
 pub mod cache;
 mod driver_error;
 mod error;
+pub mod native_bridge;
+pub mod native_image;
+pub mod native_scope;
 mod project_transaction;
 
 /// Incremental-cache KEY construction — every input that can change the

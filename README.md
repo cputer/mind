@@ -226,6 +226,23 @@ arity + per-arg types against the imported declaration and returns
 the declared return type; an `export { ... }`-block donor falls back
 to Phase-A loose typing.
 
+### Native project builds
+
+`mindc build --backend native` resolves a project's manifest entry and captured
+local imports when built with `std-surface,cross-module-imports`. It checks each
+module's declared export boundary before composing the supported scalar/control
+flow program for the pure-MIND x86-64 ELF emitter. The entry module must supply
+`main`; a sibling's `main` cannot become the program entry.
+
+This bridge has a temporary whole-source restriction: an imported module with
+any type alias, struct, or enum is refused, even if that declaration is private
+or unused. Merged lowering does not yet preserve those declarations' source
+owners. Duplicate bare definitions, unresolved imports, unsupported operations,
+and unsupported library emit kinds also fail before artifact publication.
+Ordinary imported scalar functions execute, and the pinned single-file corpus
+retains byte-identical output. This increment does not complete native aggregate,
+floating-point, GPU, or full-language Rust independence.
+
 ## Compilation cache (`libmind::cache`)
 
 Content-addressed caching layer in `src/cache/` keyed by compiler version,
@@ -343,8 +360,8 @@ lanes pending RFC 0021 step 5 demotion to `mind-model@2`. See
 
 ## Testing
 
-The MIND compiler includes a comprehensive test suite with 2,659+ tests
-(`#[test]` / `#[tokio::test]` across `src/` and `tests/`) in 350+ test files
+The MIND compiler includes a comprehensive test suite with 2,880+ tests
+(`#[test]` / `#[tokio::test]` across `src/` and `tests/`) in 378+ test files
 covering parsing, type checking, IR generation, MLIR lowering, and execution.
 Both figures are RE-DERIVED from the tree by `scripts/check_claims.py`
 (`[counts]` in `config/capabilities.toml`): the Docs Claims gate fails if the

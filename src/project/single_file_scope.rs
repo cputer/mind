@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::ast::{Module, Node};
+use crate::ast::Module;
 
 use super::sources::{canonical_project_root, resolve_project_entry};
 use super::{
@@ -223,11 +223,12 @@ pub fn discover_with_source(
     target_block: &str,
     entry_source: &str,
 ) -> Result<Discovery> {
-    let entry_module = match crate::parser::parse(entry_source) {
-        Ok(module) => module,
+    let (entry_module, entry_imports) = match crate::parser::parse_with_imports(entry_source) {
+        Ok(pair) => pair,
         Err(_) => return Ok(Discovery::SingleTranslationUnit),
     };
-    let direct = local_import_paths(&entry_module);
+    let _ = &entry_module;
+    let direct = local_import_segments(&entry_imports);
     if direct.is_empty() {
         return Ok(Discovery::SingleTranslationUnit);
     }
@@ -265,6 +266,7 @@ pub fn discover_with_source(
         &entry,
         entry_source,
         entry_module,
+        entry_imports,
         &candidates,
         &source_root,
     )?))
@@ -283,15 +285,23 @@ pub fn capture_project_scope(
     candidates: &[PathBuf],
     source_root: &Path,
 ) -> Result<ProjectScope> {
-    let entry_module = crate::parser::parse(entry_source)
+    let (entry_module, entry_imports) = crate::parser::parse_with_imports(entry_source)
         .map_err(|_| anyhow::anyhow!("entry {} does not parse", entry.display()))?;
-    capture_scope_from_paths(entry, entry_source, entry_module, candidates, source_root)
+    capture_scope_from_paths(
+        entry,
+        entry_source,
+        entry_module,
+        entry_imports,
+        candidates,
+        source_root,
+    )
 }
 
 fn capture_scope_from_paths(
     entry: &Path,
     entry_source: &str,
     entry_module: Module,
+    entry_imports: Vec<String>,
     candidates: &[PathBuf],
     source_root: &Path,
 ) -> Result<ProjectScope> {
@@ -309,6 +319,7 @@ fn capture_scope_from_paths(
         entry,
         entry_source,
         entry_module,
+        entry_imports,
         captured
             .iter()
             .map(|(path, source)| (*path, source.as_str())),
@@ -324,15 +335,23 @@ pub(crate) fn capture_project_scope_from_texts<'a>(
     candidates: impl IntoIterator<Item = (&'a Path, &'a str)>,
     source_root: &Path,
 ) -> Result<ProjectScope> {
-    let entry_module = crate::parser::parse(entry_source)
+    let (entry_module, entry_imports) = crate::parser::parse_with_imports(entry_source)
         .map_err(|_| anyhow::anyhow!("entry {} does not parse", entry.display()))?;
-    capture_scope(entry, entry_source, entry_module, candidates, source_root)
+    capture_scope(
+        entry,
+        entry_source,
+        entry_module,
+        entry_imports,
+        candidates,
+        source_root,
+    )
 }
 
 fn capture_scope<'a>(
     entry: &Path,
     entry_source: &str,
     entry_module: Module,
+    entry_imports: Vec<String>,
     candidates: impl IntoIterator<Item = (&'a Path, &'a str)>,
     source_root: &Path,
 ) -> Result<ProjectScope> {
@@ -341,6 +360,9 @@ fn capture_scope<'a>(
         module_path: String,
         source: String,
         module: Option<Module>,
+        /// The parser's own record for this candidate, captured with the same
+        /// parse that produced `module`. Empty when the source did not parse.
+        imports: Vec<String>,
     }
     let entry_canonical = entry.canonicalize().unwrap_or_else(|_| entry.to_path_buf());
     let entry_module_path = super::module_table::module_path_of(entry, source_root);
@@ -356,7 +378,10 @@ fn capture_scope<'a>(
             anyhow::bail!("multiple project sources resolve to module path {module_path}");
         }
         let source = source.to_string();
-        let module = crate::parser::parse(&source).ok();
+        let (module, imports) = match crate::parser::parse_with_imports(&source) {
+            Ok((m, i)) => (Some(m), i),
+            Err(_) => (None, Vec::new()),
+        };
         if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
             stems
                 .entry(stem.to_string())
@@ -370,6 +395,7 @@ fn capture_scope<'a>(
                 module_path,
                 source,
                 module,
+                imports,
             },
         );
     }
@@ -403,7 +429,7 @@ fn capture_scope<'a>(
     }
 
     let mut pending = BTreeSet::new();
-    for path in local_import_paths(&entry_module) {
+    for path in local_import_segments(&entry_imports) {
         if let Some(key) = resolve_import(&path, &by_path, &stems) {
             pending.insert(key);
         }
@@ -422,7 +448,8 @@ fn capture_scope<'a>(
                 candidate.path.display()
             )
         })?;
-        for path in local_import_paths(module) {
+        let _ = module;
+        for path in local_import_segments(&candidate.imports) {
             if let Some(dep) = resolve_import(&path, &by_path, &stems) {
                 if !linked.contains(&dep) {
                     pending.insert(dep);
@@ -433,14 +460,14 @@ fn capture_scope<'a>(
     }
 
     let mut resolved_imports = BTreeMap::new();
-    for path in local_import_paths(&entry_module) {
+    for path in local_import_segments(&entry_imports) {
         if let Some(target) = resolve_import(&path, &by_path, &stems) {
             resolved_imports.insert((entry_module_path.clone(), path), target);
         }
     }
     for (owner, candidate) in &by_path {
-        if let Some(module) = &candidate.module {
-            for path in local_import_paths(module) {
+        if candidate.module.is_some() {
+            for path in local_import_segments(&candidate.imports) {
                 if let Some(target) = resolve_import(&path, &by_path, &stems) {
                     resolved_imports.insert((owner.clone(), path), target);
                 }
@@ -488,24 +515,33 @@ fn capture_scope<'a>(
     })
 }
 
-fn local_import_paths(module: &Module) -> BTreeSet<Vec<String>> {
-    fn collect(items: &[Node], out: &mut BTreeSet<Vec<String>>) {
-        for item in items {
-            if let Node::Block { stmts, .. } = item {
-                collect(stmts, out);
-                continue;
-            }
-            let Node::Import { path, .. } = item else {
-                continue;
-            };
-            if !matches!(path.first().map(String::as_str), Some("std")) {
-                out.insert(path.clone());
-            }
-        }
-    }
-    let mut paths = BTreeSet::new();
-    collect(&module.items, &mut paths);
-    paths
+/// Local (non-`std`) import paths, from the PARSER'S OWN record.
+///
+/// Replaces a hand-rolled walk that recursed into `Node::Block` only. That walk
+/// could not see an import inside a function body, a branch, a loop, a match arm
+/// or a closure, and it could not see one under an expression wrapper such as a
+/// closure bound by `let` — a wildcard arm skips the wrapper before any
+/// statement-bearing node is reached. Enumerating containers cannot fix that
+/// class; it only moves the boundary.
+///
+/// `P::import_paths` is pushed unconditionally by both `parse_import` and
+/// `parse_use`, and `parse_stmt` accepts those keywords wherever a statement is
+/// accepted, so the record is container-independent by construction and is
+/// written at parse time — before any question of use, reachability or support.
+///
+/// Policy preserved exactly: `std` is dropped (satisfied by the seed blob), FULL
+/// dotted paths are split into ordered segments, and the `BTreeSet` return keeps
+/// the previous sorted, deduplicated set semantics these call sites rely on.
+fn local_import_segments(raw: &[String]) -> BTreeSet<Vec<String>> {
+    raw.iter()
+        .map(|dotted| {
+            dotted
+                .split('.')
+                .map(str::to_string)
+                .collect::<Vec<String>>()
+        })
+        .filter(|segs| !matches!(segs.first().map(String::as_str), Some("std")))
+        .collect()
 }
 
 fn common_ancestor_dir(files: &[PathBuf]) -> PathBuf {
@@ -535,17 +571,82 @@ mod tests {
     }
 
     #[test]
-    fn local_import_paths_are_sorted_and_exclude_std() {
-        let module = crate::parser::parse(
-            "import zed;\nimport std.vec;\nimport crate.alpha;\nimport zed;\n",
+    fn discovery_links_a_sibling_imported_only_from_inside_a_function() {
+        // The control root asked for: it must NOT be able to pass merely because
+        // the frozen compiler refuses nested imports. Nothing here runs the
+        // frozen compiler, or any backend at all. It asserts what DISCOVERY
+        // resolved, so the only way it passes is if the nested import was seen.
+        //
+        // MUTATION: restore the Block-only walk and this goes red — the entry's
+        // sole import lives inside a function body, so a Block-only walk sees an
+        // import-free entry and returns SingleTranslationUnit instead of a
+        // two-module project.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("Mind.toml"),
+            "[package]\nname = \"nested\"\nversion = \"0.1.0\"\n\n\
+             [build]\ntarget = \"cpu\"\nentry = \"src/main.mind\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("src/helper.mind"),
+            "export { helper }\n\npub fn helper(x: i64) -> i64 {\n    return x + 1;\n}\n",
+        )
+        .unwrap();
+        // The ONLY import is nested inside the function body.
+        let main_src = "fn main() -> i64 {\n    import helper;\n    return helper(6);\n}\n";
+        std::fs::write(root.join("src/main.mind"), main_src).unwrap();
+        let _ = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(root)
+            .status();
+
+        let entry = root.join("src/main.mind");
+        match discover_with_source(&entry, "cpu", main_src) {
+            Ok(Discovery::Project(scope)) => {
+                let linked: Vec<String> = scope
+                    .linked_sources()
+                    .map(|c| c.module_path().to_string())
+                    .collect();
+                assert!(
+                    linked.iter().any(|m| m.ends_with("helper")),
+                    "discovery must link the sibling named by a NESTED import; linked {linked:?}"
+                );
+            }
+            Ok(Discovery::SingleTranslationUnit) => panic!(
+                "discovery missed the nested import and treated the entry as a single \
+                 translation unit — this is the Block-only walk's failure mode"
+            ),
+            Ok(Discovery::MissingProject(imports)) => {
+                // Also acceptable evidence the import was SEEN, as long as it is named.
+                assert!(
+                    imports.iter().any(|i| i.contains("helper")),
+                    "the nested import must be named; got {imports:?}"
+                );
+            }
+            Err(e) => panic!("discovery failed: {e:#}"),
+        }
+    }
+
+    #[test]
+    fn local_import_segments_are_sorted_and_exclude_std() {
+        // Now driven by the parser's own record, and covering a NESTED import
+        // the previous Block-only walk could not see.
+        let (_module, raw) = crate::parser::parse_with_imports(
+            "import zed;\nimport std.vec;\nimport crate.alpha;\nimport zed;\n\
+             fn main() -> i64 {\n    import nested.dep;\n    return 1;\n}\n",
         )
         .unwrap();
         assert_eq!(
-            local_import_paths(&module).into_iter().collect::<Vec<_>>(),
+            local_import_segments(&raw).into_iter().collect::<Vec<_>>(),
             [
                 vec![String::from("crate"), String::from("alpha")],
+                vec![String::from("nested"), String::from("dep")],
                 vec![String::from("zed")],
-            ]
+            ],
+            "std excluded, duplicates absorbed, sorted, and the NESTED import present"
         );
     }
 

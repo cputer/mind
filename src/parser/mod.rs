@@ -27,6 +27,7 @@ use crate::diagnostics::{Diagnostic as PrettyDiagnostic, Span as DiagnosticSpan}
 use crate::types::ConvPadding;
 
 mod eval_imports;
+pub(crate) use eval_imports::parse_with_imports;
 pub(crate) mod expand_bimap;
 mod trivia;
 pub(crate) use eval_imports::{EvalImportRef, EvalImportRefKind, EvalParsedModule};
@@ -80,7 +81,7 @@ impl std::fmt::Display for ParseError {
     }
 }
 
-struct P<'a> {
+pub(crate) struct P<'a> {
     b: &'a [u8],
     pos: usize,
     /// Last segments imported as module qualifiers. Kept linear because import
@@ -6058,10 +6059,7 @@ fn parse_internal(
         Ok(mut module) => {
             let diags = expand_bimap::expand_bimap(&mut module, src, None);
             if diags.is_empty() {
-                Ok(EvalParsedModule {
-                    module,
-                    import_refs: p.eval_import_refs.take().unwrap_or_default(),
-                })
+                Ok(EvalParsedModule::take_from(module, &mut p))
             } else {
                 Err(diags
                     .into_iter()

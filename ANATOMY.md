@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1701 | **Est. tokens:** ~3284055
-**Generated:** 2026-09-08 22:13 UTC
+**Files:** 1719 | **Est. tokens:** ~3332382
+**Generated:** 2026-09-08 23:02 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~29722 |
+| `./` | 33 | ~29976 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -45,7 +45,7 @@
 | `benchmarks/jax_comparison/` | 5 | ~4689 |
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
-| `config/` | 2 | ~3329 |
+| `config/` | 2 | ~3347 |
 | `docs/` | 37 | ~103813 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
@@ -66,9 +66,9 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 172 | ~441005 |
+| `examples/mindc_mind/` | 172 | ~441734 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
-| `examples/mindc_mind/testdata/backend_native_bridge/` | 2 | ~415 |
+| `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
 | `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2138 |
 | `examples/native/` | 4 | ~1440 |
@@ -94,7 +94,7 @@
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
 | `src/bin/mindc/` | 1 | ~204 |
-| `src/build/` | 9 | ~29633 |
+| `src/build/` | 13 | ~48121 |
 | `src/build/cache/` | 3 | ~3150 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10613 |
@@ -108,7 +108,7 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 8 | ~90766 |
+| `src/ir/` | 9 | ~95045 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 14 | ~75479 |
@@ -119,9 +119,9 @@
 | `src/ops/` | 3 | ~4764 |
 | `src/opt/` | 9 | ~53642 |
 | `src/package/` | 2 | ~1877 |
-| `src/parser/` | 3 | ~20920 |
+| `src/parser/` | 4 | ~24395 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 16 | ~46361 |
+| `src/project/` | 16 | ~47539 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 386 | ~758264 |
+| `tests/` | 390 | ~776393 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -183,6 +183,7 @@
 | `tests/mindfuzz_cross_substrate/known_environmental/` | 2 | ~556 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
+| `tests/native_bridge_support/` | 1 | ~1114 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 163 | ~10627 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
@@ -222,7 +223,7 @@
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
-- `README.md` (~6872 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~7126 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `SECURITY.md` (~1538 tok, huge) — Security Policy
 - `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
@@ -420,7 +421,7 @@
 - `scientific_benchmark_raw.py` (~2485 tok, huge)
 ### `config/`
 
-- `capabilities.toml` (~2357 tok, huge) — [ir]
+- `capabilities.toml` (~2375 tok, huge) — [ir]
 - `token_pricing.toml` (~972 tok, large) — [pricing]
 ### `docs/`
 
@@ -650,7 +651,7 @@
 - `_selfhost_loop_reseed.py` (~1550 tok, huge) — Legacy Rust-seeded re-freeze implementation for the LOOP harness.
 - `_selfhost_so.py` (~3780 tok, huge) — Shared self-host `.so` resolver for the examples/mindc_mind smokes.
 - `_stdlib_manifest.py` (~1129 tok, large) — Shared reader for the committed std/*.mind manifest.
-- `backend_native_bridge_smoke.py` (~3256 tok, huge) — RI-D slice 1 gate (task #110): `mindc build --backend native` is a byte-faithful
+- `backend_native_bridge_smoke.py` (~3985 tok, huge) — RI-D slice 1 gate (task #110): `mindc build --backend native` is a byte-faithful
 - `bootstrap_smoke.py` (~2473 tok, huge)
 - `branch_shadow_crossbackend_smoke.py` (~2039 tok, huge) — #318 — branch-local `let` shadow must not leak across backends (the WEDGE gate).
 - `check_driver.mind` (~9782 tok, huge) — ===========================================================================
@@ -805,8 +806,15 @@
 - `tc_differential_fuzz.py` (~13332 tok, huge) — tcdiff — differential fuzzer for the self-host source-position tc-rule ports.
 ### `examples/mindc_mind/testdata/backend_native_bridge/`
 
-- `MANIFEST.txt` (~292 tok, medium) — # Pure-MIND native-ELF oracle (RI-D slice 1, task #110). Frozen from the pure-MI
+- `MANIFEST.txt` (~497 tok, medium) — # Pure-MIND native-ELF oracle (RI-D slice 1, task #110). Frozen from the pure-MI
 - `add.elf` (~123 tok, small) — ELF> @@@8
+- `add.mind` (~24 tok, tiny) — fn add(a: i64, b: i64) -> i64 {
+- `const_return.elf` (~100 tok, small) — ELF> @@@8
+- `const_return.mind` (~9 tok, tiny) — fn main() -> i64 {
+- `local_call.elf` (~119 tok, small) — ELF> @@@8
+- `local_call.mind` (~23 tok, tiny) — fn helper(x: i64) -> i64 {
+- `while_sum.elf` (~146 tok, small) — ELF> @@@8
+- `while_sum.mind` (~37 tok, tiny) — fn main() -> i64 {
 ### `examples/mindc_mind/testdata/`
 
 - `dtk_plan_parity_smoke.py` (~2452 tok, huge)
@@ -1044,7 +1052,11 @@
 
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~9594 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~9611 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_bridge.rs` (~4976 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_image.rs` (~2018 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_scope.rs` (~6258 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_scope_tests.rs` (~5219 tok, huge) — Seam tests for the captured-source snapshot and its module identities.
 - `project_transaction.rs` (~1908 tok, huge) — Copyright 2026 STARGA Inc.
 - `source_key.rs` (~3219 tok, huge) — Copyright 2025 STARGA Inc.
 - `source_snapshot_tests.rs` (~1337 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1193,7 +1205,8 @@
 - `evidence.rs` (~13387 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13664 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7690 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17724 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17733 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_closure.rs` (~4270 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4421 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21216 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
@@ -1242,8 +1255,9 @@
 - `mod.rs` (~1567 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/parser/`
 
-- `eval_imports.rs` (~565 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `eval_imports.rs` (~1324 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `expand_bimap.rs` (~16544 tok, huge) — An `#[bimap]` attribute on an `enum` declares a one-to-one correspondence
+- `import_list_tests.rs` (~2716 tok, huge) — Completeness of the parser-owned import list.
 - `trivia.rs` (~3811 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/phf/`
 
@@ -1253,7 +1267,7 @@
 - `pipeline.rs` (~6535 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
-- `active_module_table.rs` (~3688 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `active_module_table.rs` (~3677 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `build_input_snapshot.rs` (~4632 tok, huge) — Copyright 2025 STARGA Inc.
 - `build_lock.rs` (~1630 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1263,7 +1277,7 @@
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~7642 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~5251 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~6440 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `source_snapshot.rs` (~608 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~5153 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1954,6 +1968,15 @@
 - `narrow_tuple_pr216_run.rs` (~1409 tok, large) — Copyright 2025 STARGA Inc.
 - `narrow_unsigned_div_zero_run.rs` (~1247 tok, large) — Copyright 2025 STARGA Inc.
 - `narrowing_check.rs` (~438 tok, medium) — Regression test for the silent i64->i32 narrowing miscompile found by MIND-Fuzz
+### `tests/native_bridge_support/`
+
+- `mod.rs` (~1114 tok, large) — Shared harness for the native module-bridge integration controls.
+### `tests/`
+
+- `native_closure_admission.rs` (~3941 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_default_profile_imports.rs` (~2840 tok, huge) — Default-feature-profile controls for the native backend's import admission.
+- `native_module_bridge_controls.rs` (~7889 tok, huge) — Native module-bridge controls: SOURCE RESOLUTION and ADMISSION.
+- `native_module_bridge_visibility_controls.rs` (~3459 tok, huge) — Native module-bridge controls: VISIBILITY, EMIT KIND, CROSS-INVOCATION
 - `native_opt_wiring.rs` (~1953 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_numerics_lint.rs` (~4079 tok, huge) — Copyright 2025 STARGA Inc.
 - `nested_block_surface_run.rs` (~990 tok, large) — Copyright 2025 STARGA Inc.

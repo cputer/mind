@@ -26,6 +26,7 @@ pub mod compact;
 mod evidence;
 pub(crate) mod fp_mode;
 pub mod frozen_profile;
+pub mod native_closure;
 mod print;
 mod verify;
 
@@ -1185,7 +1186,7 @@ pub(crate) fn canonical_array_type_in(
 /// in any function at any nesting depth (a `FnDef` inside a `Region` inside an
 /// `If` still counts), so it crosses `FnDef` boundaries the scope walks stop at.
 #[cfg(feature = "std-surface")]
-fn instr_bodies(instr: &Instr) -> [&[Instr]; 3] {
+pub(crate) fn instr_bodies(instr: &Instr) -> [&[Instr]; 3] {
     const NONE: &[Instr] = &[];
     match instr {
         Instr::FnDef { body, .. } => [body.as_slice(), NONE, NONE],

@@ -39,11 +39,41 @@ STD_MODULES = [
     "net", "process", "reactor", "regex", "ring", "sha256", "string", "time", "toml",
     "tui", "vec",
 ]
-ADD_PROG = (
-    "fn add(a: i64, b: i64) -> i64 {\n    return a + b;\n}\n"
-    "fn main() -> i64 {\n    return add(2, 3);\n}\n"
-)
-ADD_EXPECT_EXIT = 5
+TESTDATA = HERE / "testdata" / "backend_native_bridge"
+MANIFEST = TESTDATA / "MANIFEST.txt"
+
+
+def manifest_corpus():
+    """Every pinned program, read from the committed manifest.
+
+    The gate used to hardcode ONE program, so its "byte anchor" covered a single
+    492-byte artifact and a regression in any other shape -- a bare return, a
+    local call, a loop -- was invisible here. Deriving the corpus from the
+    manifest means adding a row is enough to extend coverage, and a row with no
+    source file or no oracle is a FAILURE rather than a silent skip.
+    """
+    rows = []
+    for line in MANIFEST.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) != 4:
+            raise SystemExit(f"malformed manifest row: {line!r}")
+        name, size, sha, exit_code = parts
+        rows.append(
+            {
+                "name": name,
+                "size": int(size),
+                "sha256": sha,
+                "expect_exit": int(exit_code),
+                "source": TESTDATA / f"{name}.mind",
+                "oracle": TESTDATA / f"{name}.elf",
+            }
+        )
+    if not rows:
+        raise SystemExit("manifest declares no programs -- a corpus of zero proves nothing")
+    return rows
 
 
 def std_blob() -> bytes:
@@ -206,43 +236,77 @@ def main() -> int:
         print(f"BLOCKED: stage1.elf missing at {STAGE1}")
         return 2
 
-    add = ADD_PROG.encode()
+    corpus = manifest_corpus()
+    add = None
+    add_direct = None
     fails = []
     with tempfile.TemporaryDirectory() as td:
         td = pathlib.Path(td)
 
-        # 1. pass-through: bridge output == stage1.elf-direct output (zero bytes added).
-        de, do = stage1_direct(add)
-        be, bd, berr = bridge_build(add, td / "add.elf")
-        dh, bh = hashlib.sha256(do).hexdigest(), hashlib.sha256(bd).hexdigest()
-        if be != 0 or de != 0 or not bd or bd != do:
-            fails.append(
-                f"pass-through: bridge_exit={be} direct_exit={de} bridge_sha={bh} "
-                f"direct_sha={dh} stderr={berr[:200]!r}"
-            )
-        else:
-            print(f"  ok    pass-through: bridge == stage1-direct ({len(bd)}B sha={bh})")
+        # Gates 1-3, per manifest row. Every pinned program is built through the
+        # bridge and checked three ways: the bridge adds zero bytes over invoking
+        # stage1.elf directly, the artifact matches its committed oracle, and it
+        # runs with the declared exit code.
+        for row in corpus:
+            name = row["name"]
+            if not row["source"].exists():
+                fails.append(f"{name}: manifest row has no source at {row['source']}")
+                continue
+            src = row["source"].read_bytes()
 
-        # 2. functional: the emitted ELF runs with the expected exit code.
-        if bd:
-            p = td / "run.elf"
-            p.write_bytes(bd)
-            p.chmod(0o755)
-            rc = subprocess.run([str(p)]).returncode
-            if rc != ADD_EXPECT_EXIT:
-                fails.append(f"functional: emitted ELF exit={rc} expected {ADD_EXPECT_EXIT}")
-            else:
-                print(f"  ok    functional: emitted ELF exit={rc}")
+            # 1. pass-through: bridge output == stage1.elf-direct output.
+            de, do = stage1_direct(src)
+            be, bd, berr = bridge_build(src, td / f"{name}.elf")
+            dh = hashlib.sha256(do).hexdigest()
+            bh = hashlib.sha256(bd).hexdigest() if bd else ""
+            if be != 0 or de != 0 or not bd or bd != do:
+                fails.append(
+                    f"{name} pass-through: bridge_exit={be} direct_exit={de} "
+                    f"bridge_sha={bh} direct_sha={dh} stderr={berr[:200]!r}"
+                )
+                continue
+            print(f"  ok    {name}: bridge == stage1-direct ({len(bd)}B sha={bh[:16]})")
 
-        # 3. frozen pure-MIND byte anchor (catches stage1.elf drift).
-        if ORACLE.exists():
-            oh = hashlib.sha256(ORACLE.read_bytes()).hexdigest()
-            if oh != bh:
-                fails.append(f"oracle: bridge sha {bh} != frozen pure-MIND oracle {oh}")
+            # Keep the first row's bytes for the toolchain-absence proof below.
+            if add is None:
+                add, add_direct = src, do
+
+            # 2. the artifact matches the size and hash the manifest pins.
+            if len(bd) != row["size"] or bh != row["sha256"]:
+                fails.append(
+                    f"{name} manifest: got {len(bd)}B sha={bh} "
+                    f"expected {row['size']}B sha={row['sha256']}"
+                )
             else:
-                print(f"  ok    oracle: bridge == frozen pure-MIND anchor ({oh})")
-        else:
-            fails.append(f"oracle: missing {ORACLE}")
+                print(f"  ok    {name}: matches pinned manifest row")
+
+            # 3. the committed oracle file agrees with the manifest and the build.
+            if row["oracle"].exists():
+                oh = hashlib.sha256(row["oracle"].read_bytes()).hexdigest()
+                if oh != bh:
+                    fails.append(f"{name} oracle: bridge sha {bh} != committed oracle {oh}")
+                else:
+                    print(f"  ok    {name}: bridge == committed oracle")
+            else:
+                fails.append(f"{name} oracle: missing {row['oracle']}")
+
+            # 4. functional: the emitted ELF runs with the expected exit code.
+            rp = td / f"run_{name}.elf"
+            rp.write_bytes(bd)
+            rp.chmod(0o755)
+            rc = subprocess.run([str(rp)]).returncode
+            if rc != row["expect_exit"]:
+                fails.append(f"{name} functional: exit={rc} expected {row['expect_exit']}")
+            else:
+                print(f"  ok    {name}: emitted ELF exit={rc}")
+
+        if add is None:
+            fails.append("no manifest row produced a build -- the corpus proved nothing")
+        # Gates 4 and 6 need one good build's bytes. Gate 1 asserted the bridge
+        # output equals the stage1-direct output for this row, so the direct bytes
+        # ARE the bridge bytes. `None` here would trip gate 6's fail-closed arm on
+        # every run, which is why it is set from the loop rather than left unset.
+        bd = do = add_direct
 
         # 4. run-to-run determinism of the pure-MIND compiler.
         _, do2 = stage1_direct(add)
