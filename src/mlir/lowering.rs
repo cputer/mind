@@ -2656,7 +2656,9 @@ impl LoweringContext {
             // catch-all still errors `UnsupportedOp` on `Instr::Call`
             // exactly as before — byte-identical, moat held.
             #[cfg(feature = "std-surface")]
-            Instr::Call { dst, name, args } => {
+            Instr::Call {
+                dst, name, args, ..
+            } => {
                 // Intrinsic dispatch and argument validation share one classification.
                 // Narrow memory values and f64 bitcasts are already admitted by
                 // the scalar cases below; neither permits tensors or vectors.
