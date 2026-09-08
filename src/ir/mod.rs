@@ -40,8 +40,7 @@ pub use fp_mode::{FpMode, fp_contract_mode};
 pub use print::format_ir_module;
 pub use verify::{IrVerifyError, SsaRule, SsaViolation, check_ssa_well_formed, verify_module};
 
-/// Whole-project enum registry. Empty for single files; project builds set and
-/// clear it with the cross-module registry.
+/// Whole-project enum registry; single-file compilation leaves it empty.
 #[derive(Debug, Clone, Default)]
 pub struct GlobalEnums {
     /// Enum type names declared across the project. The parser checks this to
