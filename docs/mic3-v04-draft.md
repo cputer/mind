@@ -58,8 +58,10 @@ verification remains a separate operation from parsing an envelope.
 
 ## Admission limits
 
-Bodies are limited to 10 MiB. Descriptor nesting is limited to 64 and instruction
-nesting to 256. Fixed extents retain the existing `u32::MAX` bound and semantic
+Bodies and complete body-plus-MAP artifacts are limited to 10 MiB. Checked
+evidence emitters return a structured refusal before appending an oversized
+envelope; their infallible wrappers panic on refusal. Descriptor nesting is
+limited to 64 and instruction nesting to 256. Fixed extents retain the existing `u32::MAX` bound and semantic
 descriptor accounting retains its existing scope. Value IDs must admit safe
 exclusive bounds, and module `next_id` must cover module values.
 

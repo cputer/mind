@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1701 | **Est. tokens:** ~3284010
-**Generated:** 2026-09-08 22:03 UTC
+**Files:** 1701 | **Est. tokens:** ~3284055
+**Generated:** 2026-09-08 22:13 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3329 |
-| `docs/` | 37 | ~103769 |
+| `docs/` | 37 | ~103813 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -111,7 +111,7 @@
 | `src/ir/` | 8 | ~90766 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
-| `src/ir/compact/v3/` | 14 | ~75478 |
+| `src/ir/compact/v3/` | 14 | ~75479 |
 | `src/ir/compact/v3/v04/` | 3 | ~13696 |
 | `src/lint/` | 2 | ~4001 |
 | `src/lint/rules/` | 6 | ~10017 |
@@ -470,7 +470,7 @@
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
 - `ir-stability.md` (~1658 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
-- `mic3-v04-draft.md` (~1147 tok, large) — MIC3 `0x04` core codec — implementation draft
+- `mic3-v04-draft.md` (~1191 tok, large) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -1187,7 +1187,7 @@
 - `mod.rs` (~1266 tok, large) — Copyright 2025-2026 STARGA Inc.
 ### `src/ir/compact/v3/`
 
-- `v04_tests.rs` (~6731 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_tests.rs` (~6732 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/ir/`
 
 - `evidence.rs` (~13387 tok, huge) — Copyright 2025 STARGA Inc.

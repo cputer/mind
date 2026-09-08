@@ -143,7 +143,7 @@ fn largest_body_at_most(limit: usize) -> (IRModule, Vec<u8>) {
     let mut low = 0usize;
     let mut high = MAX_MIC3_INPUT - 1;
     while low < high {
-        let candidate = low + (high - low + 1) / 2;
+        let candidate = low + (high - low).div_ceil(2);
         let module = module_with_export_name_len(candidate);
         if let Ok(bytes) = emit_mic3_checked(&module) {
             if bytes.len() <= limit {
