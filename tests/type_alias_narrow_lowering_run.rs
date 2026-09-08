@@ -232,6 +232,30 @@ assert lib.builtin_return_control() == 1
         "lib.owner_pair.restype = ctypes.c_int64\nlib.qualified_left.restype = ctypes.c_int64\nlib.qualified_right.restype = ctypes.c_int64\nassert lib.owner_pair() == 1122\nassert lib.qualified_left() == 31\nassert lib.qualified_right() == 41",
     );
 
+    if cfg!(feature = "ffi-c-user") {
+        run_ctypes(
+            &project.join("target/debug/libalias_owners.so"),
+            r#"
+lib.owner_pair.restype = ctypes.c_int64
+lib.qualified_left.restype = ctypes.c_int64
+lib.qualified_right.restype = ctypes.c_int64
+assert lib.owner_pair() == 1122
+assert lib.qualified_left() == 31
+assert lib.qualified_right() == 41
+
+# Type aliases are part of the language export surface but have no callable
+# C ABI. Their old wrappers collided across left.mind/right.mind; they must
+# be absent while the real exported functions remain linkable ENOSYS stubs.
+assert not hasattr(lib, 'mind_fn_Byte_v1_invoke')
+for name in ('mind_fn_left_owner_v1_invoke', 'mind_fn_right_owner_v1_invoke'):
+    fn = getattr(lib, name)
+    fn.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t]
+    fn.restype = ctypes.c_int32
+    assert fn(None, 0, None, 0) == 38
+"#,
+        );
+    }
+
     std::fs::write(
         project_src.join("main.mind"),
         "import left;\nfn private_alias_access() -> i64 { let y: left.PrivateByte = 200; return y; }\n",

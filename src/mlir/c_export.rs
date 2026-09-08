@@ -14,7 +14,7 @@
 
 //! RFC 0002 deliverable 2 — C-ABI export wrapper codegen.
 //!
-//! For every name in [`IRModule::exports`] this pass appends an
+//! For every callable name in [`IRModule::exports`] this pass appends an
 //! `llvm.func @mind_fn_<name>_v1_invoke` symbol to the lowered MLIR
 //! module. The `_v1` token is the ABI generation (RFC 0003 §"Symbol
 //! versioning"): it increments only on a breaking change to the
@@ -50,7 +50,7 @@
 //! never compiles this file and emits byte-identical MLIR to before —
 //! the compile-speed moat is module-level-gated, never per-statement.
 
-use crate::ir::IRModule;
+use crate::ir::{IRModule, Instr};
 
 /// `mind-spec` RFC-0007: an identifier admitted into a C symbol name.
 /// The pipeline already validates `Mind.toml [exports] c_abi` and
@@ -65,7 +65,7 @@ fn is_c_symbol_safe(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Append `mind_fn_<name>_invoke` wrappers for every export to `out`.
+/// Append `mind_fn_<name>_invoke` wrappers for every callable export to `out`.
 ///
 /// `out` is the assembled MLIR module text *with the closing `}` not yet
 /// written* — wrappers are emitted as sibling top-level symbols inside
@@ -79,16 +79,42 @@ pub fn emit_c_export_wrappers(out: &mut String, module: &IRModule) -> Result<(),
         return Ok(());
     }
 
+    // `IRModule::exports` is also the source-level export surface: an
+    // explicit `export { ... }` may name a type alias or struct for imports,
+    // but those declarations have no callable ABI.  Only lowered function
+    // definitions can receive a C wrapper.  Keep this check here, at the
+    // symbol-emission boundary, so a manually-built IR cannot accidentally
+    // mint a wrapper for a non-function export or silently omit an unknown
+    // requested symbol.
+    let callable_names: std::collections::BTreeSet<&str> = module
+        .instrs
+        .iter()
+        .filter_map(|instr| match instr {
+            Instr::FnDef { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+
     let mut names: Vec<&String> = module.exports.iter().collect();
     names.sort();
 
-    for name in names {
+    // Validate the complete requested set before mutating the output. A bad
+    // name after a valid one must not leave a partial MLIR module behind.
+    for name in &names {
+        if !callable_names.contains(name.as_str()) {
+            return Err(format!(
+                "export `{name}` does not name a lowered function; C ABI wrappers require callable exports"
+            ));
+        }
         if !is_c_symbol_safe(name) {
             return Err(format!(
                 "export `{name}` is not a valid C symbol; reject before codegen \
                  (mind-spec RFC-0007 §symbol-names)"
             ));
         }
+    }
+
+    for name in names {
         out.push_str(&format!(
             "  llvm.func @mind_fn_{name}_v1_invoke(%inputs: !llvm.ptr, %in_count: i64, \
              %outputs: !llvm.ptr, %out_count: i64) -> i32 {{\n"
@@ -112,12 +138,23 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn module_with(exports: &[&str]) -> IRModule {
+    fn module_with(exports: &[&str], functions: &[&str]) -> IRModule {
         let mut m = IRModule::new();
         m.exports = exports
             .iter()
             .map(|s| s.to_string())
             .collect::<HashSet<_>>();
+        for name in functions {
+            m.instrs.push(Instr::FnDef {
+                name: (*name).to_string(),
+                params: Vec::new(),
+                ret_id: None,
+                body: Vec::new(),
+                reap_threshold: None,
+                #[cfg(feature = "std-surface")]
+                value_types: std::collections::BTreeMap::new(),
+            });
+        }
         m
     }
 
@@ -131,7 +168,7 @@ mod tests {
 
     #[test]
     fn single_export_emits_invoke_symbol() {
-        let m = module_with(&["preselect_pre_tokenized"]);
+        let m = module_with(&["preselect_pre_tokenized"], &["preselect_pre_tokenized"]);
         let mut out = String::new();
         emit_c_export_wrappers(&mut out, &m).unwrap();
         assert!(out.contains("llvm.func @mind_fn_preselect_pre_tokenized_v1_invoke("));
@@ -153,7 +190,7 @@ mod tests {
 
     #[test]
     fn exports_emitted_in_sorted_order_for_stable_hash() {
-        let m = module_with(&["zeta", "alpha", "mid"]);
+        let m = module_with(&["zeta", "alpha", "mid"], &["zeta", "alpha", "mid"]);
         let mut out = String::new();
         emit_c_export_wrappers(&mut out, &m).unwrap();
         let a = out.find("mind_fn_alpha_v1_invoke").unwrap();
@@ -167,7 +204,7 @@ mod tests {
 
     #[test]
     fn invalid_symbol_is_rejected() {
-        let m = module_with(&["bad-name"]);
+        let m = module_with(&["bad-name"], &["bad-name"]);
         let mut out = String::new();
         let err = emit_c_export_wrappers(&mut out, &m).unwrap_err();
         assert!(err.contains("not a valid C symbol"));
@@ -178,5 +215,37 @@ mod tests {
         assert!(!is_c_symbol_safe("9fn"));
         assert!(is_c_symbol_safe("_ok"));
         assert!(is_c_symbol_safe("fn9"));
+    }
+
+    #[test]
+    fn non_callable_export_is_rejected_without_emitting_a_wrapper() {
+        let m = module_with(&["Byte"], &[]);
+        let mut out = String::new();
+        let err = emit_c_export_wrappers(&mut out, &m).unwrap_err();
+        assert!(err.contains("does not name a lowered function"));
+        assert!(
+            out.is_empty(),
+            "rejected exports must emit no partial wrapper"
+        );
+    }
+
+    #[test]
+    fn callable_export_is_the_only_wrapper_and_stub_is_enosys() {
+        let m = module_with(&["alpha_callable", "z_missing"], &["alpha_callable"]);
+        let mut out = String::new();
+        out.push_str("sentinel");
+        let before = out.clone();
+        let err = emit_c_export_wrappers(&mut out, &m).unwrap_err();
+        assert!(err.contains("z_missing"));
+        assert_eq!(
+            out, before,
+            "rejection must not leave partial wrapper output"
+        );
+
+        let m = module_with(&["owner"], &["owner"]);
+        let mut out = String::new();
+        emit_c_export_wrappers(&mut out, &m).unwrap();
+        assert!(out.contains("mind_fn_owner_v1_invoke"));
+        assert!(out.contains("llvm.mlir.constant(38 : i32)"));
     }
 }

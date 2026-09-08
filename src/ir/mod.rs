@@ -1243,12 +1243,15 @@ fn instrs_have_scoped_value_types(instrs: &[Instr]) -> bool {
 pub struct IRModule {
     pub instrs: Vec<Instr>,
     pub next_id: usize,
-    /// Names declared in an `export { ... }` block, populated by the
-    /// AST -> IR lowering pass. Consumed by the C-ABI codegen pass under
-    /// `feature = "ffi-c-user"` (RFC 0002, deliverable 2). Empty in the
-    /// default code path; readers must never assume membership without
-    /// the feature flag enabled. Kept on `IRModule` rather than in a
-    /// side-table so mic@1 round-trip preserves the export set.
+    /// Names declared in an `export { ... }` block, initially populated by the
+    /// AST -> IR lowering pass. This starts as the source export surface, which
+    /// can include type and value declarations used by the project resolver.
+    /// With `feature = "ffi-c-user"`, lowering removes known non-callable source
+    /// declarations before C-ABI emission; manifest `[exports] c_abi` entries
+    /// are merged afterward and remain subject to callable-name validation.
+    /// With the feature off, the full source export surface remains here.
+    /// The C-ABI codegen pass (RFC 0002, deliverable 2) validates that every
+    /// requested name has a lowered `FnDef` before emitting any wrapper.
     pub exports: std::collections::HashSet<String>,
     /// RFC 0005 P0e Step 1 — struct schema registry. Maps a struct name
     /// to its canonical field-name order (as declared in `Node::StructDef`).

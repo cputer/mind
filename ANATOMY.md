@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1673 | **Est. tokens:** ~3203962
-**Generated:** 2026-09-08 07:47 UTC
+**Files:** 1673 | **Est. tokens:** ~3204975
+**Generated:** 2026-09-08 08:30 UTC
 
 ## Token Budget Guide
 
@@ -106,13 +106,13 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 6 | ~78069 |
+| `src/ir/` | 6 | ~78139 |
 | `src/ir/compact/` | 3 | ~15292 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 7 | ~63340 |
 | `src/lint/` | 2 | ~4001 |
 | `src/lint/rules/` | 6 | ~10017 |
-| `src/mlir/` | 3 | ~5905 |
+| `src/mlir/` | 3 | ~6616 |
 | `src/ops/` | 3 | ~4764 |
 | `src/opt/` | 9 | ~53284 |
 | `src/package/` | 2 | ~1877 |
@@ -128,7 +128,7 @@
 | `src/types/` | 4 | ~3336 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 384 | ~747375 |
+| `tests/` | 384 | ~747607 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12322 |
@@ -1159,7 +1159,7 @@
 - `evidence.rs` (~13353 tok, huge) — Copyright 2025 STARGA Inc.
 - `fp_mode.rs` (~13711 tok, huge) — FP-contract mode — the strict-vs-relaxed floating-point determinism state of
 - `frozen_profile.rs` (~7689 tok, huge) — Copyright 2025 STARGA Inc.
-- `mod.rs` (~17790 tok, huge) — Copyright 2025 STARGA Inc.
+- `mod.rs` (~17860 tok, huge) — Copyright 2025 STARGA Inc.
 - `print.rs` (~4413 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify.rs` (~21113 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
@@ -1183,7 +1183,7 @@
 - `main.rs` (~6847 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/mlir/`
 
-- `c_export.rs` (~1931 tok, huge) — Copyright 2025 STARGA Inc.
+- `c_export.rs` (~2642 tok, huge) — Copyright 2025 STARGA Inc.
 - `gemm_tuning.rs` (~3639 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mod.rs` (~335 tok, medium) — Copyright 2025 STARGA Inc.
 ### `src/ops/`
@@ -2265,7 +2265,7 @@
 - `try_operator_run.rs` (~1058 tok, large) — Copyright 2025 STARGA Inc.
 - `tuple_destructure_run.rs` (~1112 tok, large) — Copyright 2025 STARGA Inc.
 - `turboquant_kernel_run.rs` (~1318 tok, large) — Copyright 2025 STARGA Inc.
-- `type_alias_narrow_lowering_run.rs` (~2017 tok, huge) — Copyright 2025 STARGA Inc.
+- `type_alias_narrow_lowering_run.rs` (~2249 tok, huge) — Copyright 2025 STARGA Inc.
 - `type_ann_check.rs` (~330 tok, medium) — Copyright 2025 STARGA Inc.
 - `type_ann_parse.rs` (~583 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/type_checker/`
