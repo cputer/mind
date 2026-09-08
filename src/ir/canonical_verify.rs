@@ -254,8 +254,9 @@ pub fn verify_canonical_metadata(module: &IRModule) -> Result<(), CanonicalMetad
 /// A caller must not be able to put semantic data on an instruction and then
 /// fall back to the legacy metadata-free serializer.
 pub(crate) fn instruction_metadata_present(instrs: &[Instr]) -> bool {
-    let mut streams = vec![instrs];
-    while let Some(stream) = streams.pop() {
+    let mut pending = Vec::new();
+    let mut stream = instrs;
+    loop {
         for instr in stream {
             match instr {
                 Instr::FnDef {
@@ -266,7 +267,7 @@ pub(crate) fn instruction_metadata_present(instrs: &[Instr]) -> bool {
                     if semantic_types.is_some() {
                         return true;
                     }
-                    streams.push(body);
+                    pending.push(body.as_slice());
                 }
                 Instr::Call {
                     resolved_callee, ..
@@ -277,18 +278,21 @@ pub(crate) fn instruction_metadata_present(instrs: &[Instr]) -> bool {
                     then_instrs,
                     else_instrs,
                     ..
-                } => streams.extend([cond_instrs.as_slice(), then_instrs, else_instrs]),
+                } => pending.extend([cond_instrs.as_slice(), then_instrs, else_instrs]),
                 #[cfg(feature = "std-surface")]
                 Instr::While {
                     cond_instrs, body, ..
-                } => streams.extend([cond_instrs.as_slice(), body]),
+                } => pending.extend([cond_instrs.as_slice(), body]),
                 #[cfg(feature = "std-surface")]
-                Instr::Region { body, .. } => streams.push(body),
+                Instr::Region { body, .. } => pending.push(body),
                 _ => {}
             }
         }
+        let Some(next) = pending.pop() else {
+            return false;
+        };
+        stream = next;
     }
-    false
 }
 
 fn verify_stream(

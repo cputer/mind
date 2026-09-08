@@ -247,6 +247,32 @@ fn nested_orphan_metadata_is_seen_by_the_presence_guard() {
 }
 
 #[test]
+fn metadata_presence_scan_handles_flat_and_deep_streams() {
+    let flat = [Instr::ConstI64(ValueId(0), 1)];
+    assert!(!instruction_metadata_present(&flat));
+
+    let mut nested = Instr::Call {
+        dst: ValueId(0),
+        name: "deep_call".to_string(),
+        args: Vec::new(),
+        resolved_callee: Some(Box::new(FunctionIdentity::new("module", "deep_call"))),
+    };
+    for _ in 0..1_024 {
+        nested = Instr::FnDef {
+            name: "nested".to_string(),
+            params: Vec::new(),
+            ret_id: None,
+            body: vec![nested],
+            reap_threshold: None,
+            #[cfg(feature = "std-surface")]
+            value_types: std::collections::BTreeMap::new(),
+            semantic_types: None,
+        };
+    }
+    assert!(instruction_metadata_present(std::slice::from_ref(&nested)));
+}
+
+#[test]
 fn intrinsic_authority_is_explicit_and_reserved() {
     let registry = SchemaRegistryBuilder::default().finish().expect("registry");
     let mut bundle = CanonicalModuleTypes::new(registry);
