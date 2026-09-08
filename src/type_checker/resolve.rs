@@ -52,6 +52,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::OnceLock;
 
+use super::qualified_imports::{call as qcall, current_symbol as cse, value as qvalue};
 use crate::ast::{Literal, Module, Node, Pattern, TypeAnn};
 
 /// Deterministic FxHash-backed tables for the lookup-only symbol sets built
@@ -615,21 +616,6 @@ fn suggest(name: &str, scopes: &Scopes, syms: &ModuleSyms) -> Option<String> {
     best.map(|(_, k)| k.to_string())
 }
 
-/// Feature-neutral shim over the cross-module export lookup. On a `mindc`
-/// built without `cross-module-imports` there is no project table, so this is a
-/// constant `false` and the resolver behaves byte-identically to the pre-change
-/// single-file path.
-#[cfg(feature = "cross-module-imports")]
-#[inline]
-fn cm_symbol_exported_res(name: &str) -> bool {
-    super::cm_symbol_exported(name)
-}
-#[cfg(not(feature = "cross-module-imports"))]
-#[inline]
-fn cm_symbol_exported_res(_name: &str) -> bool {
-    false
-}
-
 /// Resolver state threaded through the body walk.
 struct Resolver<'a> {
     syms: &'a ModuleSyms,
@@ -657,7 +643,7 @@ impl<'a> Resolver<'a> {
             // Covers module-qualified consts the parser normalised to bare names
             // (`fixed_point.Q16_ONE` → `Q16_ONE`) and any other exported value.
             // Empty (false) on the single-file / default path (no project table).
-            || cm_symbol_exported_res(name)
+            || cse(name)
     }
 
     fn call_resolvable(&self, name: &str) -> bool {
@@ -718,7 +704,7 @@ impl<'a> Resolver<'a> {
         // explicit-export surface carries names for every kind, whereas
         // `cm_lookup_fn` only sees typed fn signatures — so this catches the
         // `export`-block fn form the signature table does not.
-        if cm_symbol_exported_res(name) {
+        if cse(name) {
             return true;
         }
         false
@@ -908,7 +894,7 @@ impl<'a> Resolver<'a> {
                         fn_value_call: false,
                         non_fn_call: false,
                     });
-                } else if !self.ident_resolvable(name) {
+                } else if !self.ident_resolvable(name) && !qvalue(*span, name) {
                     let suggestion = suggest(name, &self.scopes, self.syms);
                     self.out.push(Unresolved {
                         name: name.clone(),
@@ -924,6 +910,7 @@ impl<'a> Resolver<'a> {
             }
             Node::Lit(_, _) => {}
             Node::Call { callee, args, span } => {
+                let qualified_call = qcall(*span, callee);
                 // Advisory, orthogonal to the resolvable/unresolved decision
                 // below: a callee that resolves ONLY through the blanket
                 // `__mind_*` acceptance in `call_resolvable` (not a registered
@@ -957,7 +944,7 @@ impl<'a> Resolver<'a> {
                         fn_value_call: false,
                         non_fn_call: false,
                     });
-                } else if self.is_fn_value_call(callee) {
+                } else if !qualified_call && self.is_fn_value_call(callee) {
                     // Calling a function value (`let f = add1  f(41)`): the
                     // callee resolves only as a local binding and to nothing
                     // emittable. Reject at compile (E2012) rather than letting
@@ -972,7 +959,7 @@ impl<'a> Resolver<'a> {
                         fn_value_call: true,
                         non_fn_call: false,
                     });
-                } else if self.is_module_non_fn_call(callee) {
+                } else if !qualified_call && self.is_module_non_fn_call(callee) {
                     // Calling a module-level NON-function (`const ADD: i64 = 1
                     // ADD(2)`): the callee is a data/global symbol, not a fn, so
                     // the lowerer would synthesise `func.call @ADD` to a
@@ -988,7 +975,7 @@ impl<'a> Resolver<'a> {
                         fn_value_call: false,
                         non_fn_call: true,
                     });
-                } else if !self.call_resolvable(callee) {
+                } else if !self.call_resolvable(callee) && !qualified_call {
                     let suggestion = suggest(callee, &self.scopes, self.syms);
                     self.out.push(Unresolved {
                         name: callee.clone(),

@@ -85,6 +85,7 @@ fn bind_import_refs(
     references: Vec<crate::parser::EvalImportRef>,
     scope: &crate::project::single_file_scope::ProjectScope,
     bindings: &mut EvalBindings,
+    qualified_refs: &mut std::collections::BTreeMap<(String, usize, usize, String, bool), String>,
 ) -> Result<(), String> {
     use crate::parser::EvalImportRefKind;
 
@@ -98,15 +99,23 @@ fn bind_import_refs(
             })
             .collect::<Vec<_>>();
         if matches.len() != 1 {
+            let code = match reference.kind {
+                EvalImportRefKind::Call => "E2003",
+                EvalImportRefKind::Value => "E2002",
+            };
             return Err(format!(
-                "ambiguous evaluator import qualifier `{}` in module `{owner}`",
+                "error[type-check][{code}]: ambiguous evaluator import qualifier `{}` in module `{owner}`",
                 reference.qualifier.join(".")
             ));
         }
         let import = matches[0];
         let Some(target_owner) = scope.resolve_import_path(owner, import) else {
+            let code = match reference.kind {
+                EvalImportRefKind::Call => "E2003",
+                EvalImportRefKind::Value => "E2002",
+            };
             return Err(format!(
-                "unresolved evaluator import `{}` in module `{owner}`",
+                "error[type-check][{code}]: unresolved evaluator import `{}` in module `{owner}`",
                 import.join(".")
             ));
         };
@@ -130,6 +139,16 @@ fn bind_import_refs(
             },
             target_owner,
             &reference.symbol,
+        );
+        qualified_refs.insert(
+            (
+                owner.to_string(),
+                reference.span.start(),
+                reference.span.end(),
+                reference.symbol,
+                matches!(reference.kind, EvalImportRefKind::Call),
+            ),
+            target_owner.to_string(),
         );
     }
     Ok(())
@@ -184,6 +203,7 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
             let mut linked_modules = BTreeMap::<String, Module>::new();
             let mut module_dependencies = BTreeMap::<String, BTreeSet<String>>::new();
             let mut std_queue = VecDeque::<String>::new();
+            let mut qualified_refs = std::collections::BTreeMap::new();
 
             for captured in scope.linked_sources() {
                 let parsed = match crate::parser::parse_for_eval(captured.source()) {
@@ -205,6 +225,35 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
                 };
                 let _module_guard =
                     crate::qualified_enums::ModuleGuard::install(captured.module_path());
+                let imports = super::top_level::refs(&parsed.module.items)
+                    .into_iter()
+                    .filter_map(|item| match item {
+                        Node::Import { path, .. } => Some(path.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                if let Err(error) = bind_import_refs(
+                    captured.module_path(),
+                    &imports,
+                    parsed.import_refs.clone(),
+                    &scope,
+                    &mut bindings,
+                    &mut qualified_refs,
+                ) {
+                    return EvalSupport {
+                        setup_error: Some(error),
+                        ..EvalSupport::default()
+                    };
+                }
+                let _qualified_guard =
+                    crate::project::active_module_table::QualifiedImportsGuard::install(
+                        qualified_refs.clone(),
+                    );
+                let captured_path = captured
+                    .path()
+                    .canonicalize()
+                    .unwrap_or_else(|_| captured.path().to_path_buf());
+                let is_entry = captured_path == entry;
                 // Type validation must see the same exact import owner selected
                 // during manifest discovery. A source-level `import schema`
                 // can resolve to `crate.src.schema`; reconstructing it as
@@ -218,7 +267,15 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
                     &crate::type_checker::TypeEnv::default(),
                 )
                 .into_iter()
-                .filter(|diag| matches!(diag.code, "E2002" | "E2003"))
+                .filter(|diag| {
+                    // The evaluator deliberately defers an unresolved bare
+                    // call in a linked module to execution, where it reports
+                    // `unsupported operation`. Explicit namespace references
+                    // were validated by `bind_import_refs` above, so this
+                    // narrow defer cannot allow a private imported symbol or
+                    // an arbitrary consumer-local capture.
+                    matches!(diag.code, "E2002" | "E2003") && (is_entry || diag.code != "E2003")
+                })
                 .map(|diag| crate::diagnostics::render(captured.source(), &diag))
                 .collect::<Vec<_>>();
                 if !unresolved.is_empty() {
@@ -227,13 +284,6 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
                         ..EvalSupport::default()
                     };
                 }
-                let imports = super::top_level::refs(&parsed.module.items)
-                    .into_iter()
-                    .filter_map(|item| match item {
-                        Node::Import { path, .. } => Some(path.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
                 for import in &imports {
                     if let Some(target) = scope.resolve_import_path(captured.module_path(), import)
                     {
@@ -249,23 +299,6 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
                     }
                 }
 
-                if let Err(error) = bind_import_refs(
-                    captured.module_path(),
-                    &imports,
-                    parsed.import_refs,
-                    &scope,
-                    &mut bindings,
-                ) {
-                    return EvalSupport {
-                        setup_error: Some(error),
-                        ..EvalSupport::default()
-                    };
-                }
-
-                let captured_path = captured
-                    .path()
-                    .canonicalize()
-                    .unwrap_or_else(|_| captured.path().to_path_buf());
                 if captured_path == entry {
                     entry_owner = Some(captured.module_path().to_string());
                     continue;
@@ -329,9 +362,14 @@ pub(super) fn prepare_eval_support(path: &Path, source: &str) -> EvalSupport {
                         .insert(target.to_string());
                     std_queue.push_back(target.to_string());
                 }
-                if let Err(error) =
-                    bind_import_refs(&owner, &imports, parsed.import_refs, &scope, &mut bindings)
-                {
+                if let Err(error) = bind_import_refs(
+                    &owner,
+                    &imports,
+                    parsed.import_refs,
+                    &scope,
+                    &mut bindings,
+                    &mut qualified_refs,
+                ) {
                     return EvalSupport {
                         setup_error: Some(error),
                         ..EvalSupport::default()

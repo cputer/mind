@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1694 | **Est. tokens:** ~3255504
-**Generated:** 2026-09-08 17:25 UTC
+**Files:** 1695 | **Est. tokens:** ~3257080
+**Generated:** 2026-09-08 17:26 UTC
 
 ## Token Budget Guide
 
@@ -120,17 +120,17 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 3 | ~20920 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 16 | ~45334 |
+| `src/project/` | 16 | ~46131 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
-| `src/test/` | 4 | ~13787 |
-| `src/type_checker/` | 13 | ~51728 |
+| `src/test/` | 4 | ~14244 |
+| `src/type_checker/` | 14 | ~52044 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 8 | ~17587 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 386 | ~756668 |
+| `tests/` | 386 | ~756674 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1242,7 +1242,7 @@
 - `pipeline.rs` (~6535 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
-- `active_module_table.rs` (~2664 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `active_module_table.rs` (~3461 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `build_input_snapshot.rs` (~4632 tok, huge) — Copyright 2025 STARGA Inc.
 - `build_lock.rs` (~1630 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1283,21 +1283,22 @@
 - `target.rs` (~5031 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `src/test/`
 
-- `imports.rs` (~4153 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `imports.rs` (~4610 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mod.rs` (~6606 tok, huge) — Copyright 2025 STARGA Inc.
 - `runner.rs` (~2689 tok, huge) — Copyright 2025 STARGA Inc.
 - `top_level.rs` (~339 tok, medium) — Copyright 2025-2026 STARGA Inc.
 ### `src/type_checker/`
 
 - `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
-- `cross_module_types.rs` (~300 tok, medium) — Copyright 2026 STARGA Inc.
+- `cross_module_types.rs` (~430 tok, medium) — Copyright 2026 STARGA Inc.
 - `duplicate_structs.rs` (~424 tok, medium) — Copyright 2026 STARGA Inc.
 - `lowering_refusals.rs` (~6770 tok, huge) — Copyright 2026 STARGA Inc.
 - `lowering_refusals_tests.rs` (~4372 tok, huge) — Copyright 2026 STARGA Inc.
 - `nerve_lint.rs` (~7669 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_walk.rs` (~2232 tok, huge) — Copyright 2025 STARGA Inc.
 - `qualified_enums.rs` (~3239 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `resolve.rs` (~15177 tok, huge) — Copyright 2025 STARGA Inc.
+- `qualified_imports.rs` (~268 tok, medium) — Feature-neutral span-scoped qualified import predicates for name resolution.
+- `resolve.rs` (~15095 tok, huge) — Copyright 2025 STARGA Inc.
 - `slice_abi.rs` (~7414 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
 
@@ -1808,7 +1809,7 @@
 - `mindc_project_lock.rs` (~1069 tok, large) — Copyright 2026 STARGA Inc.
 - `mindc_symlinked_project_identity.rs` (~2222 tok, huge) — Copyright 2026 STARGA Inc.
 - `mindc_test_evaluator_issues.rs` (~5202 tok, huge) — Copyright 2025 STARGA Inc.
-- `mindc_test_imports.rs` (~4547 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `mindc_test_imports.rs` (~4553 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_nested_modules.rs` (~1901 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3574 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_workspace_phase_c.rs` (~4166 tok, huge) — Copyright 2025 STARGA Inc.

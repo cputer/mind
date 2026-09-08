@@ -311,6 +311,7 @@ fn direct_qualifiers_select_same_named_exports() {
         r#"
 import left;
 import right;
+let value: i64 = 0;
 
 #[test]
 fn direct_qualifiers_keep_owners() {
@@ -375,7 +376,7 @@ fn local_value() -> i64 { return BASE; }
 fn local_caller() -> i64 { let BASE: i64 = 100; return local_value(); }
 #[test]
 fn caller_locals_do_not_override_qualified_or_callee_values() {
-    let UNIT: i64 = 99;
+    let UNIT: f64 = 99.0;
     let BASE: i64 = 5;
     assert arithmetic.UNIT == 8, "qualified value owner";
     assert arithmetic.unit() == 8, "callee lexical owner";
@@ -384,7 +385,7 @@ fn caller_locals_do_not_override_qualified_or_callee_values() {
     assert right.global_value() == 77, "sibling module globals";
     assert local_value() == 90, "entry module global";
     assert local_caller() == 90, "caller local isolation";
-    assert UNIT == 99, "ordinary local shadow";
+    assert UNIT == 99.0, "ordinary local shadow";
     assert BASE == 5, "module global can be shadowed locally";
 }
 "#,

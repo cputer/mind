@@ -6,6 +6,17 @@
 use super::{ValueType, describe_value_type, valuetype_from_ann};
 use crate::ast::TypeAnn;
 
+/// Seed names visible to the legacy explicit multi-file check scope.
+pub(super) fn cm_inject_visible_symbols(tenv: &mut super::TypeEnv) {
+    let owner = crate::qualified_enums::current_module_path();
+    for sym in crate::project::active_module_table::visible_symbols(owner.as_deref()) {
+        tenv.entry(sym).or_insert(ValueType::ScalarI64);
+    }
+    for function in crate::project::active_module_table::visible_fns(owner.as_deref()) {
+        tenv.entry(function.name).or_insert(ValueType::ScalarI64);
+    }
+}
+
 /// Map a declared imported-call type to the loose call-site `ValueType`.
 /// Aggregates and named heap records retain the established i64 fallback.
 pub(super) fn cm_typeann_to_valuetype(ann: &TypeAnn) -> ValueType {

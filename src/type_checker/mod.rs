@@ -22,6 +22,7 @@ pub(crate) mod lowering_refusals;
 pub mod nerve_lint;
 mod nerve_walk;
 mod qualified_enums;
+mod qualified_imports;
 mod struct_bindings;
 use qualified_enums::variant_payload_of;
 use struct_bindings::{StructNamesGuard, struct_name_in_scope};
@@ -856,27 +857,33 @@ fn infer_expr(node: &Node, env: &TypeEnv) -> Result<(ValueType, AstSpan), TypeEr
         #[cfg(feature = "std-surface")]
         Node::Break { span } | Node::Continue { span } => Ok((ValueType::ScalarI32, *span)),
         Node::Lit(Literal::Ident(name), span) => {
+            #[cfg(feature = "cross-module-imports")]
+            if crate::project::active_module_table::qualified_import_value(*span, name) {
+                return Ok((ValueType::ScalarI64, *span));
+            }
             if let Some(t) = env.get(name).cloned() {
                 Ok((t, *span))
-            } else if split_enum_variant_path(name)
-                .and_then(|(e, v)| enum_variants_of(&e).map(|vs| vs.iter().any(|x| x == &v)))
-                .unwrap_or(false)
-            {
-                // An enum-variant constructor used as a *value* (`Mode::On`) is a
-                // valid expression but is not a value-env binding. Resolve it via
-                // the enum registry to the i64 ABI (the discriminant) rather than
-                // raising E2002 — matches the loose i64 ABI every other value
-                // form lowers to. (Unit variants only; payload variants such as
-                // `Some(x)` are call expressions handled by `infer_call`.)
-                Ok((ValueType::ScalarI64, *span))
             } else {
-                Err(TypeErrSpan {
-                    msg: match closest_identifier(name, env) {
-                        Some(s) => format!("unknown identifier `{name}` — did you mean `{s}`?"),
-                        None => format!("unknown identifier `{name}`"),
-                    },
-                    span: *span,
-                })
+                if split_enum_variant_path(name)
+                    .and_then(|(e, v)| enum_variants_of(&e).map(|vs| vs.iter().any(|x| x == &v)))
+                    .unwrap_or(false)
+                {
+                    // An enum-variant constructor used as a *value* (`Mode::On`) is a
+                    // valid expression but is not a value-env binding. Resolve it via
+                    // the enum registry to the i64 ABI (the discriminant) rather than
+                    // raising E2002 — matches the loose i64 ABI every other value
+                    // form lowers to. (Unit variants only; payload variants such as
+                    // `Some(x)` are call expressions handled by `infer_call`.)
+                    Ok((ValueType::ScalarI64, *span))
+                } else {
+                    Err(TypeErrSpan {
+                        msg: match closest_identifier(name, env) {
+                            Some(s) => format!("unknown identifier `{name}` — did you mean `{s}`?"),
+                            None => format!("unknown identifier `{name}`"),
+                        },
+                        span: *span,
+                    })
+                }
             }
         }
         Node::Paren(inner, span) => {
@@ -2278,6 +2285,14 @@ fn infer_call(
     span: AstSpan,
     env: &TypeEnv,
 ) -> Result<(ValueType, AstSpan), TypeErrSpan> {
+    #[cfg(feature = "cross-module-imports")]
+    if let Some(sig) = crate::project::active_module_table::qualified_import_fn(span, callee) {
+        return check_imported_fn_call(&sig, args, span, env);
+    }
+    #[cfg(feature = "cross-module-imports")]
+    if crate::project::active_module_table::qualified_import_value(span, callee) {
+        return Ok((ValueType::ScalarI64, span));
+    }
     match callee {
         "tensor.zeros" | "tensor.ones" => {
             if args.len() != 2 {
@@ -4425,22 +4440,6 @@ pub fn cm_all_imported_fn_signatures() -> Vec<(
     signatures
 }
 
-/// True iff ANY module in the active project table exports `name`. Unlike
-/// `cm_lookup_fn` (which resolves only typed `fn` signatures), this answers the
-/// bare resolvability question for EVERY exported symbol kind — `fn`, `const`,
-/// `type`, `struct` — so a cross-module const (`fixed_point.Q16_ONE`, which the
-/// parser has normalised to a bare `Q16_ONE` reference) or an explicitly
-/// `export`ed fn is not a genuinely-undefined reference. Empty on the
-/// default-feature / single-file (`mindc check`) path (table is `None`), so
-/// that path is byte-identical.
-#[cfg(feature = "cross-module-imports")]
-pub(crate) fn cm_symbol_exported(name: &str) -> bool {
-    crate::project::active_module_table::symbol_visible(
-        crate::qualified_enums::current_module_path().as_deref(),
-        name,
-    )
-}
-
 /// RFC 0005 Phase B — validate a call against an imported fn's
 /// signature.  Compares arity then per-arg types against the
 /// declared `param_types`; returns the declared `ret_type` as a
@@ -4555,10 +4554,19 @@ pub fn check_module_types_in_file(
     crate::diagnostics::reset_line_index_cache();
     let mut errors = qualified_enums::validate(module, src, file);
     duplicate_structs::check(&module.items, src, file, &mut errors);
+    #[cfg(feature = "cross-module-imports")]
+    let env = {
+        let mut env = env.clone();
+        cross_module_types::cm_inject_visible_symbols(&mut env);
+        env
+    };
     errors.extend(check_module_types_in_file_impl(
         module,
         src,
         file,
+        #[cfg(feature = "cross-module-imports")]
+        &env,
+        #[cfg(not(feature = "cross-module-imports"))]
         env,
         #[cfg(feature = "std-surface")]
         None,

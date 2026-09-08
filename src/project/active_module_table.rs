@@ -27,6 +27,12 @@ thread_local! {
     /// across modules or override an exact qualified path.
     static ACTIVE_RESOLVED_IMPORTS: RefCell<Option<BTreeMap<(String, Vec<String>), String>>> =
         const { RefCell::new(None) };
+    /// Evaluator parsing keeps the owner qualifier for namespace references,
+    /// while the ordinary AST intentionally folds `mod.name` to `name`.
+    /// Keep those references span-scoped during evaluator setup so qualified
+    /// access can be admitted without making an ambiguous bare name visible.
+    static ACTIVE_QUALIFIED_IMPORTS: RefCell<Option<BTreeMap<(String, usize, usize, String, bool), String>>> =
+        const { RefCell::new(None) };
 }
 
 /// Replace the active table. Retained for project-build compatibility.
@@ -100,7 +106,14 @@ pub(crate) fn lookup_visible_fn(
             });
             let first = selected.next()?;
             if selected.next().is_some() {
-                return None;
+                // Explicit multi-file checking historically exposed one
+                // translation-unit namespace. Preserve that scope only when
+                // every duplicate carries the exact same ABI; manifest
+                // captures and conflicting signatures remain fail-closed.
+                if captured.is_some() || candidates.iter().any(|(_, function)| *function != first.1)
+                {
+                    return None;
+                }
             }
             Some(first.1.clone())
         })
@@ -143,7 +156,9 @@ pub(crate) fn visible_fns(owner: Option<&str>) -> Vec<super::module_table::Expor
                     });
                     let first = selected.next()?;
                     if selected.next().is_some() {
-                        None
+                        (captured.is_none()
+                            && candidates.iter().all(|(_, function)| *function == first.1))
+                        .then(|| (*first.1).clone())
                     } else {
                         Some(first.1.clone())
                     }
@@ -174,6 +189,49 @@ pub(crate) fn symbol_visible(owner: Option<&str>, name: &str) -> bool {
                 });
             selected.next().is_some() && selected.next().is_none()
         })
+    })
+}
+
+/// Resolve a bare symbol for the current owner; empty without project scope.
+pub(crate) fn current_symbol_exported(name: &str) -> bool {
+    symbol_visible(
+        crate::qualified_enums::current_module_path().as_deref(),
+        name,
+    )
+}
+
+fn qualified_import_target(span: crate::ast::Span, name: &str, is_call: bool) -> Option<String> {
+    let owner = crate::qualified_enums::current_module_path()?;
+    ACTIVE_QUALIFIED_IMPORTS.with(|refs| {
+        refs.borrow()
+            .as_ref()?
+            .get(&(owner, span.start(), span.end(), name.to_string(), is_call))
+            .cloned()
+    })
+}
+
+/// Whether this span is a validated evaluator namespace value reference.
+pub(crate) fn qualified_import_value(span: crate::ast::Span, name: &str) -> bool {
+    qualified_import_target(span, name, false).is_some()
+}
+
+/// Resolve a validated evaluator namespace call to its defining signature.
+/// Explicitly exported functions carry signatures in the same table as
+/// auto-exported functions; a missing signature remains a loose i64 call.
+pub(crate) fn qualified_import_fn(
+    span: crate::ast::Span,
+    name: &str,
+) -> Option<super::module_table::ExportedFn> {
+    let target = qualified_import_target(span, name, true)?;
+    ACTIVE.with(|active| {
+        active
+            .borrow()
+            .as_ref()?
+            .get(&target)?
+            .exported_fns
+            .iter()
+            .find(|f| f.name == name)
+            .cloned()
     })
 }
 
@@ -248,6 +306,25 @@ impl Guard {
 /// pre-existing table API remains unchanged for non-project callers.
 pub(crate) struct ResolvedImportsGuard {
     previous: Option<BTreeMap<(String, Vec<String>), String>>,
+}
+
+/// Installs the validated namespace references for one evaluator module and
+/// restores the previous set on every exit path.
+pub(crate) struct QualifiedImportsGuard {
+    previous: Option<BTreeMap<(String, usize, usize, String, bool), String>>,
+}
+
+impl QualifiedImportsGuard {
+    pub(crate) fn install(refs: BTreeMap<(String, usize, usize, String, bool), String>) -> Self {
+        let previous = ACTIVE_QUALIFIED_IMPORTS.with(|cell| cell.borrow_mut().replace(refs));
+        Self { previous }
+    }
+}
+
+impl Drop for QualifiedImportsGuard {
+    fn drop(&mut self) {
+        ACTIVE_QUALIFIED_IMPORTS.with(|cell| *cell.borrow_mut() = self.previous.take());
+    }
 }
 
 impl ResolvedImportsGuard {
