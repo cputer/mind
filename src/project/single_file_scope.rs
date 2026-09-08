@@ -181,7 +181,7 @@ pub struct ProjectTableGuard {
 impl ProjectTableGuard {
     pub(crate) fn install(table: super::module_table::ModuleTable) -> Self {
         Self {
-            _guard: super::active_module_table::Guard::install(table),
+            _guard: super::active_module_table::Guard::install_legacy(table),
             _enums: None,
             _resolved_imports: None,
             _module_path: None,
@@ -193,7 +193,7 @@ impl ProjectTableGuard {
         enums: crate::ir::GlobalEnums,
     ) -> Self {
         Self {
-            _guard: super::active_module_table::Guard::install(table),
+            _guard: super::active_module_table::Guard::install_legacy(table),
             _enums: Some(crate::qualified_enums::GlobalGuard::install(enums)),
             _resolved_imports: None,
             _module_path: None,

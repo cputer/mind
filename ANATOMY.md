@@ -5,7 +5,7 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1695 | **Est. tokens:** ~3257080
+**Files:** 1695 | **Est. tokens:** ~3257333
 **Generated:** 2026-09-08 17:26 UTC
 
 ## Token Budget Guide
@@ -120,12 +120,12 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 3 | ~20920 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 16 | ~46131 |
+| `src/project/` | 16 | ~46361 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 4 | ~14244 |
-| `src/type_checker/` | 14 | ~52044 |
+| `src/type_checker/` | 14 | ~52067 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 8 | ~17587 |
 | `src/workspace/` | 1 | ~4906 |
@@ -1242,7 +1242,7 @@
 - `pipeline.rs` (~6535 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/project/`
 
-- `active_module_table.rs` (~3461 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `active_module_table.rs` (~3688 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `artifact.rs` (~1045 tok, large) — Copyright 2025 STARGA Inc.
 - `build_input_snapshot.rs` (~4632 tok, huge) — Copyright 2025 STARGA Inc.
 - `build_lock.rs` (~1630 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1252,7 +1252,7 @@
 - `link.rs` (~2598 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `module_table.rs` (~7642 tok, huge) — Copyright 2025 STARGA Inc.
 - `runtime_link.rs` (~1621 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `single_file_scope.rs` (~5248 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `single_file_scope.rs` (~5251 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `source_snapshot.rs` (~608 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `sources.rs` (~5153 tok, huge) — Copyright 2025 STARGA Inc.
 - `stdlib.rs` (~3656 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1290,7 +1290,7 @@
 ### `src/type_checker/`
 
 - `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
-- `cross_module_types.rs` (~430 tok, medium) — Copyright 2026 STARGA Inc.
+- `cross_module_types.rs` (~453 tok, medium) — Copyright 2026 STARGA Inc.
 - `duplicate_structs.rs` (~424 tok, medium) — Copyright 2026 STARGA Inc.
 - `lowering_refusals.rs` (~6770 tok, huge) — Copyright 2026 STARGA Inc.
 - `lowering_refusals_tests.rs` (~4372 tok, huge) — Copyright 2026 STARGA Inc.

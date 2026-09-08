@@ -15,13 +15,16 @@
 
 //! Scoped ownership of the active cross-module export table.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::module_table::ModuleTable;
 
 thread_local! {
     static ACTIVE: RefCell<Option<ModuleTable>> = const { RefCell::new(None) };
+    /// Legacy whole-project checks intentionally expose the supplied files as
+    /// one translation unit. Per-call table checks must remain import-scoped.
+    static LEGACY_VISIBLE_SCOPE: Cell<bool> = const { Cell::new(false) };
     /// Import spellings resolved during manifest-bounded source capture.
     /// Keys include the importing owner so a unique basename cannot leak
     /// across modules or override an exact qualified path.
@@ -43,6 +46,10 @@ pub(crate) fn set(table: Option<ModuleTable>) {
 /// Borrow the active table for one non-reentrant lookup.
 pub(crate) fn with<R>(f: impl FnOnce(Option<&ModuleTable>) -> R) -> R {
     ACTIVE.with(|cell| f(cell.borrow().as_ref()))
+}
+
+pub(crate) fn legacy_visible_scope() -> bool {
+    LEGACY_VISIBLE_SCOPE.with(Cell::get)
 }
 
 /// Resolve an import through captured project bindings, falling back to the
@@ -292,12 +299,26 @@ pub(crate) fn imported_fn_conflicts_with_local(owner: Option<&str>, name: &str) 
 /// Installs a table and restores the previous value on every exit path.
 pub(crate) struct Guard {
     previous: Option<ModuleTable>,
+    previous_legacy_scope: bool,
 }
 
 impl Guard {
     pub(crate) fn install(table: ModuleTable) -> Self {
         let previous = ACTIVE.with(|cell| cell.borrow_mut().replace(table));
-        Self { previous }
+        let previous_legacy_scope = LEGACY_VISIBLE_SCOPE.with(|cell| cell.replace(false));
+        Self {
+            previous,
+            previous_legacy_scope,
+        }
+    }
+
+    pub(crate) fn install_legacy(table: ModuleTable) -> Self {
+        let previous = ACTIVE.with(|cell| cell.borrow_mut().replace(table));
+        let previous_legacy_scope = LEGACY_VISIBLE_SCOPE.with(|cell| cell.replace(true));
+        Self {
+            previous,
+            previous_legacy_scope,
+        }
     }
 }
 
@@ -343,5 +364,6 @@ impl Drop for ResolvedImportsGuard {
 impl Drop for Guard {
     fn drop(&mut self) {
         ACTIVE.with(|cell| *cell.borrow_mut() = self.previous.take());
+        LEGACY_VISIBLE_SCOPE.with(|cell| cell.set(self.previous_legacy_scope));
     }
 }

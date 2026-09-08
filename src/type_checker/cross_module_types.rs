@@ -8,6 +8,9 @@ use crate::ast::TypeAnn;
 
 /// Seed names visible to the legacy explicit multi-file check scope.
 pub(super) fn cm_inject_visible_symbols(tenv: &mut super::TypeEnv) {
+    if !crate::project::active_module_table::legacy_visible_scope() {
+        return;
+    }
     let owner = crate::qualified_enums::current_module_path();
     for sym in crate::project::active_module_table::visible_symbols(owner.as_deref()) {
         tenv.entry(sym).or_insert(ValueType::ScalarI64);
