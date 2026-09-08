@@ -2663,8 +2663,16 @@ pub fn alias_join_narrow_code(left: i64, right: i64, op: i64) -> i64 {
     }
     if left != 0 {
         if right != 0 {
-            let lw: i64 = if left < 0 { 0 - left } else { left };
-            let rw: i64 = if right < 0 { 0 - right } else { right };
+            let lw: i64 = if left < 0 {
+                0 - left
+            } else {
+                left
+            };
+            let rw: i64 = if right < 0 {
+                0 - right
+            } else {
+                right
+            };
             if rw > lw {
                 return right;
             }
@@ -2689,7 +2697,15 @@ pub fn flatten_narrow_binop_result(op: i64, left: i64, right: i64, root: i64, no
     }
     if code < 0 {
         let w: i64 = 0 - code;
-        let mask: i64 = if w == 8 { 255 } else { if w == 16 { 65535 } else { 4294967295 } };
+        let mask: i64 = if w == 8 {
+            255
+        } else {
+            if w == 16 {
+                65535
+            } else {
+                4294967295
+            }
+        };
         let mslot: i64 = desc_emit_const(nodes, cursor, mask);
         return desc_emit_binop(nodes, cursor, binop_to_byte(op_bitand()), root, mslot);
     }
@@ -44316,7 +44332,11 @@ pub fn alias_annotate_call_expr(src: i64, aliases: i64, frt: i64, env: i64, node
         }
         let cw: i64 = ast_aux(node);
         let w: i64 = if alias_is_positive_narrow_code(cw) == 1 {
-            if ast_cast_is_unsigned(src, node) == 1 { 0 - cw } else { cw }
+            if ast_cast_is_unsigned(src, node) == 1 {
+                0 - cw
+            } else {
+                cw
+            }
         } else {
             64
         };
@@ -44431,7 +44451,11 @@ pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: i64, stm
             0
         } else {
             let ak: i64 = alias_find_latest(aliases, src, ast_span_lo(ty), ast_span_hi(ty));
-            if ak >= 0 { 1 } else { 0 }
+            if ak >= 0 {
+                1
+            } else {
+                0
+            }
         };
         let code: i64 = if ty == 0 {
             64
@@ -44446,7 +44470,7 @@ pub fn alias_annotate_call_stmts(src: i64, aliases: i64, frt: i64, env: i64, stm
         // to every alias spelling, including signed and unsigned chains.
         if alias_ty == 1 {
             if alias_is_narrow_code(code) == 1 {
-                __mind_store_i64(ty + 56, code);
+                __mind_store_i64(ty + 56, code)
             }
         }
         let next_env: i64 = alias_env_bind(env, src, name, code);
