@@ -156,7 +156,7 @@ fn rederive_instr(
     let opcode = *body.get(*pos).ok_or("opcode past the body")?;
     *pos += 1;
     out.push(opcode);
-    let mut uleb = |pos: &mut usize, out: &mut Vec<u8>| -> Result<u64, String> {
+    let uleb = |pos: &mut usize, out: &mut Vec<u8>| -> Result<u64, String> {
         let value = read_uleb(body, pos)?;
         write_uleb(out, value);
         Ok(value)

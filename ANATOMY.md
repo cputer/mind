@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1750 | **Est. tokens:** ~3439323
-**Generated:** 2026-09-09 10:46 UTC
+**Files:** 1750 | **Est. tokens:** ~3439322
+**Generated:** 2026-09-09 10:50 UTC
 
 ## Token Budget Guide
 
@@ -191,7 +191,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
-| `tests/support/` | 7 | ~17481 |
+| `tests/support/` | 7 | ~17480 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -2345,7 +2345,7 @@
 - `v04_mirror_descriptor_vectors.rs` (~1851 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `v04_mirror_intrinsic_vectors.rs` (~1359 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `v04_mirror_modules.rs` (~1936 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_oracle.rs` (~6009 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_oracle.rs` (~6008 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `tests/`
 
 - `target_cerebras.rs` (~340 tok, medium) — Cerebras backend target — first-class surface tests.
