@@ -38,7 +38,11 @@ def lint_constant(name: str) -> int:
     this repo keeps paying for, and importing the module would compile it into a
     __pycache__ the repo does not track.
     """
-    m = re.search(rf"^{name}\s*=\s*(\d+)\s*$",
+    # Permit an accurate inline rationale while still requiring the executable
+    # assignment to remain a top-level decimal literal.  The gate's ceiling
+    # carries such a rationale; rejecting it here makes the mutation proof
+    # vacuous before any wiring case can run.
+    m = re.search(rf"^{name}\s*=\s*(\d+)(?:\s*#.*)?$",
                   LINT.read_text(encoding="utf-8"), re.MULTILINE)
     if not m:
         raise SystemExit(f"test_gate_wiring: {name} not found in {LINT.name} "

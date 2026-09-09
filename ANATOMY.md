@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1810 | **Est. tokens:** ~3451245
-**Generated:** 2026-09-09 23:16 UTC
+**Files:** 1810 | **Est. tokens:** ~3451316
+**Generated:** 2026-09-09 23:34 UTC
 
 ## Token Budget Guide
 
@@ -82,7 +82,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 31 | ~116849 |
+| `scripts/` | 31 | ~116920 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -1017,7 +1017,7 @@
 ### `scripts/`
 
 - `test_exec_semantics_gate.py` (~6646 tok, huge) — Regression test for scripts/exec_semantics_gate.sh: a FAILING test must red the tier.
-- `test_gate_wiring.py` (~7055 tok, huge) — Regression test for scripts/check_gate_wiring.py.
+- `test_gate_wiring.py` (~7126 tok, huge) — Regression test for scripts/check_gate_wiring.py.
 - `test_no_ai_attribution.py` (~3509 tok, huge) — Self-test for the no-AI-attribution gate and for what feeds it.
 - `test_smoke_wiring_lint.py` (~2257 tok, huge) — Regression test for the CI-coverage and branch-awareness contracts of
 - `verify_ci_green.py` (~3651 tok, huge) — verify_ci_green.py — refuse to release a commit that CI has not proven green.
