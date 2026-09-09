@@ -113,14 +113,9 @@ GATED_EVENTS = ("push", "pull_request")
 # publication path lives in its own helper. These are reviewed support/test
 # modules for existing gates, not new product surfaces; each remains below the
 # 800-line source ceiling and the stable runner commands stay unchanged.
-# 257 -> 258 adds self_host_alias_controls_smoke.py for alias collisions,
-# scope isolation and typed joins, below the unchanged 800-line source ceiling.
+# 257 -> 258 adds self_host_alias_controls_smoke.py for alias/scope/join controls.
 # 258 -> 259 adds the required, non-vacuous two-feature pqc_hybrid_ci.sh gate.
-# 259 -> 260 adds examples/mind_mirror_v04/mirror_gate.py, the executable
-# runner for the checked pure-MIND v04 prefix corpus. It is a required gate
-# driver rather than an optional helper, and its corpus/mutation controls
-# cannot be folded into an existing gate without losing the independent
-# subprocess boundary they exercise.
+# 259 -> 260 adds the required pure-MIND v04 prefix mirror gate driver.
 HARNESS_CEILING = 260
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
