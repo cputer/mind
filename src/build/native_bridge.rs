@@ -389,9 +389,33 @@ fn admit_merged_program(
 ) -> Result<crate::ir::IRModule, String> {
     let text = std::str::from_utf8(merged)
         .map_err(|e| format!("`{path}`: source is not valid UTF-8: {e}"))?;
-    let ast = crate::parser::parse(text).map_err(|_| {
-        format!("`{path}`: the merged module set does not parse as one translation unit")
-    })?;
+    let ast = match crate::parser::parse(text) {
+        Ok(ast) => ast,
+        Err(_) => {
+            // Keep the native refusal fail-closed, but preserve the parser's
+            // structured source diagnostic.  A generic merged-image message
+            // loses the E1001 code, source line, and caret that the shipping
+            // check path already provides for the same input.
+            let diagnostics = crate::parser::parse_with_diagnostics_in_file(text, Some(path))
+                .err()
+                .unwrap_or_default();
+            let emitter = crate::diagnostics::DiagnosticEmitter::new(
+                crate::diagnostics::DiagnosticFormat::Human,
+                crate::diagnostics::ColorChoice::Never,
+            );
+            let rendered = diagnostics
+                .iter()
+                .map(|diagnostic| emitter.render_human(diagnostic, Some(text)))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if rendered.is_empty() {
+                return Err(format!(
+                    "`{path}`: the merged module set does not parse as one translation unit"
+                ));
+            }
+            return Err(rendered);
+        }
+    };
     // A lowering refusal propagates as an explicit refusal. It is never
     // unwrapped and never becomes an empty successful module.
     //

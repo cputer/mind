@@ -247,6 +247,11 @@ const BARE_LEGACY_PARSE_SKIPS: &[&str] = &[
     "examples/mindc_mind/testdata/rh_f64_aggregate_canary.mind",
     "examples/native/ci_kernel.mind",
     "examples/native/loop.mind",
+    // The native bridge corpus includes a while loop.  `while` belongs to the
+    // std-surface grammar, so the bare formatter must classify this fixture as
+    // a measured legacy parse skip rather than silently treating it as an
+    // unexpected corpus regression.
+    "examples/mindc_mind/testdata/backend_native_bridge/while_sum.mind",
     "examples/policy.mind",
     "examples/remizov_benchmark.mind",
     "examples/remizov_gpu.mind",

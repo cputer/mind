@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1719 | **Est. tokens:** ~3332519
-**Generated:** 2026-09-08 23:44 UTC
+**Files:** 1719 | **Est. tokens:** ~3332868
+**Generated:** 2026-09-09 00:12 UTC
 
 ## Token Budget Guide
 
@@ -94,7 +94,7 @@
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
 | `src/bin/mindc/` | 1 | ~204 |
-| `src/build/` | 13 | ~48121 |
+| `src/build/` | 13 | ~48384 |
 | `src/build/cache/` | 3 | ~3150 |
 | `src/cache/` | 4 | ~3682 |
 | `src/check/` | 3 | ~10613 |
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 390 | ~776393 |
+| `tests/` | 390 | ~776479 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1053,7 +1053,7 @@
 - `driver_error.rs` (~699 tok, large) — Copyright 2025 STARGA Inc.
 - `error.rs` (~2022 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~9611 tok, huge) — Copyright 2025 STARGA Inc.
-- `native_bridge.rs` (~4976 tok, huge) — Copyright 2025 STARGA Inc.
+- `native_bridge.rs` (~5239 tok, huge) — Copyright 2025 STARGA Inc.
 - `native_image.rs` (~2018 tok, huge) — Copyright 2025 STARGA Inc.
 - `native_scope.rs` (~6258 tok, huge) — Copyright 2025 STARGA Inc.
 - `native_scope_tests.rs` (~5219 tok, huge) — Seam tests for the captured-source snapshot and its module identities.
@@ -1747,7 +1747,7 @@
 ### `tests/`
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_idempotence.rs` (~4597 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_idempotence.rs` (~4683 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_ir_preservation.rs` (~3956 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
