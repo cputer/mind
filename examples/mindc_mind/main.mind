@@ -33297,6 +33297,124 @@ pub fn nb_slit_validate_fields(buf: i64, srt: i64, sk: i64, lcell: i64, fields_a
 //   paren   -> transparent
 //   call    -> lower args, spill to argregs, call rel32, spill result
 //   binop   -> lower lhs+rhs, mov rax,[lhs]; OP rax,[rhs]; mov [dst],rax
+pub fn nb_record_index_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64, calls: i64, lets: i64, lcell: i64) -> NbState {
+    // `BASE[IDX]` i64 array index READ: lower base -> pointer slot, idx ->
+    // index slot, then CONST 8 ; MUL(idx,8) -> off ; ADD(base,off) -> addr ;
+    // __mind_load_i64(addr) -> dst. Uniform for constant AND variable idx
+    // (4 fresh ids after the operands — mirrored exactly in nb_count_expr).
+    // Compile-time bounds refusal (fail-closed, never a silent OOB read):
+    // a constant NEGATIVE index, or a constant index >= n on a base name
+    // let-bound directly to an `[...]` literal, POISONS the compile
+    // (nb_index_oob). Runtime bounds are NOT checked — same trust model as
+    // the manual __mind_load_i64 ABI this desugars to (documented in the
+    // fail-closed smoke). FLOAT base or FLOAT idx poisons (i64-only).
+    // main.mind's own source produces no index node — never fires during
+    // self-compile, integer native-ELF oracle byte-identical.
+    let ix_base: i64 = ast_child0(node);
+    let ix_idx: i64 = ast_child1(node);
+    // Exact u8 record fields take the direct scalar path: lower the owner
+    // and index once, bounds-check, then load one byte from the canonical
+    // eight-byte logical cell. Existing i64 fields keep their established
+    // materialize-then-index bytes below.
+    if ast_kind(ix_base) == ast_field() {
+        if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 1 {
+            if nb_field_array_rep_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 2 {
+                return nb_u8_field_index_read(st, buf, ix_base, ix_idx, params_addr, n_params, calls, lets, lcell);
+            }
+        }
+    }
+    // Field-backed arrays require exact schema authority. A literal-shaped
+    // runtime value is insufficient for an alias or unsupported element
+    // type. Likewise, an identifier must retain an array descriptor; this
+    // refuses call/parameter/alias paths whose length/layout was discarded.
+    if ast_kind(ix_base) == ast_field() {
+        if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) != 1 {
+            __mind_store_i64(lcell + 80, 1)
+        }
+    }
+    if ast_kind(ix_base) == ast_ident() {
+        let ix_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(ix_base), ast_span_hi(ix_base));
+        if ix_desc == 0 {
+            __mind_store_i64(lcell + 80, 1)
+        } else {
+            if ast_kind(ix_desc) != ast_array_lit() {
+                __mind_store_i64(lcell + 80, 1)
+            }
+        }
+    }
+    let s_xb: NbState = nb_expr(st, buf, ix_base, params_addr, n_params, calls, lets, lcell);
+    let xb_id: i64 = s_xb.last_id;
+    let s_xi: NbState = nb_expr(s_xb, buf, ix_idx, params_addr, n_params, calls, lets, lcell);
+    let xi_id: i64 = s_xi.last_id;
+    if nb_index_oob(ix_base, ix_idx, buf, lets, lcell) == 1 {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    let xdtbl: i64 = __mind_load_i64(lcell + 8);
+    if nb_node_dtype_tbl(ix_base, xdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    if nb_node_dtype_tbl(ix_idx, xdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    // NESTED index base (`a[i][j]`) whose LEAF scalar dtype is PROVEN FLOAT:
+    // fail CLOSED. nb_index_elem_dtype classifies only a DIRECT ident/array-lit
+    // base and returns INT for a nested ast_index base, so a nested-FLOAT read
+    // GP-loads the raw IEEE-754 bits and `as i64` no-ops to 0 — a silent
+    // miscompile (fail-OPEN). Poison -> 0-byte ELF. A nested-i64 index proves
+    // INT and keeps running. No SSA slot is consumed, so the count mirror is
+    // unchanged. The poison fires ONLY on a PROVEN-FLOAT leaf (== float), never
+    // on -1/UNKNOWN: main.mind's own source has ZERO float arrays but DOES carry
+    // internal nested integer indices whose leaf can be UNPROVABLE (-1) — a `!=
+    // int` guard would poison those and 0-byte the self-emit. A proven-float
+    // leaf can never occur during self-compile, so byte-identity holds.
+    // deferred: a nested index whose base IS float but UNPROVABLE (-1, e.g. a
+    // float array reaching this arm through an untraceable path) is NOT caught
+    // this slice — rare, and a documented follow-up, not a regression. Upgrade
+    // path: strengthen nb_index_leaf_dtype's root resolution to cover the
+    // unprovable float paths, then widen the guard to catch -1-float too.
+    if ast_kind(ix_base) == ast_index() {
+        if nb_index_leaf_dtype(node, 0, buf, lets, lcell) == nb_dtype_float() {
+            __mind_store_i64(lcell + 80, 1)
+        }
+    }
+    // RUNTIME bounds guard (direct let-bound known-length arrays only): a
+    // variable/computed index that would read OUT OF BOUNDS halts
+    // deterministically (_exit(nb_oob_trap_code)) instead of an unchecked
+    // load. Consumes NO SSA id (raw rax compare + fixed rel8 jumps), so the
+    // count mirror stays in lockstep. -1 length (call-boundary) => no guard.
+    let x_guard: String = nb_emit_bounds_guard(s_xi.code, nb_slot_disp(xi_id), nb_index_len(ix_base, buf, lets, lcell), nb_oob_trap_code());
+    // CONST 8 (element stride).
+    let xc8_id: i64 = s_xi.next_id;
+    let xc1: String = nb_push(x_guard, 72);
+    let xc2: String = nb_push(xc1, 184);
+    let xc3: String = nb_i64le(xc2, 8);
+    let xc4: String = nb_store_rax(xc3, nb_slot_disp(xc8_id));
+    // MUL(idx, 8) -> byte offset.
+    let xoff_id: i64 = xc8_id + 1;
+    let xm1: String = nb_load_rax(xc4, nb_slot_disp(xi_id));
+    let xm2: String = nb_arith_rax_mem(xm1, op_mul(), nb_slot_disp(xc8_id));
+    let xm3: String = nb_store_rax(xm2, nb_slot_disp(xoff_id));
+    // ADD(base, off) -> element address.
+    let xaddr_id: i64 = xoff_id + 1;
+    let xa1: String = nb_load_rax(xm3, nb_slot_disp(xb_id));
+    let xa2: String = nb_arith_rax_mem(xa1, op_add(), nb_slot_disp(xoff_id));
+    let xa3: String = nb_store_rax(xa2, nb_slot_disp(xaddr_id));
+    // __mind_load_i64(addr) -> dst.
+    let xdst_id: i64 = xaddr_id + 1;
+    let xl1: String = nb_emit_load_i64(xa3, nb_slot_disp(xaddr_id));
+    let xl2: String = nb_store_rax(xl1, nb_slot_disp(xdst_id));
+    // f64-element array READ: tag the result slot FLOAT so a binop over it
+    // (`a[i] + a[j]`) routes the SSE2 arm (the GP load already spilled the raw
+    // 8-byte IEEE bits to xdst; a float consumer movsd-reads them, so no SSE
+    // load is needed). INT arrays and non-array bases are unchanged
+    // (nb_index_elem_dtype returns INT). Tagging allocates NO slot, so count
+    // lockstep is preserved. main.mind has no index node -> byte-identical.
+    if nb_index_elem_dtype(ix_base, buf, lets, lcell) == nb_dtype_float() {
+        let _xtg: i64 = nb_dtype_tag_slot(xdtbl, xdst_id, nb_dtype_float());
+    }
+    return NbState { code: xl2, next_id: xdst_id + 1, last_id: xdst_id, ncalls: s_xi.ncalls };
+}
+
 pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64, calls: i64, lets: i64, lcell: i64) -> NbState {
     let k: i64 = ast_kind(node);
     if k == ast_int_lit() {
@@ -33579,121 +33697,7 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         return nb_expr(st, buf, earr, params_addr, n_params, calls, lets, lcell);
     }
     if k == ast_index() {
-        // `BASE[IDX]` i64 array index READ: lower base -> pointer slot, idx ->
-        // index slot, then CONST 8 ; MUL(idx,8) -> off ; ADD(base,off) -> addr ;
-        // __mind_load_i64(addr) -> dst. Uniform for constant AND variable idx
-        // (4 fresh ids after the operands — mirrored exactly in nb_count_expr).
-        // Compile-time bounds refusal (fail-closed, never a silent OOB read):
-        // a constant NEGATIVE index, or a constant index >= n on a base name
-        // let-bound directly to an `[...]` literal, POISONS the compile
-        // (nb_index_oob). Runtime bounds are NOT checked — same trust model as
-        // the manual __mind_load_i64 ABI this desugars to (documented in the
-        // fail-closed smoke). FLOAT base or FLOAT idx poisons (i64-only).
-        // main.mind's own source produces no index node — never fires during
-        // self-compile, integer native-ELF oracle byte-identical.
-        let ix_base: i64 = ast_child0(node);
-        let ix_idx: i64 = ast_child1(node);
-        // Exact u8 record fields take the direct scalar path: lower the owner
-        // and index once, bounds-check, then load one byte from the canonical
-        // eight-byte logical cell. Existing i64 fields keep their established
-        // materialize-then-index bytes below.
-        if ast_kind(ix_base) == ast_field() {
-            if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 1 {
-                if nb_field_array_rep_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 2 {
-                    return nb_u8_field_index_read(st, buf, ix_base, ix_idx, params_addr, n_params, calls, lets, lcell);
-                }
-            }
-        }
-        // Field-backed arrays require exact schema authority. A literal-shaped
-        // runtime value is insufficient for an alias or unsupported element
-        // type. Likewise, an identifier must retain an array descriptor; this
-        // refuses call/parameter/alias paths whose length/layout was discarded.
-        if ast_kind(ix_base) == ast_field() {
-            if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) != 1 {
-                __mind_store_i64(lcell + 80, 1)
-            }
-        }
-        if ast_kind(ix_base) == ast_ident() {
-            let ix_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(ix_base), ast_span_hi(ix_base));
-            if ix_desc == 0 {
-                __mind_store_i64(lcell + 80, 1)
-            } else {
-                if ast_kind(ix_desc) != ast_array_lit() {
-                    __mind_store_i64(lcell + 80, 1)
-                }
-            }
-        }
-        let s_xb: NbState = nb_expr(st, buf, ix_base, params_addr, n_params, calls, lets, lcell);
-        let xb_id: i64 = s_xb.last_id;
-        let s_xi: NbState = nb_expr(s_xb, buf, ix_idx, params_addr, n_params, calls, lets, lcell);
-        let xi_id: i64 = s_xi.last_id;
-        if nb_index_oob(ix_base, ix_idx, buf, lets, lcell) == 1 {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        let xdtbl: i64 = __mind_load_i64(lcell + 8);
-        if nb_node_dtype_tbl(ix_base, xdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        if nb_node_dtype_tbl(ix_idx, xdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        // NESTED index base (`a[i][j]`) whose LEAF scalar dtype is PROVEN FLOAT:
-        // fail CLOSED. nb_index_elem_dtype classifies only a DIRECT ident/array-lit
-        // base and returns INT for a nested ast_index base, so a nested-FLOAT read
-        // GP-loads the raw IEEE-754 bits and `as i64` no-ops to 0 — a silent
-        // miscompile (fail-OPEN). Poison -> 0-byte ELF. A nested-i64 index proves
-        // INT and keeps running. No SSA slot is consumed, so the count mirror is
-        // unchanged. The poison fires ONLY on a PROVEN-FLOAT leaf (== float), never
-        // on -1/UNKNOWN: main.mind's own source has ZERO float arrays but DOES carry
-        // internal nested integer indices whose leaf can be UNPROVABLE (-1) — a `!=
-        // int` guard would poison those and 0-byte the self-emit. A proven-float
-        // leaf can never occur during self-compile, so byte-identity holds.
-        // deferred: a nested index whose base IS float but UNPROVABLE (-1, e.g. a
-        // float array reaching this arm through an untraceable path) is NOT caught
-        // this slice — rare, and a documented follow-up, not a regression. Upgrade
-        // path: strengthen nb_index_leaf_dtype's root resolution to cover the
-        // unprovable float paths, then widen the guard to catch -1-float too.
-        if ast_kind(ix_base) == ast_index() {
-            if nb_index_leaf_dtype(node, 0, buf, lets, lcell) == nb_dtype_float() {
-                __mind_store_i64(lcell + 80, 1)
-            }
-        }
-        // RUNTIME bounds guard (direct let-bound known-length arrays only): a
-        // variable/computed index that would read OUT OF BOUNDS halts
-        // deterministically (_exit(nb_oob_trap_code)) instead of an unchecked
-        // load. Consumes NO SSA id (raw rax compare + fixed rel8 jumps), so the
-        // count mirror stays in lockstep. -1 length (call-boundary) => no guard.
-        let x_guard: String = nb_emit_bounds_guard(s_xi.code, nb_slot_disp(xi_id), nb_index_len(ix_base, buf, lets, lcell), nb_oob_trap_code());
-        // CONST 8 (element stride).
-        let xc8_id: i64 = s_xi.next_id;
-        let xc1: String = nb_push(x_guard, 72);
-        let xc2: String = nb_push(xc1, 184);
-        let xc3: String = nb_i64le(xc2, 8);
-        let xc4: String = nb_store_rax(xc3, nb_slot_disp(xc8_id));
-        // MUL(idx, 8) -> byte offset.
-        let xoff_id: i64 = xc8_id + 1;
-        let xm1: String = nb_load_rax(xc4, nb_slot_disp(xi_id));
-        let xm2: String = nb_arith_rax_mem(xm1, op_mul(), nb_slot_disp(xc8_id));
-        let xm3: String = nb_store_rax(xm2, nb_slot_disp(xoff_id));
-        // ADD(base, off) -> element address.
-        let xaddr_id: i64 = xoff_id + 1;
-        let xa1: String = nb_load_rax(xm3, nb_slot_disp(xb_id));
-        let xa2: String = nb_arith_rax_mem(xa1, op_add(), nb_slot_disp(xoff_id));
-        let xa3: String = nb_store_rax(xa2, nb_slot_disp(xaddr_id));
-        // __mind_load_i64(addr) -> dst.
-        let xdst_id: i64 = xaddr_id + 1;
-        let xl1: String = nb_emit_load_i64(xa3, nb_slot_disp(xaddr_id));
-        let xl2: String = nb_store_rax(xl1, nb_slot_disp(xdst_id));
-        // f64-element array READ: tag the result slot FLOAT so a binop over it
-        // (`a[i] + a[j]`) routes the SSE2 arm (the GP load already spilled the raw
-        // 8-byte IEEE bits to xdst; a float consumer movsd-reads them, so no SSE
-        // load is needed). INT arrays and non-array bases are unchanged
-        // (nb_index_elem_dtype returns INT). Tagging allocates NO slot, so count
-        // lockstep is preserved. main.mind has no index node -> byte-identical.
-        if nb_index_elem_dtype(ix_base, buf, lets, lcell) == nb_dtype_float() {
-            let _xtg: i64 = nb_dtype_tag_slot(xdtbl, xdst_id, nb_dtype_float());
-        }
-        return NbState { code: xl2, next_id: xdst_id + 1, last_id: xdst_id, ncalls: s_xi.ncalls };
+        return nb_record_index_expr(st, buf, node, params_addr, n_params, calls, lets, lcell);
     }
     if k == ast_field() {
         // `recv.field` field READ (mirrors eval/lower.rs FieldAccess + the Rust
@@ -36964,6 +36968,151 @@ pub fn nb_while_patch_breaks(loops: i64, lpcell: i64, jmps: i64, jcell: i64, end
 // Lower one body statement: a `return EXPR` lowers EXPR then the return; an `if`
 // statement lowers per the src/native If arm; any other (bare expr) lowers the
 // expr. `jmps`/`jcell` are the intra-fn forward-jump scratch (used by the If arm).
+pub fn nb_record_index_assign_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64, calls: i64, is_entry: i64, jmps: i64, jcell: i64, lets: i64, lcell: i64, srt: i64, loops: i64, lpcell: i64) -> NbState {
+    // `BASE[IDX] = RHS ;` i64 array index WRITE — the store twin of
+    // nb_expr's ast_index read arm. Evaluation order (left-to-right,
+    // mirrored EXACTLY in nb_count_stmt): base -> ptr slot ; idx -> index
+    // slot ; CONST 8 ; MUL(idx,8) -> off ; ADD(base,off) -> addr ; RHS ->
+    // val ; __mind_store_i64(addr, val) (store-dst id consumed, never
+    // read — same as the struct-field store). It is a MEMORY store, not a
+    // name rebind: no let-env change, so if/while merge machinery is
+    // untouched (heap writes are naturally visible across branches and
+    // loop iterations). Same fail-closed refusals as the read arm:
+    // proven-constant OOB index, FLOAT idx, FLOAT rhs (i64-only).
+    // main.mind's own source produces no index-assign node — never fires
+    // during self-compile, integer native-ELF oracle byte-identical.
+    let w_base: i64 = ast_child0(node);
+    let w_idx: i64 = ast_child1(node);
+    let w_rhs: i64 = ast_child2(node);
+    // This slice exposes record-array fields by value. An indexed write
+    // through `record.field` would mutate only a temporary copy, so refuse
+    // it until an explicit ArrayStore/borrow contract exists.
+    if ast_kind(w_base) == ast_field() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    if ast_kind(w_base) == ast_ident() {
+        let w_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(w_base), ast_span_hi(w_base));
+        if w_desc == 0 {
+            __mind_store_i64(lcell + 80, 1)
+        } else {
+            if ast_kind(w_desc) != ast_array_lit() {
+                __mind_store_i64(lcell + 80, 1)
+            }
+        }
+    }
+    let s_wb: NbState = nb_expr(st, buf, w_base, params_addr, n_params, calls, lets, lcell);
+    let wb_id: i64 = s_wb.last_id;
+    let s_wi: NbState = nb_expr(s_wb, buf, w_idx, params_addr, n_params, calls, lets, lcell);
+    let wi_id: i64 = s_wi.last_id;
+    if nb_index_oob(w_base, w_idx, buf, lets, lcell) == 1 {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    let wdtbl: i64 = __mind_load_i64(lcell + 8);
+    if nb_node_dtype_tbl(w_idx, wdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    // NESTED index base (`a[i][j] = rhs`) whose LEAF scalar dtype is PROVEN
+    // FLOAT: fail CLOSED (twin of the READ arm). The target chain is w_base
+    // indexed once more, so classify w_base with one EXTRA level. A nested-FLOAT
+    // cell written through the GP integer store path is a silent miscompile (an
+    // int rhs corrupts the float cell; a float rhs already poisons via the
+    // rhs-dtype check below). A nested-i64 write proves INT and keeps running.
+    // Poison fires ONLY on a PROVEN-FLOAT leaf (== float), never on -1/UNKNOWN,
+    // for the same self-compile-byte-identity reason as the READ arm. No SSA
+    // slot is consumed. deferred: the unprovable-float (-1) write is a
+    // documented follow-up (see the READ arm), not a regression.
+    if ast_kind(w_base) == ast_index() {
+        if nb_index_leaf_dtype(w_base, 1, buf, lets, lcell) == nb_dtype_float() {
+            __mind_store_i64(lcell + 80, 1)
+        }
+    }
+    // RUNTIME bounds guard (direct let-bound known-length arrays only): a
+    // variable/computed index that would write OUT OF BOUNDS halts
+    // deterministically (_exit(nb_oob_trap_code)) instead of an unchecked
+    // store. Consumes NO SSA id (raw rax compare + fixed rel8 jumps), so the
+    // count mirror stays in lockstep. -1 length (call-boundary) => no guard.
+    let w_guard: String = nb_emit_bounds_guard(s_wi.code, nb_slot_disp(wi_id), nb_index_len(w_base, buf, lets, lcell), nb_oob_trap_code());
+    // CONST 8 (element stride).
+    let wc8_id: i64 = s_wi.next_id;
+    let wc1: String = nb_push(w_guard, 72);
+    let wc2: String = nb_push(wc1, 184);
+    let wc3: String = nb_i64le(wc2, 8);
+    let wc4: String = nb_store_rax(wc3, nb_slot_disp(wc8_id));
+    // MUL(idx, 8) -> byte offset.
+    let woff_id: i64 = wc8_id + 1;
+    let wm1: String = nb_load_rax(wc4, nb_slot_disp(wi_id));
+    let wm2: String = nb_arith_rax_mem(wm1, op_mul(), nb_slot_disp(wc8_id));
+    let wm3: String = nb_store_rax(wm2, nb_slot_disp(woff_id));
+    // ADD(base, off) -> element address.
+    let waddr_id: i64 = woff_id + 1;
+    let wa1: String = nb_load_rax(wm3, nb_slot_disp(wb_id));
+    let wa2: String = nb_arith_rax_mem(wa1, op_add(), nb_slot_disp(woff_id));
+    let wa3: String = nb_store_rax(wa2, nb_slot_disp(waddr_id));
+    // RHS -> value slot.
+    let s_wv: NbState = nb_expr(NbState { code: wa3, next_id: waddr_id + 1, last_id: waddr_id, ncalls: s_wi.ncalls }, buf, w_rhs, params_addr, n_params, calls, lets, lcell);
+    if nb_node_dtype_tbl(w_rhs, wdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    // __mind_store_i64(addr, val); the store's dst id is consumed unread.
+    let wdst_id: i64 = s_wv.next_id;
+    let ws1: String = nb_emit_store_i64(s_wv.code, nb_slot_disp(waddr_id), nb_slot_disp(s_wv.last_id));
+    return NbState { code: ws1, next_id: wdst_id + 1, last_id: wdst_id, ncalls: s_wv.ncalls };
+}
+
+pub fn nb_record_field_assign_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64, calls: i64, is_entry: i64, jmps: i64, jcell: i64, lets: i64, lcell: i64, srt: i64, loops: i64, lpcell: i64) -> NbState {
+    // `RECV.FIELD = RHS ;` struct field WRITE — the store twin of nb_expr's
+    // ast_field read arm, lowered exactly like the index-assign arm above
+    // but with the field's fixed byte offset in place of idx*8. Evaluation
+    // order (mirrored EXACTLY in nb_count_stmt): recv -> base-ptr slot ;
+    // CONST off ; ADD(base,off) -> addr (uniform, off==0 included) ; RHS ->
+    // val ; __mind_store_i64(addr, val) (store-dst id consumed, never read). It
+    // is a MEMORY store, not a name rebind: no let-env change, so if/while
+    // merge machinery is untouched — heap writes are naturally visible
+    // across branches and loop iterations (the next field READ is always a
+    // fresh load through the base pointer). FAIL-CLOSED refusals (poison ->
+    // 0-byte ELF, never a silent drop): unsupported target shape
+    // (nb_field_offset -1: nested `p.q.x` / non-ident receiver / unbound or
+    // non-struct receiver / unknown field), a FLOAT field, a FLOAT rhs.
+    // main.mind's own source produces no field-assign node — never fires
+    // during self-compile, integer native-ELF oracle byte-identical.
+    let fa_t: i64 = ast_child0(node);
+    let fa_v: i64 = ast_child2(node);
+    let fa_recv: i64 = ast_child0(fa_t);
+    let s_fb: NbState = nb_expr(st, buf, fa_recv, params_addr, n_params, calls, lets, lcell);
+    let fb_id: i64 = s_fb.last_id;
+    let foff: i64 = nb_field_offset(fa_recv, fa_t, buf, lets, lcell);
+    if foff < 0 {
+        // Unsupported target shape — poison; the placeholder const0 keeps
+        // the walk crash-free (its output is discarded on refusal).
+        __mind_store_i64(lcell + 80, 1);
+        return nb_emit_const0(s_fb);
+    }
+    // Whole-field fixed-array stores are not part of this slice. Refuse
+    // rather than overwriting the first inline cell with an array handle.
+    if nb_field_array_status_r(fa_recv, fa_t, buf, lets, lcell) != 0 {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    if ast_kind(fa_v) == ast_array_lit() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    // i64-only: a FLOAT field target refuses (the store would drop the SSE
+    // classification), as does a FLOAT rhs below.
+    if nb_field_dtype(fa_recv, fa_t, buf, lets, lcell) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    let s_fa: NbState = nb_field_addr(s_fb.code, s_fb.next_id, fb_id, foff, s_fb.ncalls);
+    let faddr_id: i64 = s_fa.last_id;
+    let s_fv: NbState = nb_expr(s_fa, buf, fa_v, params_addr, n_params, calls, lets, lcell);
+    let fdtbl: i64 = __mind_load_i64(lcell + 8);
+    if nb_node_dtype_tbl(fa_v, fdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    // __mind_store_i64(addr, val); the store's dst id is consumed unread.
+    let fdst_id: i64 = s_fv.next_id;
+    let fs1: String = nb_emit_store_i64(s_fv.code, nb_slot_disp(faddr_id), nb_slot_disp(s_fv.last_id));
+    return NbState { code: fs1, next_id: fdst_id + 1, last_id: fdst_id, ncalls: s_fv.ncalls };
+}
+
 pub fn nb_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64, calls: i64, is_entry: i64, jmps: i64, jcell: i64, lets: i64, lcell: i64, srt: i64, loops: i64, lpcell: i64) -> NbState {
     let k: i64 = ast_kind(node);
     if k == ast_return() {
@@ -37263,147 +37412,10 @@ pub fn nb_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         return nb_deref_store(s_dv.code, s_dv.next_id, s_dv.last_id, s_dv.ncalls, da_slot);
     }
     if k == ast_index_assign() {
-        // `BASE[IDX] = RHS ;` i64 array index WRITE — the store twin of
-        // nb_expr's ast_index read arm. Evaluation order (left-to-right,
-        // mirrored EXACTLY in nb_count_stmt): base -> ptr slot ; idx -> index
-        // slot ; CONST 8 ; MUL(idx,8) -> off ; ADD(base,off) -> addr ; RHS ->
-        // val ; __mind_store_i64(addr, val) (store-dst id consumed, never
-        // read — same as the struct-field store). It is a MEMORY store, not a
-        // name rebind: no let-env change, so if/while merge machinery is
-        // untouched (heap writes are naturally visible across branches and
-        // loop iterations). Same fail-closed refusals as the read arm:
-        // proven-constant OOB index, FLOAT idx, FLOAT rhs (i64-only).
-        // main.mind's own source produces no index-assign node — never fires
-        // during self-compile, integer native-ELF oracle byte-identical.
-        let w_base: i64 = ast_child0(node);
-        let w_idx: i64 = ast_child1(node);
-        let w_rhs: i64 = ast_child2(node);
-        // This slice exposes record-array fields by value. An indexed write
-        // through `record.field` would mutate only a temporary copy, so refuse
-        // it until an explicit ArrayStore/borrow contract exists.
-        if ast_kind(w_base) == ast_field() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        if ast_kind(w_base) == ast_ident() {
-            let w_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(w_base), ast_span_hi(w_base));
-            if w_desc == 0 {
-                __mind_store_i64(lcell + 80, 1)
-            } else {
-                if ast_kind(w_desc) != ast_array_lit() {
-                    __mind_store_i64(lcell + 80, 1)
-                }
-            }
-        }
-        let s_wb: NbState = nb_expr(st, buf, w_base, params_addr, n_params, calls, lets, lcell);
-        let wb_id: i64 = s_wb.last_id;
-        let s_wi: NbState = nb_expr(s_wb, buf, w_idx, params_addr, n_params, calls, lets, lcell);
-        let wi_id: i64 = s_wi.last_id;
-        if nb_index_oob(w_base, w_idx, buf, lets, lcell) == 1 {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        let wdtbl: i64 = __mind_load_i64(lcell + 8);
-        if nb_node_dtype_tbl(w_idx, wdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        // NESTED index base (`a[i][j] = rhs`) whose LEAF scalar dtype is PROVEN
-        // FLOAT: fail CLOSED (twin of the READ arm). The target chain is w_base
-        // indexed once more, so classify w_base with one EXTRA level. A nested-FLOAT
-        // cell written through the GP integer store path is a silent miscompile (an
-        // int rhs corrupts the float cell; a float rhs already poisons via the
-        // rhs-dtype check below). A nested-i64 write proves INT and keeps running.
-        // Poison fires ONLY on a PROVEN-FLOAT leaf (== float), never on -1/UNKNOWN,
-        // for the same self-compile-byte-identity reason as the READ arm. No SSA
-        // slot is consumed. deferred: the unprovable-float (-1) write is a
-        // documented follow-up (see the READ arm), not a regression.
-        if ast_kind(w_base) == ast_index() {
-            if nb_index_leaf_dtype(w_base, 1, buf, lets, lcell) == nb_dtype_float() {
-                __mind_store_i64(lcell + 80, 1)
-            }
-        }
-        // RUNTIME bounds guard (direct let-bound known-length arrays only): a
-        // variable/computed index that would write OUT OF BOUNDS halts
-        // deterministically (_exit(nb_oob_trap_code)) instead of an unchecked
-        // store. Consumes NO SSA id (raw rax compare + fixed rel8 jumps), so the
-        // count mirror stays in lockstep. -1 length (call-boundary) => no guard.
-        let w_guard: String = nb_emit_bounds_guard(s_wi.code, nb_slot_disp(wi_id), nb_index_len(w_base, buf, lets, lcell), nb_oob_trap_code());
-        // CONST 8 (element stride).
-        let wc8_id: i64 = s_wi.next_id;
-        let wc1: String = nb_push(w_guard, 72);
-        let wc2: String = nb_push(wc1, 184);
-        let wc3: String = nb_i64le(wc2, 8);
-        let wc4: String = nb_store_rax(wc3, nb_slot_disp(wc8_id));
-        // MUL(idx, 8) -> byte offset.
-        let woff_id: i64 = wc8_id + 1;
-        let wm1: String = nb_load_rax(wc4, nb_slot_disp(wi_id));
-        let wm2: String = nb_arith_rax_mem(wm1, op_mul(), nb_slot_disp(wc8_id));
-        let wm3: String = nb_store_rax(wm2, nb_slot_disp(woff_id));
-        // ADD(base, off) -> element address.
-        let waddr_id: i64 = woff_id + 1;
-        let wa1: String = nb_load_rax(wm3, nb_slot_disp(wb_id));
-        let wa2: String = nb_arith_rax_mem(wa1, op_add(), nb_slot_disp(woff_id));
-        let wa3: String = nb_store_rax(wa2, nb_slot_disp(waddr_id));
-        // RHS -> value slot.
-        let s_wv: NbState = nb_expr(NbState { code: wa3, next_id: waddr_id + 1, last_id: waddr_id, ncalls: s_wi.ncalls }, buf, w_rhs, params_addr, n_params, calls, lets, lcell);
-        if nb_node_dtype_tbl(w_rhs, wdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        // __mind_store_i64(addr, val); the store's dst id is consumed unread.
-        let wdst_id: i64 = s_wv.next_id;
-        let ws1: String = nb_emit_store_i64(s_wv.code, nb_slot_disp(waddr_id), nb_slot_disp(s_wv.last_id));
-        return NbState { code: ws1, next_id: wdst_id + 1, last_id: wdst_id, ncalls: s_wv.ncalls };
+        return nb_record_index_assign_stmt(st, buf, node, params_addr, n_params, calls, is_entry, jmps, jcell, lets, lcell, srt, loops, lpcell);
     }
     if k == ast_field_assign() {
-        // `RECV.FIELD = RHS ;` struct field WRITE — the store twin of nb_expr's
-        // ast_field read arm, lowered exactly like the index-assign arm above
-        // but with the field's fixed byte offset in place of idx*8. Evaluation
-        // order (mirrored EXACTLY in nb_count_stmt): recv -> base-ptr slot ;
-        // CONST off ; ADD(base,off) -> addr (uniform, off==0 included) ; RHS ->
-        // val ; __mind_store_i64(addr, val) (store-dst id consumed, never read). It
-        // is a MEMORY store, not a name rebind: no let-env change, so if/while
-        // merge machinery is untouched — heap writes are naturally visible
-        // across branches and loop iterations (the next field READ is always a
-        // fresh load through the base pointer). FAIL-CLOSED refusals (poison ->
-        // 0-byte ELF, never a silent drop): unsupported target shape
-        // (nb_field_offset -1: nested `p.q.x` / non-ident receiver / unbound or
-        // non-struct receiver / unknown field), a FLOAT field, a FLOAT rhs.
-        // main.mind's own source produces no field-assign node — never fires
-        // during self-compile, integer native-ELF oracle byte-identical.
-        let fa_t: i64 = ast_child0(node);
-        let fa_v: i64 = ast_child2(node);
-        let fa_recv: i64 = ast_child0(fa_t);
-        let s_fb: NbState = nb_expr(st, buf, fa_recv, params_addr, n_params, calls, lets, lcell);
-        let fb_id: i64 = s_fb.last_id;
-        let foff: i64 = nb_field_offset(fa_recv, fa_t, buf, lets, lcell);
-        if foff < 0 {
-            // Unsupported target shape — poison; the placeholder const0 keeps
-            // the walk crash-free (its output is discarded on refusal).
-            __mind_store_i64(lcell + 80, 1);
-            return nb_emit_const0(s_fb);
-        }
-        // Whole-field fixed-array stores are not part of this slice. Refuse
-        // rather than overwriting the first inline cell with an array handle.
-        if nb_field_array_status_r(fa_recv, fa_t, buf, lets, lcell) != 0 {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        if ast_kind(fa_v) == ast_array_lit() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        // i64-only: a FLOAT field target refuses (the store would drop the SSE
-        // classification), as does a FLOAT rhs below.
-        if nb_field_dtype(fa_recv, fa_t, buf, lets, lcell) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        let s_fa: NbState = nb_field_addr(s_fb.code, s_fb.next_id, fb_id, foff, s_fb.ncalls);
-        let faddr_id: i64 = s_fa.last_id;
-        let s_fv: NbState = nb_expr(s_fa, buf, fa_v, params_addr, n_params, calls, lets, lcell);
-        let fdtbl: i64 = __mind_load_i64(lcell + 8);
-        if nb_node_dtype_tbl(fa_v, fdtbl, lets, lcell, buf, params_addr, n_params) == nb_dtype_float() {
-            __mind_store_i64(lcell + 80, 1)
-        }
-        // __mind_store_i64(addr, val); the store's dst id is consumed unread.
-        let fdst_id: i64 = s_fv.next_id;
-        let fs1: String = nb_emit_store_i64(s_fv.code, nb_slot_disp(faddr_id), nb_slot_disp(s_fv.last_id));
-        return NbState { code: fs1, next_id: fdst_id + 1, last_id: fdst_id, ncalls: s_fv.ncalls };
+        return nb_record_field_assign_stmt(st, buf, node, params_addr, n_params, calls, is_entry, jmps, jcell, lets, lcell, srt, loops, lpcell);
     }
     if k == ast_break() {
         // `break` — emit the leading ConstI64(unit,0) (lower.rs 5967), then a jmp
