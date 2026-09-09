@@ -6,10 +6,16 @@
 //! This foundation is intentionally standalone. Later slices will connect the
 //! resolver, IR value metadata, MIC codec, and runnable backends.
 
+#[path = "canonical_intrinsic_validation.rs"]
+mod canonical_intrinsic_validation;
 #[path = "canonical_registry.rs"]
 mod canonical_registry;
 #[path = "canonical_types.rs"]
 mod canonical_types;
+
+#[cfg(test)]
+#[path = "canonical_intrinsic_tests.rs"]
+mod canonical_intrinsic_tests;
 
 #[cfg(test)]
 #[path = "canonical_tests.rs"]

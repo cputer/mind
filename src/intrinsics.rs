@@ -14,7 +14,9 @@
 
 //! The intrinsic registry: the ONE table naming every `__mind_*` primitive the
 //! compiler will emit, its i64 arity, and whether calling it can make the
-//! program's result depend on something other than its declared inputs.
+//! program's result depend on something other than its declared inputs. Rows
+//! with a canonical contract additionally own the logical spelling, result
+//! policy, effect, offset policy, and backend profiles used for admission.
 //!
 //! ## Why the determinism verdict lives HERE, beside the arity
 //!
@@ -70,11 +72,16 @@ pub(crate) enum Det {
     /// host CPU-feature state.
     World,
 }
+pub(crate) use crate::intrinsic_contract::{
+    FOUR_I64, IntrinsicEffect, IntrinsicProfile, IntrinsicResult, IntrinsicSpec,
+    IntrinsicValueType, NO_I64, ONE_I64, TWO_I64, intrinsic_contract, intrinsic_supports_profile,
+};
 
 // RFC 0005 Phase 1 + 1.5 — pure-MIND standard surface intrinsics.
 //
 // The primitives the std surface (`Vec`, `String`, `Map`, `io`)
-// is allowed to bottom out into. All take and return `i64` only (no
+// is allowed to bottom out into. Their operands use the i64 ABI; a contract
+// row may explicitly be discard-only (no
 // `Ptr` type — see RFC 0005 P0a; an address is a 64-bit integer).
 // The pair (`__mind_load_i64`, `__mind_store_i64`) was added at Phase
 // 1.5 to resolve P0c — without scalar load/store at address, `vec.push`
@@ -84,54 +91,62 @@ pub(crate) enum Det {
 // with a matching `func.func private` declaration emitted once per
 // distinct callee in sorted order. Default builds compile out the
 // recogniser entirely.
-pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
-    ("__mind_alloc", 1, Det::Pure),
-    ("__mind_blas_dot_f32", 3, Det::Pure),
+pub(crate) const STD_SURFACE_INTRINSICS: &[IntrinsicSpec] = &[
+    IntrinsicSpec::frozen_native_value("__mind_argc", "argc", NO_I64, IntrinsicEffect::Argc, 10),
+    IntrinsicSpec::frozen_native_value("__mind_argv", "argv", ONE_I64, IntrinsicEffect::Argv, 11),
+    IntrinsicSpec::frozen_value(
+        "__mind_alloc",
+        "alloc",
+        ONE_I64,
+        IntrinsicEffect::ArenaAlloc,
+        1,
+    ),
+    IntrinsicSpec::legacy("__mind_blas_dot_f32", 3, Det::Pure),
     // RFC 0006 Track B (increment 1): native MLIR vector-dialect
     // `dot_f32`. Same i64 ABI / arity (3) as the Track A scalar bridge;
     // the difference is purely in lowering — the `Instr::Call` for this
     // name emits a `vector`-dialect reduction loop, not a `func.call` to
     // the runtime-support C shim. Track A's `__mind_blas_dot_f32` stays
     // registered and is the unchanged scalar/AVX2 fallback.
-    ("__mind_blas_dot_f32_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_f32_v", 3, Det::Pure),
     // "int-dot" tier: native MLIR vector-dialect int16 dot product. Same i64
     // ABI / arity (3) as the other vector dots. Inputs are i16 row-major;
     // byte-identical to the scalar oracle `(i32) sum_k ((i32)a[k]*(i32)b[k])`
     // for ALL int16 inputs (i64-lane accumulate, no shift, no saturation, no
     // early narrow). The widen-multiply-accumulate loop is the AVX2 vpmaddwd
     // idiom at -march=x86-64-v3 — the fast deterministic int GEMM tier.
-    ("__mind_blas_dot_i16_v", 3, Det::Pure),
-    ("__mind_blas_dot_l1_f32", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_i16_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_l1_f32", 3, Det::Pure),
     // RFC 0006 Track B (increment 2): native MLIR vector-dialect f32 L1
     // (sum-of-abs) reduction. Same i64 ABI / arity (3) as the Track A
     // scalar bridge; lowering interception emits an abs-diff + add
     // reduction loop. Track A's `__mind_blas_dot_l1_f32` is unchanged.
-    ("__mind_blas_dot_l1_f32_v", 3, Det::Pure),
-    ("__mind_blas_dot_l1_q16", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_l1_f32_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_l1_q16", 3, Det::Pure),
     // RFC 0006 Track B (increment 3): native MLIR vector-dialect Q16.16 L1
     // (Manhattan, sum-of-abs) reduction. Byte-identical to the Track A
     // scalar oracle `__mind_blas_dot_l1_q16` at every length (task #57
     // cross-arch bit-identity gate); closes the Q16.16 vector-path metric
     // parity deferred in increment 2. Track A's `__mind_blas_dot_l1_q16`
     // is unchanged.
-    ("__mind_blas_dot_l1_q16_v", 3, Det::Pure),
-    ("__mind_blas_dot_linf_f32", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_l1_q16_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_linf_f32", 3, Det::Pure),
     // RFC 0006 Track B (increment 2): native MLIR vector-dialect f32 L∞
     // (max-of-abs) reduction. Track A's `__mind_blas_dot_linf_f32` is
     // unchanged.
-    ("__mind_blas_dot_linf_f32_v", 3, Det::Pure),
-    ("__mind_blas_dot_q16", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_linf_f32_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_q16", 3, Det::Pure),
     // RFC 0006 Track B (increment 2): native MLIR vector-dialect Q16.16
     // dot product. Byte-identical to the Track A scalar oracle
     // `__mind_blas_dot_q16` at every length (task #57 cross-arch
     // bit-identity gate). Track A's `__mind_blas_dot_q16` is unchanged.
-    ("__mind_blas_dot_q16_v", 3, Det::Pure),
-    ("__mind_blas_matmul_rmajor_f32", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_dot_q16_v", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_rmajor_f32", 5, Det::Pure),
     // RFC 0006 Track B (increment 3b): native MLIR vector-dialect row-major
     // f32 matmul.  Outer scf.for over rows, inner vectorised dot_f32_v
     // (8-lane FMA + scalar tail) inlined per row, stores to caller-allocated
     // y buffer, returns 0.  Same arity (5) and i64 ABI as Track A.
-    ("__mind_blas_matmul_rmajor_f32_v", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_rmajor_f32_v", 5, Det::Pure),
     // "int-dot" tier: native MLIR vector-dialect row-major int16 matmul.
     // Outer scf.for over rows, inner int16 dot reduction from emit_vec_dot_i16
     // (sext i16->i64, i64-lane accumulate, vector.reduction <add>, scalar
@@ -139,7 +154,7 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // buffer, returns 0. Same arity (5) and i64 ABI as the f32/q16 matmuls.
     // Byte-identical to the scalar oracle applied per row, for all int16
     // inputs. Track B vector-dialect only — no Track A i16 matmul extern.
-    ("__mind_blas_matmul_rmajor_i16_v", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_rmajor_i16_v", 5, Det::Pure),
     // RFC 0006 Track B (increment 4): native MLIR vector-dialect row-major
     // Q16.16 matmul.  Outer scf.for over rows, inner Q16.16 dot reduction
     // from emit_vec_dot_q16 (widen i32→i64, >> 16, i64-lane accumulate,
@@ -148,7 +163,7 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // to the scalar oracle __mind_blas_dot_q16 applied per row (cross-arch
     // bit-identity gate, task #57).  Track B vector-dialect only — there is
     // no Track A q16 matmul extern; the per-row oracle is __mind_blas_dot_q16.
-    ("__mind_blas_matmul_rmajor_q16_v", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_rmajor_q16_v", 5, Det::Pure),
     // "det.igemm" tier: fused int8 GEMM. A is M×K row-major int8 (1 byte), B
     // is K×N row-major int8, C is M×N row-major INT32 caller-allocated; arity 6
     // (a, b, c, m, k, n), i64 ABI, returns 0. Same BLIS-blocked register-tiled
@@ -158,25 +173,25 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // the per-element scalar int32 oracle (i32) Σ_k (i32)A[i,k]*(i32)B[k,j] for
     // all shapes. The same MLIR lowers to vpmaddwd (AVX2) / SDOT (aarch64),
     // both yielding the identical exact int32 sum.
-    ("__mind_blas_matmul_mm_i8_v", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_mm_i8_v", 6, Det::Pure),
     // Multithreaded fused int8 GEMM. Same ABI (arity 6: a, b, c, m, k, n; i64;
     // returns 0) and byte-for-byte output as __mind_blas_matmul_mm_i8_v,
     // parallelised over contiguous owner-computes M-row bands with raw POSIX
     // threads. Output is independent of the thread count (no cross-thread
     // reduction), so cross-substrate bit-identity holds.
-    ("__mind_blas_matmul_mm_i8_mt_v", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_mm_i8_mt_v", 6, Det::Pure),
     // RFC 0006 Track B: fused outer-product Q16.16 GEMM. A is M×K row-major,
     // B is K×N row-major (un-transposed), C is M×N row-major caller-allocated;
     // arity 6 (a, b, c, m, k, n), i64 ABI, returns 0. Register-tiled
     // outer-product microkernel (no horizontal reduction) — byte-identical to
     // the per-element scalar oracle Σ_k (A[i,k]*B[k,j])>>16 for all shapes.
-    ("__mind_blas_matmul_mm_q16_v", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_mm_q16_v", 6, Det::Pure),
     // Multithreaded fused outer-product Q16.16 GEMM. Same ABI (arity 6:
     // a, b, c, m, k, n; i64; returns 0) and byte-for-byte output as
     // __mind_blas_matmul_mm_q16_v, parallelised over contiguous owner-computes
     // M-row bands with raw POSIX threads. Output is independent of the thread
     // count (no cross-thread reduction), so cross-substrate bit-identity holds.
-    ("__mind_blas_matmul_mm_q16_mt_v", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_matmul_mm_q16_mt_v", 6, Det::Pure),
     // Multithreaded fused Q16.16 GEMV — the routing SCORE kernel
     // (`scores[M] = catalog[M×K] · query[K]`, catalog + query packed-i32, scores
     // i32; arity 5: catalog, query, scores, m, k; i64 ABI, returns 0). Same
@@ -186,7 +201,7 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // once (memory-bound). Byte-for-byte identical to the per-row scalar dot oracle
     // `Σ_k (catalog[i,k]*query[k])>>16` and independent of the thread count, so
     // cross-substrate bit-identity holds.
-    ("__mind_blas_gemv_q16_mt", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_blas_gemv_q16_mt", 5, Det::Pure),
     // mind-nerve C-ABI runtime surface (RFC 0006 pattern, i64 ABI). These nine
     // symbols are the native encoder's Q16.16 BLAS + LUT-handle bridge, defined
     // in mind-nerve's `runtime/blas_shims_i64.c` + `runtime/lut_cache.c` and
@@ -200,15 +215,15 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // (task #57 cross-arch gate). The four `_lut_*_h` accessors are 0-arity cached
     // table-handle getters; the five `_blas_*` are Q16.16 dot / score / GEMM /
     // attention contractions with the un-transposed row-major operand layout.
-    ("__mind_nerve_blas_attnv_q16_i64", 6, Det::Pure),
-    ("__mind_nerve_blas_dot_q16_i64", 3, Det::Pure),
-    ("__mind_nerve_blas_matmul_q16_i64", 6, Det::Pure),
-    ("__mind_nerve_blas_matmul_score_q16_i64", 5, Det::Pure),
-    ("__mind_nerve_blas_qkt_q16_i64", 6, Det::Pure),
-    ("__mind_nerve_lut_exp_h", 0, Det::Pure),
-    ("__mind_nerve_lut_recip_h", 0, Det::Pure),
-    ("__mind_nerve_lut_rsqrt_h", 0, Det::Pure),
-    ("__mind_nerve_lut_tanh_h", 0, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_blas_attnv_q16_i64", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_blas_dot_q16_i64", 3, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_blas_matmul_q16_i64", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_blas_matmul_score_q16_i64", 5, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_blas_qkt_q16_i64", 6, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_lut_exp_h", 0, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_lut_recip_h", 0, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_lut_rsqrt_h", 0, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_lut_tanh_h", 0, Det::Pure),
     // mind-nerve host/runtime FFI surface (src/runtime_ffi.mind): the envelope
     // CLI's clock / stdio / file / entropy / exit primitives, defined in the
     // mind-nerve runtime C shim and statically linked via
@@ -226,15 +241,15 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // `Det::World` is the honest verdict for the four channels the artifact
     // cannot name; the file reads and the write/exit effects stay `Det::Pure`
     // (the two `deferred:` blocks below say exactly why the line falls there).
-    ("__mind_nerve_rt_exit", 1, Det::Pure),
-    ("__mind_nerve_rt_file_size", 2, Det::Pure),
-    ("__mind_nerve_rt_getenv", 4, Det::World),
-    ("__mind_nerve_rt_monotonic_ns", 0, Det::World),
-    ("__mind_nerve_rt_os_entropy", 2, Det::World),
-    ("__mind_nerve_rt_read_file", 4, Det::Pure),
-    ("__mind_nerve_rt_read_stdin", 2, Det::World),
-    ("__mind_nerve_rt_write_stderr", 2, Det::Pure),
-    ("__mind_nerve_rt_write_stdout", 2, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_rt_exit", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_rt_file_size", 2, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_rt_getenv", 4, Det::World),
+    IntrinsicSpec::legacy("__mind_nerve_rt_monotonic_ns", 0, Det::World),
+    IntrinsicSpec::legacy("__mind_nerve_rt_os_entropy", 2, Det::World),
+    IntrinsicSpec::legacy("__mind_nerve_rt_read_file", 4, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_rt_read_stdin", 2, Det::World),
+    IntrinsicSpec::legacy("__mind_nerve_rt_write_stderr", 2, Det::Pure),
+    IntrinsicSpec::legacy("__mind_nerve_rt_write_stdout", 2, Det::Pure),
     // Phase 17.3 — `f64` bit-cast surface. These three same-width coercions let
     // an `f64` aggregate be built on the existing i64 heap: `__mind_f64_to_bits`
     // reinterprets an `f64` as its i64 bit pattern for storage, `__mind_bits_to_f64`
@@ -245,24 +260,29 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // through the arity-checked cross-backend surface instead of the type checker
     // rejecting the call. All three are classified strict in `src/ir/fp_mode.rs`
     // (STRICT_FLOAT_INTRINSICS / dtype-recovery), so the FP attestation stays honest.
-    ("__mind_bits_to_f64", 1, Det::Pure),
-    ("__mind_conv_f64", 1, Det::Pure),
-    ("__mind_f64_to_bits", 1, Det::Pure),
-    ("__mind_free", 1, Det::Pure),
-    ("__mind_load_i64", 1, Det::Pure),
-    // RFC 0005 Phase 1.6 (task #306) — single-byte load/store. The
-    // (`__mind_store_i64(base + i, b)` writes one byte / `__mind_load_i64(base + i) & 255`
-    // reads one byte) convention used by `std.string` / `std.sha256` / `std.toml`
-    // / `std.tui` clobbers 7 bytes per store and can read past the buffer. The
-    // store form is currently masked by a 7-byte backing-store pad in runtime-support
-    // (commit `cc5a513`), but the garbage past `len` is a cross-substrate
-    // bit-identity landmine (NEON / RVV may not have the same pad). These two
-    // intrinsics provide a proper one-byte ABI; `load_i8` zero-extends to i64 so
-    // call sites preserve the `& 255` mask semantics during migration.
-    ("__mind_load_i8", 1, Det::Pure),
-    ("__mind_load_i32", 1, Det::Pure),
-    ("__mind_load_i16", 1, Det::Pure),
-    ("__mind_string_eq", 2, Det::Pure),
+    IntrinsicSpec::legacy("__mind_bits_to_f64", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_conv_f64", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_f64_to_bits", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_free", 1, Det::Pure),
+    IntrinsicSpec::frozen_value(
+        "__mind_load_i64",
+        "load_i64",
+        ONE_I64,
+        IntrinsicEffect::MemoryRead { width_bytes: 8 },
+        3,
+    ),
+    // RFC 0005 Phase 1.6 single-byte ABI: load8 zero-extends its byte result;
+    // the native contract retains that width explicitly.
+    IntrinsicSpec::frozen_value(
+        "__mind_load_i8",
+        "load8",
+        ONE_I64,
+        IntrinsicEffect::MemoryRead { width_bytes: 1 },
+        5,
+    ),
+    IntrinsicSpec::legacy("__mind_load_i32", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_load_i16", 1, Det::Pure),
+    IntrinsicSpec::legacy("__mind_string_eq", 2, Det::Pure),
     // RFC 0005 Phase 3 / RI-C #228 — `open(2)` with O_RDONLY by path. Arity 1
     // (path_addr), returns the fd or a negative value on error; the path must be a
     // NUL-terminated C string (std/fs.mind:274-285 states the same contract, and
@@ -275,17 +295,35 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // `UNREGISTERED_PURE_INTRINSICS` row — moving a name between the two tables is
     // not a reclassification, and `registry_and_side_lists_do_not_overlap_or_repeat`
     // requires it to live in exactly one of them.
-    ("__mind_open", 1, Det::Pure),
+    IntrinsicSpec::frozen_value(
+        "__mind_open",
+        "open",
+        ONE_I64,
+        IntrinsicEffect::OpenReadOnly,
+        12,
+    ),
     // `Det::Pure` is the NAME-level row only. `__mind_read`'s real verdict is
     // decided per CALL SITE from its `fd` argument — see `fd_dependent_read_arg`
     // / `read_fd_is_world` below: a read of an inherited standard stream, or of a
     // descriptor the call site cannot prove, is `World`.
-    ("__mind_read", 4, Det::Pure),
-    ("__mind_realloc", 2, Det::Pure),
-    ("__mind_store_i64", 2, Det::Pure),
-    ("__mind_store_i8", 2, Det::Pure),
-    ("__mind_store_i32", 2, Det::Pure),
-    ("__mind_store_i16", 2, Det::Pure),
+    IntrinsicSpec::frozen_io("__mind_read", "read", FOUR_I64, IntrinsicEffect::FdRead, 9),
+    IntrinsicSpec::legacy("__mind_realloc", 2, Det::Pure),
+    IntrinsicSpec::frozen_discard(
+        "__mind_store_i64",
+        "store_i64",
+        TWO_I64,
+        IntrinsicEffect::MemoryWrite { width_bytes: 8 },
+        2,
+    ),
+    IntrinsicSpec::frozen_discard(
+        "__mind_store_i8",
+        "store8",
+        TWO_I64,
+        IntrinsicEffect::MemoryWrite { width_bytes: 1 },
+        4,
+    ),
+    IntrinsicSpec::legacy("__mind_store_i32", 2, Det::Pure),
+    IntrinsicSpec::legacy("__mind_store_i16", 2, Det::Pure),
     // issue #204 zeroed backing store. `std/vec.mind::vec_zeroed` forwards to it;
     // runtime-support/mind_intrinsics.c gives it a STRONG definition that the
     // `--emit-shared` path links into every cdylib, and `Instr::Call` lowers it as a
@@ -293,13 +331,19 @@ pub(crate) const STD_SURFACE_INTRINSICS: &[(&str, usize, Det)] = &[
     // `__mind_alloc`/`__mind_free`. Unregistered, the E2024 advisory fired and
     // `pipeline.rs` turned that WARNING into a hard compile abort, so
     // `mindc std/vec.mind --emit-shared` exited 1 and emitted no .so at all.
-    ("__mind_vec_zeroed", 1, Det::Pure),
-    ("__mind_write", 4, Det::Pure),
+    IntrinsicSpec::legacy("__mind_vec_zeroed", 1, Det::Pure),
+    IntrinsicSpec::frozen_io(
+        "__mind_write",
+        "write",
+        FOUR_I64,
+        IntrinsicEffect::FdWrite,
+        8,
+    ),
     // `c.byte()` — the byte (low 8 bits) of a char/int receiver. The method-call
     // type-check validates it as a 1-arg call `byte(recv)`; lowering desugars it
     // to `recv & 0xFF` (see the MethodCall arm in eval/lower.rs). mind-flow's
     // lexer relies on it (`'0'.byte()`).
-    ("byte", 1, Det::Pure),
+    IntrinsicSpec::legacy("byte", 1, Det::Pure),
 ];
 
 // deferred: the raw-memory intrinsics `__mind_load_i{8,16,32,64}` /
@@ -428,13 +472,9 @@ const UNREGISTERED_WORLD_INTRINSICS: &[&str] = &[
 /// is exactly what admitted the `__mind_nerve_rt_*` clock and entropy calls as
 /// deterministic (see the module docs).
 const UNREGISTERED_PURE_INTRINSICS: &[&str] = &[
-    // Native-ELF self-host-only surface (`src/type_checker/resolve.rs`): the OS
-    // argument vector. argv is a declared program input, classified with the same
-    // reasoning as the file-read `deferred:` above. (`__mind_open` used to sit here
-    // too; it now has a real STD_SURFACE_INTRINSICS row — same `Det::Pure` verdict —
-    // because the Rust/MLIR backend can emit it.)
-    "__mind_argc",
-    "__mind_argv",
+    // `__mind_argc` and `__mind_argv` have exact FrozenNative contract rows
+    // above. They remain native-only by their profile; they are not admitted
+    // as ordinary Rust/MLIR surface calls merely by being in this table.
     // Aborts, bounds traps, allocator, generation-checked handles, region
     // bookkeeping: effects and arena addresses, not varying results — the `__mind_load/store` `deferred:` above carries the
     // full argument for the allocator family.
@@ -492,8 +532,11 @@ pub(crate) const NONDETERMINISTIC_BUILTINS: &[&str] = &[
 /// not one the compiler knows about (a user function, a std surface call, an
 /// unrecognised extern).
 pub(crate) fn intrinsic_determinism(name: &str) -> Option<Det> {
-    if let Some((_, _, det)) = STD_SURFACE_INTRINSICS.iter().find(|(n, _, _)| *n == name) {
-        return Some(*det);
+    if let Some(spec) = STD_SURFACE_INTRINSICS
+        .iter()
+        .find(|spec| spec.physical_name == name)
+    {
+        return Some(spec.det);
     }
     if UNREGISTERED_WORLD_INTRINSICS.contains(&name) {
         return Some(Det::World);
@@ -587,13 +630,19 @@ pub(crate) fn read_fd_is_world(fd: i64) -> bool {
     INHERITED_STREAM_FDS.contains(&fd)
 }
 
-/// The declared i64 arity of a std-surface intrinsic, or `None` if `name` is not
-/// in the cross-backend table.
+/// The declared i64 arity of a Rust/MLIR-selectable std-surface intrinsic, or
+/// `None` if `name` is native-only or not in the cross-backend table.
 #[cfg(feature = "std-surface")]
 pub(crate) fn std_surface_intrinsic_arity(name: &str) -> Option<usize> {
-    STD_SURFACE_INTRINSICS
-        .iter()
-        .find_map(|(n, arity, _)| (*n == name).then_some(*arity))
+    STD_SURFACE_INTRINSICS.iter().find_map(|spec| {
+        if spec.physical_name != name {
+            return None;
+        }
+        let selectable = spec
+            .contract
+            .is_none_or(|contract| contract.profiles.contains(&IntrinsicProfile::RustMlir));
+        selectable.then_some(spec.arity)
+    })
 }
 
 #[cfg(test)]
@@ -659,11 +708,13 @@ mod tests {
     /// The classifier must actually READ the registry row, not a parallel array.
     #[test]
     fn classifier_agrees_with_every_registry_row() {
-        for (name, _, det) in STD_SURFACE_INTRINSICS {
+        for spec in STD_SURFACE_INTRINSICS {
             assert_eq!(
-                callee_is_nondeterministic(name),
-                *det == Det::World,
-                "`{name}` is classified {det:?} in the registry but the classifier disagrees"
+                callee_is_nondeterministic(spec.physical_name),
+                spec.det == Det::World,
+                "`{}` is classified {:?} in the registry but the classifier disagrees",
+                spec.physical_name,
+                spec.det
             );
         }
     }
@@ -715,8 +766,12 @@ mod tests {
     #[test]
     fn registry_and_side_lists_do_not_overlap_or_repeat() {
         let mut seen = std::collections::BTreeSet::new();
-        for (name, _, _) in STD_SURFACE_INTRINSICS {
-            assert!(seen.insert(*name), "duplicate registry entry `{name}`");
+        for spec in STD_SURFACE_INTRINSICS {
+            assert!(
+                seen.insert(spec.physical_name),
+                "duplicate registry entry `{}`",
+                spec.physical_name
+            );
         }
         for name in UNREGISTERED_WORLD_INTRINSICS
             .iter()

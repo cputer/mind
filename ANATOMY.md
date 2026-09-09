@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1779 | **Est. tokens:** ~3393331
-**Generated:** 2026-09-09 05:24 UTC
+**Files:** 1782 | **Est. tokens:** ~3398940
+**Generated:** 2026-09-09 05:27 UTC
 
 ## Token Budget Guide
 
@@ -91,7 +91,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 10 | ~48435 |
+| `src/` | 11 | ~51601 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -110,7 +110,7 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 9 | ~95842 |
+| `src/ir/` | 9 | ~95624 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 14 | ~75479 |
@@ -130,7 +130,7 @@
 | `src/test/` | 4 | ~14244 |
 | `src/type_checker/` | 17 | ~56166 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 8 | ~18062 |
+| `src/types/` | 10 | ~20723 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
 | `tests/` | 393 | ~790261 |
@@ -1210,11 +1210,12 @@
 - `printer.rs` (~17300 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `intrinsics.rs` (~10409 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsic_contract.rs` (~2601 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsics.rs` (~10966 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
 - `canonical_verify.rs` (~6429 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_verify_tests.rs` (~7045 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_verify_tests.rs` (~6827 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/`
 
 - `emit.rs` (~4693 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1265,7 +1266,7 @@
 - `verify.rs` (~21216 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `lib.rs` (~1110 tok, large) — Copyright 2025 STARGA Inc.
+- `lib.rs` (~1118 tok, large) — Copyright 2025 STARGA Inc.
 - `linalg.rs` (~2025 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/lint/`
 
@@ -1396,10 +1397,12 @@
 - `type_display.rs` (~628 tok, large) — Copyright 2026 STARGA Inc.
 ### `src/types/`
 
-- `canonical.rs` (~214 tok, medium) — Copyright 2025 STARGA Inc.
+- `canonical.rs` (~256 tok, medium) — Copyright 2025 STARGA Inc.
+- `canonical_intrinsic_tests.rs` (~1418 tok, large) — Copyright 2025 STARGA Inc.
+- `canonical_intrinsic_validation.rs` (~446 tok, medium) — Copyright 2025 STARGA Inc.
 - `canonical_registry.rs` (~5107 tok, huge) — Copyright 2025 STARGA Inc.
 - `canonical_tests.rs` (~3544 tok, huge)
-- `canonical_types.rs` (~5766 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_types.rs` (~6521 tok, huge) — Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.

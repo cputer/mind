@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — registry-backed intrinsic contracts
+- Canonical intrinsic declarations now use one exact registry contract under
+  the reserved owner `__mind_intrinsic`. The first-cut logical/physical rows
+  are:
+
+  | Logical | Physical | Wire signature | Native result-use | Effect | Profiles |
+  |---|---|---|---|---|---|
+  | `argc` | `__mind_argc` | `() -> i64` | value | argument count | FrozenNative |
+  | `argv` | `__mind_argv` | `(i64) -> i64` | value | argument vector | FrozenNative |
+  | `alloc` | `__mind_alloc` | `(i64) -> i64` | value | arena allocation | FrozenNative + RustMlir |
+  | `load_i64` | `__mind_load_i64` | `(i64) -> i64` | value | 8-byte memory read | FrozenNative + RustMlir |
+  | `load8` | `__mind_load_i8` | `(i64) -> i64` | value | 1-byte memory read | FrozenNative + RustMlir |
+  | `open` | `__mind_open` | `(i64) -> i64` | value | read-only open | FrozenNative + RustMlir |
+  | `read` | `__mind_read` | `(i64,i64,i64,i64) -> i64` | value | file-descriptor read; fourth offset is `-1` and ignored | FrozenNative + RustMlir |
+  | `store_i64` | `__mind_store_i64` | `(i64,i64) -> i64` | discard-only in FrozenNative | 8-byte memory write | FrozenNative + RustMlir |
+  | `store8` | `__mind_store_i8` | `(i64,i64) -> i64` | discard-only in FrozenNative | 1-byte memory write | FrozenNative + RustMlir |
+  | `write` | `__mind_write` | `(i64,i64,i64,i64) -> i64` | value | file-descriptor write; fourth offset is `-1` and ignored | FrozenNative + RustMlir |
+
+- `DiscardOnly` is a native result-use policy; stores retain their historical
+  i64 wire return. This registry validates canonical declarations and exposes
+  a profile check. It does **not** by itself admit source calls, prove memory
+  provenance or destination liveness, consume a whole native image, or claim
+  pure-MIND/native execution parity. Those remain separate admission work.
+
 ### Added — checked source ownership for canonical IR
 - The opt-in `compile_source_to_canonical_ir` library API binds source to a
   captured project scope and retains resolved function owners, signatures,
