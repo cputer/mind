@@ -1,17 +1,14 @@
 name: Bench gate
 
-# GATE-RUNNER SCOPE — the `cargo bench` step below is DEFERRED, not covered.
-# scripts/run_gate.py judges a gate on the `asserted=<N>` line it publishes;
-# criterion publishes no such line, so a bench run that measured nothing would
-# still exit 0 here and the comparison downstream would have nothing to reject.
-# Upgrade path: have tools/bench_gate.py report the number of benchmarks it
-# actually compared and route the step through the runner with --min-asserted.
-# run_gate-exempt: cargo-bench - deferred: criterion publishes no asserted=N; upgrade path is a compared-benchmark count from tools/bench_gate.py routed through the runner
+# GATE-RUNNER SCOPE — the criterion command below runs directly because the
+# shared runner does not parse Criterion output. The comparator invoked below
+# emits `asserted=<N>` and enforces the complete canonical pipeline inventory.
+# run_gate-exempt: cargo-bench - deferred: Criterion has no asserted=N; comparator counts are enforced, and direct cargo runner coverage needs a Criterion adapter.
 
 # Enforces the parser/typecheck/IR pipeline regression rule for mindc.
 #
-# The threshold is documented at docs/versioning.md (and pinned in
-# .bench-baseline-2026-05-18-rfc0005.txt). A regression beyond it on any of
+# The threshold is documented at docs/ir-stability.md (and enforced against
+# the correctness floor below). A regression beyond it on any of
 # the canonical bench programs fails the job.
 #
 # Threshold: ONE-SIDED +10% regression on any of the three pipeline benches
@@ -164,8 +161,9 @@ jobs:
         #                                       variance band)
         # Total pipeline time for the largest tracked network stays
         # under 18 µs (microsecond-class compile envelope intact).
-        # See `.bench-baseline-2026-05-18-rfc0005.txt` for the frozen
-        # reference numbers + rationale.
+        # The historical RFC 0005 reference numbers and rationale remain in
+        # `.bench-baseline-2026-05-18-rfc0005.txt`; the active correctness floor
+        # is `.bench-baseline-2026-06-01-correctness.txt`, passed below.
         #
         # Threshold bumped 5% -> 7% on 2026-05-18 after the v0.4.3
         # (RFC 0005 Phase D1) push: small_matmul measured +5.29% on
@@ -183,12 +181,11 @@ jobs:
         # 10% band still defends the compile-speed moat while tolerating the
         # slower / noisier hosted runners.
         run: |
-          # run_gate-exempt: tools/bench_gate.py - a measurement comparator, not an
-          # assert-gate: it reads a frozen baseline and a criterion run and decides a
-          # one-sided threshold. Its fail-closed contract (empty/truncated bench.out
-          # or missing baseline must exit 4, never fall through to PASS) is asserted
-          # by tools/test_bench_gate.py, which IS routed through the runner in the
-          # ci.yml sdlc_integrity job.
+          # run_gate-exempt: tools/bench_gate.py - direct comparator enforces the three-fixture count and trusted-measurement contract. It
+          # compares the active floor, rejects missing measurements, classifies
+          # >12% Criterion spread as inconclusive, and requires all three
+          # canonical pipeline fixtures before PASS; its contract is also tested
+          # by tools/test_bench_gate.py in the ci.yml sdlc_integrity job.
           python3 tools/bench_gate.py \
             --baseline .bench-baseline-2026-06-01-correctness.txt \
             --current bench.out \
