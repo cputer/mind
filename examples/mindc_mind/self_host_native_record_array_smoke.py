@@ -60,20 +60,23 @@ def _reference_tests() -> None:
     mindc = pathlib.Path(os.environ.get("MINDC_BIN", _REPO / "target/release/mindc"))
     if not mindc.is_file():
         raise AssertionError(f"reference mindc missing: {mindc}")
-    proc = subprocess.run(
-        [str(mindc), "test", str(_DATA / "reference.mind"), "--threads", "1"],
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    transcript = proc.stdout + proc.stderr
-    if proc.returncode != 0 or "6 passed; 0 failed" not in transcript:
-        raise AssertionError(
-            f"ordinary evaluator reference failed rc={proc.returncode}: {transcript[-800:]}"
+    for name, expected in (("reference", 6), ("reference_u8", 3)):
+        proc = subprocess.run(
+            [str(mindc), "test", str(_DATA / f"{name}.mind"), "--threads", "1"],
+            cwd=_REPO,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
-    print("  PASS evaluator reference 6/6")
+        transcript = proc.stdout + proc.stderr
+        marker = f"{expected} passed; 0 failed"
+        if proc.returncode != 0 or marker not in transcript:
+            raise AssertionError(
+                f"ordinary evaluator {name} failed rc={proc.returncode}: "
+                f"{transcript[-800:]}"
+            )
+        print(f"  PASS evaluator {name} {expected}/{expected}")
 
 
 def _scalar_identity(lib: ctypes.CDLL) -> None:
@@ -118,6 +121,9 @@ def main() -> int:
         "record_param_copy": 23,
         "record_return": 5,
         "record_transport_owners": 37,
+        "u8_direct_loop": 118,
+        "u8_copy_out": 155,
+        "u8_record_return": 144,
     }
     seen: dict[str, bytes] = {}
     with tempfile.TemporaryDirectory(prefix="mind-native-record-array-") as td:
@@ -140,6 +146,11 @@ def main() -> int:
         if not runtime or _run(runtime, scratch / "runtime_oob.elf") != 77:
             raise AssertionError("runtime_oob: expected emitted ELF exit 77")
         print("  PASS runtime_oob exit=77")
+
+        u8_runtime = _compile(lib, _source("u8_runtime_oob"))
+        if not u8_runtime or _run(u8_runtime, scratch / "u8_runtime_oob.elf") != 77:
+            raise AssertionError("u8_runtime_oob: expected emitted ELF exit 77")
+        print("  PASS u8_runtime_oob exit=77")
 
         mutated = _source("direct").replace(b"post: 7", b"post: 9")
         mutated_elf = _compile(lib, mutated)
@@ -169,6 +180,22 @@ def main() -> int:
             raise AssertionError("record return extent mutation did not refuse")
         print("  PASS discriminating return-extent mutation refuses")
 
+        u8_value_mutated = _source("u8_direct_loop").replace(b"300]", b"301]")
+        u8_value_elf = _compile(lib, u8_value_mutated)
+        if not u8_value_elf or u8_value_elf == seen["u8_direct_loop"]:
+            raise AssertionError("u8 value mutation did not change native bytes")
+        if _run(u8_value_elf, scratch / "u8_value_mutated.elf") != 119:
+            raise AssertionError("u8 value mutation did not change executed result to 119")
+        print("  PASS discriminating u8 value mutation exit=119")
+
+        u8_kind_mutated = _source("u8_direct_loop").replace(b"[u8; 4]", b"[i64; 4]")
+        u8_kind_elf = _compile(lib, u8_kind_mutated)
+        if not u8_kind_elf or u8_kind_elf == seen["u8_direct_loop"]:
+            raise AssertionError("u8->i64 descriptor mutation did not change bytes")
+        if _run(u8_kind_elf, scratch / "u8_kind_mutated.elf") != 182:
+            raise AssertionError("u8->i64 descriptor mutation did not change result to 182")
+        print("  PASS discriminating u8 descriptor mutation exit=182")
+
     for name in (
         "constant_oob",
         "narrow_refuse",
@@ -187,10 +214,18 @@ def main() -> int:
         "wrong_owner_return_refuse",
         "return_extent_refuse",
         "duplicate_owner_refuse",
+        "u8_float_refuse",
+        "u8_aggregate_refuse",
+        "u8_comparison_refuse",
+        "u8_not_refuse",
+        "u8_unproven_let_refuse",
+        "u8_alias_refuse",
+        "u8_wrong_owner_refuse",
+        "u8_constant_oob_refuse",
     ):
         _require_refusal(lib, name)
 
-    print("PASS native record-array gate: 9 ELF positives, 17 refusals, 4 mutations")
+    print("PASS native record-array gate: 12 ELF positives, 25 refusals, 6 mutations")
     return 0
 
 

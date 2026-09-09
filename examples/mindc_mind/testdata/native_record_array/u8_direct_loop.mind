@@ -1,0 +1,20 @@
+struct Packet {
+    pre: i64,
+    bytes: [u8; 4],
+    post: i64,
+}
+
+fn total(p: Packet) -> i64 {
+    let mut i: i64 = 0;
+    let mut sum: i64 = 0;
+    while i < 4 {
+        sum = sum + p.bytes[i];
+        i = i + 1;
+    }
+    return sum;
+}
+
+fn main() -> i64 {
+    let p: Packet = Packet { pre: 5, bytes: [0, 128, 255, 300], post: 7 };
+    return total(p) / 4 + p.pre + p.post;
+}

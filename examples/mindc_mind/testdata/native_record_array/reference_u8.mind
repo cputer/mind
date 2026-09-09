@@ -1,0 +1,34 @@
+struct Packet {
+    pre: i64,
+    bytes: [u8; 4],
+    post: i64,
+}
+
+fn total(p: Packet) -> i64 {
+    let mut i: i64 = 0;
+    let mut sum: i64 = 0;
+    while i < 4 {
+        sum = sum + p.bytes[i];
+        i = i + 1;
+    }
+    return sum;
+}
+
+#[test]
+fn u8_direct_loop_reference() -> i64 {
+    let p: Packet = Packet { pre: 5, bytes: [0, 128, 255, 300], post: 7 };
+    return total(p) / 4 + p.pre + p.post == 118;
+}
+
+#[test]
+fn u8_copy_out_reference() -> i64 {
+    let p: Packet = Packet { pre: 0, bytes: [0, 128, 255, 300], post: 17 };
+    let copied = p.bytes;
+    return copied[0] + copied[2] / 2 + copied[3] / 4 + p.post == 155;
+}
+
+#[test]
+fn u8_unsigned_reference() -> i64 {
+    let p: Packet = Packet { pre: 0, bytes: [128, 255, 0, 0], post: 0 };
+    return p.bytes[0] == 128 && p.bytes[1] == 255;
+}

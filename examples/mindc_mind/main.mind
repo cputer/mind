@@ -28453,8 +28453,32 @@ pub fn srt_parse_extent(src: i64, lo: i64, hi: i64, acc: i64, seen: i64) -> i64 
     srt_parse_extent(src, lo + 1, hi, acc * 10 + d, 1)
 }
 
-// Initial read-only native record-array slice: exact i64 cells only. Narrow
-// cells, aliases and aggregate cells remain explicit capability refusals.
+// Native record-array scalar representation. Values are source-schema facts,
+// never inferred from a runtime handle or the native dtype default.
+//   1 = exact i64 cell, 2 = exact u8 cell, 0 = unsupported.
+// Both representations retain the canonical eight-byte logical cell stride;
+// the tag selects only the memory load/store width inside each cell.
+pub fn srt_field_native_array_rep(t: i64, src: i64, k: i64, j: i64) -> i64 {
+    if srt_field_array_kind(t, k, j) != 1 {
+        return 0;
+    }
+    let lo: i64 = srt_field_array_elem_lo(t, k, j);
+    let hi: i64 = srt_field_array_elem_hi(t, k, j);
+    if pnt_span_is_i64(src, lo, hi) == 1 {
+        return 1;
+    }
+    if hi - lo == 2 {
+        if load_byte(src, lo) == 117 {
+            if load_byte(src, lo + 1) == 56 {
+                return 2;
+            }
+        }
+    }
+    0
+}
+
+// Initial read-only native record-array slice: exact i64 and exact u8 cells.
+// Aliases, other widths and aggregate cells remain explicit refusals.
 pub fn srt_field_native_array_ok(t: i64, src: i64, k: i64, j: i64) -> i64 {
     if srt_field_array_kind(t, k, j) != 1 {
         return 0;
@@ -28466,7 +28490,10 @@ pub fn srt_field_native_array_ok(t: i64, src: i64, k: i64, j: i64) -> i64 {
     if n > srt_native_array_cap() {
         return 0;
     }
-    pnt_span_is_i64(src, srt_field_array_elem_lo(t, k, j), srt_field_array_elem_hi(t, k, j))
+    if srt_field_native_array_rep(t, src, k, j) > 0 {
+        return 1;
+    }
+    0
 }
 
 pub fn srt_field_native_width(t: i64, src: i64, k: i64, j: i64) -> i64 {
@@ -33566,6 +33593,17 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         // self-compile, integer native-ELF oracle byte-identical.
         let ix_base: i64 = ast_child0(node);
         let ix_idx: i64 = ast_child1(node);
+        // Exact u8 record fields take the direct scalar path: lower the owner
+        // and index once, bounds-check, then load one byte from the canonical
+        // eight-byte logical cell. Existing i64 fields keep their established
+        // materialize-then-index bytes below.
+        if ast_kind(ix_base) == ast_field() {
+            if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 1 {
+                if nb_field_array_rep_r(ast_child0(ix_base), ix_base, buf, lets, lcell) == 2 {
+                    return nb_u8_field_index_read(st, buf, ix_base, ix_idx, params_addr, n_params, calls, lets, lcell);
+                }
+            }
+        }
         // Field-backed arrays require exact schema authority. A literal-shaped
         // runtime value is insufficient for an alias or unsupported element
         // type. Likewise, an identifier must retain an array descriptor; this
@@ -33686,7 +33724,8 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         }
         if array_status == 1 {
             let n: i64 = nb_field_array_len_r(recv, node, buf, lets, lcell);
-            return nb_materialize_field_array(s_recv, ptr_id, off, n);
+            let rep: i64 = nb_field_array_rep_r(recv, node, buf, lets, lcell);
+            return nb_materialize_field_array(s_recv, ptr_id, off, n, rep);
         }
         // RI-D2 S-D: an f64/f32 struct field READ returns a FLOAT-tagged value. Classify
         // the field's dtype from the struct binding (nb_field_dtype, value-node based for
@@ -34701,7 +34740,7 @@ pub fn nb_field_offset_r(recv: i64, field_node: i64, buf: i64, lets: i64, lcell:
 }
 
 // Classify a resolved field as a fixed array for the native record ABI.
-//  1 = exact supported `[i64; N]`, 0 = ordinary scalar/record field,
+//  1 = exact supported `[i64; N]` or `[u8; N]`, 0 = ordinary scalar/record field,
 // -1 = fixed-array syntax outside this initial capability slice. Resolution is
 // through the receiver's owner/type descriptor and the source registry; a value
 // node's runtime shape alone never grants layout authority.
@@ -34751,6 +34790,30 @@ pub fn nb_field_array_len_r(recv: i64, field_node: i64, buf: i64, lets: i64, lce
         return 0 - 1;
     }
     srt_field_array_len(srt, sk, didx)
+}
+
+// Return the exact scalar representation of a resolved fixed-array field.
+// This repeats the same owner/declared-index resolution as status/length so a
+// caller cannot select a byte load from a value-shaped descriptor alone.
+pub fn nb_field_array_rep_r(recv: i64, field_node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let slit: i64 = nb_field_recv_desc_r(recv, buf, lets, lcell);
+    if slit == 0 {
+        return 0;
+    }
+    let fidx: i64 = nb_slit_field_index(slit, buf, ast_child1(field_node), ast_child2(field_node));
+    if fidx < 0 {
+        return 0;
+    }
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let didx: i64 = nb_slit_decl_index(slit, buf, srt, ast_child1(field_node), ast_child2(field_node), fidx);
+    if didx < 0 {
+        return 0;
+    }
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(slit), ast_child2(slit), 0);
+    if sk < 0 {
+        return 0;
+    }
+    srt_field_native_array_rep(srt, buf, sk, didx)
 }
 
 // RI-D2 S-D: classify a field READ `recv.field`'s dtype (FLOAT for an f64/f32 field,
@@ -34949,6 +35012,118 @@ pub fn nb_array_elems_proven_i64(elems_addr: i64, nelems: i64, i: i64, buf: i64,
     nb_array_elems_proven_i64(elems_addr, nelems, i + 1, buf, params_addr, n_params, lets, lcell)
 }
 
+// Exact source spellings admitted as integer values for a u8 record cell in
+// this slice. Other widths and aliases remain outside the capability even
+// though their physical call ABI may also occupy an i64 slot.
+pub fn pnt_span_is_i64_or_u8(buf: i64, lo: i64, hi: i64) -> i64 {
+    if pnt_span_is_i64(buf, lo, hi) == 1 {
+        return 1;
+    }
+    if hi - lo == 2 {
+        if load_byte(buf, lo) == 117 {
+            if load_byte(buf, lo + 1) == 56 {
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+// Prove an integer source representation before normalising it into an exact
+// u8 record cell. Real decimal literals and arithmetic/bitwise expressions over
+// proven operands are admitted; comparison/!, float, handles, untyped lets and
+// synthetic bool/const folds refuse. Exact i64/u8 declarations on params,
+// callees and scalar fields are authority. Integer casts are admitted only when
+// their operand is already proven, keeping opaque-handle casts outside this
+// narrow backend slice.
+pub fn nb_expr_proven_u8_input(node: i64, buf: i64, params_addr: i64, n_params: i64, lets: i64, lcell: i64) -> i64 {
+    let k: i64 = ast_kind(node);
+    if k == ast_int_lit() {
+        if ast_child1(node) == 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if k == ast_paren() {
+        return nb_expr_proven_u8_input(ast_child0(node), buf, params_addr, n_params, lets, lcell);
+    }
+    if k == ast_neg() {
+        return nb_expr_proven_u8_input(ast_child0(node), buf, params_addr, n_params, lets, lcell);
+    }
+    if k == ast_binop() {
+        if nb_binop_yields_i64(ast_aux(node)) == 0 {
+            return 0;
+        }
+        if nb_expr_proven_u8_input(ast_child0(node), buf, params_addr, n_params, lets, lcell) == 1 {
+            return nb_expr_proven_u8_input(ast_child1(node), buf, params_addr, n_params, lets, lcell);
+        }
+        return 0;
+    }
+    if k == ast_cast() {
+        if pnt_span_is_i64_or_u8(buf, ast_child1(node), ast_child2(node)) == 0 {
+            return 0;
+        }
+        return nb_expr_proven_u8_input(ast_child0(node), buf, params_addr, n_params, lets, lcell);
+    }
+    if k == ast_ident() {
+        if nb_lets_lookup(lets, lcell, buf, ast_span_lo(node), ast_span_hi(node)) >= 0 {
+            return 0;
+        }
+        let pi: i64 = resolve_param(params_addr, n_params, buf, ast_span_lo(node), ast_span_hi(node));
+        if pi < 0 {
+            return 0;
+        }
+        let pnode: i64 = __mind_load_i64(params_addr + pi * 8);
+        let pty: i64 = ast_child1(pnode);
+        return pnt_span_is_i64_or_u8(buf, ast_span_lo(pty), ast_span_hi(pty));
+    }
+    if k == ast_call() {
+        let frt: i64 = __mind_load_i64(lcell + 16);
+        let callee: i64 = ast_child0(node);
+        let fk: i64 = frt_find(frt, buf, ast_span_lo(callee), ast_span_hi(callee), 0);
+        if fk < 0 {
+            return 0;
+        }
+        return pnt_span_is_i64_or_u8(buf, frt_retty_lo(frt, fk), frt_retty_hi(frt, fk));
+    }
+    if k == ast_field() {
+        let recv: i64 = ast_child0(node);
+        let desc: i64 = nb_field_recv_desc_r(recv, buf, lets, lcell);
+        if desc == 0 {
+            return 0;
+        }
+        let fi: i64 = nb_slit_field_index(desc, buf, ast_child1(node), ast_child2(node));
+        if fi < 0 {
+            return 0;
+        }
+        let srt: i64 = __mind_load_i64(lcell + 24);
+        let sk: i64 = srt_find_by_name(srt, buf, ast_child0(desc), ast_child2(desc), 0);
+        if sk < 0 {
+            return 0;
+        }
+        let di: i64 = nb_slit_decl_index(desc, buf, srt, ast_child1(node), ast_child2(node), fi);
+        if di < 0 {
+            return 0;
+        }
+        if srt_field_array_kind(srt, sk, di) == 1 {
+            return 0;
+        }
+        return pnt_span_is_i64_or_u8(buf, srt_field_type_lo(srt, sk, di), srt_field_type_hi(srt, sk, di));
+    }
+    0
+}
+
+pub fn nb_array_elems_proven_u8_input(elems_addr: i64, nelems: i64, i: i64, buf: i64, params_addr: i64, n_params: i64, lets: i64, lcell: i64) -> i64 {
+    if i >= nelems {
+        return 1;
+    }
+    let elem: i64 = __mind_load_i64(elems_addr + i * 8);
+    if nb_expr_proven_u8_input(elem, buf, params_addr, n_params, lets, lcell) == 0 {
+        return 0;
+    }
+    nb_array_elems_proven_u8_input(elems_addr, nelems, i + 1, buf, params_addr, n_params, lets, lcell)
+}
+
 // Emit each struct-literal field's store, in SOURCE order. For field i: emit the
 // value expr -> val slot ; addr = (i==0 ? ptr_id : CONST(8*i)+ADD(ptr,off)) ;
 // __mind_store_i64(addr, val) — the store's own dst id is consumed (the front-end
@@ -34977,6 +35152,7 @@ pub fn nb_struct_fields(st: NbState, buf: i64, snode: i64, fields_addr: i64, nfi
     };
     if is_array == 1 {
         let ok: i64 = srt_field_native_array_ok(srt, buf, sk, i);
+        let arep: i64 = srt_field_native_array_rep(srt, buf, sk, i);
         let alen: i64 = srt_field_array_len(srt, sk, i);
         if ok == 0 {
             __mind_store_i64(lcell + 80, 1)
@@ -34988,12 +35164,22 @@ pub fn nb_struct_fields(st: NbState, buf: i64, snode: i64, fields_addr: i64, nfi
             if ast_aux(value_node) != alen {
                 __mind_store_i64(lcell + 80, 1)
             }
-            if nb_array_elems_proven_i64(ast_child1(value_node), ast_aux(value_node), 0, buf, params_addr, n_params, lets, lcell) == 0 {
-                __mind_store_i64(lcell + 80, 1)
+            if arep == 1 {
+                if nb_array_elems_proven_i64(ast_child1(value_node), ast_aux(value_node), 0, buf, params_addr, n_params, lets, lcell) == 0 {
+                    __mind_store_i64(lcell + 80, 1)
+                }
+            } else {
+                if arep == 2 {
+                    if nb_array_elems_proven_u8_input(ast_child1(value_node), ast_aux(value_node), 0, buf, params_addr, n_params, lets, lcell) == 0 {
+                        __mind_store_i64(lcell + 80, 1)
+                    }
+                } else {
+                    __mind_store_i64(lcell + 80, 1)
+                }
             }
         }
         let sv_arr: NbState = nb_expr(st, buf, value_node, params_addr, n_params, calls, lets, lcell);
-        let copied: NbState = nb_copy_array_cells(sv_arr, sv_arr.last_id, 0, ptr_id, off, alen, 0);
+        let copied: NbState = nb_copy_array_to_record_cells(sv_arr, sv_arr.last_id, 0, ptr_id, off, alen, 0, arep);
         return nb_struct_fields(copied, buf, snode, fields_addr, nfields, i + 1, ptr_id, params_addr, n_params, calls, lets, lcell);
     }
     // Lower the field value -> its slot.
@@ -35013,10 +35199,39 @@ pub fn nb_struct_fields(st: NbState, buf: i64, snode: i64, fields_addr: i64, nfi
     nb_struct_fields(s_after, buf, snode, fields_addr, nfields, i + 1, ptr_id, params_addr, n_params, calls, lets, lcell)
 }
 
-// Copy `n` 8-byte scalar cells from a temporary fixed-array value into the
-// owning record's inline field at `dst_off`. This makes record construction a
-// value copy; the temporary array handle is never stored in the record.
-pub fn nb_copy_array_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64) -> NbState {
+// Store one semantic i64-slot value into an inline record-array cell. u8 writes
+// only the low byte; i64 retains the old exact store path. Both consume one
+// store-dst id and address later cells at their eight-byte logical stride.
+pub fn nb_record_array_store0(code: String, next_id: i64, ptr_id: i64, val_id: i64, ncalls: i64, rep: i64) -> NbState {
+    if rep == 2 {
+        let store_dst: i64 = next_id;
+        let c_st: String = nb_emit_store_i8(code, nb_slot_disp(ptr_id), nb_slot_disp(val_id));
+        return NbState { code: c_st, next_id: store_dst + 1, last_id: store_dst, ncalls: ncalls };
+    }
+    nb_struct_field_store0(code, next_id, ptr_id, val_id, ncalls)
+}
+
+pub fn nb_record_array_store_off(code: String, next_id: i64, ptr_id: i64, val_id: i64, ncalls: i64, off: i64, rep: i64) -> NbState {
+    if rep != 2 {
+        return nb_struct_field_store_off(code, next_id, ptr_id, val_id, ncalls, off);
+    }
+    let off_id: i64 = next_id;
+    let o1: String = nb_push(code, 72);
+    let o2: String = nb_push(o1, 184);
+    let o3: String = nb_i64le(o2, off);
+    let o4: String = nb_store_rax(o3, nb_slot_disp(off_id));
+    let add_id: i64 = off_id + 1;
+    let a1: String = nb_load_rax(o4, nb_slot_disp(ptr_id));
+    let a2: String = nb_arith_rax_mem(a1, op_add(), nb_slot_disp(off_id));
+    let a3: String = nb_store_rax(a2, nb_slot_disp(add_id));
+    let store_dst: i64 = add_id + 1;
+    let c_st: String = nb_emit_store_i8(a3, nb_slot_disp(add_id), nb_slot_disp(val_id));
+    NbState { code: c_st, next_id: store_dst + 1, last_id: store_dst, ncalls: ncalls }
+}
+
+// Copy `n` semantic eight-byte cells into an owning inline record field.
+// `rep` changes the destination memory width, never the logical stride.
+pub fn nb_copy_array_to_record_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64, rep: i64) -> NbState {
     if i >= n {
         return st;
     }
@@ -35028,11 +35243,11 @@ pub fn nb_copy_array_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i6
         let after_load0: NbState = NbState { code: l20, next_id: val_id0 + 1, last_id: val_id0, ncalls: st.ncalls };
         let dst_off0: i64 = dst_base + i * 8;
         if dst_off0 == 0 {
-            let after_store0: NbState = nb_struct_field_store0(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls);
-            return nb_copy_array_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+            let after_store0: NbState = nb_record_array_store0(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls, rep);
+            return nb_copy_array_to_record_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep);
         }
-        let after_store0: NbState = nb_struct_field_store_off(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls, dst_off0);
-        return nb_copy_array_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+        let after_store0: NbState = nb_record_array_store_off(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls, dst_off0, rep);
+        return nb_copy_array_to_record_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep);
     }
     let s_addr: NbState = nb_field_addr(st.code, st.next_id, src_ptr, src_off, st.ncalls);
     let val_id: i64 = s_addr.next_id;
@@ -35041,16 +35256,16 @@ pub fn nb_copy_array_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i6
     let after_load: NbState = NbState { code: l2, next_id: val_id + 1, last_id: val_id, ncalls: s_addr.ncalls };
     let dst_off: i64 = dst_base + i * 8;
     if dst_off == 0 {
-        let after_store: NbState = nb_struct_field_store0(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls);
-        return nb_copy_array_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+        let after_store: NbState = nb_record_array_store0(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls, rep);
+        return nb_copy_array_to_record_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep);
     }
-    let after_store: NbState = nb_struct_field_store_off(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls, dst_off);
-    nb_copy_array_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1)
+    let after_store: NbState = nb_record_array_store_off(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls, dst_off, rep);
+    nb_copy_array_to_record_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep)
 }
 
 // Copy an inline fixed-array field out to a fresh value block. The returned
 // pointer owns independent cells, matching reference evaluator value semantics.
-pub fn nb_materialize_field_array(st: NbState, src_ptr: i64, src_off: i64, n: i64) -> NbState {
+pub fn nb_materialize_field_array(st: NbState, src_ptr: i64, src_off: i64, n: i64, rep: i64) -> NbState {
     let sz_id: i64 = st.next_id;
     let a1: String = nb_push(st.code, 72);
     let a2: String = nb_push(a1, 184);
@@ -35069,8 +35284,87 @@ pub fn nb_materialize_field_array(st: NbState, src_ptr: i64, src_off: i64, n: i6
     let al1: String = nb_emit_alloc(m3, nb_slot_disp(mul_id));
     let al2: String = nb_store_rax(al1, nb_slot_disp(ptr_id));
     let allocated: NbState = NbState { code: al2, next_id: ptr_id + 1, last_id: ptr_id, ncalls: st.ncalls };
-    let copied: NbState = nb_copy_array_cells(allocated, src_ptr, src_off, ptr_id, 0, n, 0);
+    let copied: NbState = nb_copy_record_to_array_cells(allocated, src_ptr, src_off, ptr_id, 0, n, 0, rep);
     NbState { code: copied.code, next_id: copied.next_id, last_id: ptr_id, ncalls: copied.ncalls }
+}
+
+// Copy inline record cells into a fresh semantic aggregate. u8 reads one byte
+// and zero-extends it in rax before the ordinary i64 store; i64 retains the old
+// load/store path. The destination remains an eight-byte-cell array value.
+pub fn nb_copy_record_to_array_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64, rep: i64) -> NbState {
+    if i >= n {
+        return st;
+    }
+    let src_off: i64 = src_base + i * 8;
+    if src_off == 0 {
+        return nb_copy_record_to_array_from_addr(st, src_ptr, src_ptr, src_base, dst_ptr, dst_base, n, i, rep);
+    }
+    let after_addr: NbState = nb_field_addr(st.code, st.next_id, src_ptr, src_off, st.ncalls);
+    nb_copy_record_to_array_from_addr(after_addr, after_addr.last_id, src_ptr, src_base, dst_ptr, dst_base, n, i, rep)
+}
+
+pub fn nb_copy_record_to_array_from_addr(st: NbState, addr_id: i64, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64, rep: i64) -> NbState {
+    let val_id: i64 = st.next_id;
+    if rep == 2 {
+        let l8: String = nb_emit_load_i8(st.code, nb_slot_disp(addr_id));
+        return nb_copy_record_to_array_loaded(l8, val_id, st.ncalls, src_ptr, src_base, dst_ptr, dst_base, n, i, rep);
+    }
+    let l1: String = nb_emit_load_i64(st.code, nb_slot_disp(addr_id));
+    nb_copy_record_to_array_loaded(l1, val_id, st.ncalls, src_ptr, src_base, dst_ptr, dst_base, n, i, rep)
+}
+
+pub fn nb_copy_record_to_array_loaded(code: String, val_id: i64, ncalls: i64, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64, rep: i64) -> NbState {
+    let l2: String = nb_store_rax(code, nb_slot_disp(val_id));
+    let after_load: NbState = NbState { code: l2, next_id: val_id + 1, last_id: val_id, ncalls: ncalls };
+    let dst_off: i64 = dst_base + i * 8;
+    if dst_off == 0 {
+        let after_store0: NbState = nb_struct_field_store0(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls);
+        return nb_copy_record_to_array_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep);
+    }
+    let after_store: NbState = nb_struct_field_store_off(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls, dst_off);
+    nb_copy_record_to_array_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1, rep)
+}
+
+// Direct indexed read for an exact owner-resolved `[u8; N]` record field.
+// Receiver then index evaluation order is preserved, both are lowered once,
+// and the runtime guard executes before the eight-byte-stride address math.
+// The final byte load zero-extends to the semantic i64 value representation.
+pub fn nb_u8_field_index_read(st: NbState, buf: i64, field_node: i64, idx: i64, params_addr: i64, n_params: i64, calls: i64, lets: i64, lcell: i64) -> NbState {
+    let recv: i64 = ast_child0(field_node);
+    let off: i64 = nb_field_offset_r(recv, field_node, buf, lets, lcell);
+    let n: i64 = nb_field_array_len_r(recv, field_node, buf, lets, lcell);
+    if off < 0 {
+        __mind_store_i64(lcell + 80, 1);
+        return nb_emit_const0(st);
+    }
+    if n < 1 {
+        __mind_store_i64(lcell + 80, 1);
+        return nb_emit_const0(st);
+    }
+    let s_recv: NbState = nb_expr(st, buf, recv, params_addr, n_params, calls, lets, lcell);
+    let s_field: NbState = nb_field_addr(s_recv.code, s_recv.next_id, s_recv.last_id, off, s_recv.ncalls);
+    let s_idx: NbState = nb_expr(s_field, buf, idx, params_addr, n_params, calls, lets, lcell);
+    if nb_index_oob(field_node, idx, buf, lets, lcell) == 1 {
+        __mind_store_i64(lcell + 80, 1)
+    }
+    let guarded: String = nb_emit_bounds_guard(s_idx.code, nb_slot_disp(s_idx.last_id), n, nb_oob_trap_code());
+    let stride_id: i64 = s_idx.next_id;
+    let c1: String = nb_push(guarded, 72);
+    let c2: String = nb_push(c1, 184);
+    let c3: String = nb_i64le(c2, 8);
+    let c4: String = nb_store_rax(c3, nb_slot_disp(stride_id));
+    let offset_id: i64 = stride_id + 1;
+    let m1: String = nb_load_rax(c4, nb_slot_disp(s_idx.last_id));
+    let m2: String = nb_arith_rax_mem(m1, op_mul(), nb_slot_disp(stride_id));
+    let m3: String = nb_store_rax(m2, nb_slot_disp(offset_id));
+    let addr_id: i64 = offset_id + 1;
+    let a1: String = nb_load_rax(m3, nb_slot_disp(s_field.last_id));
+    let a2: String = nb_arith_rax_mem(a1, op_add(), nb_slot_disp(offset_id));
+    let a3: String = nb_store_rax(a2, nb_slot_disp(addr_id));
+    let dst_id: i64 = addr_id + 1;
+    let l1: String = nb_emit_load_i8(a3, nb_slot_disp(addr_id));
+    let l2: String = nb_store_rax(l1, nb_slot_disp(dst_id));
+    NbState { code: l2, next_id: dst_id + 1, last_id: dst_id, ncalls: s_idx.ncalls }
 }
 
 // Append `n` raw source bytes buf[lo..lo+n) into the module rodata accumulator
@@ -38008,9 +38302,21 @@ pub fn nb_count_expr(next_id: i64, buf: i64, node: i64, params_addr: i64, n_para
         return nb_field_addr_ids(cpay, 1) + 1;
     }
     if k == ast_index() {
+        let index_base: i64 = ast_child0(node);
+        if ast_kind(index_base) == ast_field() {
+            if nb_field_array_status_r(ast_child0(index_base), index_base, buf, clets, clcell) == 1 {
+                if nb_field_array_rep_r(ast_child0(index_base), index_base, buf, clets, clcell) == 2 {
+                    // Direct u8 field read: receiver ids, two field-address ids,
+                    // index ids, then stride/mul/add/load (four ids).
+                    let after_owner: i64 = nb_count_expr(next_id, buf, ast_child0(index_base), params_addr, n_params, clets, clcell);
+                    let after_index: i64 = nb_count_expr(after_owner + 2, buf, ast_child1(node), params_addr, n_params, clets, clcell);
+                    return after_index + 4;
+                }
+            }
+        }
         // base ids + idx ids + 4 (CONST 8 ; MUL ; ADD ; load-dst) — the exact
         // mirror of nb_expr's ast_index arm.
-        let xcb: i64 = nb_count_expr(next_id, buf, ast_child0(node), params_addr, n_params, clets, clcell);
+        let xcb: i64 = nb_count_expr(next_id, buf, index_base, params_addr, n_params, clets, clcell);
         let xci: i64 = nb_count_expr(xcb, buf, ast_child1(node), params_addr, n_params, clets, clcell);
         return xci + 4;
     }

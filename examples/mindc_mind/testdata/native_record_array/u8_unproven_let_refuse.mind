@@ -1,0 +1,9 @@
+struct Packet {
+    bytes: [u8; 1],
+}
+
+fn main() -> i64 {
+    let value = 7;
+    let p: Packet = Packet { bytes: [value] };
+    return p.bytes[0];
+}

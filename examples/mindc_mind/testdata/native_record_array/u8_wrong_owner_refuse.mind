@@ -1,0 +1,17 @@
+struct A {
+    bytes: [u8; 2],
+    sibling: i64,
+}
+struct B {
+    sibling: i64,
+    bytes: [u8; 3],
+}
+
+fn read_a(p: A) -> i64 {
+    return p.bytes[1] + p.sibling;
+}
+
+fn main() -> i64 {
+    let b: B = B { sibling: 10, bytes: [3, 4, 5] };
+    return read_a(b);
+}

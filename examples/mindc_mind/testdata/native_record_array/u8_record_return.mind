@@ -1,0 +1,13 @@
+struct Packet {
+    bytes: [u8; 2],
+    sibling: i64,
+}
+
+fn make() -> Packet {
+    return Packet { bytes: [128, 255], sibling: 17 };
+}
+
+fn main() -> i64 {
+    let p: Packet = make();
+    return p.bytes[1] / 2 + p.sibling;
+}
