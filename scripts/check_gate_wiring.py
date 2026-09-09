@@ -116,12 +116,7 @@ GATED_EVENTS = ("push", "pull_request")
 # each to pass once, and requires the final tally, so cfg-out tests cannot report
 # a false zero-pass success. It gates the shipped binary separately from the
 # library gate. Both tracked controls are retained in the ratchet.
-# 262 -> 263 adds self_host_native_record_trace_smoke.py, the canonical-trace gate
-# for record-field reads: manifest-bound fixtures, byte-equality against
-# `mindc --emit-mic3`, an EXECUTED `_u` artifact, a build-twice determinism
-# control, and the 0-byte contract fixed-array records keep until their inline
-# layout is modelled canonically.
-HARNESS_CEILING = 263
+HARNESS_CEILING = 263  # Includes the manifest-bound canonical record-trace gate.
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

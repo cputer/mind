@@ -62,7 +62,7 @@ def seed_modules():
 # compiler or the seed blob silently changed underneath it. Re-blessing is a
 # deliberate edit of these two constants in the commit that changes them.
 EXPECTED_COMPILER_SHA256 = (
-    "72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e"
+    "2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c"
 )
 EXPECTED_STD_SEED_SHA256 = (
     "421d99c41cd6b0dcf77c39f67181b9846a2658437d72eb8b590d5c26089bffca"
