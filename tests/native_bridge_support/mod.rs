@@ -12,6 +12,9 @@
 // Licensed under the Apache License, Version 2.0.
 // Part of the MIND project (Machine Intelligence Native Design).
 
+use fs2::FileExt;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
@@ -209,14 +212,31 @@ pub fn repo_path(rel: &str) -> PathBuf {
 pub fn run(bytes: &[u8]) -> i32 {
     let dir = tempfile::tempdir().expect("tempdir");
     let p = dir.path().join("run.elf");
-    std::fs::write(&p, bytes).expect("write elf");
+    // A concurrent Command::spawn can fork while this writer is open and
+    // inherit its writable descriptor.  On Linux that makes the later execve
+    // fail with ETXTBSY even after this thread closes its copy.  Hold an
+    // exclusive flock before closing the writer, then acquire an exclusive
+    // lock through a read-only reopen.  The read-only lock waits for inherited
+    // writer descriptors to close and proves that subsequent forks inherit
+    // only a read-only descriptor. See rust-lang/rust#114554 for this handoff.
+    let mut writer = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&p)
+        .expect("create elf");
+    writer.write_all(bytes).expect("write elf");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perm = std::fs::metadata(&p).expect("meta").permissions();
+        let mut perm = writer.metadata().expect("meta").permissions();
         perm.set_mode(0o755);
-        std::fs::set_permissions(&p, perm).expect("chmod");
+        writer.set_permissions(perm).expect("chmod");
     }
+    writer.lock_exclusive().expect("lock writable elf");
+    drop(writer);
+    let reader = OpenOptions::new().read(true).open(&p).expect("reopen elf");
+    reader.lock_exclusive().expect("lock readable elf");
+    drop(reader);
     Command::new(&p)
         .status()
         .expect("run artifact")

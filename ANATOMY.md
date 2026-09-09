@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1720 | **Est. tokens:** ~3336492
-**Generated:** 2026-09-09 02:24 UTC
+**Files:** 1720 | **Est. tokens:** ~3336730
+**Generated:** 2026-09-09 03:01 UTC
 
 ## Token Budget Guide
 
@@ -183,7 +183,7 @@
 | `tests/mindfuzz_cross_substrate/known_environmental/` | 2 | ~556 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
-| `tests/native_bridge_support/` | 2 | ~2336 |
+| `tests/native_bridge_support/` | 2 | ~2574 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 163 | ~10627 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
@@ -1971,7 +1971,7 @@
 ### `tests/native_bridge_support/`
 
 - `draining_native_compiler.rs` (~300 tok, medium) — Host-native compiler fixture for admission-only controls.
-- `mod.rs` (~2036 tok, huge) — Shared harness for the native module-bridge integration controls.
+- `mod.rs` (~2274 tok, huge) — Shared harness for the native module-bridge integration controls.
 ### `tests/`
 
 - `native_closure_admission.rs` (~3941 tok, huge) — Copyright 2025 STARGA Inc.
