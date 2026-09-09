@@ -104,6 +104,9 @@ def main() -> int:
     # poison + -1 sentinel gate). An unbound ident poisons the compile.
     refuse_cases = [
         "struct P { x: f64 } { let p: P = P { x: 3.5 }; qq + 1.0 }",
+        # The scalar block driver has no enclosing function return contract.
+        # Preserving scalar early returns must not admit an array-record return.
+        "struct R { xs: [i64; 2] } { let r: R = R { xs: [4, 5] }; return r; }",
     ]
     all_ok = True
     with tempfile.TemporaryDirectory() as td:

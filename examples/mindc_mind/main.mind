@@ -9499,6 +9499,13 @@ pub fn es_new() -> EmitState {
     EmitState { buf: string_new(), next_id: 0, last_id: 0 - 1, lets: env_new() }
 }
 
+// IR-text entry-point refusal: no output, with an explicit status sentinel.
+// Empty output with next_id >= 0 is not a refusal and must not be accepted by
+// a differential consumer as evidence of an unsupported language surface.
+pub fn es_refused() -> EmitState {
+    EmitState { buf: string_new(), next_id: 0 - 1, last_id: 0 - 1, lets: env_new() }
+}
+
 pub fn es_buf(s: EmitState) -> String {
     s.buf
 }
@@ -27791,7 +27798,7 @@ pub fn lower_program_bimap(ast_addr: i64, buf: i64) -> EmitState {
     let items: i64 = ast_child0(ast_addr);
     let n: i64 = ast_aux(ast_addr);
     if bimap_items_valid(buf, items, n, 0) == 0 {
-        return es_new();
+        return es_refused();
     }
     let s0: EmitState = es_new();
     let s1: EmitState = emit_lit_module_open(s0);
@@ -27839,7 +27846,7 @@ pub fn lower_program(ast_addr: i64, buf: i64) -> EmitState {
     // none of which reach the parser fallback, so this never fires during
     // self-compile and the fixed point is unchanged.
     if nb_items_any_unsupported(items_addr, items_len, 0) == 1 {
-        return es_new();
+        return es_refused();
     }
     let s0: EmitState = es_new();
     let s1: EmitState = emit_lit_module_open(s0);
@@ -27868,6 +27875,8 @@ pub fn flush_to_stdout(s: EmitState) -> i64 {
 //   offset  0 : buf     (String handle — addr/len/cap)
 //   offset  8 : next_id (SSA value counter)
 //   offset 16 : last_id (most-recently allocated SSA id)
+// next_id == -1 with an empty buffer explicitly reports refusal. A null
+// record is a runtime failure; an unmarked empty buffer is not a refusal.
 //
 // The Python harness (bootstrap_smoke.py) reads the EmitState via
 // ctypes and compares the decoded String bytes to EXPECTED.md.
@@ -33325,18 +33334,26 @@ pub fn nb_record_index_expr(st: NbState, buf: i64, node: i64, params_addr: i64, 
     }
     // Field-backed arrays require exact schema authority. A literal-shaped
     // runtime value is insufficient for an alias or unsupported element
-    // type. Likewise, an identifier must retain an array descriptor; this
-    // refuses call/parameter/alias paths whose length/layout was discarded.
+    // type. An identifier with a retained non-array descriptor is not an
+    // array. Descriptor-free scalar handles keep the established low-level
+    // call/return ABI; their bounds remain unknown, as in nb_index_len.
     if ast_kind(ix_base) == ast_field() {
-        if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) != 1 {
+        // Unsupported fixed-array schemas refuse. A scalar field may carry
+        // the established raw i64 handle; ordinary field resolution and dtype
+        // checks below still reject missing fields and float handles.
+        if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) < 0 {
             __mind_store_i64(lcell + 80, 1)
+        }
+        let ix_field_desc: i64 = nb_field_type_desc(ix_base, buf, lets, lcell);
+        if ix_field_desc != 0 {
+            if ast_kind(ix_field_desc) != ast_array_lit() {
+                __mind_store_i64(lcell + 80, 1)
+            }
         }
     }
     if ast_kind(ix_base) == ast_ident() {
         let ix_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(ix_base), ast_span_hi(ix_base));
-        if ix_desc == 0 {
-            __mind_store_i64(lcell + 80, 1)
-        } else {
+        if ix_desc != 0 {
             if ast_kind(ix_desc) != ast_array_lit() {
                 __mind_store_i64(lcell + 80, 1)
             }
@@ -34361,6 +34378,15 @@ pub fn nb_let_descriptor(init: i64, ty_node: i64, buf: i64, srt: i64, frt: i64, 
         return ast_new_array_lit(ast_span_lo(init), ast_span_hi(init), eelems, 2);
     }
     if ty_node == 0 {
+        // Preserve the descriptor of an identifier alias. An array literal
+        // binding must retain its element count for constant/runtime bounds,
+        // while a struct-literal binding must stay a known non-array so the
+        // descriptor-free raw-handle exemption cannot reinterpret a record as
+        // an array. A scalar raw handle still returns 0 and keeps the
+        // established low-level ABI path.
+        if ast_kind(init) == ast_ident() {
+            return nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(init), ast_span_hi(init));
+        }
         // Unannotated `let p = o.i` where `o.i` is a struct-typed field read:
         // bind p to that field's inner struct descriptor so `p.v` resolves. Returns
         // 0 (scalar, unchanged) when the field is not struct-typed — main.mind's own
@@ -34596,6 +34622,9 @@ pub fn nb_expr_struct_owner(node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
         if desc == 0 {
             return 0 - 1;
         }
+        if ast_kind(desc) != ast_struct_lit() {
+            return 0 - 1;
+        }
         return nb_srt_unique_by_name(srt, buf, ast_child0(desc), ast_child2(desc));
     }
     if k == ast_call() {
@@ -34608,6 +34637,9 @@ pub fn nb_expr_struct_owner(node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
     if k == ast_field() {
         let desc: i64 = nb_field_type_desc(node, buf, lets, lcell);
         if desc == 0 {
+            return 0 - 1;
+        }
+        if ast_kind(desc) != ast_struct_lit() {
             return 0 - 1;
         }
         return nb_srt_unique_by_name(srt, buf, ast_child0(desc), ast_child2(desc));
@@ -34673,9 +34705,18 @@ pub fn nb_call_record_owner_args_ok(callee: i64, args_addr: i64, args_len: i64, 
 // record owner whenever either side is an array-bearing record. Scalar and
 // established non-array record returns stay outside this focused admission.
 pub fn nb_return_record_owner_ok(value: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let actual: i64 = nb_expr_struct_owner(value, buf, lets, lcell);
+    if actual == 0 - 2 {
+        return 0;
+    }
+    let actual_array: i64 = nb_srt_has_fixed_array(srt, actual, 0);
     let at: i64 = __mind_load_i64(lcell + 88);
     if at == 0 {
-        return 0;
+        // Standalone scalar-expression drivers have no enclosing FnDef. They
+        // cannot establish a record return contract, but scalar returns do
+        // not need one. An array-bearing record still refuses here.
+        return 1 - actual_array;
     }
     let current: i64 = nb_at_native_current(at);
     if current == 0 {
@@ -34684,7 +34725,6 @@ pub fn nb_return_record_owner_ok(value: i64, buf: i64, lets: i64, lcell: i64) ->
     let frt: i64 = __mind_load_i64(lcell + 16);
     let name: i64 = ast_child0(current);
     let fk: i64 = frt_find(frt, buf, ast_span_lo(name), ast_span_hi(name), 0);
-    let srt: i64 = __mind_load_i64(lcell + 24);
     let expected: i64 = if fk < 0 {
         0 - 1
     } else {
@@ -34693,12 +34733,7 @@ pub fn nb_return_record_owner_ok(value: i64, buf: i64, lets: i64, lcell: i64) ->
     if expected == 0 - 2 {
         return 0;
     }
-    let actual: i64 = nb_expr_struct_owner(value, buf, lets, lcell);
-    if actual == 0 - 2 {
-        return 0;
-    }
     let expected_array: i64 = nb_srt_has_fixed_array(srt, expected, 0);
-    let actual_array: i64 = nb_srt_has_fixed_array(srt, actual, 0);
     if expected_array == 1 {
         if actual != expected {
             return 0;

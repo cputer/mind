@@ -25,12 +25,12 @@
 //! Each fixture is classified as one of:
 //!   * `MATCH` — byte-identical (Rust and pure-MIND agree).
 //!   * `DIVERGE` — both produced output but they differ (real bug).
-//!   * `MIND_UNSUPPORTED` — the pure-MIND `mindc_compile` returned a null
-//!     handle or panicked at runtime on a fixture the Rust path compiled.
+//!   * `MIND_UNSUPPORTED` — the pure-MIND `mindc_compile` explicitly refused
+//!     the input (next_id == -1, empty output) that the Rust path compiled.
 //!     There is no longer a source-level feature pre-filter: the front-end
 //!     lowers the whole corpus (fn / struct / enum / extern / module / use /
 //!     import / const items + bare const-folded expressions), so a construct
-//!     it cannot handle surfaces as `DIVERGE`, not a silent exclusion.
+//!     it cannot handle without an explicit refusal surfaces as `DIVERGE`.
 //!   * `REJECT_MATCH` — both paths reject a bimap or NERVE policy violation.
 //!   * `RUST_ONLY` — Rust rejected another input; the self-host path was not
 //!     compared. This bucket is not evidence of self-host correctness.
@@ -64,7 +64,12 @@
 //! (it dlopens an ELF and calls in over the System V AMD64 C ABI); on other
 //! platforms the test no-ops as a pass.
 
+#[path = "support/g2_capability_ratchet.rs"]
+mod capability_ratchet;
 mod common;
+#[path = "support/g2_compile_result.rs"]
+mod compile_result;
+use compile_result::{MindCall, classify_compiler_output};
 #[path = "support/g2_policy_rejections.rs"]
 mod policy_rejections;
 use common::require_mindc;
@@ -271,12 +276,12 @@ type MinDcCompileFn = unsafe extern "C" fn(src_addr: i64, src_len: i64) -> i64;
 
 /// Call `mindc_compile` on `src_bytes` via `lib`.
 ///
-/// Returns the decoded output bytes on success, or `None` if the returned
-/// handle is 0 (allocation failure).
+/// A null handle is a runtime failure. Only the compiler's explicit refusal
+/// sentinel with empty output is an unsupported construct.
 ///
 /// # Safety
 /// Calls foreign code and reads MIND heap records at returned addresses.
-unsafe fn call_mindc_compile(lib: &Library, src_bytes: &[u8]) -> Option<Vec<u8>> {
+unsafe fn call_mindc_compile(lib: &Library, src_bytes: &[u8]) -> MindCall {
     let compile: libloading::Symbol<MinDcCompileFn> = unsafe {
         lib.get(b"mindc_compile\0")
             .expect("symbol mindc_compile must be present in libmindc_mind.so")
@@ -289,38 +294,15 @@ unsafe fn call_mindc_compile(lib: &Library, src_bytes: &[u8]) -> Option<Vec<u8>>
 
     let es_handle: i64 = unsafe { compile(src_addr, src_len) };
     if es_handle == 0 {
-        return None;
+        return MindCall::Crashed("null compiler result handle".to_string());
     }
 
     let buf_handle = unsafe { read_i64_at(es_handle, 0) };
-    Some(read_mind_string(buf_handle))
-}
-
-/// Wrapper that runs `call_mindc_compile` on a dedicated thread with a
-/// 64 MiB stack to avoid overflow on large fixtures (the pure-MIND compiler
-/// uses deep recursion for its lexer/parser/emitter).
-///
-/// The `Library` handle must remain alive in the calling thread for the
-/// duration. We pass a raw pointer into the spawned thread; this is safe
-/// because the calling thread joins before returning, and the `.so` stays
-/// loaded in-process.
-/// Outcome of one pure-MIND `mindc_compile` call.
-///
-/// `Option` was WRONG here: it collapsed two different things into `None` — the
-/// compiler deliberately declining a construct (a null handle) and the compiler
-/// DYING on it (a panicked worker). Those were then both reported as
-/// MIND_UNSUPPORTED, so an abnormal termination read as "not ported yet" and the
-/// gate stayed green. A crash is a defect; an unsupported construct is a backlog
-/// item. They must not share an outcome.
-enum MindCall {
-    /// `mindc_compile` returned a handle and we decoded its buffer.
-    Ok(Vec<u8>),
-    /// `mindc_compile` returned a NULL handle — the pure-MIND front end declined
-    /// this fixture. Legitimate, expected, and non-fatal to the gate.
-    NullHandle,
-    /// The worker terminated abnormally (panic / internal assertion / stack
-    /// overflow the runtime turned into an unwind). NOT an unsupported construct.
-    Crashed(String),
+    if buf_handle == 0 {
+        return MindCall::Crashed("null compiler output buffer".to_string());
+    }
+    let next_id = unsafe { read_i64_at(es_handle, 8) };
+    classify_compiler_output(next_id, read_mind_string(buf_handle))
 }
 
 /// Re-exec THIS test binary as a single-fixture worker so a hard signal is
@@ -338,7 +320,7 @@ enum MindCall {
 /// signals its verdict through the exit code:
 ///
 ///   0   -> compiled; stdout holds the bytes
-///   3   -> `mindc_compile` returned a NULL handle (legitimately unsupported)
+///   3   -> `mindc_compile` returned an explicit refusal record
 ///   4   -> the WORKER ITSELF could not get as far as asking the compiler
 ///          (staged fixture unreadable, `.so` path not passed, dlopen failed,
 ///          stdout unwritable). Distinct from 3 on purpose: this is a harness
@@ -363,9 +345,9 @@ const WORKER_SO_ENV: &str = "G2_MIND_WORKER_SO";
 /// and every fixture compared as EMPTY — 0 MATCH / 99 DIVERGE, a differential gate
 /// that silently compared nothing at all. A plain file has no such interception.
 const WORKER_OUT_ENV: &str = "G2_MIND_WORKER_OUT";
-const WORKER_EXIT_NULL_HANDLE: i32 = 3;
+const WORKER_EXIT_REFUSED: i32 = 3;
 /// The worker could not reach the compiler at all. See the exit-code table above:
-/// this must NEVER be `WORKER_EXIT_NULL_HANDLE`, because a null handle means the
+/// this must NEVER be `WORKER_EXIT_REFUSED`, because a refusal means the
 /// pure-MIND front end looked at the fixture and declined it, and that is a
 /// legitimate, gate-passing outcome. A harness fault is not.
 const WORKER_EXIT_HARNESS_FAULT: i32 = 4;
@@ -425,7 +407,7 @@ fn run_as_worker_if_requested() {
         });
 
         match compiled {
-            Some(bytes) => {
+            MindCall::Ok(bytes) => {
                 let Ok(out_path) = std::env::var(WORKER_OUT_ENV) else {
                     worker_fault("worker was not given an output path")
                 };
@@ -438,7 +420,8 @@ fn run_as_worker_if_requested() {
                 }
                 std::process::exit(0);
             }
-            None => std::process::exit(WORKER_EXIT_NULL_HANDLE),
+            MindCall::Refused => std::process::exit(WORKER_EXIT_REFUSED),
+            MindCall::Crashed(reason) => panic!("compiler result failure: {reason}"),
         }
     }
 }
@@ -501,7 +484,7 @@ fn call_in_subprocess(src_bytes: &[u8], so_path: &Path) -> MindCall {
                 out_file.display()
             )),
         },
-        Some(c) if c == WORKER_EXIT_NULL_HANDLE => MindCall::NullHandle,
+        Some(c) if c == WORKER_EXIT_REFUSED => MindCall::Refused,
         Some(c) if c == WORKER_EXIT_HARNESS_FAULT => MindCall::Crashed(format!(
             "HARNESS FAULT (the compiler was never asked about this fixture): {child_err}"
         )),
@@ -678,8 +661,8 @@ fn run_fixture(bin: &Path, lib: &Library, fixture: &Path) -> Outcome {
     // returns). `lib` stays loaded in-process for the Rust-side path.
     let _ = lib;
     let Some(so_for_worker) = oracle_so_path(bin) else {
-        return Outcome::MindUnsupported {
-            reason: "pure-MIND oracle .so unavailable".to_string(),
+        return Outcome::MindCrash {
+            reason: "resolved pure-MIND oracle became unavailable".to_string(),
         };
     };
     let mind_raw = call_in_subprocess(&src_bytes, &so_for_worker);
@@ -687,9 +670,9 @@ fn run_fixture(bin: &Path, lib: &Library, fixture: &Path) -> Outcome {
     let mind_out: Vec<u8> = match mind_raw {
         MindCall::Ok(bytes) => bytes,
         // Declining a construct is legitimate and stays non-fatal.
-        MindCall::NullHandle => {
+        MindCall::Refused => {
             return Outcome::MindUnsupported {
-                reason: "mindc_compile returned a null handle (construct not lowered yet)"
+                reason: "mindc_compile explicitly refused the input (next_id=-1, empty output)"
                     .to_string(),
             };
         }
@@ -904,6 +887,12 @@ fn g2_1_differential_coverage() {
         let outcome = run_fixture(&bin, &lib, fixture);
         rows.push((fixture.clone(), outcome));
     }
+    // An empty program still emits a module; this also pins next_id's ABI word
+    // independently of last_id, which remains -1 for that program.
+    assert!(
+        matches!(unsafe { call_mindc_compile(&lib, b"") }, MindCall::Ok(bytes) if !bytes.is_empty())
+    );
+    capability_ratchet::assert_preserved(&repo_root(), &rows);
 
     // Write and print the coverage report.
     let target_dir = repo_root().join("target");
@@ -933,7 +922,7 @@ fn g2_1_differential_coverage() {
         let root = repo_root();
         let mut msg = format!(
             "G2.1 GATE FAILED: the pure-MIND compiler CRASHED on {} fixture(s).\n\
-             This is not a porting gap — an unsupported construct returns a null handle \
+             This is not a porting gap — an unsupported construct returns an explicit refusal \
              and is reported as MIND_UNSUPPORTED. These terminated abnormally.\n",
             crashes.len()
         );

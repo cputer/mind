@@ -49,8 +49,7 @@ pub(super) fn check_rejection(
 /// reject it too. A crash remains a defect even on deliberately invalid input.
 fn classify_policy_rejection(result: MindCall) -> Outcome {
     match result {
-        MindCall::NullHandle => Outcome::RejectMatch,
-        MindCall::Ok(bytes) if bytes.is_empty() => Outcome::RejectMatch,
+        MindCall::Refused => Outcome::RejectMatch,
         MindCall::Ok(bytes) => Outcome::Diverge {
             diff_preview: format!(
                 "Rust rejected policy violation; self-host emitted {} bytes",
@@ -64,13 +63,13 @@ fn classify_policy_rejection(result: MindCall) -> Outcome {
 #[test]
 fn policy_rejection_gate_distinguishes_refusal_acceptance_and_crash() {
     assert_eq!(
-        classify_policy_rejection(MindCall::NullHandle),
+        classify_policy_rejection(MindCall::Refused),
         Outcome::RejectMatch
     );
-    assert_eq!(
+    assert!(matches!(
         classify_policy_rejection(MindCall::Ok(Vec::new())),
-        Outcome::RejectMatch
-    );
+        Outcome::Diverge { .. }
+    ));
     assert!(matches!(
         classify_policy_rejection(MindCall::Ok(b"module {}".to_vec())),
         Outcome::Diverge { .. }

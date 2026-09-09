@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1793 | **Est. tokens:** ~3437235
-**Generated:** 2026-09-09 16:56 UTC
+**Files:** 1796 | **Est. tokens:** ~3444141
+**Generated:** 2026-09-09 20:42 UTC
 
 ## Token Budget Guide
 
@@ -68,7 +68,7 @@
 | `examples/lexer/` | 6 | ~8888 |
 | `examples/mind_mirror_v04/` | 2 | ~3836 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3862 |
-| `examples/mindc_mind/` | 173 | ~445433 |
+| `examples/mindc_mind/` | 173 | ~445750 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -134,7 +134,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 396 | ~808320 |
+| `tests/` | 396 | ~808188 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -166,7 +166,7 @@
 | `tests/cross_substrate_identity/scalar-float-f64/` | 2 | ~1310 |
 | `tests/cross_substrate_identity/struct-handle-roundtrip/` | 2 | ~746 |
 | `tests/cross_substrate_identity/u64-ops/` | 2 | ~1054 |
-| `tests/fixtures/` | 6 | ~228 |
+| `tests/fixtures/` | 7 | ~5820 |
 | `tests/fixtures/f64_abi_negative/` | 3 | ~192 |
 | `tests/fixtures/nerve_numerics/` | 11 | ~968 |
 | `tests/fixtures/selfhost_policy/` | 13 | ~315 |
@@ -192,7 +192,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
-| `tests/support/` | 7 | ~18278 |
+| `tests/support/` | 9 | ~19407 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -710,7 +710,7 @@
 - `self_host_continue_smoke.py` (~1384 tok, large) — Regression gate for #308 (closes #286's break/continue fixtures): the pure-MIND
 - `self_host_dtype_tag_smoke.py` (~780 tok, large) — RI-B1 per-SSA dtype-tag gate (parser <-> nb_fp_* encoder connecting construct).
 - `self_host_else_if_smoke.py` (~1715 tok, huge)
-- `self_host_failclosed_smoke.py` (~9644 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
+- `self_host_failclosed_smoke.py` (~9902 tok, huge) — self_host_failclosed_smoke.py — the fail-closed boundary of the pure-MIND
 - `self_host_float_lit_exact_smoke.py` (~1368 tok, large) — CPU-as-oracle smoke for the C1 float-literal exactness guard.
 - `self_host_for_smoke.py` (~3191 tok, huge) — Permanent battery for the self-host range-`for` loop.
 - `self_host_if_region_carry_smoke.py` (~4632 tok, huge) — Native-ELF smoke: i64 loop-carry through BRANCHED regions (Sub-step C).
@@ -738,7 +738,7 @@
 - `self_host_native_fp_binop_smoke.py` (~1095 tok, large) — RI-B1 nb_expr FLOAT-op-FLOAT arithmetic routing gate (zero MLIR/LLVM).
 - `self_host_native_fp_call_smoke.py` (~5469 tok, huge) — RI-D2 S-C1: FLOAT call-RETURN dtype through the native-ELF general nb_expr lowering.
 - `self_host_native_fp_expr_smoke.py` (~1020 tok, large) — RI-B1 nb_expr float-scalar routing gate (zero MLIR/LLVM).
-- `self_host_native_fp_field_smoke.py` (~1832 tok, huge) — RI-D2 S-D FLOAT struct-FIELD READ dtype through native-ELF general lowering (zero MLIR).
+- `self_host_native_fp_field_smoke.py` (~1891 tok, huge) — RI-D2 S-D FLOAT struct-FIELD READ dtype through native-ELF general lowering (zero MLIR).
 - `self_host_native_fp_let_smoke.py` (~1208 tok, large) — RI-B1 (#107 follow-up) FLOAT dtype propagation ACROSS a LET binding (zero MLIR/LLVM).
 - `self_host_native_fp_param_smoke.py` (~1403 tok, large) — RI-D2 S-B: FLOAT fn-param dtype classification + SysV SSE-spill ABI (zero MLIR/LLVM).
 - `self_host_native_fp_smoke.py` (~1142 tok, large) — RI-B1 native-ELF scalar-f64 gate (zero MLIR/LLVM).
@@ -1721,6 +1721,7 @@
 - `scale_pos.mind` (~23 tok, tiny)
 ### `tests/fixtures/`
 
+- `g2_expected_outcomes.tsv` (~5592 tok, huge) — # Per-fixture G2 capability ratchet; canonical source SHA-256 binds each case.
 - `invalid.mind` (~6 tok, tiny)
 - `invalid_broadcast.mind` (~17 tok, tiny)
 ### `tests/fixtures/nerve_numerics/`
@@ -1828,7 +1829,7 @@
 - `for_continue_step_injection.rs` (~1306 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `for_each_run.rs` (~805 tok, large) — Copyright 2025 STARGA Inc.
 - `for_hygiene_run.rs` (~1396 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
-- `g2_differential_mlir.rs` (~10698 tok, huge) — Copyright 2025 STARGA Inc.
+- `g2_differential_mlir.rs` (~10566 tok, huge) — Copyright 2025 STARGA Inc.
 - `gate_assert_count_contract_test.py` (~7131 tok, huge) — Gate test: the assertion count must be EVIDENCE, never a printed integer.
 - `gather_preview.rs` (~288 tok, medium) — Copyright 2025 STARGA Inc.
 - `generics_lowering.rs` (~1384 tok, large) — Copyright 2026 STARGA Inc. Licensed under the Apache License, Version 2.0.
@@ -2385,7 +2386,9 @@
 - `substrate_nonentry_import_link.rs` (~1449 tok, large) — Copyright 2025 STARGA Inc.
 ### `tests/support/`
 
-- `g2_policy_rejections.rs` (~773 tok, large) — Copyright 2026 STARGA Inc.
+- `g2_capability_ratchet.rs` (~783 tok, large) — Copyright 2026 STARGA Inc.
+- `g2_compile_result.rs` (~364 tok, medium) — Copyright 2026 STARGA Inc.
+- `g2_policy_rejections.rs` (~755 tok, large) — Copyright 2026 STARGA Inc.
 - `pqc_hybrid_cli_support.rs` (~1429 tok, large) — Copyright 2026 STARGA Inc.
 - `v04_mirror_body_vectors.rs` (~4124 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `v04_mirror_descriptor_vectors.rs` (~2649 tok, huge) — Copyright 2025-2026 STARGA Inc.

@@ -186,6 +186,15 @@ REFUSED = [
     ("array negative index", M("let a=[1,2,3]; return a[-1];"), "0B"),
     ("array direct-lit OOB", M("return [1,2,3][7];"), "0B"),
     ("array field access", M("let a=[1,2,3]; return a.x;"), "0B"),
+    ("record call result is not an array handle",
+     "struct R { xs: [i64; 2] } fn mk()->R{ R { xs: [4,5] } } "
+     "fn main()->i64{ let r:R=mk(); return r[9]; }", "0B"),
+    ("record literal alias is not an array handle",
+     "struct R { xs: [i64; 2] } fn main()->i64{ "
+     "let r:R=R { xs: [4,5] }; let a=r; return a[0]; }", "0B"),
+    ("nested record field is not an array handle",
+     "struct I { xs: [i64; 2] } struct O { inner: I } fn main()->i64{ "
+     "let o:O=O { inner:I { xs:[4,5] } }; return o.inner[9]; }", "0B"),
     ("array missing ]", M("let a=[1,2; return 0;"), "0B"),
     # TYPED-ARRAY annotation `let NAME : [T; N] = INIT` (parse-past the balanced
     # annotation, then the existing i64/f64 array-lit emit path runs). A MALFORMED
@@ -306,6 +315,14 @@ REFUSED = [
 
 # (label, source, expected exit value) — the supported subset MUST run correct.
 SUPPORTED = [
+    ("array descriptor survives let alias", M("let a=[4,5]; let b=a; return b[1];"), 5),
+    ("raw handle field index",
+     "struct S { h: i64 } fn main()->i64{ let a:i64=__mind_alloc(16); "
+     "__mind_store_i64(a,9); let s:S=S { h:a }; return s.h[0]; }", 9),
+    ("raw handle field index through parameter",
+     "struct S { h: i64 } fn get(s:S)->i64{ return s.h[0]; } "
+     "fn main()->i64{ let a:i64=__mind_alloc(16); __mind_store_i64(a,7); "
+     "let s:S=S { h:a }; return get(s); }", 7),
     *NERVE_POLICY_SUPPORTED,
     ("item attr determinism", "#[determinism(BitIdentical)]\nfn main()->i64{7}", 7),
     ("scalar arith", M("return 2+3*4;"), 14),
