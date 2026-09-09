@@ -196,13 +196,12 @@ const SIGNATURE_KEYS: [&str; 9] = [
     KEY_SIG_SLHDSA,
 ];
 
-/// `alg` tag: classical Ed25519 only (NON-COMPLIANT for the federal PQC mandate;
-/// retained for interop/legacy).
+/// Retired `alg` tag: classical Ed25519 (retained for historical inspection).
 const SIG_SCHEME_ED25519: &str = "ed25519";
 /// `alg` tag: post-quantum ML-DSA-65 (FIPS-204) only. Compliant PQC signature.
 const SIG_SCHEME_MLDSA65: &str = "ml-dsa-65";
-/// `alg` tag: hybrid — BOTH Ed25519 AND ML-DSA-65 must verify. Preferred for the
-/// PQC transition (defense-in-depth: safe if either primitive is later broken).
+/// Retired `alg` tag: hybrid Ed25519 + ML-DSA-65 (retained for historical
+/// inspection; never trusted or emitted by current signing APIs).
 const SIG_SCHEME_HYBRID: &str = "hybrid-ed25519-ml-dsa-65";
 /// `alg` tag: the BULLETPROOF PQC-hybrid — BOTH ML-DSA-87 (FIPS-204, cat-5,
 /// module-lattice) AND SLH-DSA-SHAKE-256s (FIPS-205, cat-5, hash-based) must
@@ -222,16 +221,20 @@ pub use super::mldsa::ENV_MLDSA_SEED;
 ///
 /// This is the crypto-agility surface (OMB M-26-15): the caller picks a scheme and
 /// the encoder tags the artifact with the corresponding `signature.scheme` value so
-/// a verifier can dispatch. All variants sign the SAME payload — the 32-byte
+/// a verifier can dispatch. `Ed25519` and `Hybrid` are retained as historical
+/// decoding/API representations, but are permanently retired from signing and
+/// trust verification. All supported variants sign the SAME payload — the 32-byte
 /// canonical mic@3 `trace_hash` — so the anchor (Constitution Article IV) is
 /// untouched regardless of scheme.
 #[derive(Debug, Clone)]
 pub enum SigningKey {
-    /// Classical Ed25519 (32-byte seed). Legacy/interop; not PQC-compliant.
+    /// Retired classical Ed25519 (32-byte seed), retained for historical/API
+    /// representation only. Signing with it returns [`EvidenceEmitError::SchemeRetired`].
     Ed25519([u8; 32]),
     /// Post-quantum ML-DSA-65 (32-byte FIPS-204 keygen seed ξ).
     MlDsa65([u8; 32]),
-    /// Hybrid: sign with BOTH; a verifier requires BOTH halves to verify.
+    /// Retired hybrid: sign with BOTH; retained for historical/API representation
+    /// only. A verifier reports the artifact as retired rather than trusted.
     Hybrid {
         /// Ed25519 seed.
         ed25519: [u8; 32],
@@ -380,10 +383,7 @@ pub fn emit_mic3_with_evidence_and_receipts(
             );
             let scheme = scheme_for_key(key);
             let preimage = build_signature_preimage(&evidence_entries, &trace_hash, scheme);
-            Some(
-                compute_signature_payload(key, &preimage)
-                    .map_err(EvidenceEmitError::SchemeUnavailable)?,
-            )
+            Some(compute_signature_payload(key, &preimage)?)
         }
         None => None,
     };
@@ -403,11 +403,14 @@ pub fn emit_mic3_with_evidence_and_receipts(
     Ok(out)
 }
 
-/// Emit a mic@3 artifact with an `evidence_chain.*` MAP **and** an Ed25519
-/// signature over the canonical provenance preimage (RFC 0021 §6).
+/// Legacy compatibility entry point for Ed25519-signed evidence.
 ///
-/// The signature is deterministic (RFC 8032): the `seed` plus the preimage fully
-/// determine the 64-byte signature, so this call is byte-reproducible.
+/// Ed25519 signing is permanently retired. This infallible wrapper therefore
+/// intentionally panics on every signing attempt; callers that need a structured
+/// result must use [`emit_mic3_with_signed_evidence_checked`] or the scheme API.
+///
+/// The function remains available so historical source/API consumers fail
+/// explicitly rather than silently producing a different scheme.
 ///
 /// ## Anchor invariant (Constitution Article IV)
 ///
@@ -454,10 +457,12 @@ pub fn emit_mic3_with_signed_evidence_checked(
 /// Emit a mic@3 artifact with an `evidence_chain.*` MAP **and** a crypto-agile
 /// signature over the canonical `trace_hash` (RFC 0021 §6).
 ///
-/// The [`SigningKey`] selects the scheme — classical Ed25519, post-quantum
-/// ML-DSA-65 (FIPS-204), or the hybrid of both — and the artifact is tagged with
-/// the matching `signature.scheme` (`alg`) value so a verifier is crypto-agile
-/// (OMB M-26-15). Every scheme signs the SAME payload (the canonical provenance
+/// The [`SigningKey`] selects the scheme. Retired Ed25519 and old hybrid values
+/// are accepted as historical/API representations only and return
+/// [`EvidenceEmitError::SchemeRetired`]; the supported signing choices are
+/// ML-DSA-65 and the ML-DSA-87 + SLH-DSA-SHAKE-256s hybrid. A supported artifact is
+/// tagged with the matching `signature.scheme` (`alg`) value so a verifier is
+/// crypto-agile (OMB M-26-15). Every supported scheme signs the SAME payload (the canonical provenance
 /// preimage: mic@3 anchor + all other `evidence_chain.*` keys), so the
 /// `trace_hash` — and therefore the determinism/keystone gate — is identical
 /// across all schemes and versus the unsigned path.
@@ -504,8 +509,7 @@ pub fn emit_mic3_with_signed_evidence_scheme(
     // fails to verify (fail-closed).
     let scheme = scheme_for_key(key);
     let preimage = build_signature_preimage(&evidence_entries, &trace_hash, scheme);
-    let payload =
-        compute_signature_payload(key, &preimage).map_err(EvidenceEmitError::SchemeUnavailable)?;
+    let payload = compute_signature_payload(key, &preimage)?;
     let mut out = body;
     append_map_epilogue(
         &mut out,
@@ -554,12 +558,7 @@ struct SignaturePayload {
 fn compute_signature_payload(
     key: &SigningKey,
     preimage: &[u8],
-) -> Result<SignaturePayload, &'static str> {
-    let ed = |seed: &[u8; 32]| -> ([u8; 32], [u8; 64]) {
-        let sig = super::ed25519::sign(seed, preimage);
-        let pubkey = super::ed25519::public_key(seed);
-        (pubkey, sig)
-    };
+) -> Result<SignaturePayload, EvidenceEmitError> {
     let mldsa = |seed: &[u8; 32]| -> Result<(Vec<u8>, Vec<u8>), &'static str> {
         if !super::mldsa::supported() {
             return Err(
@@ -600,24 +599,17 @@ fn compute_signature_payload(
         ))
     };
     match key {
-        SigningKey::Ed25519(seed) => Ok(SignaturePayload {
-            scheme: SIG_SCHEME_ED25519,
-            ed25519: Some(ed(seed)),
-            mldsa: None,
-            mldsa87: None,
-            slhdsa: None,
-        }),
+        // RETIRED. This is the lowest shared checked signing boundary, so every
+        // emitter above it — including the receipt-bearing and
+        // application-attribute paths — inherits the refusal. Gating only the
+        // CLI would leave these public library APIs able to mint retired
+        // signatures, which is exactly the hole this closes.
+        SigningKey::Ed25519(_) => Err(EvidenceEmitError::SchemeRetired(SIG_SCHEME_ED25519)),
+        SigningKey::Hybrid { .. } => Err(EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
         SigningKey::MlDsa65(seed) => Ok(SignaturePayload {
             scheme: SIG_SCHEME_MLDSA65,
             ed25519: None,
-            mldsa: Some(mldsa(seed)?),
-            mldsa87: None,
-            slhdsa: None,
-        }),
-        SigningKey::Hybrid { ed25519, mldsa65 } => Ok(SignaturePayload {
-            scheme: SIG_SCHEME_HYBRID,
-            ed25519: Some(ed(ed25519)),
-            mldsa: Some(mldsa(mldsa65)?),
+            mldsa: Some(mldsa(seed).map_err(EvidenceEmitError::SchemeUnavailable)?),
             mldsa87: None,
             slhdsa: None,
         }),
@@ -628,8 +620,8 @@ fn compute_signature_payload(
             scheme: SIG_SCHEME_PQC_HYBRID,
             ed25519: None,
             mldsa: None,
-            mldsa87: Some(mldsa87(m87_seed)?),
-            slhdsa: Some(slhdsa(slh_seed)?),
+            mldsa87: Some(mldsa87(m87_seed).map_err(EvidenceEmitError::SchemeUnavailable)?),
+            slhdsa: Some(slhdsa(slh_seed).map_err(EvidenceEmitError::SchemeUnavailable)?),
         }),
     }
 }
@@ -1037,7 +1029,7 @@ fn collect_const_i64(instrs: &[crate::ir::Instr], out: &mut std::collections::BT
 
 // ─── Signature verification (RFC 0021 §6) ──────────────────────────────────────
 
-/// Result of checking the optional Ed25519 signature layer on a mic@3 artifact.
+/// Result of checking the optional signature layer on a mic@3 artifact.
 ///
 /// Signature status is reported *separately* from `trace_hash_valid`: the two
 /// properties are orthogonal.  `trace_hash_valid` proves the stored anchor equals
@@ -1049,12 +1041,26 @@ pub enum SignatureStatus {
     /// No `signature.*` keys present — an unsigned (but possibly attested) artifact.
     Absent,
     /// Every signature required by the artifact's `scheme` verified over the stored
-    /// `trace_hash`. For a hybrid scheme this means BOTH the Ed25519 and the
-    /// ML-DSA-65 halves verified.
+    /// `trace_hash`. For the supported PQC hybrid this means BOTH post-quantum
+    /// halves verified.
     Valid(VerifiedScheme),
     /// `signature.*` keys present and well-formed, but at least one required
     /// signature does NOT verify over the stored `trace_hash`. Fail-closed.
     Invalid,
+    /// The artifact is signed under a scheme that has been PERMANENTLY RETIRED
+    /// from supported signing and trust verification (Ed25519 and the old
+    /// Ed25519+ML-DSA-65 hybrid).
+    ///
+    /// This is deliberately its own status rather than `Malformed` or `Absent`.
+    /// The bytes are well formed and were once a real signature, so calling them
+    /// malformed would misdescribe them, and calling them absent would silently
+    /// demote a signed artifact to an unsigned one — which is exactly the quiet
+    /// downgrade the retirement exists to prevent. A caller must be able to say
+    /// "this was signed, under a scheme we no longer trust".
+    ///
+    /// Historical artifacts remain decodable for INSPECTION; that is not the
+    /// same as verification, and this status never counts as success.
+    Retired(&'static str),
     /// `signature.*` keys present but structurally unusable — unknown scheme,
     /// wrong key/signature length, or a missing companion key. Fail-closed.
     Malformed(&'static str),
@@ -1068,10 +1074,11 @@ pub enum SignatureStatus {
 /// against. Surfaced by `mindc verify` for provenance/audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedScheme {
-    /// The `signature.scheme` (`alg`) tag: `ed25519`, `ml-dsa-65`, or
-    /// `hybrid-ed25519-ml-dsa-65`.
+    /// The supported `signature.scheme` (`alg`) tag. Retired schemes are returned
+    /// as [`SignatureStatus::Retired`] and never populate this structure.
     pub scheme: String,
-    /// The Ed25519 public key, present for `ed25519` and hybrid schemes.
+    /// Reserved for legacy decoded structures; current trusted signatures never
+    /// populate an Ed25519 key because that scheme is retired.
     pub ed25519_pubkey: Option<[u8; 32]>,
     /// The ML-DSA-65 public key (1952 bytes), present for `ml-dsa-65` and hybrid.
     pub mldsa_pubkey: Option<Vec<u8>>,
@@ -1081,7 +1088,7 @@ pub struct VerifiedScheme {
     pub slhdsa_pubkey: Option<Vec<u8>>,
 }
 
-/// Inspect the optional Ed25519 signature layer of a mic@3 artifact.
+/// Inspect the optional signature layer of a mic@3 artifact.
 ///
 /// Returns [`SignatureStatus::Absent`] when the artifact carries no
 /// `signature.*` keys (back-compat: unsigned artifacts are legal).  When a
@@ -1121,7 +1128,8 @@ pub fn mic3_signature_status(bytes: &[u8]) -> Result<SignatureStatus, EvidenceEr
 /// Decode + verify the signature layer from parsed MAP entries.
 ///
 /// Crypto-agile dispatch (OMB M-26-15): reads the `signature.scheme` (`alg`) tag
-/// and runs the corresponding verifier(s). A hybrid scheme requires BOTH halves to
+/// and runs the corresponding verifier(s). Retired schemes stop as
+/// [`SignatureStatus::Retired`]; the supported PQC hybrid requires BOTH halves to
 /// verify. Every scheme is fail-closed — an unknown `alg`, a missing/short key or
 /// signature, or a required-but-uncompiled PQC verifier all yield a non-`Valid`
 /// status, never a silent pass.
@@ -1163,8 +1171,21 @@ fn signature_status_from_entries(
     // preimage the genuine half was signed over.
     let preimage = build_signature_preimage(&view, &trace_hash, &scheme);
 
-    let want_ed = scheme == SIG_SCHEME_ED25519 || scheme == SIG_SCHEME_HYBRID;
-    let want_mldsa = scheme == SIG_SCHEME_MLDSA65 || scheme == SIG_SCHEME_HYBRID;
+    // RETIRED SCHEMES, checked before any verification work.
+    //
+    // Ed25519 and the old Ed25519+ML-DSA-65 hybrid are permanently retired from
+    // supported signing and trust verification. They stop here, with an explicit
+    // status: never Valid, and never silently reinterpreted as unsigned. The
+    // structural decode above still ran, so a historical artifact stays
+    // inspectable — inspection is not trust.
+    if scheme == SIG_SCHEME_ED25519 {
+        return Ok(SignatureStatus::Retired(SIG_SCHEME_ED25519));
+    }
+    if scheme == SIG_SCHEME_HYBRID {
+        return Ok(SignatureStatus::Retired(SIG_SCHEME_HYBRID));
+    }
+
+    let want_mldsa = scheme == SIG_SCHEME_MLDSA65;
     // The bulletproof PQC-hybrid requires BOTH the ML-DSA-87 and SLH-DSA legs.
     // No scheme value names only one of them, so both flags are true TOGETHER —
     // the verifier structurally cannot be coaxed into accepting a single leg
@@ -1172,7 +1193,7 @@ fn signature_status_from_entries(
     // below, never silently collapses the hybrid to one scheme).
     let want_mldsa87 = scheme == SIG_SCHEME_PQC_HYBRID;
     let want_slhdsa = scheme == SIG_SCHEME_PQC_HYBRID;
-    if !want_ed && !want_mldsa && !want_mldsa87 && !want_slhdsa {
+    if !want_mldsa && !want_mldsa87 && !want_slhdsa {
         // Unknown `alg` — fail closed (never accept a scheme we do not understand).
         return Ok(SignatureStatus::Malformed("signature.scheme"));
     }
@@ -1194,7 +1215,7 @@ fn signature_status_from_entries(
     let has_slhdsa_half = entries
         .iter()
         .any(|e| e.key == KEY_SIG_SLHDSA || e.key == KEY_SIG_SLHDSA_PUBKEY);
-    if has_ed_half && !want_ed {
+    if has_ed_half {
         return Ok(SignatureStatus::Malformed(KEY_SIG_SCHEME));
     }
     if has_mldsa_half && !want_mldsa {
@@ -1205,23 +1226,6 @@ fn signature_status_from_entries(
     }
     if has_slhdsa_half && !want_slhdsa {
         return Ok(SignatureStatus::Malformed(KEY_SIG_SCHEME));
-    }
-
-    // ── Ed25519 half ──────────────────────────────────────────────────────────
-    let mut ed_pubkey: Option<[u8; 32]> = None;
-    if want_ed {
-        let pubkey = match find_bytes_opt_n::<32>(entries, KEY_SIG_PUBKEY)? {
-            Some(pk) => pk,
-            None => return Ok(SignatureStatus::Malformed(KEY_SIG_PUBKEY)),
-        };
-        let sig = match find_bytes_opt_n::<64>(entries, KEY_SIG_ED25519)? {
-            Some(s) => s,
-            None => return Ok(SignatureStatus::Malformed(KEY_SIG_ED25519)),
-        };
-        if !super::ed25519::verify(&pubkey, &preimage, &sig) {
-            return Ok(SignatureStatus::Invalid);
-        }
-        ed_pubkey = Some(pubkey);
     }
 
     // ── ML-DSA-65 half (post-quantum) ─────────────────────────────────────────
@@ -1293,7 +1297,7 @@ fn signature_status_from_entries(
 
     Ok(SignatureStatus::Valid(VerifiedScheme {
         scheme,
-        ed25519_pubkey: ed_pubkey,
+        ed25519_pubkey: None,
         mldsa_pubkey,
         mldsa87_pubkey,
         slhdsa_pubkey,
@@ -1309,25 +1313,6 @@ fn find_bytes_var(
 ) -> Result<Option<Vec<u8>>, EvidenceError> {
     match find_entry(entries, key) {
         Some(ParsedValue::Bytes(b)) => Ok(Some(b.clone())),
-        Some(_) => Err(EvidenceError::Malformed(key)),
-        None => Ok(None),
-    }
-}
-
-/// Read an optional fixed-length bytes entry. `None` if absent; `Malformed` if
-/// present with a wrong-typed or wrong-length value (fail-closed).
-fn find_bytes_opt_n<const N: usize>(
-    entries: &[ParsedEntry],
-    key: &'static str,
-) -> Result<Option<[u8; N]>, EvidenceError> {
-    match find_entry(entries, key) {
-        Some(ParsedValue::Bytes(b)) => {
-            let arr: [u8; N] = b
-                .as_slice()
-                .try_into()
-                .map_err(|_| EvidenceError::Malformed(key))?;
-            Ok(Some(arr))
-        }
         Some(_) => Err(EvidenceError::Malformed(key)),
         None => Ok(None),
     }
@@ -2834,6 +2819,7 @@ mod tests {
 
     // (S4-f) A signed artifact's receipts are covered by the signature preimage:
     // editing the receipt blob under a valid signature breaks the signature.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signed_receipt_edit_breaks_signature() {
         let ir = mod_with_const(4950);
@@ -2850,7 +2836,7 @@ mod tests {
             None,
             Determinism::Deterministic,
             "0.10.1",
-            Some(&SigningKey::Ed25519(TEST_SEED)),
+            Some(&pqc_hybrid_key()),
             &receipts,
             &[],
         )
@@ -2887,6 +2873,7 @@ mod tests {
     // -------------------------------------------------------------------------
 
     // Deterministic test seed (NOT a production key — tests only).
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     const TEST_SEED: [u8; 32] = [
         0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfc, 0xbe, 0xb2, 0xc4, 0xcf, 0x3d, 0x1e, 0x79, 0xfd, 0xae,
         0x0e, 0x34, 0xbc, 0xcb, 0xaa, 0xcf, 0x9e, 0xc2, 0x4b, 0xd0, 0xe7, 0x5c, 0x4e, 0x5d, 0x6b,
@@ -2895,19 +2882,21 @@ mod tests {
 
     // (o) Unsigned path is byte-identical to a signed artifact's unsigned prefix,
     //     and the trace_hash is unchanged — the determinism-gate invariant.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signed_artifact_unsigned_prefix_is_byte_identical() {
         for (name, ir) in all_modules() {
             let unsigned =
                 emit_mic3_with_evidence(&ir, "x86_avx2", None, Determinism::Deterministic, "0.8.0");
-            let signed = emit_mic3_with_signed_evidence(
+            let signed = emit_mic3_with_signed_evidence_scheme(
                 &ir,
                 "x86_avx2",
                 None,
                 Determinism::Deterministic,
                 "0.8.0",
-                &TEST_SEED,
-            );
+                &pqc_hybrid_key(),
+            )
+            .expect("supported pair must sign");
             // The signature keys sort AFTER evidence_chain.* keys, but they are
             // interleaved into the same MAP, so the signed artifact is NOT a byte
             // prefix. The load-bearing invariant is that the *trace_hash anchor*
@@ -2936,27 +2925,36 @@ mod tests {
     }
 
     // (p) sign → verify round trip: a freshly-signed artifact reports Valid.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signature_round_trip_is_valid() {
         for (name, ir) in all_modules() {
-            let signed = emit_mic3_with_signed_evidence(
+            let signed = emit_mic3_with_signed_evidence_scheme(
                 &ir,
                 "arm_neon",
                 None,
                 Determinism::Deterministic,
                 "0.8.0",
-                &TEST_SEED,
-            );
+                &pqc_hybrid_key(),
+            )
+            .expect("supported pair must sign");
             let status = mic3_signature_status(&signed)
                 .unwrap_or_else(|e| panic!("module '{}': signature_status err {:?}", name, e));
-            let expected_pk = super::super::ed25519::public_key(&TEST_SEED);
             match status {
                 SignatureStatus::Valid(v) => {
-                    assert_eq!(v.scheme, "ed25519", "module '{}': scheme tag", name);
                     assert_eq!(
-                        v.ed25519_pubkey,
-                        Some(expected_pk),
-                        "module '{}': ed25519 pubkey",
+                        v.scheme, SIG_SCHEME_PQC_HYBRID,
+                        "module '{}': scheme tag",
+                        name
+                    );
+                    assert!(
+                        v.ed25519_pubkey.is_none(),
+                        "module '{}': the retired Ed half must be absent",
+                        name
+                    );
+                    assert!(
+                        v.mldsa87_pubkey.is_some() && v.slhdsa_pubkey.is_some(),
+                        "module '{}': both supported halves must be present",
                         name
                     );
                     assert!(v.mldsa_pubkey.is_none(), "module '{}': no mldsa half", name);
@@ -2981,17 +2979,19 @@ mod tests {
 
     // (r) Tamper: flipping a body byte breaks BOTH trace_hash_valid and the
     //     signature (the signed trace_hash no longer matches the body).
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signature_tamper_body_byte_fails_closed() {
         let ir = mod_fndef();
-        let signed = emit_mic3_with_signed_evidence(
+        let signed = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &TEST_SEED,
-        );
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
         let mut tampered = signed.clone();
         tampered[5] ^= 0xFF; // inside the mic@3 body
         // trace_hash recompute over the tampered body no longer matches.
@@ -3004,17 +3004,19 @@ mod tests {
     }
 
     // (s) Tamper: flipping a signature byte flips Valid → Invalid.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signature_tamper_sig_byte_flips_invalid() {
         let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence(
+        let signed = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &TEST_SEED,
-        );
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
         // Flip one byte INSIDE the signature.ed25519 value (not the trailing
         // `signature.scheme` string, which now sorts last in the MAP) and confirm
         // the signature no longer verifies. We tamper via the parsed entries so the
@@ -3023,7 +3025,7 @@ mod tests {
         let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
         let mut found = false;
         for e in entries.iter_mut() {
-            if e.key == "signature.ed25519" {
+            if e.key == KEY_SIG_MLDSA87 {
                 if let ParsedValue::Bytes(b) = &mut e.value {
                     b[0] ^= 0x01;
                     found = true;
@@ -3032,7 +3034,7 @@ mod tests {
         }
         assert!(
             found,
-            "precondition: signed artifact carries signature.ed25519"
+            "precondition: signed artifact carries the supported lattice signature"
         );
         assert_eq!(
             signature_status_from_entries(&entries).unwrap(),
@@ -3042,25 +3044,30 @@ mod tests {
     }
 
     // (t) Tamper: substituting a different public key flips Valid → Invalid.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signature_wrong_pubkey_is_invalid() {
         let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence(
+        let signed = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &TEST_SEED,
-        );
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
         // Re-emit MAP with a foreign pubkey but the same signature bytes.
         let body_end = find_map_sentinel(&signed).unwrap();
         let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
         let mut other_seed = TEST_SEED;
         other_seed[0] ^= 0x01;
-        let other_pk = super::super::ed25519::public_key(&other_seed);
+        // Substitute a half the SUPPORTED scheme actually verifies. Swapping the
+        // retired Ed field would change nothing, and the test would pass while
+        // proving nothing about key substitution.
+        let other_pk = super::super::mldsa::public_key_87(&other_seed);
         for e in entries.iter_mut() {
-            if e.key == "signature.pubkey" {
+            if e.key == KEY_SIG_MLDSA87_PUBKEY {
                 e.value = ParsedValue::Bytes(other_pk.to_vec());
             }
         }
@@ -3073,25 +3080,28 @@ mod tests {
     }
 
     // (u) Signing is deterministic: same seed + IR ⇒ byte-identical artifact.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn signing_is_byte_deterministic() {
         let ir = mod_call_chain();
-        let a = emit_mic3_with_signed_evidence(
+        let a = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &TEST_SEED,
-        );
-        let b = emit_mic3_with_signed_evidence(
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
+        let b = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &TEST_SEED,
-        );
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
         assert_eq!(a, b, "deterministic signing must be byte-reproducible");
     }
 
@@ -3180,11 +3190,20 @@ mod tests {
 
     // (x) Hybrid sign → verify: BOTH halves present and Valid.
     #[cfg(feature = "evidence-mldsa")]
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn hybrid_round_trip_requires_both() {
-        let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence_scheme(
-            &ir,
+        // RETIREMENT ASSERTION. This test previously exercised a tamper or
+        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
+        // vehicle. That hybrid can no longer be signed, so the invariant is
+        // now unreachable through it: the old Ed25519+ML-DSA-65 hybrid cannot be signed at all.
+        //
+        // The invariant itself is NOT lost — it is covered for the supported
+        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
+        // requires Malformed. What this test now pins is the retirement: the
+        // emitter refuses, by name, and produces no artifact.
+        let err = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
             "x86_avx2",
             None,
             Determinism::Deterministic,
@@ -3194,28 +3213,30 @@ mod tests {
                 mldsa65: TEST_MLDSA_SEED,
             },
         )
-        .unwrap();
-        match mic3_signature_status(&signed).unwrap() {
-            SignatureStatus::Valid(v) => {
-                assert_eq!(v.scheme, "hybrid-ed25519-ml-dsa-65");
-                assert_eq!(
-                    v.ed25519_pubkey,
-                    Some(super::super::ed25519::public_key(&TEST_SEED))
-                );
-                assert_eq!(v.mldsa_pubkey.as_deref().map(<[u8]>::len), Some(1952));
-            }
-            other => panic!("expected hybrid Valid, got {:?}", other),
-        }
+        .expect_err("the retired hybrid must never sign");
+        assert!(
+            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
+            "must refuse as retired, by name, got {err:?}"
+        );
     }
 
     // (y) Hybrid tamper: corrupting ONLY the ML-DSA signature must fail the whole
     //     hybrid verification (both halves are required — defense-in-depth).
     #[cfg(feature = "evidence-mldsa")]
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn hybrid_tamper_mldsa_half_fails_closed() {
-        let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence_scheme(
-            &ir,
+        // RETIREMENT ASSERTION. This test previously exercised a tamper or
+        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
+        // vehicle. That hybrid can no longer be signed, so the invariant is
+        // now unreachable through it: there is no retired-hybrid artifact left to tamper with.
+        //
+        // The invariant itself is NOT lost — it is covered for the supported
+        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
+        // requires Malformed. What this test now pins is the retirement: the
+        // emitter refuses, by name, and produces no artifact.
+        let err = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
             "x86_avx2",
             None,
             Determinism::Deterministic,
@@ -3225,21 +3246,10 @@ mod tests {
                 mldsa65: TEST_MLDSA_SEED,
             },
         )
-        .unwrap();
-        // Flip one byte inside the signature.mldsa value, leaving ed25519 intact.
-        let body_end = find_map_sentinel(&signed).unwrap();
-        let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
-        for e in entries.iter_mut() {
-            if e.key == "signature.mldsa" {
-                if let ParsedValue::Bytes(b) = &mut e.value {
-                    b[100] ^= 0x01;
-                }
-            }
-        }
-        assert_eq!(
-            signature_status_from_entries(&entries).unwrap(),
-            SignatureStatus::Invalid,
-            "hybrid must fail closed when only the ML-DSA half is corrupted"
+        .expect_err("the retired hybrid must never sign");
+        assert!(
+            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
+            "must refuse as retired, by name, got {err:?}"
         );
     }
 
@@ -3449,33 +3459,34 @@ mod tests {
     //      artifact regardless of the declared substrate label — the signature is a
     //      pure function of (seed, trace_hash), and the trace_hash is substrate-free.
     #[cfg(feature = "evidence-mldsa")]
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn hybrid_signature_is_substrate_independent() {
-        let ir = mod_call_chain();
-        let key = SigningKey::Hybrid {
-            ed25519: TEST_SEED,
-            mldsa65: TEST_MLDSA_SEED,
-        };
-        // Same substrate label twice ⇒ identical (determinism of the whole path).
-        let a = emit_mic3_with_signed_evidence_scheme(
-            &ir,
+        // RETIREMENT ASSERTION. This test previously exercised a tamper or
+        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
+        // vehicle. That hybrid can no longer be signed, so the invariant is
+        // now unreachable through it: no substrate can produce the retired hybrid.
+        //
+        // The invariant itself is NOT lost — it is covered for the supported
+        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
+        // requires Malformed. What this test now pins is the retirement: the
+        // emitter refuses, by name, and produces no artifact.
+        let err = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &key,
+            &SigningKey::Hybrid {
+                ed25519: TEST_SEED,
+                mldsa65: TEST_MLDSA_SEED,
+            },
         )
-        .unwrap();
-        let b = emit_mic3_with_signed_evidence_scheme(
-            &ir,
-            "x86_avx2",
-            None,
-            Determinism::Deterministic,
-            "0.8.0",
-            &key,
-        )
-        .unwrap();
-        assert_eq!(a, b, "hybrid signed artifact must be byte-reproducible");
+        .expect_err("the retired hybrid must never sign");
+        assert!(
+            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
+            "must refuse as retired, by name, got {err:?}"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -3486,24 +3497,31 @@ mod tests {
     // Regression against: "signature is valid" while parent/substrate forgeable.
     // -------------------------------------------------------------------------
 
-    /// Sign `mod_binop` with the Ed25519 test seed and return the parsed MAP
+    /// Sign `mod_binop` with the SUPPORTED pair and return the parsed MAP
     /// entries (the exact structure the verifier consumes).
-    fn signed_ed25519_entries(parent: Option<[u8; 32]>) -> Vec<ParsedEntry> {
+    ///
+    /// Renamed from `signed_ed25519_entries`: it no longer signs with Ed25519,
+    /// and a helper whose name advertises a retired scheme would mislead every
+    /// caller that reads it.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    fn signed_supported_entries(parent: Option<[u8; 32]>) -> Vec<ParsedEntry> {
         let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence(
+        let signed = emit_mic3_with_signed_evidence_scheme(
             &ir,
             "cpu",
             parent,
             Determinism::Deterministic,
             "0.10.0",
-            &TEST_SEED,
-        );
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
         let body_end = find_map_sentinel(&signed).unwrap();
         parse_map_epilogue(&signed[body_end..]).unwrap()
     }
 
     /// The unmodified signed entries must verify (positive control for the four
     /// tamper tests below).
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     fn assert_valid(entries: &[ParsedEntry], ctx: &str) {
         match signature_status_from_entries(entries).unwrap() {
             SignatureStatus::Valid(_) => {}
@@ -3512,9 +3530,10 @@ mod tests {
     }
 
     // (ab) Editing `substrate` on a signed artifact breaks the signature.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn provenance_tamper_substrate_fails_closed() {
-        let mut entries = signed_ed25519_entries(None);
+        let mut entries = signed_supported_entries(None);
         assert_valid(&entries, "substrate");
         for e in entries.iter_mut() {
             if e.key == "evidence_chain.substrate" {
@@ -3529,9 +3548,10 @@ mod tests {
     }
 
     // (ac) Editing `toolchain` on a signed artifact breaks the signature.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn provenance_tamper_toolchain_fails_closed() {
-        let mut entries = signed_ed25519_entries(None);
+        let mut entries = signed_supported_entries(None);
         assert_valid(&entries, "toolchain");
         for e in entries.iter_mut() {
             if e.key == "evidence_chain.toolchain" {
@@ -3546,9 +3566,10 @@ mod tests {
     }
 
     // (ad) Editing `determinism` on a signed artifact breaks the signature.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn provenance_tamper_determinism_fails_closed() {
-        let mut entries = signed_ed25519_entries(None);
+        let mut entries = signed_supported_entries(None);
         assert_valid(&entries, "determinism");
         for e in entries.iter_mut() {
             if e.key == "evidence_chain.determinism" {
@@ -3564,9 +3585,10 @@ mod tests {
 
     // (ae) Editing `parent` (chain linkage) on a signed artifact breaks the
     //      signature — the whole reason provenance authenticity matters.
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn provenance_tamper_parent_fails_closed() {
-        let mut entries = signed_ed25519_entries(Some([0x11u8; 32]));
+        let mut entries = signed_supported_entries(Some([0x11u8; 32]));
         assert_valid(&entries, "parent");
         let mut tampered = false;
         for e in entries.iter_mut() {
@@ -3623,11 +3645,20 @@ mod tests {
     //      report Valid. Distinct from `hybrid_tamper_mldsa_half_fails_closed`
     //      (which leaves scheme=hybrid and corrupts the ML-DSA bytes).
     #[cfg(feature = "evidence-mldsa")]
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn scheme_downgrade_strip_mldsa_half_fails_closed() {
-        let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence_scheme(
-            &ir,
+        // RETIREMENT ASSERTION. This test previously exercised a tamper or
+        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
+        // vehicle. That hybrid can no longer be signed, so the invariant is
+        // now unreachable through it: the retired hybrid cannot be minted, so its halves cannot be stripped.
+        //
+        // The invariant itself is NOT lost — it is covered for the supported
+        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
+        // requires Malformed. What this test now pins is the retirement: the
+        // emitter refuses, by name, and produces no artifact.
+        let err = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
             "x86_avx2",
             None,
             Determinism::Deterministic,
@@ -3637,29 +3668,10 @@ mod tests {
                 mldsa65: TEST_MLDSA_SEED,
             },
         )
-        .unwrap();
-        let body_end = find_map_sentinel(&signed).unwrap();
-        let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
-        // Positive control: untouched hybrid verifies.
-        assert!(matches!(
-            signature_status_from_entries(&entries).unwrap(),
-            SignatureStatus::Valid(_)
-        ));
-        // The downgrade: drop BOTH ML-DSA keys and rename the scheme tag.
-        entries.retain(|e| e.key != "signature.mldsa" && e.key != "signature.mldsa_pubkey");
-        for e in entries.iter_mut() {
-            if e.key == "signature.scheme" {
-                e.value = ParsedValue::Str("ed25519".to_string());
-            }
-        }
-        let status = signature_status_from_entries(&entries).unwrap();
+        .expect_err("the retired hybrid must never sign");
         assert!(
-            matches!(status, SignatureStatus::Invalid),
-            "scheme downgrade (hybrid -> ed25519, ML-DSA stripped) must be Invalid, got {status:?}"
-        );
-        assert!(
-            !matches!(status, SignatureStatus::Valid(_)),
-            "downgrade must NEVER report Valid"
+            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
+            "must refuse as retired, by name, got {err:?}"
         );
     }
 
@@ -3668,11 +3680,20 @@ mod tests {
     //      downgrade that flips the tag but forgets to strip the now-unnamed half
     //      cannot be silently accepted.
     #[cfg(feature = "evidence-mldsa")]
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn scheme_names_no_mldsa_but_mldsa_half_present_is_malformed() {
-        let ir = mod_binop();
-        let signed = emit_mic3_with_signed_evidence_scheme(
-            &ir,
+        // RETIREMENT ASSERTION. This test previously exercised a tamper or
+        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
+        // vehicle. That hybrid can no longer be signed, so the invariant is
+        // now unreachable through it: the retired hybrid cannot be minted to create the mismatch.
+        //
+        // The invariant itself is NOT lost — it is covered for the supported
+        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
+        // requires Malformed. What this test now pins is the retirement: the
+        // emitter refuses, by name, and produces no artifact.
+        let err = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
             "x86_avx2",
             None,
             Determinism::Deterministic,
@@ -3682,19 +3703,10 @@ mod tests {
                 mldsa65: TEST_MLDSA_SEED,
             },
         )
-        .unwrap();
-        let body_end = find_map_sentinel(&signed).unwrap();
-        let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
-        // Flip the tag to ed25519 but LEAVE the ML-DSA half in place.
-        for e in entries.iter_mut() {
-            if e.key == "signature.scheme" {
-                e.value = ParsedValue::Str("ed25519".to_string());
-            }
-        }
-        assert_eq!(
-            signature_status_from_entries(&entries).unwrap(),
-            SignatureStatus::Malformed(KEY_SIG_SCHEME),
-            "scheme=ed25519 with a signature.mldsa half present must be Malformed"
+        .expect_err("the retired hybrid must never sign");
+        assert!(
+            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
+            "must refuse as retired, by name, got {err:?}"
         );
     }
 
@@ -3749,18 +3761,40 @@ mod tests {
     //      (`signature.ed25519` re-encoded as a String) must make the signature
     //      layer return `Err` — the CLI maps that to a verification FAILURE, not to
     //      `Absent`/"unsigned but attested".
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn type_confused_ed25519_field_is_err() {
-        let mut entries = signed_ed25519_entries(None);
+        // The invariant is generic and worth keeping: a type-confused signature
+        // field must be Err (fail-closed), never Ok(Absent). Reporting Absent
+        // would turn a corrupt signature into "unsigned" and hand back success.
+        //
+        // Retargeted from the retired Ed field to the supported lattice half,
+        // since the retired scheme can no longer be minted to build the fixture.
+        let signed = emit_mic3_with_signed_evidence_scheme(
+            &mod_binop(),
+            "x86_avx2",
+            None,
+            Determinism::Deterministic,
+            "0.8.0",
+            &pqc_hybrid_key(),
+        )
+        .expect("supported pair must sign");
+        let body_end = find_map_sentinel(&signed).unwrap();
+        let mut entries = parse_map_epilogue(&signed[body_end..]).unwrap();
+        let mut confused = false;
         for e in entries.iter_mut() {
-            if e.key == "signature.ed25519" {
-                // Re-encode the 64-byte signature as a String (type confusion).
+            if e.key == KEY_SIG_MLDSA87 {
                 e.value = ParsedValue::Str("not-a-signature".to_string());
+                confused = true;
             }
         }
         assert!(
+            confused,
+            "precondition: the signed artifact must carry the lattice signature"
+        );
+        assert!(
             signature_status_from_entries(&entries).is_err(),
-            "a type-confused signature.ed25519 must be Err (fail-closed), never Ok(Absent)"
+            "a type-confused signature field must be Err (fail-closed), never Ok(Absent)"
         );
     }
 

@@ -1577,16 +1577,16 @@ fn emit_evidence_if_requested(cli: &CompileArgs, products: &libmind::pipeline::C
     let toolchain = env!("CARGO_PKG_VERSION");
 
     // Optional crypto-agile signing (RFC 0021 §6), opt-in via env-supplied seeds
-    // (never a hardcoded key):
-    //   * MIND_EVIDENCE_MLDSA_KEY   → post-quantum ML-DSA-65 (FIPS-204). PREFERRED
-    //                                 for federal PQC compliance (EO 14412 / OMB
-    //                                 M-26-15 / the FAR PQC rule).
-    //   * MIND_EVIDENCE_ED25519_KEY → classical Ed25519 (legacy/interop).
-    //   * BOTH set                  → hybrid (both must verify) — defence-in-depth.
-    // Each seed is 32 bytes as 64 hex chars. No env ⇒ the unsigned path, byte-
-    // identical to the pre-signing encoder (the determinism gate is untouched).
+    // (never a hardcoded key). The supported signing profile is the exact
+    // ML-DSA-87 + SLH-DSA-SHAKE-256s pair. The historical Ed25519 and
+    // Ed25519+ML-DSA-65 variables remain recognized as retired configuration and
+    // refuse explicitly; they are available only for historical inspection.
+    // Each supported seed is supplied as hex. No env ⇒ the unsigned path,
+    // byte-identical to the pre-signing encoder (the determinism gate is untouched).
     use libmind::ir::compact::SigningKey;
-    let ed_seed = read_seed_env(libmind::ir::compact::v3::evidence::ENV_ED25519_SEED);
+    // No legacy seed is READ. The scheme is retired, so parsing it would only
+    // create a path where an invalid retired seed reports "invalid" instead of
+    // "retired" — the wrong cause, and one that implies a fixable configuration.
     let mldsa_seed = read_seed_env(libmind::ir::compact::v3::evidence::ENV_MLDSA_SEED);
     // Bulletproof PQC-hybrid (max-security offline release profile): BOTH the
     // ML-DSA-87 and SLH-DSA-256s seeds must be supplied. It takes precedence over
@@ -1594,6 +1594,32 @@ fn emit_evidence_if_requested(cli: &CompileArgs, products: &libmind::pipeline::C
     // bulletproof config and is refused fail-closed (never a silent downgrade).
     let mldsa87_seed = read_seed_env(libmind::ir::compact::v3::mldsa::ENV_MLDSA87_SEED);
     let slhdsa_seed = read_seed_env_96(libmind::ir::compact::v3::slhdsa::ENV_SLHDSA_SEED);
+    // RETIRED LEGACY SEEDS refuse EXPLICITLY, before any key is selected.
+    //
+    // Ed25519 signing is permanently retired. A supplied legacy seed is an
+    // explicit request for a retired scheme, so it is an error — not something
+    // to ignore while quietly choosing a different key. That distinction is the
+    // whole point: silently falling back to the hybrid would mean an operator
+    // who believes they configured Ed25519 gets something else without being
+    // told, and an operator who configured BOTH would never learn their legacy
+    // config was dead. Both cases refuse here, including the mixed
+    // supported-plus-legacy configuration.
+    // Presence alone, via `var_os`: a retired scheme needs no seed parsing, and
+    // an unparseable or non-UTF-8 legacy value must still refuse rather than be
+    // read as absent.
+    if std::env::var_os(libmind::ir::compact::v3::evidence::ENV_ED25519_SEED).is_some() {
+        eprintln!(
+            "error[emit-evidence]: Ed25519 evidence signing is permanently retired \
+             ({}). Remove the legacy seed; the supported signing mode is the \
+             post-quantum hybrid ML-DSA-87 + SLH-DSA-SHAKE-256s via \
+             MIND_EVIDENCE_MLDSA87_KEY and MIND_EVIDENCE_SLHDSA_KEY. Refusing \
+             rather than silently signing under a different scheme. \
+             (signing.retired_scheme)",
+            libmind::ir::compact::v3::evidence::ENV_ED25519_SEED
+        );
+        process::exit(1);
+    }
+
     let signing_key: Option<SigningKey> = match (mldsa87_seed, slhdsa_seed) {
         (Some(m87), Some(slh)) => Some(SigningKey::PqcHybrid {
             mldsa87: m87,
@@ -1606,21 +1632,23 @@ fn emit_evidence_if_requested(cli: &CompileArgs, products: &libmind::pipeline::C
             );
             process::exit(1);
         }
-        (None, None) => match (ed_seed, mldsa_seed) {
-            (Some(ed), Some(ml)) => Some(SigningKey::Hybrid {
-                ed25519: ed,
-                mldsa65: ml,
-            }),
-            (Some(ed), None) => Some(SigningKey::Ed25519(ed)),
-            (None, Some(ml)) => Some(SigningKey::MlDsa65(ml)),
-            (None, None) => None,
-        },
+        // Ed-bearing arms are unreachable: a legacy seed already refused above,
+        // which also retires the old Ed25519+ML-DSA-65 hybrid, since that hybrid
+        // cannot be requested without the Ed seed.
+        //
+        // Standalone ML-DSA-65 remains selectable and is NOT part of the
+        // supported production release profile, which requires the exact
+        // ML-DSA-87 + SLH-DSA pair. It is left reachable deliberately rather
+        // than removed by association: retiring Ed is mandated, widening that to
+        // an unrelated post-quantum primitive is not.
+        (None, None) => mldsa_seed.map(SigningKey::MlDsa65),
     };
     let sig_label = match &signing_key {
         Some(SigningKey::PqcHybrid { .. }) => ", pqc-hybrid-ml-dsa-87-slh-dsa-256s-signed",
-        Some(SigningKey::Hybrid { .. }) => ", hybrid-ed25519-ml-dsa-65-signed",
+        Some(SigningKey::Ed25519(_)) | Some(SigningKey::Hybrid { .. }) => {
+            ", retired-signing-refused"
+        }
         Some(SigningKey::MlDsa65(_)) => ", ml-dsa-65-signed",
-        Some(SigningKey::Ed25519(_)) => ", ed25519-signed",
         None => "",
     };
 
@@ -1741,25 +1769,49 @@ fn emit_evidence_if_requested(cli: &CompileArgs, products: &libmind::pipeline::C
 /// Read a 32-byte seed from a hex env var. `None` if unset; hard-exits on a
 /// set-but-invalid value (fail-closed — never silently fall back to unsigned).
 fn read_seed_env(var: &str) -> Option<[u8; 32]> {
-    match std::env::var(var) {
-        Ok(hex) => match parse_ed25519_seed(hex.trim()) {
-            Ok(seed) => Some(seed),
-            Err(msg) => {
-                eprintln!("error[emit-evidence]: {var} is set but invalid: {msg}");
-                process::exit(1);
-            }
-        },
-        Err(_) => None,
+    // A SET-BUT-UNREADABLE value must never look like an absent one.
+    // `std::env::var` collapses NotPresent and NotUnicode into one Err, so a
+    // non-UTF-8 seed would have been silently ignored and the build would have
+    // produced unsigned (or differently signed) output while the operator
+    // believed a key was configured. Presence is decided by `var_os`, which
+    // does not require UTF-8.
+    //
+    // The variable NAME is reported; its VALUE never is.
+    let raw = std::env::var_os(var)?;
+    let Some(hex) = raw.to_str() else {
+        eprintln!(
+            "error[emit-evidence]: {var} is set but is not valid UTF-8, so it \
+             cannot be a hex seed. Refusing rather than ignoring a configured \
+             key. (signing.invalid_seed_encoding)"
+        );
+        process::exit(1);
+    };
+    match parse_ed25519_seed(hex.trim()) {
+        Ok(seed) => Some(seed),
+        Err(msg) => {
+            eprintln!("error[emit-evidence]: {var} is set but invalid: {msg}");
+            process::exit(1);
+        }
     }
 }
 
 /// Decode a 64-hex-char string into a 32-byte seed. No `hex` crate dep.
 fn parse_ed25519_seed(s: &str) -> Result<[u8; 32], String> {
+    // Validate ASCII hex BEFORE indexing. `len()` counts BYTES and the loop
+    // below slices by byte offset, so a multi-byte value whose byte length is 64
+    // would slice at a non-char boundary and PANIC. A malformed configuration
+    // must produce a structured error, never a crash.
+    if !s.is_ascii() {
+        return Err("seed must be ASCII hex".to_string());
+    }
     if s.len() != 64 {
         return Err(format!(
             "expected 64 hex chars (32-byte seed), got {}",
             s.len()
         ));
+    }
+    if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("seed must be hex digits only".to_string());
     }
     let mut out = [0u8; 32];
     for (i, byte) in out.iter_mut().enumerate() {
@@ -1773,15 +1825,23 @@ fn parse_ed25519_seed(s: &str) -> Result<[u8; 32], String> {
 /// an env var. Fail-closed: a set-but-invalid value exits non-zero (never a
 /// silently-dropped or truncated key).
 fn read_seed_env_96(var: &str) -> Option<[u8; 96]> {
-    match std::env::var(var) {
-        Ok(hex) => match parse_seed_96(hex.trim()) {
-            Ok(seed) => Some(seed),
-            Err(msg) => {
-                eprintln!("error[emit-evidence]: {var} is set but invalid: {msg}");
-                process::exit(1);
-            }
-        },
-        Err(_) => None,
+    // Same rule as `read_seed_env`: a set-but-non-UTF-8 value refuses rather
+    // than reading as absent. The variable name is reported, never its value.
+    let raw = std::env::var_os(var)?;
+    let Some(hex) = raw.to_str() else {
+        eprintln!(
+            "error[emit-evidence]: {var} is set but is not valid UTF-8, so it \
+             cannot be a hex seed. Refusing rather than ignoring a configured \
+             key. (signing.invalid_seed_encoding)"
+        );
+        process::exit(1);
+    };
+    match parse_seed_96(hex.trim()) {
+        Ok(seed) => Some(seed),
+        Err(msg) => {
+            eprintln!("error[emit-evidence]: {var} is set but invalid: {msg}");
+            process::exit(1);
+        }
     }
 }
 
@@ -1792,6 +1852,12 @@ fn parse_seed_96(s: &str) -> Result<[u8; 96], String> {
             "expected 192 hex chars (96-byte seed), got {}",
             s.len()
         ));
+    }
+    if !s.is_ascii() {
+        return Err("seed must be ASCII hex".to_string());
+    }
+    if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("seed must be hex digits only".to_string());
     }
     let mut out = [0u8; 96];
     for (i, byte) in out.iter_mut().enumerate() {
@@ -1895,8 +1961,8 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 /// Build the signer-key trust allowlist for `mindc verify` from `--signer-pubkey`
 /// flags plus the `MIND_EVIDENCE_VERIFY_PUBKEYS` env var (comma/space-separated
 /// hex). An invalid hex entry is a hard error (fail-closed on operator input),
-/// never silently dropped. Returns the decoded key bytes (Ed25519 = 32 B,
-/// ML-DSA-65 = 1952 B) compared verbatim against the artifact's embedded key(s).
+/// never silently dropped. Returns decoded key bytes compared verbatim against
+/// the artifact's embedded supported key(s); retired schemes never verify.
 fn collect_trusted_pubkeys(flags: &[String]) -> Result<Vec<Vec<u8>>, String> {
     let mut out: Vec<Vec<u8>> = Vec::new();
     let add = |tok: &str, out: &mut Vec<Vec<u8>>| -> Result<(), String> {
@@ -2291,8 +2357,9 @@ fn run_verify(
 
     // Crypto-agile signature layer (RFC 0021 §6): checked when present, tolerated
     // when absent (back-compat). The `signature.scheme` (`alg`) tag selects the
-    // verifier(s) — ed25519 / ml-dsa-65 / hybrid. A present-but-bad signature, an
-    // unknown scheme, or a required-but-uncompiled PQC verifier all fail closed.
+    // verifier(s). Retired Ed25519 and old-hybrid tags are reported as retired;
+    // a present-but-bad signature, unknown scheme, or required-but-uncompiled PQC
+    // verifier all fail closed.
     use libmind::ir::compact::{SignatureStatus, mic3_signature_status};
     // Fail-closed (MED #4): a malformed/type-confused signature field yields `Err`
     // from the signature layer. Coercing that to `Absent` would read as "unsigned
@@ -2323,7 +2390,14 @@ fn run_verify(
         SignatureStatus::Invalid => ("invalid".to_string(), None, None, None, None),
         SignatureStatus::Malformed(_) => ("malformed".to_string(), None, None, None, None),
         SignatureStatus::Unsupported(_) => ("unsupported".to_string(), None, None, None, None),
+        // Reported by NAME so the operator learns which retired scheme this
+        // artifact carries, rather than a bare "invalid" that hides the reason.
+        SignatureStatus::Retired(scheme) => (format!("retired ({scheme})"), None, None, None, None),
     };
+    // `Retired` is deliberately NOT in this set. An artifact signed under a
+    // retired scheme is not acceptable, and it is not the same as unsigned:
+    // treating it as `Absent` would silently demote a signed artifact and hand
+    // back a success, which is the quiet downgrade the retirement removes.
     let sig_ok = matches!(
         sig_status,
         SignatureStatus::Absent | SignatureStatus::Valid(_)
@@ -2446,9 +2520,21 @@ fn run_verify(
                 // verification failure even though the trace_hash matched (an
                 // attacker who re-hashed a tampered anchor cannot re-sign it).
                 if !sig_ok {
-                    eprintln!(
-                        "error[verify]: signature is {sig_label} — artifact signature does not verify over the trace_hash (fail-closed)"
-                    );
+                    // A retired scheme is not a failed signature, and saying so
+                    // would misdescribe the cause. Name the real reason.
+                    if let SignatureStatus::Retired(scheme) = &sig_status {
+                        eprintln!(
+                            "error[verify]: signature scheme `{scheme}` is PERMANENTLY RETIRED \
+                             from trust verification — the artifact is structurally intact and \
+                             remains inspectable, but a retired scheme can never verify as \
+                             trusted. Supported signing is the post-quantum hybrid \
+                             ML-DSA-87 + SLH-DSA-SHAKE-256s. (verify.retired_scheme)"
+                        );
+                    } else {
+                        eprintln!(
+                            "error[verify]: signature is {sig_label} — artifact signature does not verify over the trace_hash (fail-closed)"
+                        );
+                    }
                     return 1;
                 }
                 // Trust anchor, part 1 — signature-stripping downgrade: pinning a

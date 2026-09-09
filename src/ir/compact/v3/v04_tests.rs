@@ -2,11 +2,13 @@
 // Licensed under the Apache License, Version 2.0.
 
 use super::{
-    Determinism, EvidenceEmitError, MAX_MIC3_INPUT, MIC3_VERSION_V04, Mic3EncodeError,
-    SignatureStatus, emit_mic3, emit_mic3_checked, emit_mic3_with_evidence_and_receipts,
-    emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence_checked, mic3_canonical_check,
-    mic3_evidence_report, mic3_signature_status, parse_mic3_body, parse_mic3_prefix,
+    Determinism, EvidenceEmitError, MAX_MIC3_INPUT, MIC3_VERSION_V04, Mic3EncodeError, emit_mic3,
+    emit_mic3_checked, emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked,
+    emit_mic3_with_signed_evidence_checked, mic3_canonical_check, mic3_evidence_report,
+    parse_mic3_body, parse_mic3_prefix,
 };
+#[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+use super::{SignatureStatus, mic3_signature_status};
 use crate::ir::evidence::ir_trace_hash_checked;
 use crate::ir::{IRModule, Instr, ValueId};
 use crate::types::{
@@ -260,20 +262,39 @@ fn v04_checked_evidence_and_signature_consumers_validate_complete_artifacts() {
     assert!(report.trace_hash_valid, "v0x04 trace hash must validate");
     mic3_canonical_check(&evidence).expect("v0x04 evidence must be canonical");
 
-    let signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let signed = super::emit_mic3_with_signed_evidence_scheme(
         &module,
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("signed v0x04 evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let signed = {
+        let err = super::emit_mic3_with_signed_evidence_checked(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-test",
+            &[7; 32],
+        )
+        .expect_err("retired Ed signing must refuse");
+        assert!(format!("{err:?}").contains("SchemeRetired"));
+        evidence.clone()
+    };
     let signed_report = mic3_evidence_report(&signed).expect("signed v0x04 report");
     assert!(
         signed_report.trace_hash_valid,
         "signed v0x04 trace hash must validate"
     );
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     assert!(
         matches!(
             mic3_signature_status(&signed),
@@ -295,15 +316,22 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         "v04-cap-test",
     )
     .expect("small unsigned evidence");
-    let small_signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let small_signed = super::emit_mic3_with_signed_evidence_scheme(
         &module_value_only(),
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-cap-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("small signed evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let small_signed = small_unsigned.clone();
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     let unsigned_map_len = small_unsigned.len() - small_body.len();
     let signed_map_len = small_signed.len() - small_body.len();
 
@@ -320,27 +348,36 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         "v04-cap-test",
     )
     .expect("near-limit unsigned evidence");
-    let near_signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let near_signed = super::emit_mic3_with_signed_evidence_scheme(
         &near_module,
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-cap-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("near-limit signed evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let near_signed = near_unsigned.clone();
     assert!(near_unsigned.len() <= MAX_MIC3_INPUT);
     assert!(near_signed.len() <= MAX_MIC3_INPUT);
-    assert!(near_signed.len() > MAX_MIC3_INPUT - signed_map_len - 256);
-    assert!(
-        mic3_evidence_report(&near_signed)
-            .expect("near-limit report")
-            .trace_hash_valid
-    );
-    assert!(matches!(
-        mic3_signature_status(&near_signed),
-        Ok(SignatureStatus::Valid(_))
-    ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    {
+        assert!(near_signed.len() > MAX_MIC3_INPUT - signed_map_len - 256);
+        assert!(
+            mic3_evidence_report(&near_signed)
+                .expect("near-limit report")
+                .trace_hash_valid
+        );
+        assert!(matches!(
+            mic3_signature_status(&near_signed),
+            Ok(SignatureStatus::Valid(_))
+        ));
+    }
     mic3_canonical_check(&near_unsigned).expect("near-limit unsigned canonical");
     mic3_canonical_check(&near_signed).expect("near-limit signed canonical");
 
@@ -361,19 +398,38 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         unsigned_error,
         EvidenceEmitError::ArtifactTooLarge { .. }
     ));
-    let signed_error = emit_mic3_with_signed_evidence_checked(
-        &oversized_module,
-        "cpu",
-        None,
-        Determinism::Deterministic,
-        "v04-cap-test",
-        &[7; 32],
-    )
-    .expect_err("oversized signed envelope must refuse");
-    assert!(matches!(
-        signed_error,
-        EvidenceEmitError::ArtifactTooLarge { .. }
-    ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    {
+        let signed_error = super::emit_mic3_with_signed_evidence_scheme(
+            &oversized_module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-cap-test",
+            &super::evidence::SigningKey::PqcHybrid {
+                mldsa87: [7; 32],
+                slhdsa: [8; 96],
+            },
+        )
+        .expect_err("oversized signed envelope must refuse");
+        assert!(matches!(
+            signed_error,
+            EvidenceEmitError::ArtifactTooLarge { .. }
+        ));
+    }
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    {
+        let retired_error = super::emit_mic3_with_signed_evidence_checked(
+            &oversized_module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-cap-test",
+            &[7; 32],
+        )
+        .expect_err("retired Ed signing must refuse");
+        assert!(format!("{retired_error:?}").contains("SchemeRetired"));
+    }
     let receipts_error = emit_mic3_with_evidence_and_receipts(
         &oversized_module,
         "cpu",
@@ -389,6 +445,7 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         receipts_error,
         EvidenceEmitError::ArtifactTooLarge { .. }
     ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     assert!(unsigned_map_len < signed_map_len);
 }
 

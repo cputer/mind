@@ -43,6 +43,9 @@ pub enum EvidenceEmitError {
     Body(Mic3EncodeError),
     InvalidApplicationEntries,
     SchemeUnavailable(&'static str),
+    /// The caller asked to sign under a permanently retired scheme. Retired
+    /// variants remain available for historical decoding and inspection only.
+    SchemeRetired(&'static str),
     /// The complete body-plus-MAP artifact exceeds the reader admission limit.
     ArtifactTooLarge {
         size: usize,
@@ -60,6 +63,12 @@ impl std::fmt::Display for EvidenceEmitError {
                 f.write_str("invalid application-namespace evidence entry")
             }
             Self::SchemeUnavailable(message) => f.write_str(message),
+            Self::SchemeRetired(scheme) => write!(
+                f,
+                "signature scheme `{scheme}` is permanently retired from signing; \
+                 the supported mode is the post-quantum hybrid \
+                 ML-DSA-87 + SLH-DSA-SHAKE-256s"
+            ),
             Self::ArtifactTooLarge { size, limit } => {
                 write!(
                     f,
