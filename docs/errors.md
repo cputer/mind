@@ -83,6 +83,10 @@ These are type-checking refusals before artifact emission. See
 `module { ... }` blocks are transparent declaration lists and share that
 namespace. Separate project files may declare structs with the same name.
 
+`E2036` rejects a proven non-integer or opaque-handle right-hand side assigned
+to an `i8`, `u8`, `i16`, or `u16` array element. This prevents an opaque handle
+from being silently truncated to the destination cell width.
+
 In a manifest-captured project, a bare cross-module name is resolved against
 the current module's exact imports. If multiple imported modules export the
 same bare function or type name, the checker refuses it with `E2003` for a

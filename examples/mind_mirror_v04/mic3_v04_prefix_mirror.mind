@@ -420,18 +420,7 @@ pub fn mv_strictly_less(buf: i64, a: i64, alen: i64, b: i64, blen: i64, i: i64) 
 // `tab` receives one 16-byte row per admitted entry -- its offset in `buf` and
 // its length -- so that later sections can resolve a string index without
 // re-walking the table. `idx` is the row being written.
-pub fn mv_walk_strings(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    prev: i64,
-    prevlen: i64,
-    budget: i64,
-    tab: i64,
-    idx: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_strings(buf: i64, len: i64, pos: i64, n: i64, prev: i64, prevlen: i64, budget: i64, tab: i64, idx: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         __mind_store_i64(st + 16, 0);
@@ -461,18 +450,7 @@ pub fn mv_walk_strings(
     }
     __mind_store_i64(tab + 16 * idx + 0, body);
     __mind_store_i64(tab + 16 * idx + 8, slen);
-    mv_walk_strings(
-        buf,
-        len,
-        body + slen,
-        n - 1,
-        body,
-        slen,
-        budget2,
-        tab,
-        idx + 1,
-        st
-    )
+    mv_walk_strings(buf, len, body + slen, n - 1, body, slen, budget2, tab, idx + 1, st)
 }
 
 // ---- string table: index resolution ---------------------------------------
@@ -562,16 +540,7 @@ pub fn mv_emit_strings(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st
 //
 // The scalar, record-reference, fixed-array and dynamic-array tags are the four
 // the core codec defines; every other tag is refused rather than skipped.
-pub fn mv_type_expr(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    depth: i64,
-    nschema: i64,
-    sch: i64,
-    tab: i64,
-    st: i64
-) -> i64 {
+pub fn mv_type_expr(buf: i64, len: i64, pos: i64, depth: i64, nschema: i64, sch: i64, tab: i64, st: i64) -> i64 {
     if depth > 64 {
         return mv_fail(st, 24);
     }
@@ -670,19 +639,7 @@ pub fn mv_type_expr(
 // order and byte order are the same relation. If that table property is ever
 // weakened this comparison stops being equivalent, which is why the string walk
 // refuses a non-sorted table before any of this runs.
-pub fn mv_walk_schema_headers(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    prevo: i64,
-    prevn: i64,
-    nstr: i64,
-    tab: i64,
-    sch: i64,
-    idx: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_schema_headers(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn: i64, nstr: i64, tab: i64, sch: i64, idx: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -717,9 +674,7 @@ pub fn mv_walk_schema_headers(
     }
     __mind_store_i64(sch + 16 * idx + 0, owner);
     __mind_store_i64(sch + 16 * idx + 8, name);
-    mv_walk_schema_headers(
-        buf, len, p2, n - 1, owner, name, nstr, tab, sch, idx + 1, st
-    )
+    mv_walk_schema_headers(buf, len, p2, n - 1, owner, name, nstr, tab, sch, idx + 1, st)
 }
 
 // ---- schema field lists ---------------------------------------------------
@@ -740,19 +695,7 @@ pub fn mv_seen(fld: i64, n: i64, idx: i64, i: i64) -> i64 {
 // Walk the field list of ONE schema. `seen` counts the names already recorded
 // in `fld` for this schema, which is what makes the duplicate check per-schema
 // rather than global -- two schemas may each declare a field of the same name.
-pub fn mv_walk_fields(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    seen: i64,
-    nstr: i64,
-    nschema: i64,
-    tab: i64,
-    sch: i64,
-    fld: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_fields(buf: i64, len: i64, pos: i64, n: i64, seen: i64, nstr: i64, nschema: i64, tab: i64, sch: i64, fld: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -779,24 +722,11 @@ pub fn mv_walk_fields(
         return rce;
     }
     let p2: i64 = mv_st_cursor(st);
-    mv_walk_fields(
-        buf, len, p2, n - 1, seen + 1, nstr, nschema, tab, sch, fld, st
-    )
+    mv_walk_fields(buf, len, p2, n - 1, seen + 1, nstr, nschema, tab, sch, fld, st)
 }
 
 // Walk every schema's field list, in header order.
-pub fn mv_walk_schemas(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    nstr: i64,
-    nschema: i64,
-    tab: i64,
-    sch: i64,
-    fld: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_schemas(buf: i64, len: i64, pos: i64, n: i64, nstr: i64, nschema: i64, tab: i64, sch: i64, fld: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -900,106 +830,254 @@ pub fn mv_is_reserved_owner(buf: i64, off: i64, n: i64, i: i64) -> i64 {
 // store signatures remain `(i64, i64) -> i64` here; later native admission owns
 // the DiscardOnly use rule.
 pub fn mv_intrinsic_name_len(id: i64) -> i64 {
-    if id == 0 { return 5; } // alloc
-    if id == 1 { return 4; } // argc
-    if id == 2 { return 4; } // argv
-    if id == 3 { return 5; } // load8
-    if id == 4 { return 8; } // load_i64
-    if id == 5 { return 4; } // open
-    if id == 6 { return 4; } // read
-    if id == 7 { return 6; } // store8
-    if id == 8 { return 9; } // store_i64
-    if id == 9 { return 5; } // write
+    if id == 0 {
+        return 5;
+    }
+    // alloc
+    if id == 1 {
+        return 4;
+    }
+    // argc
+    if id == 2 {
+        return 4;
+    }
+    // argv
+    if id == 3 {
+        return 5;
+    }
+    // load8
+    if id == 4 {
+        return 8;
+    }
+    // load_i64
+    if id == 5 {
+        return 4;
+    }
+    // open
+    if id == 6 {
+        return 4;
+    }
+    // read
+    if id == 7 {
+        return 6;
+    }
+    // store8
+    if id == 8 {
+        return 9;
+    }
+    // store_i64
+    if id == 9 {
+        return 5;
+    }
+    // write
     0
 }
 
 pub fn mv_intrinsic_arity(id: i64) -> i64 {
-    if id == 1 { return 0; }
-    if id == 0 { return 1; }
-    if id == 2 { return 1; }
-    if id == 3 { return 1; }
-    if id == 4 { return 1; }
-    if id == 5 { return 1; }
-    if id == 7 { return 2; }
-    if id == 8 { return 2; }
-    if id == 6 { return 4; }
-    if id == 9 { return 4; }
+    if id == 1 {
+        return 0;
+    }
+    if id == 0 {
+        return 1;
+    }
+    if id == 2 {
+        return 1;
+    }
+    if id == 3 {
+        return 1;
+    }
+    if id == 4 {
+        return 1;
+    }
+    if id == 5 {
+        return 1;
+    }
+    if id == 7 {
+        return 2;
+    }
+    if id == 8 {
+        return 2;
+    }
+    if id == 6 {
+        return 4;
+    }
+    if id == 9 {
+        return 4;
+    }
     0 - 1
 }
 
 pub fn mv_intrinsic_name_byte(id: i64, i: i64) -> i64 {
-    if id == 0 { // alloc
-        if i == 0 { return 97; }
-        if i == 1 { return 108; }
-        if i == 2 { return 108; }
-        if i == 3 { return 111; }
+    if id == 0 {
+        // alloc
+        if i == 0 {
+            return 97;
+        }
+        if i == 1 {
+            return 108;
+        }
+        if i == 2 {
+            return 108;
+        }
+        if i == 3 {
+            return 111;
+        }
         return 99;
     }
-    if id == 1 { // argc
-        if i == 0 { return 97; }
-        if i == 1 { return 114; }
-        if i == 2 { return 103; }
+    if id == 1 {
+        // argc
+        if i == 0 {
+            return 97;
+        }
+        if i == 1 {
+            return 114;
+        }
+        if i == 2 {
+            return 103;
+        }
         return 99;
     }
-    if id == 2 { // argv
-        if i == 0 { return 97; }
-        if i == 1 { return 114; }
-        if i == 2 { return 103; }
+    if id == 2 {
+        // argv
+        if i == 0 {
+            return 97;
+        }
+        if i == 1 {
+            return 114;
+        }
+        if i == 2 {
+            return 103;
+        }
         return 118;
     }
-    if id == 3 { // load8
-        if i == 0 { return 108; }
-        if i == 1 { return 111; }
-        if i == 2 { return 97; }
-        if i == 3 { return 100; }
+    if id == 3 {
+        // load8
+        if i == 0 {
+            return 108;
+        }
+        if i == 1 {
+            return 111;
+        }
+        if i == 2 {
+            return 97;
+        }
+        if i == 3 {
+            return 100;
+        }
         return 56;
     }
-    if id == 4 { // load_i64
-        if i == 0 { return 108; }
-        if i == 1 { return 111; }
-        if i == 2 { return 97; }
-        if i == 3 { return 100; }
-        if i == 4 { return 95; }
-        if i == 5 { return 105; }
-        if i == 6 { return 54; }
+    if id == 4 {
+        // load_i64
+        if i == 0 {
+            return 108;
+        }
+        if i == 1 {
+            return 111;
+        }
+        if i == 2 {
+            return 97;
+        }
+        if i == 3 {
+            return 100;
+        }
+        if i == 4 {
+            return 95;
+        }
+        if i == 5 {
+            return 105;
+        }
+        if i == 6 {
+            return 54;
+        }
         return 52;
     }
-    if id == 5 { // open
-        if i == 0 { return 111; }
-        if i == 1 { return 112; }
-        if i == 2 { return 101; }
+    if id == 5 {
+        // open
+        if i == 0 {
+            return 111;
+        }
+        if i == 1 {
+            return 112;
+        }
+        if i == 2 {
+            return 101;
+        }
         return 110;
     }
-    if id == 6 { // read
-        if i == 0 { return 114; }
-        if i == 1 { return 101; }
-        if i == 2 { return 97; }
+    if id == 6 {
+        // read
+        if i == 0 {
+            return 114;
+        }
+        if i == 1 {
+            return 101;
+        }
+        if i == 2 {
+            return 97;
+        }
         return 100;
     }
-    if id == 7 { // store8
-        if i == 0 { return 115; }
-        if i == 1 { return 116; }
-        if i == 2 { return 111; }
-        if i == 3 { return 114; }
-        if i == 4 { return 101; }
+    if id == 7 {
+        // store8
+        if i == 0 {
+            return 115;
+        }
+        if i == 1 {
+            return 116;
+        }
+        if i == 2 {
+            return 111;
+        }
+        if i == 3 {
+            return 114;
+        }
+        if i == 4 {
+            return 101;
+        }
         return 56;
     }
-    if id == 8 { // store_i64
-        if i == 0 { return 115; }
-        if i == 1 { return 116; }
-        if i == 2 { return 111; }
-        if i == 3 { return 114; }
-        if i == 4 { return 101; }
-        if i == 5 { return 95; }
-        if i == 6 { return 105; }
-        if i == 7 { return 54; }
+    if id == 8 {
+        // store_i64
+        if i == 0 {
+            return 115;
+        }
+        if i == 1 {
+            return 116;
+        }
+        if i == 2 {
+            return 111;
+        }
+        if i == 3 {
+            return 114;
+        }
+        if i == 4 {
+            return 101;
+        }
+        if i == 5 {
+            return 95;
+        }
+        if i == 6 {
+            return 105;
+        }
+        if i == 7 {
+            return 54;
+        }
         return 52;
     }
-    if id == 9 { // write
-        if i == 0 { return 119; }
-        if i == 1 { return 114; }
-        if i == 2 { return 105; }
-        if i == 3 { return 116; }
+    if id == 9 {
+        // write
+        if i == 0 {
+            return 119;
+        }
+        if i == 1 {
+            return 114;
+        }
+        if i == 2 {
+            return 105;
+        }
+        if i == 3 {
+            return 116;
+        }
         return 101;
     }
     0 - 1
@@ -1030,17 +1108,7 @@ pub fn mv_intrinsic_find(buf: i64, off: i64, n: i64, id: i64) -> i64 {
 // Walk `n` signature parameters, each a semantic type descriptor. The wire
 // grammar for a semantic type is the schema field grammar, so the same walker
 // admits both; the reference keeps two functions over one encoding.
-pub fn mv_walk_params(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    nschema: i64,
-    sch: i64,
-    tab: i64,
-    declaration_kind: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_params(buf: i64, len: i64, pos: i64, n: i64, nschema: i64, sch: i64, tab: i64, declaration_kind: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1055,10 +1123,10 @@ pub fn mv_walk_params(
     }
     if declaration_kind == 2 {
         if __mind_load_i8(buf + pos) != 0 {
-            __mind_store_i64(st + 56, 1);
+            __mind_store_i64(st + 56, 1)
         }
         if __mind_load_i8(buf + pos + 1) != 1 {
-            __mind_store_i64(st + 56, 1);
+            __mind_store_i64(st + 56, 1)
         }
     }
     let p1: i64 = mv_st_cursor(st);
@@ -1148,7 +1216,7 @@ pub fn mv_walk_functions(
     };
     if kind == 2 {
         if intrinsic_id < 0 {
-            __mind_store_i64(st + 56, 1);
+            __mind_store_i64(st + 56, 1)
         }
     }
     let rc3: i64 = mv_uleb(buf, len, p2 + 1, 0, 0, 1, st);
@@ -1163,7 +1231,7 @@ pub fn mv_walk_functions(
     if kind == 2 {
         if intrinsic_id >= 0 {
             if nparam != mv_intrinsic_arity(intrinsic_id) {
-                __mind_store_i64(st + 56, 1);
+                __mind_store_i64(st + 56, 1)
             }
         }
     }
@@ -1208,10 +1276,10 @@ pub fn mv_walk_functions(
     let p5: i64 = mv_st_cursor(st);
     if kind == 2 {
         if __mind_load_i8(buf + p4 + 1) != 0 {
-            __mind_store_i64(st + 56, 1);
+            __mind_store_i64(st + 56, 1)
         }
         if __mind_load_i8(buf + p4 + 2) != 1 {
-            __mind_store_i64(st + 56, 1);
+            __mind_store_i64(st + 56, 1)
         }
         if __mind_load_i64(st + 56) != 0 {
             return mv_fail(st, 34);
@@ -1257,14 +1325,7 @@ pub fn mv_emit_type(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> i
     mv_emit_type(inbuf, outbuf, ipos + 1, opos + 1, st)
 }
 
-pub fn mv_emit_schema_headers(
-    inbuf: i64,
-    outbuf: i64,
-    ipos: i64,
-    opos: i64,
-    n: i64,
-    st: i64
-) -> i64 {
+pub fn mv_emit_schema_headers(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, ipos);
         return opos;
@@ -1294,14 +1355,7 @@ pub fn mv_emit_fields(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st:
     mv_emit_fields(inbuf, outbuf, p2, o2, n - 1, st)
 }
 
-pub fn mv_emit_schema_bodies(
-    inbuf: i64,
-    outbuf: i64,
-    ipos: i64,
-    opos: i64,
-    n: i64,
-    st: i64
-) -> i64 {
+pub fn mv_emit_schema_bodies(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, ipos);
         return opos;
@@ -2306,18 +2360,14 @@ pub fn main() -> i64 {
     }
     let sch: i64 = __mind_alloc(16 * nschema + 16);
     let fld: i64 = __mind_alloc(8 * mv_max_prefix() + 16);
-    let rc6: i64 = mv_walk_schema_headers(
-        inbuf, len, sch_start, nschema, 0 - 1, 0 - 1, count, tab, sch, 0, st
-    );
+    let rc6: i64 = mv_walk_schema_headers(inbuf, len, sch_start, nschema, 0 - 1, 0 - 1, count, tab, sch, 0, st);
     if rc6 != 0 {
         return rc6;
     }
     let bodies_start: i64 = mv_st_cursor(st);
 
     // --- schema field lists ---
-    let rc7: i64 = mv_walk_schemas(
-        inbuf, len, bodies_start, nschema, count, nschema, tab, sch, fld, st
-    );
+    let rc7: i64 = mv_walk_schemas(inbuf, len, bodies_start, nschema, count, nschema, tab, sch, fld, st);
     if rc7 != 0 {
         return rc7;
     }

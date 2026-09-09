@@ -83,6 +83,10 @@ pub(super) fn fixed_array_cell_bits_ty(ty: &TypeAnn) -> bool {
 #[cfg(feature = "std-surface")]
 pub(super) fn fixed_array_cell_supported(ty: &TypeAnn) -> bool {
     matches!(ty, TypeAnn::ScalarI64 | TypeAnn::ScalarF64)
+        || matches!(ty, TypeAnn::Named(name) if matches!(
+            name.as_str(),
+            "i8" | "u8" | "i16" | "u16"
+        ))
 }
 
 #[cfg(feature = "std-surface")]
@@ -297,7 +301,9 @@ pub(super) fn lower_struct_field_value(
 /// Store a fixed-array SSA aggregate into the inline cells owned by a struct
 /// record.  A tensor is never passed to a scalar memory intrinsic: each
 /// element is extracted from the typed aggregate, optionally converted to its
-/// canonical f64 bit representation, and stored in one 8-byte cell.
+/// canonical f64 bit representation, and stored in one 8-byte cell. Narrow
+/// integer cells use their declared-width memory helper; the cell stride
+/// remains eight bytes for ABI compatibility.
 #[cfg(feature = "std-surface")]
 pub(super) fn store_fixed_array_field(
     element: &TypeAnn,
@@ -356,7 +362,7 @@ pub(super) fn store_fixed_array_field(
         let unit = ir.fresh();
         ir.instrs.push(Instr::legacy_call(
             unit,
-            "__mind_store_i64".to_string(),
+            store_helper_for_width(struct_field_width(element).0).to_string(),
             vec![element_addr, stored],
         ));
     }
@@ -473,7 +479,7 @@ pub(super) fn lower_fixed_array_field_index_assign(
     let store = ir.fresh();
     ir.instrs.push(Instr::legacy_call(
         store,
-        "__mind_store_i64".to_string(),
+        store_helper_for_width(struct_field_width(&element).0).to_string(),
         vec![element_addr, stored],
     ));
     let unit = ir.fresh();
@@ -613,7 +619,7 @@ pub(super) fn lower_fixed_array_field_index_access(
     let loaded = ir.fresh();
     ir.instrs.push(Instr::legacy_call(
         loaded,
-        "__mind_load_i64".to_string(),
+        load_helper_for_width(struct_field_width(&element).0).to_string(),
         vec![element_addr],
     ));
     if fixed_array_cell_bits_ty(&element) {
@@ -625,6 +631,6 @@ pub(super) fn lower_fixed_array_field_index_access(
         ));
         Some(decoded)
     } else {
-        Some(loaded)
+        Some(super::mask_narrow_let(ir, &Some(element), loaded))
     }
 }

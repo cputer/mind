@@ -54,6 +54,7 @@ pub(crate) fn struct_field_types(
             .map(std::rc::Rc::clone)
             .unwrap_or_else(|| std::rc::Rc::new(global_struct_field_types()));
     }
+    let aliases = crate::eval::type_aliases::LocalTypeAliases::new(items);
 
     let mut table = inherited
         .map(|fields| fields.as_ref().clone())
@@ -61,7 +62,10 @@ pub(crate) fn struct_field_types(
     for (owner, fields) in local {
         table.retain(|(known_owner, _), _| known_owner != owner);
         for field in fields {
-            table.insert((owner.to_string(), field.name.clone()), field.ty.clone());
+            table.insert(
+                (owner.to_string(), field.name.clone()),
+                aliases.resolve(&field.ty),
+            );
         }
     }
     std::rc::Rc::new(table)

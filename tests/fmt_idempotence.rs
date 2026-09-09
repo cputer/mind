@@ -221,6 +221,9 @@ const BARE_E1042_REFUSALS: &[&str] = &[
     "examples/grammar_mask/main.mind",
     "examples/lexer/main.mind",
     "examples/mindc_mind/main.mind",
+    // The codec mirror uses bitwise masking/shifts; the bare parser must
+    // classify those operators as the feature-specific E1042 refusal.
+    "examples/mind_mirror_v04/mic3_v04_prefix_mirror.mind",
     "examples/parser/main.mind",
     "examples/remizov_feynman.mind",
     "examples/typecheck/main.mind",

@@ -9,7 +9,7 @@ use super::fixed_array_struct::{
     fixed_array_cell_bits_ty, fixed_array_cell_supported_in, fixed_array_cell_type,
     load_helper_for_width, lower_struct_field_value, refuse_invalid_field_receiver,
     refuse_unrepresentable_field, store_fixed_array_field, store_helper_for_width,
-    struct_field_type, struct_layout,
+    struct_field_type, struct_field_width, struct_layout,
 };
 use super::{
     HashMap, LoweringContext, MAP_SENTINEL, MAP_STR_SENTINEL, SET_SENTINEL, SET_STR_SENTINEL,
@@ -243,7 +243,7 @@ pub(super) fn lower_field_access(
                     let bits = ir.fresh();
                     ir.instrs.push(Instr::legacy_call(
                         bits,
-                        "__mind_load_i64".to_string(),
+                        load_helper_for_width(struct_field_width(&element).0).to_string(),
                         vec![cell_addr],
                     ));
                     let item = if fixed_array_cell_bits_ty(&element) {
@@ -257,6 +257,7 @@ pub(super) fn lower_field_access(
                     } else {
                         bits
                     };
+                    let item = mask_narrow_let(ir, &Some(element.clone()), item);
                     let index = ir.fresh();
                     ir.instrs.push(Instr::ConstI64(index, i64::from(position)));
                     let next = ir.fresh();

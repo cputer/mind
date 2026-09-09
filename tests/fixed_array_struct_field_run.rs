@@ -35,6 +35,40 @@ struct Empty { xs: [i64; 0], tail: i64 }
 struct Wide { xs: [i64; 64] }
 struct LeftOwner { xs: TwoWords }
 struct RightOwner { xs: ThreeWords }
+struct Narrow { xs: [u8; 4], sibling: i64 }
+struct SignedNarrow { xs: [i8; 4] }
+struct Narrow16 { xs: [u16; 4], sibling: i64 }
+struct SignedNarrow16 { xs: [i16; 4], sibling: i64 }
+struct AccessTrace { order: i64 }
+
+fn traced_receiver(t: AccessTrace, s: Narrow) -> Narrow {
+    t.order = t.order * 10 + 1
+    return s
+}
+
+fn traced_index(t: AccessTrace) -> i64 {
+    t.order = t.order * 10 + 2
+    return 1
+}
+
+fn traced_value(t: AccessTrace) -> i64 {
+    t.order = t.order * 10 + 3
+    return 255
+}
+
+pub fn narrow_read_once() -> i64 {
+    let t = AccessTrace { order: 0 }
+    let s = Narrow { xs: [0, 128, 127, 255], sibling: 900 }
+    let got = traced_receiver(t, s).xs[traced_index(t)]
+    return t.order * 1000 + got
+}
+
+pub fn narrow_write_once() -> i64 {
+    let t = AccessTrace { order: 0 }
+    let s = Narrow { xs: [0, 128, 127, 255], sibling: 900 }
+    traced_receiver(t, s).xs[traced_index(t)] = traced_value(t)
+    return t.order * 10000 + s.xs[1] + s.sibling
+}
 
 fn read_struct(s: S) -> i64 {
     let a = s.xs
@@ -79,6 +113,58 @@ fn empty_read(s: Empty) -> i64 { return s.tail }
 fn indexed_param4(s: S, i: i64) -> i64 { return s.xs[i] }
 fn indexed_param64(s: Wide, i: i64) -> i64 { return s.xs[i] }
 
+fn narrow_scan(s: Narrow) -> i64 {
+    let mut i: i64 = 0
+    let mut total: i64 = 0
+    while i < 4 { total = total + s.xs[i]; i = i + 1 }
+    return total
+}
+
+fn narrow_copy(s: Narrow) -> i64 {
+    let values = s.xs
+    return values[3] + values[0]
+}
+
+fn narrow_update(s: Narrow) -> i64 {
+    s.xs[1] = 255
+    return s.xs[1] + s.xs[0] + s.sibling
+}
+
+fn signed_narrow_scan(s: SignedNarrow) -> i64 {
+    return s.xs[0] + s.xs[1] + s.xs[2] + s.xs[3]
+}
+
+fn narrow16_scan(s: Narrow16) -> i64 {
+    let mut i: i64 = 0
+    let mut total: i64 = 0
+    while i < 4 { total = total + s.xs[i]; i = i + 1 }
+    return total
+}
+
+fn narrow16_copy(s: Narrow16) -> i64 {
+    let values = s.xs
+    return values[3] + values[0]
+}
+
+fn narrow16_update(s: Narrow16) -> i64 {
+    s.xs[1] = 65535
+    return s.xs[1] + s.xs[0] + s.sibling
+}
+
+fn signed_narrow16_scan(s: SignedNarrow16) -> i64 {
+    return s.xs[0] + s.xs[1] + s.xs[2] + s.xs[3]
+}
+
+fn signed_narrow16_copy(s: SignedNarrow16) -> i64 {
+    let values = s.xs
+    return values[0] + values[3]
+}
+
+fn signed_narrow16_update(s: SignedNarrow16) -> i64 {
+    s.xs[2] = 65535
+    return s.xs[0] + s.xs[2] + s.sibling
+}
+
 pub fn run() -> i64 {
     let s = S { xs: [10, 20, 30, 40], tail: 7 }
     let s = replace(s)
@@ -116,6 +202,26 @@ pub fn same_owner_left() -> i64 {
 pub fn same_owner_right() -> i64 {
     let s = RightOwner { xs: [31, 32, 43] }
     return s.xs[2]
+}
+
+pub fn narrow_u8_run() -> i64 {
+    let s = Narrow { xs: [0, 127, 128, 255], sibling: 900 }
+    return narrow_scan(s) + narrow_copy(s) + narrow_update(s)
+}
+
+pub fn narrow_i8_run() -> i64 {
+    let s = SignedNarrow { xs: [-128, -1, 0, 127] }
+    return signed_narrow_scan(s)
+}
+
+pub fn narrow_u16_run() -> i64 {
+    let s = Narrow16 { xs: [0, 32767, 32768, 65535], sibling: 900 }
+    return narrow16_scan(s) + narrow16_copy(s) + narrow16_update(s)
+}
+
+pub fn narrow_i16_run() -> i64 {
+    let s = SignedNarrow16 { xs: [-32768, -1, 0, 32767], sibling: 900 }
+    return signed_narrow16_scan(s) + signed_narrow16_copy(s) + signed_narrow16_update(s)
 }
 "#;
 
@@ -162,6 +268,19 @@ fn fixed_array_struct_fields_run_native_artifact() {
             lib.get(b"same_owner_left").expect("load same_owner_left");
         let same_owner_right: Symbol<unsafe extern "C" fn() -> i64> =
             lib.get(b"same_owner_right").expect("load same_owner_right");
+        let narrow_u8_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_u8_run").expect("load narrow_u8_run");
+        let narrow_i8_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_i8_run").expect("load narrow_i8_run");
+        let narrow_u16_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_u16_run").expect("load narrow_u16_run");
+        let narrow_i16_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_i16_run").expect("load narrow_i16_run");
+        let narrow_read_once: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_read_once").expect("load narrow_read_once");
+        let narrow_write_once: Symbol<unsafe extern "C" fn() -> i64> = lib
+            .get(b"narrow_write_once")
+            .expect("load narrow_write_once");
         assert_eq!(run(), 16 + 9 + 12 + 84 + 6 + 9 + 9 + 6 + 12 + 13);
         assert_eq!(float_run().to_bits(), 2.5f64.to_bits());
         assert_eq!(float_signed_zero().to_bits(), (-0.0f64).to_bits());
@@ -169,6 +288,17 @@ fn fixed_array_struct_fields_run_native_artifact() {
         assert_eq!(indexed_read64(), 37);
         assert_eq!(same_owner_left(), 22);
         assert_eq!(same_owner_right(), 43);
+        // scan=510, copy=255, update=1155; the sibling remains untouched.
+        assert_eq!(narrow_u8_run(), 1920);
+        assert_eq!(narrow_i8_run(), -2);
+        // u16 high-bit values remain zero-extended; the update includes the
+        // untouched sibling. i16 loads sign-extend, including 65535 -> -1.
+        assert_eq!(narrow_u16_run(), 263_040);
+        assert_eq!(narrow_i16_run(), -31_872);
+        // Decimal event digits detect duplicated, omitted or reordered receiver,
+        // index and RHS evaluation. The write also preserves the sibling field.
+        assert_eq!(narrow_read_once(), 12_128);
+        assert_eq!(narrow_write_once(), 1_231_155);
     }
 }
 
@@ -212,6 +342,38 @@ fn indexed_struct_field_read_does_not_expand_with_field_length() {
         );
     }
     assert_eq!(small.len(), wide.len(), "indexed read IR expanded with N");
+
+    let narrow = body("narrow_scan");
+    let narrow_debug = format!("{narrow:?}");
+    assert!(
+        narrow_debug.contains("name: \"__mind_load_i8\""),
+        "u8 indexed field read did not use its declared-width load: {narrow:?}"
+    );
+    assert!(
+        narrow_debug.contains("name: \"__mind_oob_check\""),
+        "u8 indexed field read omitted its bounds check: {narrow:?}"
+    );
+    let update = body("narrow_update");
+    assert!(
+        format!("{update:?}").contains("name: \"__mind_store_i8\""),
+        "u8 indexed field write did not use its declared-width store: {update:?}"
+    );
+    let narrow16 = body("narrow16_scan");
+    assert!(
+        format!("{narrow16:?}").contains("name: \"__mind_load_i16\""),
+        "u16 indexed field read did not use its declared-width load: {narrow16:?}"
+    );
+    let update16 = body("signed_narrow16_update");
+    assert!(
+        format!("{update16:?}").contains("name: \"__mind_store_i16\""),
+        "i16 indexed field write did not use its declared-width store: {update16:?}"
+    );
+    assert!(
+        update16
+            .iter()
+            .any(|instr| matches!(instr, Instr::ConstI64(_, 8))),
+        "i16 indexed field write lost the canonical eight-byte cell stride: {update16:?}"
+    );
 }
 
 #[test]
@@ -380,13 +542,41 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
         "unused declaration emitted no artifact"
     );
 
-    // Field-index mutation used to reach the generic fixed-array panic before
-    // the post-lowering blocker could run. It must now refuse structurally.
+    // A narrow store must not reinterpret an opaque i64 handle as integer
+    // payload and silently keep only its low byte.
+    let opaque_rhs = root.join("opaque_rhs.mind");
+    let opaque_rhs_so = root.join("opaque_rhs.so");
+    std::fs::write(
+        &opaque_rhs,
+        "struct S { xs: [u8; 1] }\nfn main(s: S) -> i64 { s.xs[0] = \"x\"; return s.xs[0] }\n",
+    )
+    .expect("write opaque narrow assignment control");
+    let out = run(
+        &[
+            "--emit-shared",
+            opaque_rhs_so.to_str().unwrap(),
+            opaque_rhs.to_str().unwrap(),
+        ],
+        None,
+    );
+    let opaque_rhs_text = text(&out);
+    assert_eq!(out.status.code(), Some(1), "opaque rhs: {opaque_rhs_text}");
+    assert!(
+        opaque_rhs_text.contains("E2036") && !opaque_rhs_text.contains("panicked at"),
+        "opaque narrow assignment did not fail structurally: {opaque_rhs_text}"
+    );
+    assert!(
+        !opaque_rhs_so.exists(),
+        "opaque narrow assignment emitted an artifact"
+    );
+
+    // A fixed-array field with an unsupported handle element still refuses
+    // structurally; the narrow integer-cell path is covered separately.
     let mutation = root.join("mutation.mind");
     let mutation_so = root.join("mutation.so");
     std::fs::write(
         &mutation,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { s.xs[1] = 3; return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { s.xs[1] = 3; return 0 }\n",
     )
     .expect("write mutation control");
     let out = run(
@@ -415,7 +605,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
     let loop_mutation = root.join("loop_mutation.mind");
     std::fs::write(
         &loop_mutation,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { for i in 0..1 { s.xs[i] = 3 } return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { for i in 0..1 { s.xs[i] = 3 } return 0 }\n",
     )
     .expect("write loop mutation control");
     for (flag, output) in [
@@ -446,7 +636,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
     let array_read = root.join("array_read.mind");
     std::fs::write(
         &array_read,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { let values = [s.xs[1]]; return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { let values = [s.xs[1]]; return 0 }\n",
     )
     .expect("write array read control");
     for (flag, output) in [
@@ -495,7 +685,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
             .expect("write boundary manifest");
             std::fs::write(
                 project.join("src/a.mind"),
-                "pub struct Bad { xs: [u8; 2] }\n",
+                "pub struct Bad { xs: [u64; 2] }\n",
             )
             .expect("write unsupported owner");
             std::fs::write(

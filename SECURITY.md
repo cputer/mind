@@ -110,8 +110,30 @@ vulnerability reports about:
   is tracked as an RFC 0021 revision (it is a preimage change and needs a new scheme
   tag), not a silent change.
   Authenticity is **opt-in** (RFC 0016 Phase C): an artifact may additionally carry
-  a `signature.*` block — Ed25519 (RFC 8032), ML-DSA-65 (FIPS-204 PQC), or the
-  hybrid — over the canonical provenance preimage. Signing is **never enabled by
+  a `signature.*` block over the canonical provenance preimage. The **recommended
+  scheme is the post-quantum hybrid** `pqc-hybrid-ml-dsa-87-slh-dsa-256s`:
+  ML-DSA-87 (FIPS-204, lattice) **and** SLH-DSA-SHAKE-256s (FIPS-205, hash-based),
+  both of which must verify. The two legs rest on independent mathematical
+  foundations, and the combiner is an AND, so neither leg alone is a signature —
+  supplying only one is refused at signing time, and trusting only one leg's key
+  is refused at verification.
+  **Ed25519 is permanently RETIRED**, from signing *and* from trust
+  verification, together with the old `hybrid-ed25519-ml-dsa-65` scheme. This
+  is a removal, not a relabelling:
+  - supplying a legacy seed **refuses explicitly** and writes no artifact, and
+    it still refuses when supported keys are also supplied — the request is
+    never silently satisfied with a different key;
+  - an artifact carrying a retired scheme verifies as **`retired`**, never as
+    valid and never as unsigned. Demoting it to "unsigned" would hand back a
+    success, which is the quiet downgrade this removes.
+  Historical artifacts remain **inspectable** — substrate, toolchain and
+  `trace_hash` still decode — because reading bytes is not the same as trusting
+  them. They are retained as rejection fixtures.
+  ML-DSA-65 on its own remains decodable and is **outside** the supported
+  production profile, which requires the exact ML-DSA-87 + SLH-DSA pair. It is
+  not retired by association with Ed25519; unrelated key-agreement and transport
+  primitives are untouched by this change.
+  Signing is **never enabled by
   default**, and the `signature.*` keys sort *after* the hashed body so an unsigned
   artifact stays byte-identical. An **unsigned** artifact is tamper-evident but says
   nothing about *who* produced it — do not treat the bare chain as proof of origin.

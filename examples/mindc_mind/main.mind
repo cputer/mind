@@ -49087,8 +49087,9 @@ pub fn tc_shoc_prefix7_span(buf: i64, len: i64) -> i64 {
     1
 }
 
-// Membership in the STD_SURFACE_INTRINSICS table (all 57 entries, packed-word
-// constants generated from the Rust table in src/intrinsics.rs — the
+// Membership in the Rust/MLIR-selectable STD_SURFACE_INTRINSICS subset (all 58
+// entries; the two FrozenNative-only argc/argv rows intentionally stay out),
+// with packed-word constants generated from the Rust table in src/intrinsics.rs — the
 // smoke regenerates them from that same source and cross-checks every case
 // against the live `mindc check` E2024 verdict).
 pub fn tc_is_std_surface_intrinsic(w0: i64, w1: i64, w2: i64, w3: i64, len: i64) -> i64 {

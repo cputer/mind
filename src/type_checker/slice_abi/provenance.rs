@@ -94,6 +94,56 @@ pub(super) fn expr_type(node: &Node, env: &Env) -> Option<TypeAnn> {
     }
 }
 
+/// True only when a narrow integer destination and the right-hand side have a
+/// provably incompatible representation. Unknown expressions remain admitted:
+/// this guards against storing an opaque i64 handle's low byte without
+/// pretending that the loose type model can classify every expression.
+pub(super) fn narrow_integer_rejects_value(target: &TypeAnn, value: &Node, env: &Env) -> bool {
+    let narrow = matches!(target, TypeAnn::Named(name) if matches!(name.as_str(), "i8" | "u8" | "i16" | "u16"));
+    if !narrow {
+        return false;
+    }
+    if let Some(actual_class) = confident_scalar_class(value, &env.classes) {
+        return scalar_class_of_ann(target)
+            .is_some_and(|target_class| target_class != actual_class);
+    }
+    let Some(actual) = expr_type(value, env) else {
+        return matches!(
+            value,
+            Node::ArrayLit { .. }
+                | Node::Tuple { .. }
+                | Node::StructLit { .. }
+                | Node::MapLit { .. }
+                | Node::SetLit { .. }
+                | Node::Ref { .. }
+        );
+    };
+    if let Some(actual_class) = scalar_class_of_ann(&actual) {
+        return scalar_class_of_ann(target)
+            .is_some_and(|target_class| target_class != actual_class);
+    }
+    match actual {
+        TypeAnn::Named(name) => {
+            matches!(name.as_str(), "string" | "String")
+                || env
+                    .struct_fields
+                    .keys()
+                    .any(|(known_owner, _)| known_owner == &name)
+        }
+        TypeAnn::Generic { .. }
+        | TypeAnn::Array { .. }
+        | TypeAnn::Slice { .. }
+        | TypeAnn::Ref { .. }
+        | TypeAnn::Tuple { .. }
+        | TypeAnn::Tensor { .. }
+        | TypeAnn::DiffTensor { .. }
+        | TypeAnn::SparseTensor { .. }
+        | TypeAnn::RawPtr { .. }
+        | TypeAnn::FnPtr { .. } => true,
+        _ => false,
+    }
+}
+
 pub(super) fn field_type(base: &Node, field: &str, env: &Env) -> Option<TypeAnn> {
     let base_ty = expr_type(base, env)?;
     let struct_name = match &base_ty {

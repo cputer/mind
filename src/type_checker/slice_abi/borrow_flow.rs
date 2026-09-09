@@ -635,10 +635,8 @@ fn type_needs_collection_flow(ty: &TypeAnn) -> bool {
     type_contains_collection_owner(ty) || declared_kind(ty).is_some() || type_contains_slice(ty)
 }
 
-/// Scalar-only functions cannot create borrowed Vec-layout provenance. Skip
-/// their bodies unless a local annotation or a resolved call signature reaches
-/// the array/slice ABI; this keeps the loop fixed-point pass off the ordinary
-/// scalar compilation path while retaining checks at every collection boundary.
+/// Skip scalar-only bodies unless a collection boundary or indexed assignment
+/// needs this pass, keeping its fixed-point analysis off unrelated functions.
 fn function_needs_collection_flow(fd: &FnDefData, has_collection_owner_field: bool) -> bool {
     if fd
         .params
@@ -655,7 +653,8 @@ fn function_needs_collection_flow(fd: &FnDefData, has_collection_owner_field: bo
                 params.iter().any(type_needs_collection_flow)
                     || ret.as_ref().is_some_and(type_needs_collection_flow)
             }),
-            Node::FieldAssign { .. } | Node::IndexAssign { .. } => has_collection_owner_field,
+            Node::IndexAssign { .. } => true,
+            Node::FieldAssign { .. } => has_collection_owner_field,
             _ => false,
         })
     })

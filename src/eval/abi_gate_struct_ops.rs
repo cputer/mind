@@ -10,9 +10,9 @@ use crate::ast::{Module, Node, Span as AstSpan};
 use crate::diagnostics::{Diagnostic, Span};
 
 const PHASE: &str = "lower";
-const HELP: &str = "the shipped backend lowers only the i64-scalar ABI; this construct is not yet \
+const HELP: &str = "the shipped backend lowers only the shipped scalar-cell ABI; this construct is not yet \
      lowerable to a runnable artifact (RUNS burndown). Run it with the `mind` interpreter, or keep \
-     the compiled path to the i64 subset.";
+     the compiled path to the supported scalar-cell subset.";
 
 fn mk(src: &str, file: Option<&str>, span: AstSpan, code: &'static str, msg: String) -> Diagnostic {
     Diagnostic::error(PHASE, code, msg)
@@ -21,11 +21,11 @@ fn mk(src: &str, file: Option<&str>, span: AstSpan, code: &'static str, msg: Str
 }
 
 /// Fixed arrays remain valid source-level types and are available through the
-/// inspection/IR surfaces. The inline struct-field ABI currently materializes
-/// only i64/f64 cells, however, so a runnable artifact must refuse an actual
-/// construction/access/update of any other fixed-array field before MLIR/code
-/// emission. Declaration-only fields are deliberately ignored: they have no
-/// lowering operation and retain the base125 runnable behavior.
+/// inspection/IR surfaces. The inline struct-field ABI materializes i64/f64 and
+/// the existing i8/u8/i16/u16 cells, however, so a runnable artifact must
+/// refuse an actual construction/access/update of any other fixed-array field
+/// before MLIR/code emission. Declaration-only fields are deliberately ignored:
+/// they have no lowering operation and retain the base125 runnable behavior.
 #[cfg(feature = "std-surface")]
 pub(super) fn check_fixed_struct_array_operations(
     module: &Module,
@@ -59,7 +59,7 @@ pub(super) fn check_fixed_struct_array_operations(
             span,
             "lower::fixed_struct_array_cell",
             format!(
-                "fixed struct-array field `{owner}.{field}` is not lowerable to a runnable artifact: only i64/f64 scalar cells are supported"
+                "fixed struct-array field `{owner}.{field}` is not lowerable to a runnable artifact: only i64/f64 and i8/u8/i16/u16 scalar cells are supported"
             ),
         ));
     }

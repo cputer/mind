@@ -36,6 +36,7 @@ use provenance::{compatible_source, expr_kind, expr_type, same_type};
 pub(super) const SLICE_ARG_ABI_CODE: &str = "E2032";
 pub(super) const SLICE_CAPABILITY_CODE: &str = "E2033";
 pub(super) const COLLECTION_OWNER_ASSIGN_CODE: &str = "E2034";
+pub(super) const NARROW_ELEMENT_ASSIGN_CODE: &str = "E2036";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum HandleKind {
@@ -188,8 +189,22 @@ fn check_expr(
             value,
             span,
         } => {
+            let target = provenance::indexed_type(receiver, env);
+            if let Some(target) = target.as_ref() {
+                if provenance::narrow_integer_rejects_value(target, value, env) {
+                    report(
+                        errs,
+                        src,
+                        file,
+                        "a narrow integer array element cannot store a proven non-integer or opaque-handle value; use an explicit numeric conversion"
+                            .to_string(),
+                        value.span(),
+                        NARROW_ELEMENT_ASSIGN_CODE,
+                    );
+                }
+            }
             owner_assignment::check(
-                provenance::indexed_type(receiver, env),
+                target,
                 value,
                 "an indexed collection-owner slot",
                 env,

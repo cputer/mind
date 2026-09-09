@@ -11,10 +11,11 @@
 //! into one artifact per refusal class and records the reference decoder's verdict
 //! for each.
 //!
-//! Vectors are only written when `MIND_V04_VECTOR_DIR` names a directory, so an
-//! ordinary test run stays a pure in-process equality check with no file output.
+//! The committed manifest and fixtures are always checked against this oracle.
+//! `MIND_V04_VECTOR_DIR` only selects an additional dump destination for callers
+//! that need regenerated files; it cannot turn the corpus check into a no-op.
 
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use libmind::ir::compact::v3::{emit_mic3_checked, parse_mic3_prefix};
 #[path = "support/v04_mirror_body_vectors.rs"]
@@ -67,6 +68,70 @@ fn oracle_consumed_len(bytes: &[u8]) -> usize {
     match rederive_prefix(bytes) {
         Ok((_, prefix_len, _)) => prefix_len,
         Err(_) => 0,
+    }
+}
+
+fn manifest_for(vectors: &[Vector]) -> String {
+    let mut manifest = String::from("# name\texpected_exit\tbytes\tsha256\tconsumed\tnote\n");
+    for vector in vectors {
+        manifest.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            vector.name,
+            vector.expect,
+            vector.bytes.len(),
+            sha256_hex(&vector.bytes),
+            oracle_consumed_len(&vector.bytes),
+            vector.note
+        ));
+    }
+    manifest
+}
+
+/// Check the tracked corpus against the same bytes, verdicts, and consumed
+/// lengths that were derived above.  Comparing the complete manifest catches
+/// changed or missing rows; comparing every shipped file catches a fixture
+/// whose manifest was edited to agree with it.  Recipe rows are intentionally
+/// represented only by their oracle digest and size.
+fn validate_committed_corpus(vectors: &[Vector], expected_manifest: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("examples/mind_mirror_v04/testdata");
+    let actual_manifest =
+        std::fs::read_to_string(dir.join("MANIFEST.tsv")).expect("committed v04 vector manifest");
+    assert_eq!(
+        actual_manifest, expected_manifest,
+        "committed v04 manifest differs from the reference oracle"
+    );
+    let expected_files: BTreeSet<String> = vectors
+        .iter()
+        .filter(|vector| !vector.note.starts_with("recipe="))
+        .map(|vector| format!("{}.mic3", vector.name))
+        .collect();
+    let actual_files: BTreeSet<String> = std::fs::read_dir(&dir)
+        .expect("committed v04 vector directory")
+        .map(|entry| {
+            entry
+                .expect("committed v04 vector directory entry")
+                .file_name()
+        })
+        .filter_map(|name| name.into_string().ok())
+        .filter(|name| name.ends_with(".mic3"))
+        .collect();
+    assert_eq!(
+        actual_files, expected_files,
+        "committed v04 fixture set differs from the reference oracle"
+    );
+    for vector in vectors {
+        if vector.note.starts_with("recipe=") {
+            continue;
+        }
+        let path = dir.join(format!("{}.mic3", vector.name));
+        let actual = std::fs::read(&path)
+            .unwrap_or_else(|error| panic!("committed v04 fixture {}: {error}", path.display()));
+        assert_eq!(
+            actual, vector.bytes,
+            "committed v04 fixture {} differs from the reference oracle",
+            vector.name
+        );
     }
 }
 
@@ -705,35 +770,27 @@ fn v04_prefix_vectors_inner() {
     );
     assert!(refused >= 49, "at least forty-nine refusals, got {refused}");
 
-    // --- write the corpus ------------------------------------------------
-    let Ok(dir) = std::env::var("MIND_V04_VECTOR_DIR") else {
-        eprintln!("MIND_V04_VECTOR_DIR unset: in-process checks only, no files written");
-        return;
-    };
-    let dir = PathBuf::from(dir);
-    std::fs::create_dir_all(&dir).expect("vector dir");
-    let mut manifest = String::new();
-    manifest.push_str("# name\texpected_exit\tbytes\tsha256\tconsumed\tnote\n");
-    for vector in &vectors {
-        let digest = sha256_hex(&vector.bytes);
-        // A vector whose note declares a RECIPE is not shipped as a file. The
-        // harness rebuilds it in scratch from the recipe and checks it against
-        // the size and digest recorded here, so it stays pinned without a large
-        // permanent binary in the repository.
-        if !vector.note.starts_with("recipe=") {
-            let path = dir.join(format!("{}.mic3", vector.name));
-            std::fs::write(&path, &vector.bytes).expect("write vector");
+    let manifest = manifest_for(&vectors);
+    validate_committed_corpus(&vectors, &manifest);
+
+    // A vector whose note declares a RECIPE is not shipped as a file. The
+    // harness rebuilds it in scratch from the recipe and checks it against the
+    // size and digest recorded in the manifest, so it stays pinned without a
+    // large permanent binary in the repository.
+    if let Some(dir) = std::env::var_os("MIND_V04_VECTOR_DIR").map(PathBuf::from) {
+        std::fs::create_dir_all(&dir).expect("vector dir");
+        for vector in &vectors {
+            if !vector.note.starts_with("recipe=") {
+                let path = dir.join(format!("{}.mic3", vector.name));
+                std::fs::write(&path, &vector.bytes).expect("write vector");
+            }
         }
-        manifest.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
-            vector.name,
-            vector.expect,
-            vector.bytes.len(),
-            digest,
-            oracle_consumed_len(&vector.bytes),
-            vector.note
-        ));
+        std::fs::write(dir.join("MANIFEST.tsv"), &manifest).expect("manifest");
+        eprintln!("wrote {} vectors to {}", vectors.len(), dir.display());
+    } else {
+        eprintln!(
+            "validated {} committed v04 vectors against the reference oracle",
+            vectors.len()
+        );
     }
-    std::fs::write(dir.join("MANIFEST.tsv"), manifest).expect("manifest");
-    eprintln!("wrote {} vectors to {}", vectors.len(), dir.display());
 }
