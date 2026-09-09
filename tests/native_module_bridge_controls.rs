@@ -222,7 +222,21 @@ fn explicit_path_and_manifest_entry_produce_identical_artifacts() {
     let (a_code, a_err, a_art) = p.build_native("src/main.mind");
     assert_eq!(a_code, 0, "explicit-path build must succeed: {a_err}");
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let captured_a = p.captured_source_image();
+    let captured_a = {
+        let captured = p.captured_source_image();
+        for expected in [
+            "pub fn helper(x: i64) -> i64 {\n    return x + 1;\n}",
+            "import helper;\n\nfn main() -> i64 {\n    return helper(6);\n}\n",
+        ] {
+            assert!(
+                captured
+                    .windows(expected.len())
+                    .any(|window| window == expected.as_bytes()),
+                "explicit-path capture must contain the expected source fragment: {expected}"
+            );
+        }
+        captured
+    };
     let a = a_art.expect("explicit artifact");
 
     let (b_code, b_err, b_art) = p.build_native_no_path();

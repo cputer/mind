@@ -236,7 +236,16 @@ fn retargeted_dependency_changes_the_verdict() {
     let (a, _, art_a) = p.build_native("src/main.mind");
     assert_eq!(a, 0);
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let captured_a = p.captured_source_image();
+    let captured_a = {
+        let captured = p.captured_source_image();
+        assert!(
+            captured
+                .windows(b"return x + 1".len())
+                .any(|window| window == b"return x + 1"),
+            "initial source image must contain the original dependency body"
+        );
+        captured
+    };
     let bytes = art_a.expect("artifact");
     assert_native_result(&p, &bytes, 7, "initial dependency result");
 

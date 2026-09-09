@@ -165,8 +165,10 @@ fn native_compiler() -> PathBuf {
 }
 
 /// Assert a semantic result where the real Linux x86-64 image is available.
-/// Other targets assert the host fixture's complete transport and artifact
-/// shape; they do not pretend that a fake anchor executed MIND semantics.
+/// Other targets assert that the host fixture received a nonempty source image
+/// and emitted its exact deterministic anchor; dedicated composition controls
+/// prove source completeness and identity. They do not pretend that a fake
+/// anchor executed MIND semantics.
 pub fn assert_native_result(project: &Project, bytes: &[u8], expected: i32, context: &str) {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -189,6 +191,11 @@ pub fn assert_native_result(project: &Project, bytes: &[u8], expected: i32, cont
             &bytes[..4],
             b"\x7fELF",
             "{context}: host-native transport fixture must preserve ELF framing"
+        );
+        assert_eq!(
+            &bytes[4..],
+            &[0; 393],
+            "{context}: host-native transport fixture must preserve its exact anchor"
         );
         let _ = expected;
     }
