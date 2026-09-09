@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1743 | **Est. tokens:** ~3,405,149
-**Generated:** 2026-09-09 07:09 UTC
+**Files:** 1743 | **Est. tokens:** ~3,414,365
+**Generated:** 2026-09-09 08:32 UTC
 
 ## Token Budget Guide
 
@@ -67,8 +67,8 @@
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1,078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
 | `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2,138 |
-| `examples/mind_mirror_v04/` | 3 | ~16,073 |
-| `examples/mind_mirror_v04/testdata/` | 1 | ~2,088 |
+| `examples/mind_mirror_v04/` | 3 | ~21,765 |
+| `examples/mind_mirror_v04/testdata/` | 1 | ~2,303 |
 | `examples/native/` | 4 | ~1,440 |
 | `examples/parser/` | 5 | ~17,923 |
 | `examples/typecheck/` | 5 | ~14,553 |
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20,740 |
 | `src/workspace/` | 1 | ~4,906 |
 | `std/` | 42 | ~202,387 |
-| `tests/` | 393 | ~790,621 |
+| `tests/` | 393 | ~790,732 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12,308 |
@@ -191,7 +191,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10,401 |
-| `tests/support/` | 6 | ~11,125 |
+| `tests/support/` | 6 | ~14,323 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13,565 |
 | `tools/mindfuzz/` | 7 | ~16,763 |
@@ -818,12 +818,12 @@
 - `while_struct_smoke.py` (~1031 tok, large)
 ### `examples/mind_mirror_v04/`
 
-- `mic3_v04_prefix_mirror.mind` (~12401 tok, huge) — ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~18093 tok, huge) — ===========================================================================
 - `mirror_gate.py` (~2888 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
 ### `examples/mind_mirror_v04/testdata/`
 
-- `MANIFEST.tsv` (~2088 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
+- `MANIFEST.tsv` (~2303 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
 ### `examples/`
 
 - `mlir_pipeline_demo.sh` (~1647 tok, huge) — MLIR/LLVM Pipeline Demonstration
@@ -2367,11 +2367,11 @@
 ### `tests/support/`
 
 - `g2_policy_rejections.rs` (~773 tok, large) — Copyright 2026 STARGA Inc.
-- `v04_mirror_body_vectors.rs` (~1261 tok, large) — Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_descriptor_vectors.rs` (~1853 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_intrinsic_vectors.rs` (~1361 tok, large) — Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_modules.rs` (~1680 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_oracle.rs` (~4197 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_body_vectors.rs` (~2395 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_descriptor_vectors.rs` (~1851 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_intrinsic_vectors.rs` (~1359 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_modules.rs` (~1936 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_oracle.rs` (~6009 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `tests/`
 
 - `target_cerebras.rs` (~340 tok, medium) — Cerebras backend target — first-class surface tests.
@@ -2410,7 +2410,7 @@
 - `typo_reject.rs` (~1127 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) — Copyright 2025 STARGA Inc.
-- `v04_mirror_vector_dump.rs` (~7024 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_vector_dump.rs` (~7135 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) — Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.

@@ -135,6 +135,171 @@ pub(super) fn synthetic_head(strings: &[&str]) -> Vec<u8> {
     out
 }
 
+/// Walk one instruction, appending its canonical bytes to `out`.
+///
+/// Independent of the mirror by construction: this validates against decoded
+/// values in Rust data structures, where the mirror walks raw bytes with an
+/// explicit cursor.
+#[allow(clippy::too_many_arguments)]
+fn rederive_instr(
+    body: &[u8],
+    pos: &mut usize,
+    strings: &[Vec<u8>],
+    schema_count: usize,
+    function_count: usize,
+    out: &mut Vec<u8>,
+    depth: usize,
+) -> Result<(), String> {
+    if depth >= 256 {
+        return Err("instruction nesting reaches depth 256".to_string());
+    }
+    let opcode = *body.get(*pos).ok_or("opcode past the body")?;
+    *pos += 1;
+    out.push(opcode);
+    let mut uleb = |pos: &mut usize, out: &mut Vec<u8>| -> Result<u64, String> {
+        let value = read_uleb(body, pos)?;
+        write_uleb(out, value);
+        Ok(value)
+    };
+    match opcode {
+        0x01 => {
+            uleb(pos, out)?;
+            uleb(pos, out)?;
+        }
+        0x02 => {
+            uleb(pos, out)?;
+            let end = *pos + 8;
+            if end > body.len() {
+                return Err("ConstF64 payload past the body".to_string());
+            }
+            out.extend_from_slice(&body[*pos..end]);
+            *pos = end;
+        }
+        0x04 => {
+            uleb(pos, out)?;
+            let tag = *body.get(*pos).ok_or("binop tag past the body")?;
+            if tag > 0x0A {
+                return Err(format!("binop tag {tag} is outside the core set"));
+            }
+            *pos += 1;
+            out.push(tag);
+            uleb(pos, out)?;
+            uleb(pos, out)?;
+        }
+        0x13 => {
+            uleb(pos, out)?;
+        }
+        0x17 => {
+            let tag = *body.get(*pos).ok_or("return tag past the body")?;
+            *pos += 1;
+            out.push(tag);
+            match tag {
+                0 => {}
+                1 => {
+                    uleb(pos, out)?;
+                }
+                other => return Err(format!("invalid optional ValueId tag {other}")),
+            }
+        }
+        0x18 => {
+            uleb(pos, out)?;
+            let name = uleb(pos, out)? as usize;
+            if name >= strings.len() {
+                return Err("param name names no string".to_string());
+            }
+            uleb(pos, out)?;
+        }
+        0x16 => {
+            uleb(pos, out)?;
+            let name = uleb(pos, out)? as usize;
+            if name >= strings.len() {
+                return Err("call name names no string".to_string());
+            }
+            let argc = uleb(pos, out)? as usize;
+            for _ in 0..argc {
+                uleb(pos, out)?;
+            }
+            let callee = uleb(pos, out)? as usize;
+            if callee >= function_count {
+                return Err("call names no function".to_string());
+            }
+        }
+        0x15 => {
+            let name = uleb(pos, out)? as usize;
+            if name >= strings.len() {
+                return Err("function name names no string".to_string());
+            }
+            let param_count = uleb(pos, out)? as usize;
+            for _ in 0..param_count {
+                let param = uleb(pos, out)? as usize;
+                if param >= strings.len() {
+                    return Err("parameter name names no string".to_string());
+                }
+                uleb(pos, out)?;
+            }
+            let ret_tag = *body.get(*pos).ok_or("ret tag past the body")?;
+            *pos += 1;
+            out.push(ret_tag);
+            match ret_tag {
+                0 => {}
+                1 => {
+                    uleb(pos, out)?;
+                }
+                other => return Err(format!("invalid optional ValueId tag {other}")),
+            }
+            let reap_tag = *body.get(*pos).ok_or("reap tag past the body")?;
+            *pos += 1;
+            out.push(reap_tag);
+            match reap_tag {
+                0 => {}
+                1 => {
+                    let end = *pos + 8;
+                    if end > body.len() {
+                        return Err("reap payload past the body".to_string());
+                    }
+                    out.extend_from_slice(&body[*pos..end]);
+                    *pos = end;
+                }
+                other => return Err(format!("invalid optional f64 tag {other}")),
+            }
+            let body_count = uleb(pos, out)? as usize;
+            for _ in 0..body_count {
+                rederive_instr(
+                    body,
+                    pos,
+                    strings,
+                    schema_count,
+                    function_count,
+                    out,
+                    depth + 1,
+                )?;
+            }
+            let legacy = uleb(pos, out)?;
+            if legacy != 0 {
+                return Err("function legacy ArrayType table is populated".to_string());
+            }
+            let identity = uleb(pos, out)? as usize;
+            if identity >= function_count {
+                return Err("function identity names no declaration".to_string());
+            }
+            let row_count = uleb(pos, out)? as usize;
+            let mut previous: Option<u64> = None;
+            for _ in 0..row_count {
+                let value = uleb(pos, out)?;
+                if previous.is_some_and(|p| p >= value) {
+                    return Err("function semantic rows are not strictly sorted".to_string());
+                }
+                previous = Some(value);
+                let mut descriptor = Vec::new();
+                rederive_type(body, pos, schema_count, &mut descriptor, 0)?;
+                out.extend_from_slice(&descriptor);
+            }
+        }
+        other => return Err(format!("opcode {other} is outside the core scalar subset")),
+    }
+    Ok(())
+}
+
 /// Returns `(prefix_bytes, prefix_len, string_count)` for `body`.
 pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), String> {
     if body.len() < 5 {
@@ -304,6 +469,38 @@ pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), St
         }
         exports.push(index);
     }
+
+    // --- module instruction list ---
+    let instruction_count = read_uleb(body, &mut pos)? as usize;
+    let mut instruction_bytes = Vec::new();
+    for _ in 0..instruction_count {
+        rederive_instr(
+            body,
+            &mut pos,
+            &strings,
+            schema_count,
+            function_count,
+            &mut instruction_bytes,
+            0,
+        )?;
+    }
+    // --- four reserved compatibility counts, then module semantic value rows ---
+    for _ in 0..4 {
+        if read_uleb(body, &mut pos)? != 0 {
+            return Err("a reserved compatibility count is populated".to_string());
+        }
+    }
+    let row_count = read_uleb(body, &mut pos)? as usize;
+    let mut rows: Vec<(u64, Vec<u8>)> = Vec::new();
+    for _ in 0..row_count {
+        let value = read_uleb(body, &mut pos)?;
+        if rows.last().is_some_and(|(previous, _)| *previous >= value) {
+            return Err("module semantic rows are not strictly sorted".to_string());
+        }
+        let mut descriptor = Vec::new();
+        rederive_type(body, &mut pos, schema_count, &mut descriptor, 0)?;
+        rows.push((value, descriptor));
+    }
     let prefix_len = pos;
 
     let mut out = Vec::new();
@@ -348,6 +545,16 @@ pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), St
     write_uleb(&mut out, exports.len() as u64);
     for index in &exports {
         write_uleb(&mut out, *index as u64);
+    }
+    write_uleb(&mut out, instruction_count as u64);
+    out.extend_from_slice(&instruction_bytes);
+    for _ in 0..4 {
+        write_uleb(&mut out, 0);
+    }
+    write_uleb(&mut out, rows.len() as u64);
+    for (value, descriptor) in &rows {
+        write_uleb(&mut out, *value);
+        out.extend_from_slice(descriptor);
     }
     Ok((out, prefix_len, strings.len()))
 }

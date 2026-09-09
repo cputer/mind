@@ -99,7 +99,7 @@ pub(super) fn append(vectors: &mut Vec<Vector>) {
     vectors.push(Vector {
         name: "pos_full_body_element_boundary",
         bytes: full_boundary,
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "real encoder body whose schema descriptor totals exactly 2^40 elements",
     });
 

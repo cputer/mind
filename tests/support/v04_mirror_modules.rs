@@ -159,6 +159,29 @@ pub(super) fn prefix_has_multibyte_uleb(prefix: &[u8]) -> bool {
 /// most one export sitting at index 0, which leaves an emitter that always
 /// writes 0, and an order rule that demands a gap between successive indices,
 /// indistinguishable from the correct code.
+/// A module carrying a ConstF64, whose payload is eight raw little-endian bytes
+/// rather than a ULEB.
+///
+/// Added after a mutation that copied SEVEN of those eight bytes survived the
+/// entire corpus: no fixture contained a ConstF64 at all, so the only
+/// fixed-width payload in the instruction grammar was never re-emitted once.
+/// The mirror does not interpret these bytes and performs no floating-point
+/// arithmetic; it relays them, so the property under test is purely the width.
+pub(super) fn module_with_const_f64() -> IRModule {
+    let registry = SchemaRegistryBuilder::default()
+        .finish()
+        .expect("empty registry");
+    let mut bundle = CanonicalModuleTypes::new(registry);
+    bundle
+        .set_module_value_type(ValueId(0), SemanticType::Scalar(ScalarType::F64))
+        .expect("module type");
+    let mut module = IRModule::new();
+    let value = module.fresh();
+    module.instrs.push(Instr::ConstF64(value, 1.5));
+    module.canonical_types = Some(Box::new(bundle));
+    module
+}
+
 pub(super) fn module_with_export_count(count: usize) -> IRModule {
     let mut module = module_value_only();
     for index in 0..count {

@@ -1,20 +1,37 @@
 // ===========================================================================
 // MIC3 v0x04 DECLARED-PREFIX MIRROR — pure MIND, executed as a native ELF.
 //
-// WHAT THIS IS. An additive, pure-MIND re-implementation of the DECLARED PREFIX
-// of the draft MIC3 `0x04` core codec: the header (magic, version byte,
-// required-surface bits), the string table, the schema section, and function
-// declarations with their signature descriptors. It reads an artifact named on
-// argv, decodes that prefix, re-emits it through its own canonical encoder, and
-// compares the re-emitted bytes against the consumed input bytes. Exit 0 means
-// the prefix decoded AND re-encoded byte for byte AND the artifact contained
-// nothing past the declared prefix.
+// WHAT THIS IS. An additive, pure-MIND re-implementation of the draft MIC3
+// `0x04` core codec covering the COMPLETE body: the header (magic, version
+// byte, required-surface bits), the string table, the schema section, function
+// declarations with their signature descriptors, module next_id, the export
+// list, the instruction list including nested function bodies, the four
+// reserved compatibility counts, and module semantic value rows. It reads an
+// artifact named on argv, decodes the body, re-emits it through its own
+// canonical encoder, and compares the re-emitted bytes against the consumed
+// input bytes. Exit 0 means the body decoded AND re-encoded byte for byte AND
+// the artifact contained nothing past it.
 //
-// WHAT THIS IS NOT. It is not a whole-codec mirror. Module next_id and the
-// export list ARE now decoded, validated and re-emitted. Everything after them
-// — instructions, the four reserved compatibility counts and module semantic
-// value rows — is DECLARED OUT OF SCOPE and REFUSED with its own exit
-// code (20), never silently accepted. A `0x04` artifact from the reference
+// WHAT THIS IS NOT. Wire acceptance is NOT semantic validity, and exit 0 must
+// not be read as the latter. These reference predicates are NOT implemented
+// here; each is a separately named outstanding obligation, not a rule this
+// program has checked:
+//
+//   * validate_core_value_ids — module next_id must cover every ValueId the
+//     instructions and module rows define. The mirror reads next_id and
+//     re-emits it without relating it to anything.
+//   * verify_canonical_metadata — a FnDef's ret_id must agree with its declared
+//     signature, and each function's semantic rows carry their own cumulative
+//     element budget, enforced in canonical_verify.rs rather than in the codec.
+//   * the "carries no semantic authority" condition, which refuses a body whose
+//     bundle is empty and whose instructions carry no metadata.
+//   * string-table minimality: the reference rebuilds the table from the
+//     strings actually referenced, so a body carrying an entry nothing names is
+//     noncanonical. The mirror re-emits the table it was given.
+//
+// A body this program exits 0 on is therefore WIRE-CANONICAL — it decoded, and
+// its canonical re-encoding is byte-identical to the bytes consumed — and
+// nothing stronger is claimed. Content past the body is still refused (20). A `0x04` artifact from the reference
 // encoder therefore exits 20 here, with its prefix proven byte-identical; it
 // does not exit 0, because this program cannot certify the rest.
 //
@@ -94,6 +111,11 @@
 //   34 INTRINSIC_CONTRACT   reserved intrinsic has no exact registered
 //                           name or `(i64...) -> i64` signature
 //   35 EXPORT_ORDER         export references are not strictly increasing
+//   36 INSTR_DEPTH          instruction nesting reaches the reference's 256
+//   37 UNKNOWN_OPCODE       opcode outside the core scalar subset
+//   38 RESERVED_NONZERO     a reserved compatibility count is not zero
+//   39 VALUE_ROW_ORDER      semantic value rows not strictly sorted by ValueId
+//   40 BAD_BINOP            binary operator tag outside the core set
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -1026,6 +1048,8 @@ pub fn mv_walk_functions(
     nschema: i64,
     tab: i64,
     sch: i64,
+    fnt: i64,
+    idx: i64,
     st: i64
 ) -> i64 {
     if n <= 0 {
@@ -1130,8 +1154,10 @@ pub fn mv_walk_functions(
         if kind == 2 {
             return mv_fail(st, 34);
         }
+        __mind_store_i64(fnt + 16 * idx + 0, owner);
+        __mind_store_i64(fnt + 16 * idx + 8, name);
         return mv_walk_functions(
-            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, st
+            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
         );
     }
     if present != 1 {
@@ -1157,7 +1183,11 @@ pub fn mv_walk_functions(
             return mv_fail(st, 34);
         }
     }
-    mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, st)
+    __mind_store_i64(fnt + 16 * idx + 0, owner);
+    __mind_store_i64(fnt + 16 * idx + 8, name);
+    mv_walk_functions(
+        buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
+    )
 }
 
 // ---- schema section: canonical re-emission --------------------------------
@@ -1287,6 +1317,438 @@ pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, 
     mv_emit_functions(inbuf, outbuf, p5, o5, n - 1, st)
 }
 
+// ---- function identity table ----------------------------------------------
+
+// Total identity bytes of function `i`, for the reference's identity-projection
+// charge. `fnt` holds one 16-byte row per admitted declaration: the owner and
+// name string indices, recorded by mv_walk_functions.
+pub fn mv_fn_ident_bytes(fnt: i64, tab: i64, i: i64) -> i64 {
+    let owner: i64 = __mind_load_i64(fnt + 16 * i + 0);
+    let name: i64 = __mind_load_i64(fnt + 16 * i + 8);
+    mv_str_len(tab, owner) + mv_str_len(tab, name)
+}
+
+// ---- instructions ---------------------------------------------------------
+
+// Read a ULEB at `pos` into st+8 and the end cursor into st+0, or return the
+// cause. Every instruction operand that is a bare value id uses this.
+pub fn mv_vid(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
+    mv_uleb(buf, len, pos, 0, 0, 1, st)
+}
+
+// An explicit 0/1 presence tag followed, when 1, by a value id.
+pub fn mv_opt_vid(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
+    if pos >= len {
+        return mv_fail(st, 10);
+    }
+    let tag: i64 = __mind_load_i8(buf + pos);
+    if tag == 0 {
+        __mind_store_i64(st + 0, pos + 1);
+        return 0;
+    }
+    if tag != 1 {
+        return mv_fail(st, 32);
+    }
+    mv_vid(buf, len, pos + 1, st)
+}
+
+// An explicit 0/1 presence tag followed, when 1, by eight little-endian bytes.
+// The bytes are not interpreted: the mirror re-emits them verbatim and never
+// performs floating-point arithmetic, so no rounding behaviour is introduced.
+pub fn mv_opt_f64(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
+    if pos >= len {
+        return mv_fail(st, 10);
+    }
+    let tag: i64 = __mind_load_i8(buf + pos);
+    if tag == 0 {
+        __mind_store_i64(st + 0, pos + 1);
+        return 0;
+    }
+    if tag != 1 {
+        return mv_fail(st, 32);
+    }
+    if pos + 9 > len {
+        return mv_fail(st, 10);
+    }
+    __mind_store_i64(st + 0, pos + 9);
+    0
+}
+
+// A reserved compatibility count. The reference checks the remaining-bytes
+// bound BEFORE the zero test, and that order is observable: a huge nonzero
+// count is refused as a bound breach, a small one as a populated table. Both
+// are reproduced, and neither charges the budget.
+pub fn mv_reserved_zero(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    let n: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    if n > len - p1 {
+        return mv_fail(st, 10);
+    }
+    if n != 0 {
+        return mv_fail(st, 38);
+    }
+    0
+}
+
+// `n` semantic value rows, each a value id and a descriptor, strictly sorted by
+// value id. Used for a function's own scoped table.
+pub fn mv_walk_value_rows(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    prev: i64,
+    nschema: i64,
+    sch: i64,
+    tab: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_vid(buf, len, pos, st);
+    if rc != 0 {
+        return rc;
+    }
+    let vid: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    if prev >= 0 {
+        if vid <= prev {
+            return mv_fail(st, 39);
+        }
+    }
+    let rct: i64 = mv_type_expr(buf, len, p1, 0, nschema, sch, tab, st);
+    if rct != 0 {
+        return rct;
+    }
+    let p2: i64 = mv_st_cursor(st);
+    mv_walk_value_rows(buf, len, p2, n - 1, vid, nschema, sch, tab, st)
+}
+
+// `n` FnDef parameters, each a string reference and a value id.
+pub fn mv_walk_named_values(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    nstr: i64,
+    tab: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_string_ref(buf, len, pos, nstr, tab, st);
+    if rc != 0 {
+        return rc;
+    }
+    let p1: i64 = mv_st_cursor(st);
+    let rcv: i64 = mv_vid(buf, len, p1, st);
+    if rcv != 0 {
+        return rcv;
+    }
+    let p2: i64 = mv_st_cursor(st);
+    mv_walk_named_values(buf, len, p2, n - 1, nstr, tab, st)
+}
+
+// `n` call arguments, each a bare value id.
+pub fn mv_walk_args(buf: i64, len: i64, pos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_vid(buf, len, pos, st);
+    if rc != 0 {
+        return rc;
+    }
+    let p1: i64 = mv_st_cursor(st);
+    mv_walk_args(buf, len, p1, n - 1, st)
+}
+
+// Decode one instruction at `pos`. Stores the end cursor at st+0.
+//
+// The depth limit and the per-instruction charge are applied BEFORE the opcode
+// byte is read, exactly as the reference does, so a stream that reaches the
+// nesting limit is refused without consuming an opcode.
+//
+// Opcodes outside the core scalar subset are refused by name (37). They are not
+// skipped and their operands are never guessed at: an unknown opcode makes the
+// remaining byte stream unparseable, so continuing would be invention.
+pub fn mv_instr(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    depth: i64,
+    nstr: i64,
+    nschema: i64,
+    nfunc: i64,
+    tab: i64,
+    sch: i64,
+    fnt: i64,
+    st: i64
+) -> i64 {
+    if depth >= 256 {
+        return mv_fail(st, 36);
+    }
+    let rc0: i64 = mv_charge(st, 320);
+    if rc0 != 0 {
+        return rc0;
+    }
+    if pos >= len {
+        return mv_fail(st, 10);
+    }
+    let op: i64 = __mind_load_i8(buf + pos);
+
+    // ConstI64: dst, then a zigzag ULEB payload the mirror re-emits verbatim.
+    if op == 1 {
+        let rc1: i64 = mv_vid(buf, len, pos + 1, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        return mv_uleb(buf, len, p1, 0, 0, 1, st);
+    }
+
+    // ConstF64: dst, then eight little-endian bytes.
+    if op == 2 {
+        let rc1: i64 = mv_vid(buf, len, pos + 1, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        if p1 + 8 > len {
+            return mv_fail(st, 10);
+        }
+        __mind_store_i64(st + 0, p1 + 8);
+        return 0;
+    }
+
+    // BinOp: dst, operator tag, lhs, rhs. Tags 0..10 are the core operators;
+    // 11 and above are std-surface operators, and a body carrying one declares
+    // the std-surface bit, which this mirror already refused at the header.
+    if op == 4 {
+        let rc1: i64 = mv_vid(buf, len, pos + 1, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        if p1 >= len {
+            return mv_fail(st, 10);
+        }
+        let tag: i64 = __mind_load_i8(buf + p1);
+        if tag < 0 {
+            return mv_fail(st, 40);
+        }
+        if tag > 10 {
+            return mv_fail(st, 40);
+        }
+        let rc2: i64 = mv_vid(buf, len, p1 + 1, st);
+        if rc2 != 0 {
+            return rc2;
+        }
+        let p2: i64 = mv_st_cursor(st);
+        return mv_vid(buf, len, p2, st);
+    }
+
+    // Output: one value id.
+    if op == 19 {
+        return mv_vid(buf, len, pos + 1, st);
+    }
+
+    // Return: an optional value id.
+    if op == 23 {
+        return mv_opt_vid(buf, len, pos + 1, st);
+    }
+
+    // Param: dst, name, index.
+    if op == 24 {
+        let rc1: i64 = mv_vid(buf, len, pos + 1, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        let rc2: i64 = mv_string_ref(buf, len, p1, nstr, tab, st);
+        if rc2 != 0 {
+            return rc2;
+        }
+        let p2: i64 = mv_st_cursor(st);
+        return mv_uleb(buf, len, p2, 0, 0, 1, st);
+    }
+
+    // Call: dst, name, argument count, arguments, resolved callee.
+    if op == 22 {
+        let rc1: i64 = mv_vid(buf, len, pos + 1, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        let rc2: i64 = mv_string_ref(buf, len, p1, nstr, tab, st);
+        if rc2 != 0 {
+            return rc2;
+        }
+        let p2: i64 = mv_st_cursor(st);
+        let rc3: i64 = mv_uleb(buf, len, p2, 0, 0, 1, st);
+        if rc3 != 0 {
+            return rc3;
+        }
+        let nargs: i64 = mv_st_value(st);
+        let p3: i64 = mv_st_cursor(st);
+        if nargs > len - p3 {
+            return mv_fail(st, 10);
+        }
+        let rcc: i64 = mv_charge(st, nargs * 32);
+        if rcc != 0 {
+            return rcc;
+        }
+        let rc4: i64 = mv_walk_args(buf, len, p3, nargs, st);
+        if rc4 != 0 {
+            return rc4;
+        }
+        let p4: i64 = mv_st_cursor(st);
+        let rc5: i64 = mv_uleb(buf, len, p4, 0, 0, 1, st);
+        if rc5 != 0 {
+            return rc5;
+        }
+        let fidx: i64 = mv_st_value(st);
+        let p5: i64 = mv_st_cursor(st);
+        if fidx >= nfunc {
+            return mv_fail(st, 23);
+        }
+        let rcf: i64 = mv_charge(st, mv_fn_ident_bytes(fnt, tab, fidx) * 8);
+        if rcf != 0 {
+            return rcf;
+        }
+        __mind_store_i64(st + 0, p5);
+        return 0;
+    }
+
+    // FnDef: name, parameters, optional return id, optional reap threshold,
+    // a NESTED body, the reserved legacy table, the resolved identity, and the
+    // function's own scoped semantic value rows.
+    if op == 21 {
+        let rc1: i64 = mv_string_ref(buf, len, pos + 1, nstr, tab, st);
+        if rc1 != 0 {
+            return rc1;
+        }
+        let p1: i64 = mv_st_cursor(st);
+        let rc2: i64 = mv_uleb(buf, len, p1, 0, 0, 1, st);
+        if rc2 != 0 {
+            return rc2;
+        }
+        let nparam: i64 = mv_st_value(st);
+        let p2: i64 = mv_st_cursor(st);
+        if nparam > len - p2 {
+            return mv_fail(st, 10);
+        }
+        let rcp: i64 = mv_charge(st, nparam * 96);
+        if rcp != 0 {
+            return rcp;
+        }
+        let rc3: i64 = mv_walk_named_values(buf, len, p2, nparam, nstr, tab, st);
+        if rc3 != 0 {
+            return rc3;
+        }
+        let p3: i64 = mv_st_cursor(st);
+        let rc4: i64 = mv_opt_vid(buf, len, p3, st);
+        if rc4 != 0 {
+            return rc4;
+        }
+        let p4: i64 = mv_st_cursor(st);
+        let rc5: i64 = mv_opt_f64(buf, len, p4, st);
+        if rc5 != 0 {
+            return rc5;
+        }
+        let p5: i64 = mv_st_cursor(st);
+        let rc6: i64 = mv_uleb(buf, len, p5, 0, 0, 1, st);
+        if rc6 != 0 {
+            return rc6;
+        }
+        let nbody: i64 = mv_st_value(st);
+        let p6: i64 = mv_st_cursor(st);
+        if nbody > len - p6 {
+            return mv_fail(st, 10);
+        }
+        let rcb: i64 = mv_charge(st, nbody * 320);
+        if rcb != 0 {
+            return rcb;
+        }
+        let rc7: i64 = mv_walk_instrs(
+            buf, len, p6, nbody, depth + 1, nstr, nschema, nfunc, tab, sch, fnt, st
+        );
+        if rc7 != 0 {
+            return rc7;
+        }
+        let p7: i64 = mv_st_cursor(st);
+        let rc8: i64 = mv_reserved_zero(buf, len, p7, st);
+        if rc8 != 0 {
+            return rc8;
+        }
+        let p8: i64 = mv_st_cursor(st);
+        let rc9: i64 = mv_uleb(buf, len, p8, 0, 0, 1, st);
+        if rc9 != 0 {
+            return rc9;
+        }
+        let fidx: i64 = mv_st_value(st);
+        let p9: i64 = mv_st_cursor(st);
+        if fidx >= nfunc {
+            return mv_fail(st, 23);
+        }
+        let rcf: i64 = mv_charge(st, mv_fn_ident_bytes(fnt, tab, fidx) * 8);
+        if rcf != 0 {
+            return rcf;
+        }
+        let rc10: i64 = mv_uleb(buf, len, p9, 0, 0, 1, st);
+        if rc10 != 0 {
+            return rc10;
+        }
+        let nrow: i64 = mv_st_value(st);
+        let p10: i64 = mv_st_cursor(st);
+        if nrow > len - p10 {
+            return mv_fail(st, 10);
+        }
+        let rcr: i64 = mv_charge(st, nrow * 160);
+        if rcr != 0 {
+            return rcr;
+        }
+        return mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, st);
+    }
+
+    mv_fail(st, 37)
+}
+
+// `n` instructions in sequence at one nesting level.
+pub fn mv_walk_instrs(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    depth: i64,
+    nstr: i64,
+    nschema: i64,
+    nfunc: i64,
+    tab: i64,
+    sch: i64,
+    fnt: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_instr(buf, len, pos, depth, nstr, nschema, nfunc, tab, sch, fnt, st);
+    if rc != 0 {
+        return rc;
+    }
+    let p1: i64 = mv_st_cursor(st);
+    mv_walk_instrs(buf, len, p1, n - 1, depth, nstr, nschema, nfunc, tab, sch, fnt, st)
+}
+
 // ---- module next_id and exports -------------------------------------------
 
 // Walk `n` remaining export references. Each is a string index, and the indices
@@ -1346,6 +1808,177 @@ pub fn mv_emit_exports(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st
     let p1: i64 = mv_st_cursor(st);
     let o1: i64 = mv_put_uleb(outbuf, opos, idx);
     mv_emit_exports(inbuf, outbuf, p1, o1, n - 1, st)
+}
+
+// ---- instructions: canonical re-emission -----------------------------------
+
+// Re-emit one ULEB read from `inbuf` at `ipos`. Stores the next input offset at
+// st+0 and returns the next output offset. Regenerating rather than copying is
+// what makes the comparison meaningful for these fields.
+pub fn mv_relay_uleb(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> i64 {
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let v: i64 = mv_st_value(st);
+    mv_put_uleb(outbuf, opos, v)
+}
+
+pub fn mv_emit_value_rows(
+    inbuf: i64,
+    outbuf: i64,
+    ipos: i64,
+    opos: i64,
+    n: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos, opos, st);
+    let p1: i64 = mv_st_cursor(st);
+    let o2: i64 = mv_emit_type(inbuf, outbuf, p1, o1, st);
+    let p2: i64 = mv_st_cursor(st);
+    mv_emit_value_rows(inbuf, outbuf, p2, o2, n - 1, st)
+}
+
+pub fn mv_emit_named_values(
+    inbuf: i64,
+    outbuf: i64,
+    ipos: i64,
+    opos: i64,
+    n: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos, opos, st);
+    let p1: i64 = mv_st_cursor(st);
+    let o2: i64 = mv_relay_uleb(inbuf, outbuf, p1, o1, st);
+    let p2: i64 = mv_st_cursor(st);
+    mv_emit_named_values(inbuf, outbuf, p2, o2, n - 1, st)
+}
+
+pub fn mv_emit_args(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos, opos, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_emit_args(inbuf, outbuf, p1, o1, n - 1, st)
+}
+
+// Re-emit one instruction. Only called after mv_instr admitted the same bytes,
+// so every read is in bounds and the opcode is one of the core set.
+pub fn mv_emit_instr(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> i64 {
+    let op: i64 = __mind_load_i8(inbuf + ipos);
+    __mind_store_i8(outbuf + opos, op);
+    if op == 1 {
+        let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+        let p1: i64 = mv_st_cursor(st);
+        return mv_relay_uleb(inbuf, outbuf, p1, o1, st);
+    }
+    if op == 2 {
+        let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+        let p1: i64 = mv_st_cursor(st);
+        mv_copy(inbuf + p1, outbuf + o1, 8, 0);
+        __mind_store_i64(st + 0, p1 + 8);
+        return o1 + 8;
+    }
+    if op == 4 {
+        let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+        let p1: i64 = mv_st_cursor(st);
+        __mind_store_i8(outbuf + o1, __mind_load_i8(inbuf + p1));
+        let o2: i64 = mv_relay_uleb(inbuf, outbuf, p1 + 1, o1 + 1, st);
+        let p2: i64 = mv_st_cursor(st);
+        return mv_relay_uleb(inbuf, outbuf, p2, o2, st);
+    }
+    if op == 19 {
+        return mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+    }
+    if op == 23 {
+        let tag: i64 = __mind_load_i8(inbuf + ipos + 1);
+        __mind_store_i8(outbuf + opos + 1, tag);
+        if tag == 0 {
+            __mind_store_i64(st + 0, ipos + 2);
+            return opos + 2;
+        }
+        return mv_relay_uleb(inbuf, outbuf, ipos + 2, opos + 2, st);
+    }
+    if op == 24 {
+        let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+        let p1: i64 = mv_st_cursor(st);
+        let o2: i64 = mv_relay_uleb(inbuf, outbuf, p1, o1, st);
+        let p2: i64 = mv_st_cursor(st);
+        return mv_relay_uleb(inbuf, outbuf, p2, o2, st);
+    }
+    if op == 22 {
+        let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+        let p1: i64 = mv_st_cursor(st);
+        let o2: i64 = mv_relay_uleb(inbuf, outbuf, p1, o1, st);
+        let p2: i64 = mv_st_cursor(st);
+        mv_uleb(inbuf, p2 + 12, p2, 0, 0, 1, st);
+        let nargs: i64 = mv_st_value(st);
+        let p3: i64 = mv_st_cursor(st);
+        let o3: i64 = mv_put_uleb(outbuf, o2, nargs);
+        let o4: i64 = mv_emit_args(inbuf, outbuf, p3, o3, nargs, st);
+        let p4: i64 = mv_st_cursor(st);
+        return mv_relay_uleb(inbuf, outbuf, p4, o4, st);
+    }
+    // FnDef
+    let o1: i64 = mv_relay_uleb(inbuf, outbuf, ipos + 1, opos + 1, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_uleb(inbuf, p1 + 12, p1, 0, 0, 1, st);
+    let nparam: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    let o2: i64 = mv_put_uleb(outbuf, o1, nparam);
+    let o3: i64 = mv_emit_named_values(inbuf, outbuf, p2, o2, nparam, st);
+    let p3: i64 = mv_st_cursor(st);
+    let rtag: i64 = __mind_load_i8(inbuf + p3);
+    __mind_store_i8(outbuf + o3, rtag);
+    let o4: i64 = if rtag == 0 {
+        o3 + 1
+    } else {
+        mv_relay_uleb(inbuf, outbuf, p3 + 1, o3 + 1, st)
+    };
+    let p4: i64 = if rtag == 0 {
+        p3 + 1
+    } else {
+        mv_st_cursor(st)
+    };
+    let ftag: i64 = __mind_load_i8(inbuf + p4);
+    __mind_store_i8(outbuf + o4, ftag);
+    let o5: i64 = if ftag == 0 { o4 + 1 } else { o4 + 9 };
+    let p5: i64 = if ftag == 0 { p4 + 1 } else { p4 + 9 };
+    if ftag != 0 {
+        mv_copy(inbuf + p4 + 1, outbuf + o4 + 1, 8, 0);
+    }
+    mv_uleb(inbuf, p5 + 12, p5, 0, 0, 1, st);
+    let nbody: i64 = mv_st_value(st);
+    let p6: i64 = mv_st_cursor(st);
+    let o6: i64 = mv_put_uleb(outbuf, o5, nbody);
+    let o7: i64 = mv_emit_instrs(inbuf, outbuf, p6, o6, nbody, st);
+    let p7: i64 = mv_st_cursor(st);
+    let o8: i64 = mv_relay_uleb(inbuf, outbuf, p7, o7, st);
+    let p8: i64 = mv_st_cursor(st);
+    let o9: i64 = mv_relay_uleb(inbuf, outbuf, p8, o8, st);
+    let p9: i64 = mv_st_cursor(st);
+    mv_uleb(inbuf, p9 + 12, p9, 0, 0, 1, st);
+    let nrow: i64 = mv_st_value(st);
+    let p10: i64 = mv_st_cursor(st);
+    let o10: i64 = mv_put_uleb(outbuf, o9, nrow);
+    mv_emit_value_rows(inbuf, outbuf, p10, o10, nrow, st)
+}
+
+pub fn mv_emit_instrs(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    let o1: i64 = mv_emit_instr(inbuf, outbuf, ipos, opos, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_emit_instrs(inbuf, outbuf, p1, o1, n - 1, st)
 }
 
 // ---- byte comparison ------------------------------------------------------
@@ -1537,8 +2170,9 @@ pub fn main() -> i64 {
     if rc9 != 0 {
         return rc9;
     }
+    let fnt: i64 = __mind_alloc(16 * nfunc + 16);
     let rc10: i64 = mv_walk_functions(
-        inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, st
+        inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st
     );
     if rc10 != 0 {
         return rc10;
@@ -1571,6 +2205,72 @@ pub fn main() -> i64 {
     if rc14 != 0 {
         return rc14;
     }
+    let after_exports: i64 = mv_st_cursor(st);
+
+    // --- module instruction list ---
+    let rc15: i64 = mv_uleb(inbuf, len, after_exports, 0, 0, 1, st);
+    if rc15 != 0 {
+        return rc15;
+    }
+    let ninstr: i64 = mv_st_value(st);
+    let instr_start: i64 = mv_st_cursor(st);
+    if ninstr > len - instr_start {
+        return 10;
+    }
+    let rc16: i64 = mv_charge(st, ninstr * 320);
+    if rc16 != 0 {
+        return rc16;
+    }
+    let rc17: i64 = mv_walk_instrs(
+        inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, st
+    );
+    if rc17 != 0 {
+        return rc17;
+    }
+    let after_instrs: i64 = mv_st_cursor(st);
+
+    // --- four reserved compatibility counts, all required to be zero ---
+    let rc18: i64 = mv_reserved_zero(inbuf, len, after_instrs, st);
+    if rc18 != 0 {
+        return rc18;
+    }
+    let z1: i64 = mv_st_cursor(st);
+    let rc19: i64 = mv_reserved_zero(inbuf, len, z1, st);
+    if rc19 != 0 {
+        return rc19;
+    }
+    let z2: i64 = mv_st_cursor(st);
+    let rc20: i64 = mv_reserved_zero(inbuf, len, z2, st);
+    if rc20 != 0 {
+        return rc20;
+    }
+    let z3: i64 = mv_st_cursor(st);
+    let rc21: i64 = mv_reserved_zero(inbuf, len, z3, st);
+    if rc21 != 0 {
+        return rc21;
+    }
+    let z4: i64 = mv_st_cursor(st);
+
+    // --- module semantic value rows ---
+    let rc22: i64 = mv_uleb(inbuf, len, z4, 0, 0, 1, st);
+    if rc22 != 0 {
+        return rc22;
+    }
+    let nrow: i64 = mv_st_value(st);
+    let row_start: i64 = mv_st_cursor(st);
+    if nrow > len - row_start {
+        return 10;
+    }
+    let rc23: i64 = mv_charge(st, nrow * 160);
+    if rc23 != 0 {
+        return rc23;
+    }
+    let rc24: i64 = mv_walk_value_rows(
+        inbuf, len, row_start, nrow, 0 - 1, nschema, sch, tab, st
+    );
+    if rc24 != 0 {
+        return rc24;
+    }
     let prefix_len: i64 = mv_st_cursor(st);
     if prefix_len > mv_max_prefix() {
         return 17;
@@ -1595,8 +2295,16 @@ pub fn main() -> i64 {
     let o9: i64 = mv_put_uleb(outbuf, o8, next_id);
     let o10: i64 = mv_put_uleb(outbuf, o9, nexport);
     let o11: i64 = mv_emit_exports(inbuf, outbuf, ex_start, o10, nexport, st);
+    let o12: i64 = mv_put_uleb(outbuf, o11, ninstr);
+    let o13: i64 = mv_emit_instrs(inbuf, outbuf, instr_start, o12, ninstr, st);
+    let o14: i64 = mv_put_uleb(outbuf, o13, 0);
+    let o15: i64 = mv_put_uleb(outbuf, o14, 0);
+    let o16: i64 = mv_put_uleb(outbuf, o15, 0);
+    let o17: i64 = mv_put_uleb(outbuf, o16, 0);
+    let o18: i64 = mv_put_uleb(outbuf, o17, nrow);
+    let o19: i64 = mv_emit_value_rows(inbuf, outbuf, row_start, o18, nrow, st);
 
-    if o11 != prefix_len {
+    if o19 != prefix_len {
         return 18;
     }
     if mv_equal(inbuf, outbuf, prefix_len, 0) == 0 {
@@ -1607,7 +2315,7 @@ pub fn main() -> i64 {
     // be redone outside this process rather than taken on its word.
     if __mind_argc() > 2 {
         if mv_is_dump(__mind_argv(2)) == 1 {
-            __mind_write(1, outbuf, o11, 0 - 1);
+            __mind_write(1, outbuf, o19, 0 - 1);
         }
     }
 

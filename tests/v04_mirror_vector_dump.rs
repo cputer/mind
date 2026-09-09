@@ -97,6 +97,11 @@ mod code {
     pub const DESCRIPTOR_ELEMENTS: u32 = 33;
     pub const INTRINSIC_CONTRACT: u32 = 34;
     pub const EXPORT_ORDER: u32 = 35;
+    pub const INSTR_DEPTH: u32 = 36;
+    pub const UNKNOWN_OPCODE: u32 = 37;
+    pub const RESERVED_NONZERO: u32 = 38;
+    pub const VALUE_ROW_ORDER: u32 = 39;
+    pub const BAD_BINOP: u32 = 40;
 }
 fn splice_surface(prefix: &[u8], replacement: &[u8]) -> Vec<u8> {
     // The surface field starts at offset 5; find its end by walking continuations.
@@ -170,13 +175,13 @@ fn v04_prefix_vectors() {
     vectors.push(Vector {
         name: "pos_full_body_small",
         bytes: full_small.clone(),
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "real encoder body: prefix verified, remainder explicitly refused",
     });
     vectors.push(Vector {
         name: "pos_full_body_scoped",
         bytes: full_scoped.clone(),
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "real encoder body: prefix verified, remainder explicitly refused",
     });
 
@@ -211,7 +216,7 @@ fn v04_prefix_vectors() {
     vectors.push(Vector {
         name: "pos_full_body_long_string",
         bytes: full_long.clone(),
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "real encoder body with a multi-byte ULEB string length",
     });
     descriptor_vectors::append(&mut vectors);
@@ -647,7 +652,10 @@ fn v04_prefix_vectors() {
                 // reference must consume the vector ENTIRELY. A boundary error
                 // the oracle and the mirror happened to share would still be
                 // caught here, because this number comes from neither of them.
-                if let Ok(parsed) = &verdict {
+                // The trailing-bytes vector is the one deliberate exception:
+                // the reference's BODY parser stops at the boundary and reports
+                // it, and refusing what follows is the whole-artifact rule.
+                if let (Ok(parsed), false) = (&verdict, vector.name == "pos_trailing_after_body") {
                     assert_eq!(
                         parsed.consumed,
                         vector.bytes.len(),
@@ -656,22 +664,16 @@ fn v04_prefix_vectors() {
                     );
                 }
             }
-            if vector.name.starts_with("pos_full_body") {
-                assert!(
-                    verdict.is_ok(),
-                    "{} must parse under the reference decoder",
-                    vector.name
-                );
-                accepted += 1;
-            } else {
-                assert!(
-                    verdict.is_err(),
-                    "{} is a deliberate prefix slice; the whole-body reference \
-                     decoder is expected to want more",
-                    vector.name
-                );
-                refused += 1;
-            }
+            // The mirror's declared subset now reaches the END of the body, so a
+            // slice taken at that boundary IS the whole body and the reference
+            // accepts it. This assertion used to require the opposite, and its
+            // flip is the visible signal that complete-body decoding landed.
+            assert!(
+                verdict.is_ok(),
+                "{} must parse under the reference decoder",
+                vector.name
+            );
+            accepted += 1;
         } else {
             assert!(
                 verdict.is_err(),
@@ -682,7 +684,10 @@ fn v04_prefix_vectors() {
             refused += 1;
         }
     }
-    assert_eq!(accepted, 6, "six full-body positives");
+    assert_eq!(
+        accepted, 15,
+        "every positive is a complete body, plus the trailing-bytes vector"
+    );
     assert!(refused >= 14, "at least fourteen refusals, got {refused}");
 
     // --- write the corpus ------------------------------------------------

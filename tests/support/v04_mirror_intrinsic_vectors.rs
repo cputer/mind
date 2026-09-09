@@ -118,7 +118,7 @@ pub(super) fn add_intrinsic_vectors(vectors: &mut Vec<Vector>) {
     vectors.push(Vector {
         name: "pos_full_body_intrinsic_catalog",
         bytes: all_valid,
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "all ten exact registered intrinsic names and i64 wire signatures",
     });
 

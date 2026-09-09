@@ -11,7 +11,9 @@
 
 use libmind::ir::compact::v3::emit_mic3_checked;
 
-use super::mirror_modules::{module_with_export_count, module_with_wide_next_id};
+use super::mirror_modules::{
+    module_with_const_f64, module_with_export_count, module_with_wide_next_id,
+};
 use super::mirror_oracle::{rederive_prefix, synthetic_head, write_uleb};
 use super::{Vector, code};
 
@@ -44,8 +46,22 @@ fn append_emitter_positives(vectors: &mut Vec<Vector>) {
     vectors.push(Vector {
         name: "pos_full_body_consecutive_exports",
         bytes: wide,
-        expect: code::REMAINDER_REFUSED,
+        expect: code::OK_EXACT,
         note: "same body entire: prefix verified, remainder refused",
+    });
+
+    let f64_body = emit_mic3_checked(&module_with_const_f64()).expect("const f64 body");
+    let (_, consumed_f, _) = rederive_prefix(&f64_body).expect("const f64 prefix");
+    assert_eq!(
+        consumed_f,
+        f64_body.len(),
+        "const f64 body decodes entirely"
+    );
+    vectors.push(Vector {
+        name: "pos_full_body_const_f64",
+        bytes: f64_body,
+        expect: code::OK_EXACT,
+        note: "ConstF64: the only fixed-width eight-byte payload in the grammar",
     });
 
     let wide_id = emit_mic3_checked(&module_with_wide_next_id()).expect("wide next_id body");
@@ -58,8 +74,108 @@ fn append_emitter_positives(vectors: &mut Vec<Vector>) {
     });
 }
 
+/// A COMPLETE minimal body: empty string table, no schemas, no functions,
+/// next_id 1, no exports, one ConstI64, the four reserved zeros, and one module
+/// semantic row. Byte-for-byte the shape the encoder emits for a value-only
+/// module, which is why these negatives can perturb one field and leave the
+/// rest of a genuinely acceptable body intact.
+fn complete_minimal_body() -> Vec<u8> {
+    let mut out = synthetic_head(&[]);
+    write_uleb(&mut out, 0); // schema count
+    write_uleb(&mut out, 0); // function count
+    write_uleb(&mut out, 1); // next_id
+    write_uleb(&mut out, 0); // export count
+    write_uleb(&mut out, 1); // instruction count
+    out.extend_from_slice(&[0x01, 0x00, 0x54]); // ConstI64 %0, zigzag(42)
+    for _ in 0..4 {
+        write_uleb(&mut out, 0); // reserved compatibility counts
+    }
+    write_uleb(&mut out, 1); // module semantic rows
+    write_uleb(&mut out, 0); // %0
+    out.extend_from_slice(&[0x00, 0x01]); // Scalar(I64)
+    out
+}
+
+/// Body-tail negatives. Each perturbs exactly one field of a complete body.
+fn append_body_tail_negatives(vectors: &mut Vec<Vector>) {
+    // The instruction list is where an unsupported construct must be refused by
+    // NAME rather than skipped: an unknown opcode makes the remaining stream
+    // unparseable, so continuing would be invention.
+    let mut unknown_op = complete_minimal_body();
+    unknown_op[12] = 0x03; // OP_CONST_TENSOR: outside the core scalar subset
+    vectors.push(Vector {
+        name: "neg_unknown_opcode",
+        bytes: unknown_op,
+        expect: code::UNKNOWN_OPCODE,
+        note: "tensor opcode is outside the core scalar subset",
+    });
+
+    let mut bad_binop = synthetic_head(&[]);
+    write_uleb(&mut bad_binop, 0);
+    write_uleb(&mut bad_binop, 0);
+    write_uleb(&mut bad_binop, 3);
+    write_uleb(&mut bad_binop, 0);
+    write_uleb(&mut bad_binop, 1);
+    // BinOp %2 = %0 <tag 0x7f> %1 -- a tag no build defines
+    bad_binop.extend_from_slice(&[0x04, 0x02, 0x7f, 0x00, 0x01]);
+    vectors.push(Vector {
+        name: "neg_bad_binop_tag",
+        bytes: bad_binop,
+        expect: code::BAD_BINOP,
+        note: "binary operator tag outside the core set",
+    });
+
+    // A reserved compatibility count that is not zero. Small, so it is refused
+    // as populated rather than as a bound breach.
+    let mut reserved = complete_minimal_body();
+    reserved[15] = 1;
+    vectors.push(Vector {
+        name: "neg_reserved_count_nonzero",
+        bytes: reserved,
+        expect: code::RESERVED_NONZERO,
+        note: "a reserved compatibility count is populated",
+    });
+
+    // Two module semantic rows in descending ValueId order.
+    let mut rows = synthetic_head(&[]);
+    write_uleb(&mut rows, 0);
+    write_uleb(&mut rows, 0);
+    write_uleb(&mut rows, 2);
+    write_uleb(&mut rows, 0);
+    write_uleb(&mut rows, 0); // no instructions
+    for _ in 0..4 {
+        write_uleb(&mut rows, 0);
+    }
+    write_uleb(&mut rows, 2);
+    write_uleb(&mut rows, 1);
+    rows.extend_from_slice(&[0x00, 0x01]);
+    write_uleb(&mut rows, 0);
+    rows.extend_from_slice(&[0x00, 0x01]);
+    vectors.push(Vector {
+        name: "neg_unsorted_value_rows",
+        bytes: rows,
+        expect: code::VALUE_ROW_ORDER,
+        note: "module semantic rows in descending ValueId order",
+    });
+
+    // Trailing content after a COMPLETE body. Named pos_ because the reference's
+    // BODY parser accepts it and reports the boundary -- rejecting trailing
+    // content is the whole-artifact rule, which the mirror implements. This is
+    // the only vector whose reference consumed length is deliberately shorter
+    // than the vector, and the generator exempts it for that reason.
+    let mut trailing = complete_minimal_body();
+    trailing.push(0x00);
+    vectors.push(Vector {
+        name: "pos_trailing_after_body",
+        bytes: trailing,
+        expect: code::REMAINDER_REFUSED,
+        note: "complete body followed by one trailing byte",
+    });
+}
+
 pub fn append(vectors: &mut Vec<Vector>) {
     append_emitter_positives(vectors);
+    append_body_tail_negatives(vectors);
     let table = ["alpha", "beta"];
 
     // Descending export references. The reference keeps exports in a set, so a
