@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1720 | **Est. tokens:** ~3334962
-**Generated:** 2026-09-09 01:09 UTC
+**Files:** 1720 | **Est. tokens:** ~3335410
+**Generated:** 2026-09-09 01:20 UTC
 
 ## Token Budget Guide
 
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 390 | ~777510 |
+| `tests/` | 390 | ~777870 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -183,7 +183,7 @@
 | `tests/mindfuzz_cross_substrate/known_environmental/` | 2 | ~556 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
-| `tests/native_bridge_support/` | 2 | ~2177 |
+| `tests/native_bridge_support/` | 2 | ~2265 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 163 | ~10627 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
@@ -1971,13 +1971,13 @@
 ### `tests/native_bridge_support/`
 
 - `draining_native_compiler.rs` (~300 tok, medium) — Host-native compiler fixture for admission-only controls.
-- `mod.rs` (~1877 tok, huge) — Shared harness for the native module-bridge integration controls.
+- `mod.rs` (~1965 tok, huge) — Shared harness for the native module-bridge integration controls.
 ### `tests/`
 
 - `native_closure_admission.rs` (~3941 tok, huge) — Copyright 2025 STARGA Inc.
 - `native_default_profile_imports.rs` (~3506 tok, huge) — Default-feature-profile controls for the native backend's import admission.
-- `native_module_bridge_controls.rs` (~8085 tok, huge) — Native module-bridge controls: SOURCE RESOLUTION and ADMISSION.
-- `native_module_bridge_visibility_controls.rs` (~3628 tok, huge) — Native module-bridge controls: VISIBILITY, EMIT KIND, CROSS-INVOCATION
+- `native_module_bridge_controls.rs` (~8230 tok, huge) — Native module-bridge controls: SOURCE RESOLUTION and ADMISSION.
+- `native_module_bridge_visibility_controls.rs` (~3843 tok, huge) — Native module-bridge controls: VISIBILITY, EMIT KIND, CROSS-INVOCATION
 - `native_opt_wiring.rs` (~1953 tok, huge) — Copyright 2025 STARGA Inc.
 - `nerve_numerics_lint.rs` (~4079 tok, huge) — Copyright 2025 STARGA Inc.
 - `nested_block_surface_run.rs` (~990 tok, large) — Copyright 2025 STARGA Inc.

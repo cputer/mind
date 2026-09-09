@@ -235,6 +235,8 @@ fn retargeted_dependency_changes_the_verdict() {
     );
     let (a, _, art_a) = p.build_native("src/main.mind");
     assert_eq!(a, 0);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let captured_a = p.captured_source_image();
     let bytes = art_a.expect("artifact");
     assert_native_result(&p, &bytes, 7, "initial dependency result");
 
@@ -245,6 +247,26 @@ fn retargeted_dependency_changes_the_verdict() {
     );
     let (b, err, art_b) = p.build_native("src/main.mind");
     assert_eq!(b, 0, "{err}");
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let captured_b = p.captured_source_image();
+        assert_ne!(
+            captured_a, captured_b,
+            "retargeting must change the source image received by the host fixture"
+        );
+        assert!(
+            captured_b
+                .windows(b"return x + 10".len())
+                .any(|window| window == b"return x + 10"),
+            "retargeted source image must contain the new dependency body"
+        );
+        assert!(
+            !captured_a
+                .windows(b"return x + 10".len())
+                .any(|window| window == b"return x + 10"),
+            "initial source image must not contain the retargeted body"
+        );
+    }
     let bytes = art_b.expect("artifact");
     assert_native_result(
         &p,

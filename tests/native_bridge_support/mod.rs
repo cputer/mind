@@ -55,6 +55,15 @@ impl Project {
         self.dir.path()
     }
 
+    /// Read the image consumed by the host-native transport fixture. This is
+    /// available only on non-Linux/x86 hosts; the real stage1 image does not
+    /// use this test-only capture path.
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    pub fn captured_source_image(&self) -> Vec<u8> {
+        std::fs::read(self.root().join("native-image.bin"))
+            .expect("host-native fixture must capture the source image")
+    }
+
     pub fn write(&self, rel: &str, body: &str) -> PathBuf {
         let p = self.root().join(rel);
         if let Some(parent) = p.parent() {
@@ -166,8 +175,7 @@ pub fn assert_native_result(project: &Project, bytes: &[u8], expected: i32, cont
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     {
-        let captured = std::fs::read(project.root().join("native-image.bin"))
-            .expect("host-native fixture must capture the complete source image");
+        let captured = project.captured_source_image();
         assert!(
             !captured.is_empty(),
             "{context}: host-native fixture received no source image"

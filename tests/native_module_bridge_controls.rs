@@ -22,7 +22,7 @@ use native_bridge_support::{Project, assert_native_result};
 /// This is the exact shape that produced
 /// "accepts exactly one source file (got 0)" before the bridge was wired.
 #[test]
-fn local_import_compiles_and_executes() {
+fn local_import_is_admitted_and_bridged() {
     let p = Project::new("import_ok");
     p.write(
         "src/helper.mind",
@@ -35,7 +35,7 @@ fn local_import_compiles_and_executes() {
     let (code, err, artifact) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "multi-module native build must succeed: {err}");
     let bytes = artifact.expect("artifact written");
-    assert_eq!(&bytes[0..4], b"\x7fELF", "must be a real ELF");
+    assert_eq!(&bytes[0..4], b"\x7fELF", "must preserve ELF framing");
     assert_native_result(&p, &bytes, 7, "helper(6) == 7");
     assert!(
         err.contains("2 linked module(s)"),
@@ -47,7 +47,7 @@ fn local_import_compiles_and_executes() {
 /// same bytes. Paired with the import case above, this is what proves the
 /// multi-module work did not disturb the existing corpus.
 #[test]
-fn single_file_still_builds_and_runs() {
+fn single_file_is_admitted_and_bridged() {
     let p = Project::new("single");
     p.write("src/main.mind", "fn main() -> i64 {\n    return 7;\n}\n");
     let (code, err, artifact) = p.build_native("src/main.mind");
@@ -221,6 +221,8 @@ fn explicit_path_and_manifest_entry_produce_identical_artifacts() {
 
     let (a_code, a_err, a_art) = p.build_native("src/main.mind");
     assert_eq!(a_code, 0, "explicit-path build must succeed: {a_err}");
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let captured_a = p.captured_source_image();
     let a = a_art.expect("explicit artifact");
 
     let (b_code, b_err, b_art) = p.build_native_no_path();
@@ -228,6 +230,14 @@ fn explicit_path_and_manifest_entry_produce_identical_artifacts() {
         b_code, 0,
         "no-path build must resolve the manifest entry: {b_err}"
     );
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let captured_b = p.captured_source_image();
+        assert_eq!(
+            captured_a, captured_b,
+            "explicit-path and manifest-entry forms must send identical source images"
+        );
+    }
     let b = b_art.expect("manifest-entry artifact");
 
     assert_eq!(
@@ -237,11 +247,12 @@ fn explicit_path_and_manifest_entry_produce_identical_artifacts() {
     assert_native_result(&p, &a, 7, "explicit-path result");
 }
 
-/// TRANSITIVE positive: main -> mid -> leaf, three linked modules, executes.
+/// TRANSITIVE positive: main -> mid -> leaf, three linked modules. Semantic
+/// execution is asserted only on Linux x86-64; other hosts verify transport.
 /// The negative twin (a transitive UNEXPORTED callee) already exists; without
 /// this, that negative could pass because transitive imports never worked.
 #[test]
-fn transitive_import_chain_executes() {
+fn transitive_import_chain_is_admitted_and_bridged() {
     let p = Project::new("transok");
     p.write(
         "src/leaf.mind",
@@ -265,9 +276,9 @@ fn transitive_import_chain_executes() {
     assert_native_result(&p, &bytes, 7, "transitive import result");
 }
 
-/// A CYCLIC import terminates and executes rather than hanging or refusing.
+/// A CYCLIC import terminates and bridges rather than hanging or refusing.
 #[test]
-fn cyclic_imports_terminate_and_execute() {
+fn cyclic_imports_terminate_and_bridge() {
     let p = Project::new("cyc");
     p.write(
         "src/p.mind",
@@ -502,7 +513,8 @@ fn source_escaping_the_project_root_is_refused() {
         "import helper;\n\nfn main() -> i64 {\n    return helper(6);\n}\n",
     );
 
-    // Control FIRST: without the escaping link this project builds and runs.
+    // Control FIRST: without the escaping link this project is admitted and
+    // reaches the native bridge (semantic execution is Linux/x86-64 scoped).
     let (ok, err, art) = p.build_native("src/main.mind");
     assert_eq!(ok, 0, "the clean project must build first: {err}");
     let bytes = art.expect("artifact");
@@ -732,13 +744,13 @@ fn an_unused_private_alias_in_an_imported_module_block_is_refused() {
     );
 }
 
-/// POSITIVE: a harmless imported scalar body is unaffected and still runs.
+/// POSITIVE: a harmless imported scalar body is unaffected and is bridged.
 ///
 /// The refusal covers owner-BEARING declarations only. Widening it to every
 /// imported body would trade a wrong answer for a useless backend, so this pins
 /// that ordinary cross-module code still compiles and executes.
 #[test]
-fn a_harmless_imported_scalar_body_still_builds_and_runs() {
+fn a_harmless_imported_scalar_body_is_admitted_and_bridged() {
     let p = Project::new("aliasok");
     p.write(
         "src/helper.mind",
