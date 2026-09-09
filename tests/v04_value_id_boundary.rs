@@ -295,3 +295,43 @@ fn shared_element_scope_covers_module_rows_but_not_function_rows() {
         error.message
     );
 }
+
+/// A FnDef's parameters must agree, POSITIONALLY, with the declared signature,
+/// and the type must come from that function's OWN scoped rows.
+///
+/// Three refusals with three distinct causes, plus two positives that pin what
+/// the refusals must not catch. `pos_function_distinct_param_types` exists
+/// because both parameters of the older two-parameter fixture are `i64`: with
+/// only that fixture, reading either list at a fixed position instead of `i`
+/// passes, so positional order was asserted by the code and by nothing else.
+///
+/// `neg_parameter_type_module_fallback` types the parameter at MODULE scope and
+/// nowhere in the function. The reference still refuses it, so a lookup that
+/// widened to the module rows on a miss would accept a body the reference
+/// rejects.
+#[test]
+fn canonical_parameters_agree_with_their_declaration() {
+    for name in [
+        "pos_function_two_params",
+        "pos_function_distinct_param_types",
+    ] {
+        let path = format!("examples/mind_mirror_v04/testdata/semantic/{name}.mic3");
+        let bytes = std::fs::read(&path).expect("positive fixture");
+        parse_mic3_body(&bytes).unwrap_or_else(|e| panic!("{name} must parse: {}", e.message));
+    }
+
+    for (name, needle) in [
+        ("neg_parameter_type_mismatch", "type mismatch"),
+        ("neg_parameter_type_missing", "no canonical type"),
+        ("neg_parameter_type_module_fallback", "no canonical type"),
+    ] {
+        let path = format!("examples/mind_mirror_v04/testdata/semantic/{name}.mic3");
+        let bytes = std::fs::read(&path).expect("negative fixture");
+        let error = parse_mic3_body(&bytes).expect_err("parameter disagreement");
+        assert!(
+            error.message.contains(needle),
+            "{name}: expected the parameter rule to be the diagnosed cause: {}",
+            error.message
+        );
+    }
+}

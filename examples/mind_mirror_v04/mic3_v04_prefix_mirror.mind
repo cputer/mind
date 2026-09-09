@@ -131,6 +131,10 @@
 //                            module carries semantic authority
 //   48 NO_SEMANTIC_AUTHORITY the body declares no schema, no function and no
 //                            module semantic row
+//   49 PARAMETER_TYPE_MISSING a FnDef parameter has no type in that function's
+//                            OWN scoped rows
+//   50 PARAMETER_TYPE_MISMATCH a FnDef parameter's scoped type differs from the
+//                            declared signature descriptor at that position
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -1248,14 +1252,17 @@ pub fn mv_walk_functions(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn
         if kind == 2 {
             return mv_fail(st, 34);
         }
-        __mind_store_i64(fnt + 56 * idx + 0, owner);
-        __mind_store_i64(fnt + 56 * idx + 8, name);
-        __mind_store_i64(fnt + 56 * idx + 16, 0);
-        __mind_store_i64(fnt + 56 * idx + 24, 0);
-        __mind_store_i64(fnt + 56 * idx + 32, 0);
-        __mind_store_i64(fnt + 56 * idx + 40, nparam);
-        __mind_store_i64(fnt + 56 * idx + 48, kind);
-        return mv_walk_functions(buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st);
+        __mind_store_i64(fnt + 64 * idx + 0, owner);
+        __mind_store_i64(fnt + 64 * idx + 8, name);
+        __mind_store_i64(fnt + 64 * idx + 16, 0);
+        __mind_store_i64(fnt + 64 * idx + 24, 0);
+        __mind_store_i64(fnt + 64 * idx + 32, 0);
+        __mind_store_i64(fnt + 64 * idx + 40, nparam);
+        __mind_store_i64(fnt + 64 * idx + 48, kind);
+        __mind_store_i64(fnt + 64 * idx + 56, p3);
+        return mv_walk_functions(
+            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
+        );
     }
     if present != 1 {
         return mv_fail(st, 32);
@@ -1280,14 +1287,17 @@ pub fn mv_walk_functions(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn
             return mv_fail(st, 34);
         }
     }
-    __mind_store_i64(fnt + 56 * idx + 0, owner);
-    __mind_store_i64(fnt + 56 * idx + 8, name);
-    __mind_store_i64(fnt + 56 * idx + 16, p4 + 1);
-    __mind_store_i64(fnt + 56 * idx + 24, p5);
-    __mind_store_i64(fnt + 56 * idx + 32, 1);
-    __mind_store_i64(fnt + 56 * idx + 40, nparam);
-    __mind_store_i64(fnt + 56 * idx + 48, kind);
-    mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st)
+    __mind_store_i64(fnt + 64 * idx + 0, owner);
+    __mind_store_i64(fnt + 64 * idx + 8, name);
+    __mind_store_i64(fnt + 64 * idx + 16, p4 + 1);
+    __mind_store_i64(fnt + 64 * idx + 24, p5);
+    __mind_store_i64(fnt + 64 * idx + 32, 1);
+    __mind_store_i64(fnt + 64 * idx + 40, nparam);
+    __mind_store_i64(fnt + 64 * idx + 48, kind);
+    __mind_store_i64(fnt + 64 * idx + 56, p3);
+    mv_walk_functions(
+        buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
+    )
 }
 
 // ---- schema section: canonical re-emission --------------------------------
@@ -1410,29 +1420,156 @@ pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, 
 // name string indices, declared return descriptor range, parameter count, and
 // declaration kind (Local, External, or Intrinsic).
 pub fn mv_fn_ident_bytes(fnt: i64, tab: i64, i: i64) -> i64 {
-    let owner: i64 = __mind_load_i64(fnt + 56 * i + 0);
-    let name: i64 = __mind_load_i64(fnt + 56 * i + 8);
+    let owner: i64 = __mind_load_i64(fnt + 64 * i + 0);
+    let name: i64 = __mind_load_i64(fnt + 64 * i + 8);
     mv_str_len(tab, owner) + mv_str_len(tab, name)
 }
 
 pub fn mv_fn_return_present(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 56 * i + 32)
+    __mind_load_i64(fnt + 64 * i + 32)
 }
 
 pub fn mv_fn_return_start(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 56 * i + 16)
+    __mind_load_i64(fnt + 64 * i + 16)
 }
 
 pub fn mv_fn_return_end(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 56 * i + 24)
+    __mind_load_i64(fnt + 64 * i + 24)
 }
 
 pub fn mv_fn_param_count(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 56 * i + 40)
+    __mind_load_i64(fnt + 64 * i + 40)
 }
 
 pub fn mv_fn_kind(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 56 * i + 48)
+    __mind_load_i64(fnt + 64 * i + 48)
+}
+
+// Where this declaration's signature parameter descriptors begin in the input.
+pub fn mv_fn_param_start(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 64 * i + 56)
+}
+
+// ---- parameter descriptor agreement ---------------------------------------
+
+// End offset of the descriptor starting at `pos`, walking structure ONLY.
+//
+// Deliberately does not charge the allocation budget or accumulate elements:
+// this re-walks bytes mv_type_expr has already admitted and charged, and
+// charging them twice would refuse bodies the reference accepts.
+pub fn mv_desc_end(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
+    if pos >= len {
+        return 0 - 1;
+    }
+    let tag: i64 = __mind_load_i8(buf + pos);
+    if tag == 0 {
+        return pos + 2;
+    }
+    if tag == 1 {
+        mv_uleb(buf, len, pos + 1, 0, 0, 1, st);
+        return mv_st_cursor(st);
+    }
+    if tag == 2 {
+        mv_uleb(buf, len, pos + 1, 0, 0, 1, st);
+        let e: i64 = mv_st_cursor(st);
+        return mv_desc_end(buf, len, e, st);
+    }
+    mv_desc_end(buf, len, pos + 1, st)
+}
+
+// Start offset of the `i`-th descriptor in a run beginning at `pos`.
+pub fn mv_nth_desc(buf: i64, len: i64, pos: i64, i: i64, st: i64) -> i64 {
+    if i <= 0 {
+        return pos;
+    }
+    let e: i64 = mv_desc_end(buf, len, pos, st);
+    if e < 0 {
+        return 0 - 1;
+    }
+    mv_nth_desc(buf, len, e, i - 1, st)
+}
+
+// The ValueId of the `i`-th entry in a FnDef parameter list, each entry being a
+// name string index followed by a value id.
+pub fn mv_nth_param_vid(buf: i64, len: i64, pos: i64, i: i64, st: i64) -> i64 {
+    mv_uleb(buf, len, pos, 0, 0, 1, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_uleb(buf, len, p1, 0, 0, 1, st);
+    let vid: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    if i <= 0 {
+        return vid;
+    }
+    mv_nth_param_vid(buf, len, p2, i - 1, st)
+}
+
+// Start offset of the descriptor carried by the row for `vid`, searching ONLY
+// the rows of one function.
+//
+// A miss returns -1 and the caller refuses. It deliberately does not fall back
+// to the module rows: the reference looks the parameter up in that function's
+// own scoped values, and a fallback would accept a body whose parameter is typed
+// nowhere in its own scope.
+pub fn mv_row_desc_for(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    vid: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        return 0 - 1;
+    }
+    mv_uleb(buf, len, pos, 0, 0, 1, st);
+    let row_vid: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let e: i64 = mv_desc_end(buf, len, p1, st);
+    if e < 0 {
+        return 0 - 1;
+    }
+    if row_vid == vid {
+        return p1;
+    }
+    mv_row_desc_for(buf, len, e, n - 1, vid, st)
+}
+
+// Check that parameter `i` and every parameter after it agree with the declared
+// signature descriptor at the same position.
+pub fn mv_check_params(
+    buf: i64,
+    len: i64,
+    i: i64,
+    nparam: i64,
+    params_start: i64,
+    decl_start: i64,
+    rows_start: i64,
+    nrow: i64,
+    st: i64
+) -> i64 {
+    if i >= nparam {
+        return 0;
+    }
+    let vid: i64 = mv_nth_param_vid(buf, len, params_start, i, st);
+    let want: i64 = mv_nth_desc(buf, len, decl_start, i, st);
+    if want < 0 {
+        return mv_fail(st, 50);
+    }
+    let want_end: i64 = mv_desc_end(buf, len, want, st);
+    let got: i64 = mv_row_desc_for(buf, len, rows_start, nrow, vid, st);
+    if got < 0 {
+        return mv_fail(st, 49);
+    }
+    let got_end: i64 = mv_desc_end(buf, len, got, st);
+    if got_end - got != want_end - want {
+        return mv_fail(st, 50);
+    }
+    if mv_bytes_equal(buf, got, want, want_end - want) == 0 {
+        return mv_fail(st, 50);
+    }
+    mv_check_params(
+        buf, len, i + 1, nparam, params_start, decl_start, rows_start, nrow, st
+    )
 }
 
 // Keep the optional return-ID branch in the parser helper, where the frozen
@@ -1458,7 +1595,7 @@ pub fn mv_prepare_return(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
 }
 
 pub fn mv_fn_name_matches(buf: i64, tab: i64, fnt: i64, i: i64, name: i64) -> i64 {
-    let declared: i64 = __mind_load_i64(fnt + 56 * i + 8);
+    let declared: i64 = __mind_load_i64(fnt + 64 * i + 8);
     let left: i64 = mv_str_off(tab, declared);
     let right: i64 = mv_str_off(tab, name);
     let left_len: i64 = mv_str_len(tab, declared);
@@ -1957,7 +2094,39 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         }
         __mind_store_i64(st + 112, 0);
         __mind_store_i64(st + 72, prior_track);
-        return result;
+        if result != 0 {
+            return result;
+        }
+        // The end cursor is captured BEFORE the check and restored after it.
+        // Every helper below re-reads ULEBs through mv_uleb, which writes st+0,
+        // so running the check would otherwise hand the caller a cursor pointing
+        // into the middle of this instruction.
+        let fn_end: i64 = mv_st_cursor(st);
+        // Parameter descriptor agreement. Every operand here is a local of THIS
+        // invocation, so the per-frame state the nesting bug class needs is
+        // supplied by the call stack rather than by a shared slot: p2 is this
+        // FnDef's own parameter list, p10 its own scoped rows, and fidx its own
+        // declaration. A nested FnDef cannot reach any of them.
+        //
+        // The rows are searched for the parameter's ValueId with no module
+        // fallback: the reference resolves a parameter in that function's own
+        // scoped values, so a miss is a refusal rather than a wider lookup.
+        let rcpa: i64 = mv_check_params(
+            buf,
+            len,
+            0,
+            nparam,
+            p2,
+            mv_fn_param_start(fnt, fidx),
+            p10,
+            nrow,
+            st
+        );
+        if rcpa != 0 {
+            return rcpa;
+        }
+        __mind_store_i64(st + 0, fn_end);
+        return 0;
     }
 
     mv_fail(st, 37)
@@ -2385,7 +2554,7 @@ pub fn main() -> i64 {
     if rc9 != 0 {
         return rc9;
     }
-    let fnt: i64 = __mind_alloc(56 * nfunc + 16);
+    let fnt: i64 = __mind_alloc(64 * nfunc + 16);
     // Cleared explicitly: __mind_alloc does not zero, and this table is read
     // through a decoded index before it is otherwise written.
     let fdef: i64 = __mind_alloc(8 * nfunc + 16);

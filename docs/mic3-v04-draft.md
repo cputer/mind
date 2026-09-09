@@ -104,16 +104,19 @@ Its separate semantic gate checks module `next_id` coverage, function identity,
 declaration kind, parameter arity and return metadata against the declared
 signature, refuses a declaration that is defined more than once, refuses a
 `Return` outside any function body when the module carries semantic authority,
-and refuses a body that carries no authority at all. The return diagnosis is
-conditional on authority: an authority-free body is refused for the
-missing authority. Neither path accepts an authority-free v0x04 body. The
+and refuses a body that carries no authority at all. Each FnDef parameter must
+agree positionally with the declared signature descriptor, and its type is
+resolved in that function's own scoped rows: a parameter typed only at module
+scope is refused rather than satisfied by the wider table. The return diagnosis
+is conditional on authority: an authority-free body is refused for the missing
+authority. Neither path accepts an authority-free v0x04 body. The
 uniqueness rule is module-wide rather than per-function: the reference keeps one
 identity set for the whole instruction stream, so a second definition is refused
 whether it appears beside the first or nested inside it, and both cases are
 pinned. Nested functions retain independent return IDs. Module semantic rows share one cumulative element scope with every
 declaration's signature, while a function's own scoped rows stay outside it.
 CI executes 72 wire
-vectors and 19 semantic vectors, with exact re-emission checks on every positive
+vectors and 23 semantic vectors, with exact re-emission checks on every positive
 fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.
