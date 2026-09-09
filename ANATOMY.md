@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1720 | **Est. tokens:** ~3335651
-**Generated:** 2026-09-09 01:52 UTC
+**Files:** 1720 | **Est. tokens:** ~3336492
+**Generated:** 2026-09-09 02:24 UTC
 
 ## Token Budget Guide
 
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 390 | ~778040 |
+| `tests/` | 390 | ~778881 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1833,7 +1833,7 @@
 - `mindc_inspect.rs` (~1135 tok, large) — Integration test for `mindc inspect` — the mic@3 artifact decoder/differ.
 - `mindc_project_lock.rs` (~1069 tok, large) — Copyright 2026 STARGA Inc.
 - `mindc_symlinked_project_identity.rs` (~2222 tok, huge) — Copyright 2026 STARGA Inc.
-- `mindc_test_evaluator_issues.rs` (~5202 tok, huge) — Copyright 2025 STARGA Inc.
+- `mindc_test_evaluator_issues.rs` (~6043 tok, huge) — Copyright 2025 STARGA Inc.
 - `mindc_test_imports.rs` (~4553 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_nested_modules.rs` (~1901 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `mindc_test_phase_b.rs` (~3574 tok, huge) — Copyright 2025 STARGA Inc.

@@ -265,6 +265,116 @@ fn false_then_reassigned() {
     assert_line(&out, "1 passed; 1 failed");
 }
 
+/// Indexed setup assignments in a `#[test]` body must use the same statement
+/// executor as ordinary function bodies. The stale-value test is the mutation
+/// control: it must fail after the write instead of passing on the initializer.
+#[test]
+fn indexed_and_nested_assignments_execute_in_test_bodies() {
+    let src = r#"
+#[test]
+fn indexed_write_persists() {
+    let mut xs: [i64; 2] = [0, 0];
+    let i: i64 = 1;
+    xs[i] = 7;
+    assert xs[1] == 7, "indexed write persists";
+}
+
+#[test]
+fn if_body_write_persists() {
+    let mut n: i64 = 0;
+    if 1 == 1 {
+        n = 5;
+    }
+    assert n == 5, "if-body write persists";
+}
+
+#[test]
+fn stale_array_value_must_fail() {
+    let mut xs: [i64; 1] = [0];
+    xs[0] = 7;
+    assert xs[0] == 0, "indexed write must invalidate the initializer";
+}
+"#;
+
+    let (code, out) = run_mindc_test("test_body_assignments", src);
+    assert_ne!(
+        code, 0,
+        "mutation control must make the command fail:\n{out}"
+    );
+    assert_line(&out, "indexed_write_persists ... ok");
+    assert_line(&out, "if_body_write_persists ... ok");
+    assert_line(&out, "stale_array_value_must_fail ... FAILED");
+    assert_line(&out, "indexed write must invalidate the initializer");
+    assert_line(&out, "2 passed; 1 failed");
+}
+
+/// A scalar receiver used to evaluate only the RHS and pass on the old value.
+/// Keep an ordinary array write beside it so refusal cannot make every write red.
+#[test]
+fn unsupported_indexed_assignment_receiver_fails_closed() {
+    let src = r#"
+#[test]
+fn ordinary_array_control() {
+    let mut xs: [i64; 1] = [0];
+    xs[0] = 7;
+    assert xs[0] == 7, "ordinary indexed write";
+}
+
+#[test]
+fn scalar_receiver_is_an_error() {
+    let mut x: i64 = 0;
+    x[0] = 7;
+    assert x == 0, "unchanged scalar cannot attest to setup";
+}
+"#;
+
+    let (code, out) = run_mindc_test("indexed_assignment_fail_closed", src);
+    assert_ne!(
+        code, 0,
+        "unsupported write must make the command fail:\n{out}"
+    );
+    assert_line(&out, "ordinary_array_control ... ok");
+    assert_line(&out, "scalar_receiver_is_an_error ... FAILED");
+    assert_line(&out, "indexed assignment receiver `x` must be an array");
+    assert_line(&out, "1 passed; 1 failed");
+}
+
+#[test]
+fn nested_indexed_assignment_receiver_fails_closed() {
+    let src = r#"
+#[test]
+fn nested_receiver_is_an_error() {
+    let mut rows: [[i64; 1]; 1] = [[0]];
+    rows[0][0] = 7;
+    assert rows[0][0] == 0, "nested write was discarded";
+}
+"#;
+    let (code, out) = run_mindc_test("nested_indexed_assignment", src);
+    assert_ne!(code, 0, "unsupported nested write must fail:\n{out}");
+    assert_line(&out, "nested_receiver_is_an_error ... FAILED");
+    assert_line(
+        &out,
+        "indexed assignment receiver must be a simple array variable",
+    );
+    assert_line(&out, "0 passed; 1 failed");
+}
+
+#[test]
+fn missing_indexed_assignment_receiver_fails_closed() {
+    let src = r#"
+#[test]
+fn missing_receiver_is_an_error() {
+    missing[0] = 7;
+    assert 1 == 1, "later assertion cannot hide the missing receiver";
+}
+"#;
+    let (code, out) = run_mindc_test("missing_indexed_assignment", src);
+    assert_ne!(code, 0, "missing receiver must fail:\n{out}");
+    assert_line(&out, "missing_receiver_is_an_error ... FAILED");
+    assert_line(&out, "unknown variable: missing");
+    assert_line(&out, "0 passed; 1 failed");
+}
+
 // ---------------------------------------------------------------------------
 // #240 — call-result and struct bindings are visible; precise failure causes
 // ---------------------------------------------------------------------------

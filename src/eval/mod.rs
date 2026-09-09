@@ -578,37 +578,21 @@ pub fn eval_module_value_with_env_mode(
             }
             // Phase 10.6: `arr[i] = v` for an array variable. The interpreter is
             // immutable-value, so we rebuild the tuple with the element replaced and
-            // rebind it (no in-place mutation). Only a simple variable receiver is
-            // supported here; tensor/slice writes need the runtime handle-table and
-            // keep the prior placeholder behavior (the statement evaluates to its RHS).
+            // rebind it (no in-place mutation).
             Node::IndexAssign {
                 receiver,
                 index,
                 value,
                 ..
             } => {
-                let val = eval_value_expr_mode(value, &venv, &tensor_env, mode.clone())?;
-                if let Node::Lit(Literal::Ident(name), _) = receiver.as_ref() {
-                    if let Some(Value::Tuple(mut items)) = venv.get(name).cloned() {
-                        let idx =
-                            match eval_value_expr_mode(index, &venv, &tensor_env, mode.clone())? {
-                                Value::Int(i) => i,
-                                other => {
-                                    return Err(EvalError::UnsupportedMsg(format!(
-                                        "array index must be an integer, got {other:?}"
-                                    )));
-                                }
-                            };
-                        if idx < 0 || idx as usize >= items.len() {
-                            return Err(EvalError::BoundsTrap(format!(
-                                "array index {idx} out of bounds (len {})",
-                                items.len()
-                            )));
-                        }
-                        items[idx as usize] = val.clone();
-                        venv.insert(name.clone(), Value::Tuple(items));
-                    }
-                }
+                let val = eval_index_assign_threaded(
+                    receiver,
+                    index,
+                    value,
+                    &mut venv,
+                    &tensor_env,
+                    mode.clone(),
+                )?;
                 last = val;
                 module_globals::sync(current_eval_owner().as_deref(), &venv, &tensor_env);
             }
@@ -950,30 +934,7 @@ fn exec_threaded_stmt(
             index,
             value,
             ..
-        } => {
-            let val = eval_value_expr_mode(value, env, tensor_env, mode.clone())?;
-            if let Node::Lit(Literal::Ident(arr), _) = receiver.as_ref() {
-                if let Some(Value::Tuple(mut items)) = env.get(arr).cloned() {
-                    let idx = match eval_value_expr_mode(index, env, tensor_env, mode.clone())? {
-                        Value::Int(i) => i,
-                        other => {
-                            return Err(EvalError::UnsupportedMsg(format!(
-                                "array index must be an integer, got {other:?}"
-                            )));
-                        }
-                    };
-                    if idx < 0 || idx as usize >= items.len() {
-                        return Err(EvalError::BoundsTrap(format!(
-                            "array index {idx} out of bounds (len {})",
-                            items.len()
-                        )));
-                    }
-                    items[idx as usize] = val.clone();
-                    env.insert(arr.clone(), Value::Tuple(items));
-                }
-            }
-            Ok(val)
-        }
+        } => eval_index_assign_threaded(receiver, index, value, env, tensor_env, mode.clone()),
         #[cfg(feature = "std-surface")]
         Node::While {
             cond: inner_cond,
@@ -1068,6 +1029,56 @@ fn exec_threaded_stmt(
         // expression evaluation; `return` surfaces as `ReturnFlow` and unwinds.
         other => eval_value_expr_mode(other, env, tensor_env, mode.clone()),
     }
+}
+
+/// Evaluate a statement-position indexed assignment and thread the rebuilt
+/// array value into `env`.
+///
+/// The tree evaluator currently supports only a simple variable holding an
+/// array tuple. Every other receiver shape fails explicitly: returning the RHS
+/// while leaving the receiver unchanged would let a test's setup disappear and
+/// a later assertion over the old value report a false pass.
+fn eval_index_assign_threaded(
+    receiver: &Node,
+    index: &Node,
+    value: &Node,
+    env: &mut HashMap<String, Value>,
+    tensor_env: &HashMap<String, TensorEnvEntry>,
+    mode: ExecMode,
+) -> Result<Value, EvalError> {
+    // Preserve the established RHS-first evaluation order.
+    let val = eval_value_expr_mode(value, env, tensor_env, mode.clone())?;
+    let Node::Lit(Literal::Ident(name), _) = receiver else {
+        return Err(EvalError::UnsupportedMsg(
+            "indexed assignment receiver must be a simple array variable".into(),
+        ));
+    };
+    let current = env
+        .get(name)
+        .cloned()
+        .ok_or_else(|| EvalError::UnknownVar(name.clone()))?;
+    let Value::Tuple(mut items) = current else {
+        return Err(EvalError::UnsupportedMsg(format!(
+            "indexed assignment receiver `{name}` must be an array"
+        )));
+    };
+    let idx = match eval_value_expr_mode(index, env, tensor_env, mode)? {
+        Value::Int(i) => i,
+        other => {
+            return Err(EvalError::UnsupportedMsg(format!(
+                "array index must be an integer, got {other:?}"
+            )));
+        }
+    };
+    if idx < 0 || idx as usize >= items.len() {
+        return Err(EvalError::BoundsTrap(format!(
+            "array index {idx} out of bounds (len {})",
+            items.len()
+        )));
+    }
+    items[idx as usize] = val.clone();
+    env.insert(name.clone(), Value::Tuple(items));
+    Ok(val)
 }
 
 /// Execute a loop body's statement list as ONE BLOCK SCOPE against the
@@ -2085,8 +2096,11 @@ pub(crate) fn eval_value_expr_mode(
                 ))),
             }
         }
-        // Phase 10.6: expression-position IndexAssign yields its RHS.
-        Node::IndexAssign { value, .. } => eval_value_expr_mode(value, env, tensor_env, mode),
+        // An indexed assignment needs the statement executor's mutable
+        // environment. Returning only its RHS would silently discard the write.
+        Node::IndexAssign { .. } => Err(EvalError::UnsupportedMsg(
+            "indexed assignment is unsupported in expression position".into(),
+        )),
         Node::FieldAssign { field, .. } => Err(EvalError::UnsupportedMsg(format!(
             "struct field assignment `.{field}` is unsupported by the interpreter; mutation semantics are not defined"
         ))),
@@ -2233,33 +2247,14 @@ pub(crate) fn eval_value_expr_mode(
                             value,
                             ..
                         } => {
-                            let val =
-                                eval_value_expr_mode(value, &loop_env, tensor_env, mode.clone())?;
-                            if let Node::Lit(Literal::Ident(arr), _) = receiver.as_ref() {
-                                if let Some(Value::Tuple(mut items)) = loop_env.get(arr).cloned() {
-                                    let idx = match eval_value_expr_mode(
-                                        index,
-                                        &loop_env,
-                                        tensor_env,
-                                        mode.clone(),
-                                    )? {
-                                        Value::Int(i) => i,
-                                        other => {
-                                            return Err(EvalError::UnsupportedMsg(format!(
-                                                "array index must be an integer, got {other:?}"
-                                            )));
-                                        }
-                                    };
-                                    if idx < 0 || idx as usize >= items.len() {
-                                        return Err(EvalError::BoundsTrap(format!(
-                                            "array index {idx} out of bounds (len {})",
-                                            items.len()
-                                        )));
-                                    }
-                                    items[idx as usize] = val.clone();
-                                    loop_env.insert(arr.clone(), Value::Tuple(items));
-                                }
-                            }
+                            let val = eval_index_assign_threaded(
+                                receiver,
+                                index,
+                                value,
+                                &mut loop_env,
+                                tensor_env,
+                                mode.clone(),
+                            )?;
                             result = val;
                         }
                         _ => {
@@ -2322,33 +2317,14 @@ pub(crate) fn eval_value_expr_mode(
                         value,
                         ..
                     } => {
-                        let val =
-                            eval_value_expr_mode(value, &region_env, tensor_env, mode.clone())?;
-                        if let Node::Lit(Literal::Ident(arr), _) = receiver.as_ref() {
-                            if let Some(Value::Tuple(mut items)) = region_env.get(arr).cloned() {
-                                let idx = match eval_value_expr_mode(
-                                    index,
-                                    &region_env,
-                                    tensor_env,
-                                    mode.clone(),
-                                )? {
-                                    Value::Int(i) => i,
-                                    other => {
-                                        return Err(EvalError::UnsupportedMsg(format!(
-                                            "array index must be an integer, got {other:?}"
-                                        )));
-                                    }
-                                };
-                                if idx < 0 || idx as usize >= items.len() {
-                                    return Err(EvalError::BoundsTrap(format!(
-                                        "array index {idx} out of bounds (len {})",
-                                        items.len()
-                                    )));
-                                }
-                                items[idx as usize] = val.clone();
-                                region_env.insert(arr.clone(), Value::Tuple(items));
-                            }
-                        }
+                        let val = eval_index_assign_threaded(
+                            receiver,
+                            index,
+                            value,
+                            &mut region_env,
+                            tensor_env,
+                            mode.clone(),
+                        )?;
                         result = val;
                     }
                     _ => {
