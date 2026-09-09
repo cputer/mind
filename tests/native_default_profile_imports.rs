@@ -19,6 +19,11 @@
 //! The same scan was also wrong in the other direction: it refused
 //! `import std.math;`, which is satisfied by the seed std blob and is not a
 //! local dependency at all.
+//!
+//! The current fixture is a host executable that drains and captures the input
+//! image, then returns fixed bytes beginning with ELF magic. It does not compile
+//! MIND or produce an executable ELF. These controls prove admission and source
+//! transport, not native code generation or cross-platform byte identity.
 
 #![cfg(all(not(feature = "cross-module-imports"), feature = "std-surface"))]
 
@@ -214,20 +219,20 @@ fn a_std_only_import_is_not_a_local_dependency_and_builds() {
     assert_fixture_drained(&p, src);
 }
 
-/// The single-file corpus must not move. This is the byte anchor: the same
-/// program emitted the same 397 bytes before and after the detector changed.
+/// A source with no local imports must reach the fixture, and its fixed output
+/// must pass through unchanged. Native byte identity has separate compiler gates.
 #[test]
-fn a_plain_single_file_still_builds_and_is_unaffected() {
+fn a_plain_single_file_reaches_the_fixture_and_preserves_its_output() {
     let p = Project::new();
     let src = "fn main() -> i64 {\n    return 7;\n}\n";
     let (code, err, art) = p.build(src);
     assert_eq!(code, 0, "a single file must build with no resolver: {err}");
     let bytes = art.expect("artifact");
+    let mut expected = b"\x7fELF".to_vec();
+    expected.resize(397, 0);
     assert_eq!(
-        bytes.len(),
-        397,
-        "the single-file artifact size is the pinned corpus anchor; a change here \
-         means the detector rewrite moved bytes it must not touch"
+        bytes, expected,
+        "fixture output must pass through unchanged"
     );
     assert_fixture_drained(&p, src);
 }

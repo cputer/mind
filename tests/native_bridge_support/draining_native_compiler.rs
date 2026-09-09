@@ -3,8 +3,9 @@
 //! The committed stage1.elf is a Linux x86-64 executable. These tests exercise
 //! source admission and image transport on every CI host, so they must not hand
 //! an aarch64/macOS or Windows runner an ELF it cannot execute. Read stdin to
-//! EOF before writing the deterministic 397-byte ELF anchor; emitting first
+//! EOF before writing 397 fixed bytes with ELF magic; emitting first
 //! would recreate the Broken-pipe false failure this fixture is meant to expose.
+//! This output is not an executable ELF and is not native code-generation proof.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
