@@ -27,6 +27,12 @@ measured against `mindc --emit-mic3` and against the ordinary evaluator:
      fixture's size + sha256, and the manifest must name exactly the fixtures on
      disk in both directions. Edit a fixture without re-deriving its row and the
      gate fails LOUD, so recorded evidence cannot drift from its input.
+  5. VALIDITY — EVERY fixture, in every role, is fed to `mindc check` and paired
+     with a malformed-input control. A zero-byte expectation is only evidence
+     about a refusal if the input was valid MIND to begin with; a `blocked` or
+     `refuse` fixture corrupted into a syntax error would otherwise emit 0 bytes
+     on both paths and keep passing forever. The sweep covers all four roles,
+     not just the `trace` positives.
 
 WHAT IS STILL BLOCKED, AND WHY THAT IS PINNED HERE
 --------------------------------------------------
@@ -36,10 +42,22 @@ desugar still lays every field out one slot wide. Measured against
 `mindc --emit-mic3`: the bare construction `let r = R { pre: 5, xs: [11,22,33] }`
 is 129 self-host bytes against 170; `r.xs[1] + r.post` is 203 against 279 (the
 reference stream also carries an `__mind_oob_check` guard call this path never
-emits); an all-scalar record of the same shape is byte-EQUAL. So the indexed
-admission cannot be byte-exact until the layout lands, and
-`srt_canonical_layout_modelled` keeps it fail-closed instead of letting it emit
-a valid-looking module with the wrong bytes.
+emits); an all-scalar record of the same shape is byte-EQUAL.
+
+The precondition therefore has to sit on BOTH paths, and the scope of the claim
+matters:
+
+  * `srt_canonical_layout_modelled` via `field_owner_layout_modelled` /
+    `fixed_field_array_key` closes the field READ.
+  * the same predicate via `slit_ctor_layout_key` closes the struct-literal
+    CONSTRUCTION desugar.
+
+The read guard alone was NOT enough, and nothing here caught that: every
+`blocked` fixture also performs a read (`r.xs[1]`, `let ys = r.xs`), so the read
+guard fired first and a program that only CONSTRUCTS a fixed-array record was
+never exercised on its own — it emitted the 129 wrong bytes measured above.
+`construct_only.mind` is that program, and it is why `blocked` now means the
+construction as well as the read.
 
 `blocked` rows pin that: the fixture must produce ZERO bytes on BOTH the
 canonical and the executable path. When the layout gap closes they will start
@@ -327,10 +345,18 @@ def main(argv: list[str]) -> int:
     seen: dict[str, bytes] = {}
     with tempfile.TemporaryDirectory(prefix="mind-record-trace-") as td:
         scratch = pathlib.Path(td)
+        # VALIDITY SWEEP — EVERY fixture, every role. Running this over the
+        # `trace` positives alone left the zero-byte roles unobserved: a
+        # `blocked`/`refuse` fixture corrupted into a syntax error still emits 0
+        # bytes on both paths, so its row would keep passing while proving
+        # nothing about the refusal it names. That is precisely the failure this
+        # gate's own docstring is written against, so the check covers all roles.
+        for name in sorted(rows):
+            _reference_consumes(mindc, _source(name, rows), scratch / f"{name}.mind")
+
         for name in sorted(by_role[_TRACE]):
             row = rows[name]
             source = _source(name, rows)
-            _reference_consumes(mindc, source, scratch / f"{name}.mind")
 
             mine = _mind_mic3_stable(lib, source, name)
             oracle = _rust_mic3(mindc, source, scratch)

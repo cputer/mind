@@ -7,6 +7,7 @@
 #       evaluator = ordinary `mindc test` fixture; expected_exit is the test count
 # name	role	size_bytes	source_sha256	trace_sha256	expected_exit
 constant_oob	refuse	111	5adafd05a8cbe5d7fc4963e56ee549f29e94e38332e51fb7a0b281bc4e0a4c91	-	-
+construct_only	blocked	127	db94229c0d1ea88b60ffde13c8d512617c7f3ef3d01a9fe4d162c7a3f817738c	-	-
 copy_i64	blocked	138	9edb0c84f23e6dd409ed3f6a596806aee47d4cb374850b4f3808f3c69d363619	-	-
 direct_i64	blocked	166	488d3d0cc6d7a3dfd88fa05fedaadff400c8083e8e79cc0d0cca1a656e8bc959	-	-
 direct_i64_prefold	blocked	629	bb75f49fcf9e8f10ddd4db222b6c3a06f510e9e8deab762fe136feb22193dbae	-	-

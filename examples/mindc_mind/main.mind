@@ -19295,17 +19295,27 @@ pub fn fixed_field_recv_owner_ok(fn_node: i64, src: i64, recv: i64, declared_ty:
 //
 // while an all-scalar record of the same shape is byte-EQUAL (192 vs 192). The
 // divergence is therefore the fixed-array record LAYOUT, not the field read and
-// not the index. Admitting the indexed read on such a record would turn today's
-// fail-closed refusal into a valid-looking module carrying the WRONG bytes.
-// Bound by MIND-CONSTITUTION §I — fail closed over wrong bytes.
+// not the index. Admitting EITHER the indexed read or the CONSTRUCTION on such a
+// record turns today's fail-closed refusal into a valid-looking module carrying
+// the WRONG bytes. Bound by MIND-CONSTITUTION §I — fail closed over wrong bytes.
 //
-// deferred: this precondition shuts the indexed-read admission for every record
-//   the reference widens inline, which today is every fixed-array record, so the
-//   admission machinery below is reachable only once the gap closes. Upgrade
-//   path: give slit_desugar_module the reference's per-element slot map and emit
-//   the ArrayLoad bounds-check call, then delete this precondition and flip
-//   examples/mindc_mind/testdata/native_record_trace's blocked fixtures to
-//   byte-equal positives.
+// TWO consumers, because the divergence starts at CONSTRUCTION and a read guard
+// cannot see a program that never reads:
+//   * field_owner_layout_modelled / fixed_field_array_key — the READ path.
+//   * slit_ctor_layout_key — the struct-literal CONSTRUCTION desugar. Before that
+//     was added the 129-vs-170 construction case above was NOT refused: it was
+//     emitted, silently, with the wrong bytes. Every blocked fixture also
+//     performs a read, so the read guard fired first and the construction path
+//     was never exercised on its own.
+//
+// deferred: this precondition shuts BOTH the indexed-read admission and the
+//   struct-literal construction desugar for every record the reference widens
+//   inline, which today is every fixed-array record, so the admission machinery
+//   below is reachable only once the gap closes. Upgrade path: give
+//   slit_desugar_module the reference's per-element slot map and emit the
+//   ArrayLoad bounds-check call, then delete this precondition at BOTH consumers
+//   and flip examples/mindc_mind/testdata/native_record_trace's blocked and
+//   construction-only fixtures to byte-equal positives.
 pub fn srt_canonical_layout_modelled(t: i64, k: i64, j: i64) -> i64 {
     if j >= srt_field_count(t, k) {
         return 1;
@@ -19330,6 +19340,35 @@ pub fn field_owner_layout_modelled(fn_node: i64, src: i64, srt: i64, recv_lo: i6
         return 0;
     }
     srt_canonical_layout_modelled(srt, k, 0)
+}
+
+// Layout agreement for a struct-literal CONSTRUCTION: the registry key of the
+// type being built, or -1 when the canonical prefold does not model its layout.
+//
+// Same predicate as the read path above, applied where a construction resolves
+// its registry entry. The reference widens a fixed-array record INLINE from the
+// CONSTRUCTION onward, so desugaring one into this tree's one-slot-per-field
+// alloc/store chain emits a valid-looking module with the WRONG bytes (measured
+// above: 129 self-host against 170 reference for a bare
+// `let r = R { pre: 5, xs: [11, 22, 33] }; return 1;` — construction alone, no
+// field read anywhere in the module). Answering -1 puts every caller on the
+// `k < 0` fall-through it already has, so the literal is left undesugared and
+// the module fails closed instead of emitting the wrong bytes.
+//
+// EVERY construction-path registry lookup goes through here, sizing and fill
+// alike (slit_stmt_outn / slit_field_slots size the expansion, slit_seq_fill /
+// slit_fill_stores_at write it, slit_set_annotation covers the expression form)
+// — one predicate, so sizing and fill can never disagree about how many slots a
+// statement expands to.
+pub fn slit_ctor_layout_key(srt: i64, src: i64, tlo: i64, thi: i64) -> i64 {
+    let k: i64 = srt_find_by_name(srt, src, tlo, thi, 0);
+    if k < 0 {
+        return 0 - 1;
+    }
+    if srt_canonical_layout_modelled(srt, k, 0) == 0 {
+        return 0 - 1;
+    }
+    k
 }
 
 // Resolve an indexed record-field base to a stable registry key k*field_cap+j.
@@ -19901,7 +19940,7 @@ pub fn slit_desugar_body(fn_node: i64, src: i64, srt: i64, alo: i64, ahi: i64, s
     }
     let ty_lo: i64 = ast_child0(snode);
     let ty_hi: i64 = ast_child2(snode);
-    let k: i64 = srt_find_by_name(srt, src, ty_lo, ty_hi, 0);
+    let k: i64 = slit_ctor_layout_key(srt, src, ty_lo, ty_hi);
     if k < 0 {
         return 0;
     }
@@ -19979,7 +20018,7 @@ pub fn slit_field_slots(val: i64, src: i64, srt: i64) -> i64 {
     if ast_kind(val) != ast_struct_lit() {
         return 2;
     }
-    let vk: i64 = srt_find_by_name(srt, src, ast_child0(val), ast_child2(val), 0);
+    let vk: i64 = slit_ctor_layout_key(srt, src, ast_child0(val), ast_child2(val));
     if vk < 0 {
         return 0 - 1;
     }
@@ -20020,7 +20059,7 @@ pub fn slit_stores_slots(fields_addr: i64, ntriples: i64, src: i64, srt: i64, k:
 pub fn slit_stmt_outn(stmt: i64, src: i64, srt: i64, fr_ok: i64) -> i64 {
     let snode: i64 = slit_stmt_snode(stmt);
     if snode != 0 {
-        let k: i64 = srt_find_by_name(srt, src, ast_child0(snode), ast_child2(snode), 0);
+        let k: i64 = slit_ctor_layout_key(srt, src, ast_child0(snode), ast_child2(snode));
         if k < 0 {
             return 1;
         }
@@ -20040,7 +20079,7 @@ pub fn slit_stmt_outn(stmt: i64, src: i64, srt: i64, fr_ok: i64) -> i64 {
     // the using statement (1), with the struct-lit replaced by an __mind_alloc ident.
     let hnode: i64 = slit_stmt_hoist_snode(stmt);
     if hnode != 0 {
-        let hk: i64 = srt_find_by_name(srt, src, ast_child0(hnode), ast_child2(hnode), 0);
+        let hk: i64 = slit_ctor_layout_key(srt, src, ast_child0(hnode), ast_child2(hnode));
         if hk < 0 {
             return 1;
         }
@@ -20062,7 +20101,7 @@ pub fn slit_stmt_outn(stmt: i64, src: i64, srt: i64, fr_ok: i64) -> i64 {
     // shared-`__mind_alloc`-span miscompile the fr_ok guard suppressed is gone.
     let frs: i64 = slit_stmt_field_recv_snode(stmt);
     if frs != 0 {
-        let fk: i64 = srt_find_by_name(srt, src, ast_child0(frs), ast_child2(frs), 0);
+        let fk: i64 = slit_ctor_layout_key(srt, src, ast_child0(frs), ast_child2(frs));
         if fk < 0 {
             return 1;
         }
@@ -20116,7 +20155,7 @@ pub fn slit_fill_stores_at(new_stmts: i64, base: i64, fields_addr: i64, ntriples
         return 0 - 1;
     }
     if ast_kind(val) == ast_struct_lit() {
-        let vk: i64 = srt_find_by_name(srt, src, ast_child0(val), ast_child2(val), 0);
+        let vk: i64 = slit_ctor_layout_key(srt, src, ast_child0(val), ast_child2(val));
         if vk < 0 {
             return 0 - 1;
         }
@@ -20396,7 +20435,7 @@ pub fn slit_seq_fill(new_stmts: i64, out_cell: i64, stmts_addr: i64, stmts_len: 
     } else {
         let snode: i64 = slit_stmt_snode(stmt);
         if snode != 0 {
-            let k: i64 = srt_find_by_name(srt, src, ast_child0(snode), ast_child2(snode), 0);
+            let k: i64 = slit_ctor_layout_key(srt, src, ast_child0(snode), ast_child2(snode));
             let nfields: i64 = srt_field_count(srt, k);
             let ec: i64 = slit_emit_ctor(new_stmts, out, stmt, snode, src, srt, k, nfields, alo, ahi, slo, shi);
             __mind_store_i64(out_cell, out + ec)
@@ -20414,7 +20453,7 @@ pub fn slit_seq_fill(new_stmts: i64, out_cell: i64, stmts_addr: i64, stmts_len: 
             if frs != 0 {
                 let fty: i64 = ast_new_leaf(ast_ident(), ast_child0(frs), ast_child2(frs));
                 let _fr: i64 = slit_field_recv_replace(stmt, ast_span_lo(frs), ast_span_hi(frs));
-                let fk: i64 = srt_find_by_name(srt, src, ast_child0(frs), ast_child2(frs), 0);
+                let fk: i64 = slit_ctor_layout_key(srt, src, ast_child0(frs), ast_child2(frs));
                 let fnf: i64 = srt_field_count(srt, fk);
                 let fc: i64 = slit_emit_ctor_hoist(new_stmts, out, frs, src, srt, fk, fnf, alo, ahi, slo, shi, fty);
                 __mind_store_i64(new_stmts + (out + fc) * 8, stmt);
@@ -20423,7 +20462,7 @@ pub fn slit_seq_fill(new_stmts: i64, out_cell: i64, stmts_addr: i64, stmts_len: 
                 let hpre: i64 = slit_stmt_hoist_snode(stmt);
                 let hform: i64 = slit_arg_hoist_form(stmt);
                 let hnode: i64 = slit_hoist_replace(stmt, ast_span_lo(hpre), ast_span_hi(hpre));
-                let hk: i64 = srt_find_by_name(srt, src, ast_child0(hnode), ast_child2(hnode), 0);
+                let hk: i64 = slit_ctor_layout_key(srt, src, ast_child0(hnode), ast_child2(hnode));
                 let hnf: i64 = srt_field_count(srt, hk);
                 // A field-read-on-struct-lit arg (`mk(P{..}.x)`) leaves `<handle>.x`
                 // behind for the field prefold — annotate the alloc-let with the
@@ -20500,7 +20539,7 @@ pub fn slit_copy_source_values(out: i64, fields_addr: i64, nf: i64, j: i64) -> i
     slit_copy_source_values(out, fields_addr, nf, j + 1)
 }
 pub fn slit_set_annotation(node: i64, src: i64, srt: i64, alo: i64, ahi: i64, slo: i64, shi: i64) -> i64 {
-    let k: i64 = srt_find_by_name(srt, src, ast_child0(node), ast_child2(node), 0);
+    let k: i64 = slit_ctor_layout_key(srt, src, ast_child0(node), ast_child2(node));
     if k < 0 {
         // SOURCE-ORDER FALLBACK. When the module defines NO structs, the Rust
         // oracle's struct registry is likewise empty, so it lowers every
@@ -20509,6 +20548,11 @@ pub fn slit_set_annotation(node: i64, src: i64, srt: i64, alo: i64, ahi: i64, sl
         // Registry-independent, so no srt/decl-order threading. Gated on
         // srt_count==0: a module WITH struct defs keeps the fail-closed path for a
         // genuinely-unresolved type, so a decl-order divergence can never open.
+        // The same gate carries the CONSTRUCTION layout precondition: a type that
+        // resolves but whose layout slit_ctor_layout_key does not model also
+        // answers -1 here, and a module holding such a struct necessarily has
+        // srt_count != 0, so it lands on the fail-closed return below and can
+        // never reach the no-registry source-order shape.
         if srt_count(srt) != 0 {
             return 0;
         }

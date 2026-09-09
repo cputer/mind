@@ -1,0 +1,8 @@
+struct R {
+    pre: i64,
+    xs: [i64; 3],
+}
+fn main() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33] };
+    return 1;
+}

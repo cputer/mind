@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1809 | **Est. tokens:** ~3450684
-**Generated:** 2026-09-09 22:22 UTC
+**Files:** 1810 | **Est. tokens:** ~3451316
+**Generated:** 2026-09-09 22:24 UTC
 
 ## Token Budget Guide
 
@@ -68,12 +68,12 @@
 | `examples/lexer/` | 6 | ~8888 |
 | `examples/mind_mirror_v04/` | 2 | ~3836 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3862 |
-| `examples/mindc_mind/` | 174 | ~450281 |
+| `examples/mindc_mind/` | 174 | ~450655 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
 | `examples/mindc_mind/testdata/native_record_array/` | 42 | ~2926 |
-| `examples/mindc_mind/testdata/native_record_trace/` | 12 | ~1869 |
+| `examples/mindc_mind/testdata/native_record_trace/` | 13 | ~2127 |
 | `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2138 |
 | `examples/native/` | 4 | ~1440 |
 | `examples/parser/` | 5 | ~17923 |
@@ -758,7 +758,7 @@
 - `self_host_native_narrowint_smoke.py` (~1656 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 truncating
 - `self_host_native_narrowwrap_smoke.py` (~1673 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 two's-complement
 - `self_host_native_record_array_smoke.py` (~2437 tok, huge) — Focused pure-MIND native fixed-array record-field gate."""
-- `self_host_native_record_trace_smoke.py` (~4432 tok, huge) — Canonical-trace contract for record-field reads, incl. the fixed-array case.
+- `self_host_native_record_trace_smoke.py` (~4806 tok, huge) — Canonical-trace contract for record-field reads, incl. the fixed-array case.
 - `self_host_native_scalar_f32_smoke.py` (~1548 tok, huge) — Phase C1-remainder f32 rung — native-ELF scalar SINGLE-precision chain.
 - `self_host_native_scalar_f64_smoke.py` (~1301 tok, large) — RI-B2 f64 rung (#108) — native-ELF scalar STRICT-FP f64 CHAIN.
 - `self_host_native_scalar_narrow_smoke.py` (~1800 tok, huge) — RI-D / #10 native-float SLICE 1a — native-ELF SATURATING f64 -> signed NARROW
@@ -886,9 +886,10 @@
 - `zero_extent_refuse.mind` (~23 tok, tiny) — fn main() -> i64 {
 ### `examples/mindc_mind/testdata/native_record_trace/`
 
-- `MANIFEST.txt` (~430 tok, medium) — # Canonical record-trace fixtures — recorded evidence bound to its input.
-- `README.md` (~670 tok, large) — Canonical record-trace fixtures
+- `MANIFEST.txt` (~454 tok, medium) — # Canonical record-trace fixtures — recorded evidence bound to its input.
+- `README.md` (~872 tok, large) — Canonical record-trace fixtures
 - `constant_oob.mind` (~28 tok, tiny) — fn main() -> i64 {
+- `construct_only.mind` (~32 tok, tiny) — fn main() -> i64 {
 - `copy_i64.mind` (~35 tok, tiny) — fn main() -> i64 {
 - `direct_i64.mind` (~42 tok, tiny) — fn main() -> i64 {
 - `direct_i64_prefold.mind` (~158 tok, small) — direct_i64.mind plus the intrinsic name literals, so the field prefold takes
