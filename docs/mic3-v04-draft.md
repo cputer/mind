@@ -118,12 +118,13 @@ whether it appears beside the first or nested inside it, and both cases are
 pinned. Nested functions retain independent return IDs. Module semantic rows share one cumulative element scope with every
 declaration's signature, while a function's own scoped rows stay outside it.
 CI executes 72 wire
-vectors and 25 semantic vectors, with exact re-emission checks on every positive
+vectors and 26 semantic vectors, with exact re-emission checks on every positive
 fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.
-Parameter descriptors, local-definition coverage, semantic scope budgets
-and string-table minimality remain explicit parity gaps. Those gaps can also
-change which refusal is diagnosed first; general diagnostic parity is not claimed.
+Parameter names, typed call relationships, each function's cumulative semantic
+scope budget, and string-table minimality remain explicit parity gaps. Those
+gaps can also change which refusal is diagnosed first; general diagnostic
+parity is not claimed.
 This mirror is not installed as the production decoder or a promoted consumer
 compiler.

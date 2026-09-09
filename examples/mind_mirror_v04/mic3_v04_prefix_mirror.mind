@@ -18,11 +18,12 @@
 // reference predicates remain separately named outstanding obligations, not
 // rules this program has checked:
 //
-//   * verify_canonical_metadata — parameter descriptors/names, local definition
-//     coverage, and each function's semantic-row scope/budget remain outside
-//     this mirror. The parameter arity, return-presence, return ValueId, return
-//     descriptor, and FnDef-name-to-declaration identity checks are implemented
-//     below.
+//   * verify_canonical_metadata — parameter names and the remaining call/type
+//     relationships, plus each function's cumulative semantic-row allocation
+//     budget, stay outside this mirror. Parameter descriptor agreement,
+//     local-definition coverage, return metadata and
+//     FnDef-name-to-declaration identity are checked below. The Rust reference
+//     decoder, not this mirror, enforces the cumulative scope budget.
 // Semantic authority presence is checked: a body whose bundle is empty and
 // whose instructions carry no metadata is refused.
 //   * string-table minimality: the reference rebuilds the table from the
@@ -68,8 +69,8 @@
 // fixed arrays multiply, dynamic arrays add one, RecordRef costs one, and every
 // nested shape is checked before its parent. Schema fields share one cumulative
 // scope; function signatures share the future module-value scope. Module value
-// rows are decoded and re-emitted in the complete-body path; semantic
-// validation of those rows remains outside this mirror's wire-only contract.
+// rows are decoded, scope-checked and re-emitted in the complete-body path;
+// typed call relationships remain outside this mirror's narrow contract.
 //
 // SUBSET NOTE. Written in the tail-recursive, immutable, i64-only subset the
 // frozen pure-MIND native compiler accepts: no `while`, no mutation, no structs,
@@ -1620,30 +1621,159 @@ pub fn mv_instr_dst(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
     0 - 1
 }
 
-// 1 when some instruction AT THIS LEVEL defines `vid`. Nested FnDef bodies are
-// stepped over, never descended into.
-pub fn mv_scope_defines(
+// Collect every destination AT THIS LEVEL. Nested FnDef bodies are stepped over,
+// never descended into. The returned count may include duplicates: the
+// reference's canonical-metadata rule asks only whether a definition exists;
+// general IR verification owns duplicate SSA definitions.
+pub fn mv_collect_instr_defs(
     buf: i64,
     len: i64,
     pos: i64,
     n: i64,
-    vid: i64,
+    defs: i64,
+    count: i64,
     st: i64
 ) -> i64 {
     if n <= 0 {
-        return 0;
+        return count;
     }
-    if mv_instr_dst(buf, len, pos, st) == vid {
-        return 1;
+    let dst: i64 = mv_instr_dst(buf, len, pos, st);
+    let next_count: i64 = if dst < 0 { count } else { count + 1 };
+    if dst >= 0 {
+        __mind_store_i64(defs + 8 * count, dst);
     }
     let e: i64 = mv_instr_end(buf, len, pos, st);
     if e < 0 {
-        return 0;
+        return 0 - 1;
     }
-    mv_scope_defines(buf, len, e, n - 1, vid, st)
+    mv_collect_instr_defs(buf, len, e, n - 1, defs, next_count, st)
 }
 
-// Every row in this scope must type a value the scope defines.
+pub fn mv_collect_param_defs(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    defs: i64,
+    count: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        return count;
+    }
+    mv_uleb(buf, len, pos, 0, 0, 1, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_uleb(buf, len, p1, 0, 0, 1, st);
+    let vid: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    __mind_store_i64(defs + 8 * count, vid);
+    mv_collect_param_defs(buf, len, p2, n - 1, defs, count + 1, st)
+}
+
+pub fn mv_defs_swap(defs: i64, left: i64, right: i64) -> i64 {
+    let saved: i64 = __mind_load_i64(defs + 8 * left);
+    __mind_store_i64(defs + 8 * left, __mind_load_i64(defs + 8 * right));
+    __mind_store_i64(defs + 8 * right, saved);
+    0
+}
+
+// Restore a max heap over [0, end). Its recursion follows one child per level,
+// so stack depth is logarithmic in the admitted definition count.
+pub fn mv_defs_sift(defs: i64, root: i64, end: i64) -> i64 {
+    let left: i64 = root * 2 + 1;
+    if left >= end {
+        return 0;
+    }
+    let right: i64 = left + 1;
+    let child: i64 = if right < end {
+        if __mind_load_i64(defs + 8 * right) > __mind_load_i64(defs + 8 * left) {
+            right
+        } else {
+            left
+        }
+    } else {
+        left
+    };
+    if __mind_load_i64(defs + 8 * root) >= __mind_load_i64(defs + 8 * child) {
+        return 0;
+    }
+    mv_defs_swap(defs, root, child);
+    mv_defs_sift(defs, child, end)
+}
+
+pub fn mv_defs_heapify(defs: i64, n: i64, root: i64) -> i64 {
+    if root < 0 {
+        return 0;
+    }
+    mv_defs_sift(defs, root, n);
+    mv_defs_heapify(defs, n, root - 1)
+}
+
+pub fn mv_defs_extract(defs: i64, end: i64) -> i64 {
+    if end <= 1 {
+        return 0;
+    }
+    mv_defs_swap(defs, 0, end - 1);
+    mv_defs_sift(defs, 0, end - 1);
+    mv_defs_extract(defs, end - 1)
+}
+
+pub fn mv_defs_sort(defs: i64, n: i64) -> i64 {
+    if n <= 1 {
+        return 0;
+    }
+    mv_defs_heapify(defs, n, n / 2 - 1);
+    mv_defs_extract(defs, n)
+}
+
+// Binary membership in the sorted definition table. ValueIds are narrowed to
+// nonnegative i64 by mv_uleb, so signed ordering is the exact wire ordering.
+pub fn mv_defs_contains(defs: i64, lo: i64, hi: i64, vid: i64) -> i64 {
+    if lo >= hi {
+        return 0;
+    }
+    let mid: i64 = lo + (hi - lo) / 2;
+    let got: i64 = __mind_load_i64(defs + 8 * mid);
+    if got == vid {
+        return 1;
+    }
+    if got < vid {
+        return mv_defs_contains(defs, mid + 1, hi, vid);
+    }
+    mv_defs_contains(defs, lo, mid, vid)
+}
+
+pub fn mv_rows_in_defs(
+    buf: i64,
+    len: i64,
+    rows: i64,
+    nrow: i64,
+    defs: i64,
+    ndef: i64,
+    st: i64
+) -> i64 {
+    if nrow <= 0 {
+        return 0;
+    }
+    mv_uleb(buf, len, rows, 0, 0, 1, st);
+    let vid: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let e: i64 = mv_desc_end(buf, len, p1, st);
+    if e < 0 {
+        return mv_fail(st, 10);
+    }
+    if mv_defs_contains(defs, 0, ndef, vid) == 0 {
+        return mv_fail(st, 51);
+    }
+    mv_rows_in_defs(buf, len, e, nrow - 1, defs, ndef, st)
+}
+
+// Every row in this scope must type a value the scope defines. Allocate by the
+// number of admitted instructions and parameters, never by the largest ValueId.
+// Both counts are individually bounded by the remaining input and the input is
+// at most mv_max_input(), so the checked sum and eight-byte table cannot wrap.
+// This table is mirror working memory only and does not double-charge the
+// reference decoder's allocation budget.
 pub fn mv_rows_in_scope(
     buf: i64,
     len: i64,
@@ -1658,43 +1788,29 @@ pub fn mv_rows_in_scope(
     if nrow <= 0 {
         return 0;
     }
-    mv_uleb(buf, len, rows, 0, 0, 1, st);
-    let vid: i64 = mv_st_value(st);
-    let p1: i64 = mv_st_cursor(st);
-    let e: i64 = mv_desc_end(buf, len, p1, st);
-    if e < 0 {
+    if ninstr > mv_max_input() {
+        return mv_fail(st, 17);
+    }
+    if nparam > mv_max_input() {
+        return mv_fail(st, 17);
+    }
+    let capacity: i64 = ninstr + nparam;
+    if capacity < ninstr {
+        return mv_fail(st, 17);
+    }
+    let defs: i64 = __mind_alloc(capacity * 8 + 16);
+    let after_params: i64 = mv_collect_param_defs(buf, len, params, nparam, defs, 0, st);
+    let ndef: i64 = mv_collect_instr_defs(
+        buf, len, instrs, ninstr, defs, after_params, st
+    );
+    if ndef < 0 {
+        __mind_free(defs);
         return mv_fail(st, 10);
     }
-    if mv_scope_defines(buf, len, instrs, ninstr, vid, st) == 0 {
-        if mv_param_defines(buf, len, params, nparam, vid, st) == 0 {
-            return mv_fail(st, 51);
-        }
-    }
-    mv_rows_in_scope(buf, len, e, nrow - 1, instrs, ninstr, params, nparam, st)
-}
-
-// 1 when `vid` is one of this function's declared parameters. The module scope
-// passes nparam 0, which is what makes this a function-only relaxation.
-pub fn mv_param_defines(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    vid: i64,
-    st: i64
-) -> i64 {
-    if n <= 0 {
-        return 0;
-    }
-    mv_uleb(buf, len, pos, 0, 0, 1, st);
-    let p1: i64 = mv_st_cursor(st);
-    mv_uleb(buf, len, p1, 0, 0, 1, st);
-    let got: i64 = mv_st_value(st);
-    let p2: i64 = mv_st_cursor(st);
-    if got == vid {
-        return 1;
-    }
-    mv_param_defines(buf, len, p2, n - 1, vid, st)
+    mv_defs_sort(defs, ndef);
+    let result: i64 = mv_rows_in_defs(buf, len, rows, nrow, defs, ndef, st);
+    __mind_free(defs);
+    result
 }
 
 // ---- parameter descriptor agreement ---------------------------------------

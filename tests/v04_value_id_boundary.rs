@@ -172,6 +172,29 @@ fn duplicate_instruction_id_is_not_a_core_value_id_bound_rule() {
 }
 
 #[test]
+fn local_definition_membership_preserves_sparse_duplicates_and_nested_boundaries() {
+    let bytes = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/pos_scope_sparse_duplicate_nested.mic3"
+    );
+    let module = parse_mic3_body(bytes).expect(
+        "same-scope duplicate %300 definitions are membership-equivalent and nested scopes stay opaque",
+    );
+    let Some(Instr::FnDef { body, .. }) = module.instrs.first() else {
+        panic!("fixture must contain an outer function");
+    };
+    assert!(matches!(body.first(), Some(Instr::FnDef { .. })));
+    assert_eq!(
+        body.iter()
+            .filter(|instr| matches!(instr, Instr::ConstI64(ValueId(300), 42)))
+            .count(),
+        2,
+        "fixture must keep both sparse same-scope definitions",
+    );
+    assert!(matches!(body.get(2), Some(Instr::ConstI64(ValueId(2), 42))));
+    assert!(matches!(body.get(3), Some(Instr::ConstI64(ValueId(1), 42))));
+}
+
+#[test]
 fn duplicate_module_rows_are_refused_before_core_bound_check() {
     let bytes = body(1, &[0], &[0, 0]);
     let error = parse_mic3_body(&bytes).expect_err("duplicate semantic rows");
