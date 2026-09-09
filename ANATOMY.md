@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1730 | **Est. tokens:** ~3363442
-**Generated:** 2026-09-09 04:56 UTC
+**Files:** 1779 | **Est. tokens:** ~3393331
+**Generated:** 2026-09-09 05:24 UTC
 
 ## Token Budget Guide
 
@@ -66,6 +66,8 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
+| `examples/mind_mirror_v04/` | 3 | ~13924 |
+| `examples/mind_mirror_v04/testdata/` | 42 | ~2239 |
 | `examples/mindc_mind/` | 172 | ~441747 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
@@ -131,7 +133,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 392 | ~783597 |
+| `tests/` | 393 | ~790261 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -189,7 +191,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
-| `tests/support/` | 1 | ~773 |
+| `tests/support/` | 4 | ~7835 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -633,6 +635,55 @@
 - `lorenz_q16.mind` (~1091 tok, large) â€” Deterministic Q16.16 fixed-point Lorenz-attractor integrator (forward Euler).
 - `mandelbrot.mind` (~1019 tok, large) â€” Deterministic IEEE-754 float64 Mandelbrot escape-count renderer.
 - `mandelbrot_strict.mind` (~982 tok, large) â€” Strict-f64 Mandelbrot escape-count checksum â€” a determinism-wedge demo.
+### `examples/mind_mirror_v04/`
+
+- `RUNNER_REPLACEMENT.md` (~784 tok, large) â€” `mirror_gate.py` â€” replacement checklist
+- `mic3_v04_prefix_mirror.mind` (~10240 tok, huge) â€” ===========================================================================
+- `mirror_gate.py` (~2900 tok, huge) â€” Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
+### `examples/mind_mirror_v04/testdata/`
+
+- `MANIFEST.tsv` (~1575 tok, huge) â€” # name	expected_exit	bytes	sha256	consumed	note
+- `neg_bad_magic.mic3` (~26 tok, tiny) â€” MIC4	PairalphaentrymainownerAownerBstepxzeta
+- `neg_bad_return_present_tag.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_bad_utf8_string.mic3` (~3 tok, tiny) â€” MIC3Ã(
+- `neg_duplicate_field.mic3` (~17 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_duplicate_strings.mic3` (~5 tok, tiny) â€” MIC3alphaalpha
+- `neg_dynamic_over_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
+- `neg_empty_schema_owner.mic3` (~6 tok, tiny) â€” MIC3Pairf
+- `neg_function_cumulative_elements.mic3` (~14 tok, tiny) â€” MIC3entrymain€€ €€@€€ €€@
+- `neg_intrinsic_without_reserved_owner.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_non_minimal_surface.mic3` (~26 tok, tiny) â€” MIC3€	PairalphaentrymainownerAownerBstepxzeta
+- `neg_overlong_surface.mic3` (~29 tok, tiny) â€” MIC3€€€€€€€€€€€€	PairalphaentrymainownerAownerBstepxzeta
+- `neg_path_like_function_owner.mic3` (~6 tok, tiny) â€” MIC3A..Bmain
+- `neg_path_like_schema_owner.mic3` (~7 tok, tiny) â€” MIC3A..BPairf
+- `neg_reserved_owner_not_intrinsic.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_schema_cumulative_elements.mic3` (~14 tok, tiny) â€” MIC3ABabc€€ €€@€€ €€@
+- `neg_schema_descriptor_product.mic3` (~11 tok, tiny) â€” MIC3ABfÿÿÿÿÿÿÿÿ
+- `neg_schema_ref_out_of_bounds.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_std_surface_required.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_string_count_overruns.mic3` (~3 tok, tiny) â€” MIC3€€€€€ 
+- `neg_string_length_overruns.mic3` (~4 tok, tiny) â€” MIC3€€€€€ ab
+- `neg_truncated_header.mic3` (~1 tok, tiny) â€” MIC3
+- `neg_truncated_schema_headers.mic3` (~15 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_truncated_string_bytes.mic3` (~25 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_unknown_function_kind.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_unknown_scalar_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta	
+- `neg_unknown_surface_bits.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_unknown_type_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_unsorted_functions.mic3` (~14 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_unsorted_schemas.mic3` (~19 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_unsorted_strings.mic3` (~14 tok, tiny) â€” MIC3	alphaPairentrymainownerAownerBstepxzeta
+- `neg_wrong_version.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `neg_zero_extent_hides_product.mic3` (~11 tok, tiny) â€” MIC3ABfÿÿÿÿÿÿÿÿ
+- `pos_full_body_element_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
+- `pos_full_body_long_string.mic3` (~57 tok, small) â€” MIC3Èxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+- `pos_full_body_scoped.mic3` (~41 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
+- `pos_full_body_small.mic3` (~6 tok, tiny) â€” MIC3T
+- `pos_prefix_element_boundary.mic3` (~8 tok, tiny) â€” MIC3ABf€€@€€@
+- `pos_prefix_empty_strings.mic3` (~3 tok, tiny) â€” MIC3
+- `pos_prefix_long_string.mic3` (~53 tok, small) â€” MIC3Èxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+- `pos_prefix_record_ref_cost_one.mic3` (~6 tok, tiny) â€” MIC3ABf
+- `pos_prefix_scoped.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 ### `examples/mindc_mind/`
 
 - `.gitignore` (~5 tok, tiny) â€” __pycache__/
@@ -2322,6 +2373,9 @@
 ### `tests/support/`
 
 - `g2_policy_rejections.rs` (~773 tok, large) â€” Copyright 2026 STARGA Inc.
+- `v04_mirror_descriptor_vectors.rs` (~1853 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_modules.rs` (~1403 tok, large) â€” Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_oracle.rs` (~3806 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
 ### `tests/`
 
 - `target_cerebras.rs` (~340 tok, medium) â€” Cerebras backend target â€” first-class surface tests.
@@ -2360,6 +2414,7 @@
 - `typo_reject.rs` (~1127 tok, large) â€” Copyright 2025 STARGA Inc.
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) â€” Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) â€” Copyright 2025 STARGA Inc.
+- `v04_mirror_vector_dump.rs` (~6664 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) â€” Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) â€” Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) â€” Copyright 2025 STARGA Inc.

@@ -1,0 +1,1342 @@
+// ===========================================================================
+// MIC3 v0x04 DECLARED-PREFIX MIRROR — pure MIND, executed as a native ELF.
+//
+// WHAT THIS IS. An additive, pure-MIND re-implementation of the DECLARED PREFIX
+// of the draft MIC3 `0x04` core codec: the header (magic, version byte,
+// required-surface bits), the string table, the schema section, and function
+// declarations with their signature descriptors. It reads an artifact named on
+// argv, decodes that prefix, re-emits it through its own canonical encoder, and
+// compares the re-emitted bytes against the consumed input bytes. Exit 0 means
+// the prefix decoded AND re-encoded byte for byte AND the artifact contained
+// nothing past the declared prefix.
+//
+// WHAT THIS IS NOT. It is not a whole-codec mirror. Everything after function
+// declarations — next_id, exports, instructions, compatibility counts and
+// module semantic value rows — is DECLARED OUT OF SCOPE and REFUSED with its own exit
+// code (20), never silently accepted. A `0x04` artifact from the reference
+// encoder therefore exits 20 here, with its prefix proven byte-identical; it
+// does not exit 0, because this program cannot certify the rest.
+//
+// DECLARED NARROWINGS vs the reference decoder, stated rather than hidden:
+//   * ULEB128 values are admitted up to 2^62-1. The reference admits the full
+//     u64 range. A larger value is refused as a limit breach (exit 17), never
+//     wrapped. Every field this prefix carries is far below that bound.
+//   * The re-emission buffer is bounded at 65536 bytes; a longer prefix is
+//     refused as a limit breach (exit 17).
+//   * The input buffer is bounded at MAX_MIC3_INPUT + 2; anything longer is
+//     refused as oversize (exit 17) without being decoded.
+//
+//   * The string index table and the schema table are bounded by the admitted
+//     prefix, so a declared count larger than that prefix is refused as a limit
+//     breach (exit 17) before either table is allocated.
+//
+// The allocation-budget mirror follows the reference formula
+// min(128 MiB, 1 MiB + 32 * input_bytes) with the reference's own charges for
+// string-table slots (32 each), string bytes (1 each), schema headers (256
+// each), schema fields (192 each), type descriptors (160 each) and the
+// eight-bytes-per-referenced-byte owned-projection charge. The reference's
+// final whole-body "canonical re-emission" charge is NOT applied here: it is
+// levied once the whole body is admitted, which this subset does not yet do.
+// Semantic descriptors use the separate reference limit of 2^40 elements:
+// fixed arrays multiply, dynamic arrays add one, RecordRef costs one, and every
+// nested shape is checked before its parent. Schema fields share one cumulative
+// scope; function signatures share the future module-value scope. Module value
+// rows remain outside this bounded prefix and are still refused as remainder.
+//
+// SUBSET NOTE. Written in the tail-recursive, immutable, i64-only subset the
+// frozen pure-MIND native compiler accepts: no `while`, no mutation, no structs,
+// no aggregate returns. Multi-value results travel through an explicit state
+// record in raw memory.
+//
+// USAGE
+//   ./mirror <artifact>            decode + checked re-emission, exit = verdict
+//   ./mirror <artifact> --dump     on success also write the re-emitted prefix
+//                                  bytes to stdout, so a caller can compare them
+//                                  against the input itself rather than trusting
+//                                  this program's own equality claim
+//
+// EXIT CODES (one distinct named cause per refusal class)
+//    0 OK_EXACT             prefix decoded, re-emitted byte-identically, no remainder
+//    2 USAGE                no artifact path on argv
+//    3 OPEN_FAILED          open(2) failed
+//   10 TRUNCATED            input ends inside a field the grammar requires
+//   11 BAD_MAGIC            first four bytes are not "MIC3"
+//   12 WRONG_VERSION        version byte is not 0x04
+//   13 NON_MINIMAL_ULEB     terminating ULEB byte is 0 at a nonzero index
+//   14 OVERLONG_ULEB        ULEB continuation runs past the admitted length
+//   15 UNKNOWN_SURFACE      required-surface bits outside KNOWN_SURFACE_BITS
+//   16 STD_SURFACE_REQUIRED REQUIRED_STD_SURFACE set: refused by the core codec
+//   17 OVERSIZE             input, prefix or value exceeds a declared bound
+//   18 REEMIT_MISMATCH      canonical re-emission differs from the consumed bytes
+//   19 STRING_TABLE_ORDER   string table is not strictly sorted by UTF-8 bytes
+//   20 REMAINDER_REFUSED    prefix verified; content beyond the declared subset
+//   21 BAD_UTF8             string-table entry is not valid UTF-8
+//   22 BUDGET_EXHAUSTED     decoded-allocation budget breached
+//   23 INDEX_OUT_OF_BOUNDS  a string or schema reference names no entry
+//   24 DESCRIPTOR_DEPTH     type descriptor nests past the declared limit
+//   25 UNKNOWN_TYPE_TAG     type or scalar tag outside the core codec
+//   26 SCHEMA_ORDER         schema identities are not strictly sorted
+//   27 BAD_IDENTITY         identity component empty or path-like
+//   28 DUPLICATE_FIELD      a schema declares the same field name twice
+//   29 UNKNOWN_FUNCTION_KIND function kind tag outside local/external/intrinsic
+//   30 FUNCTION_ORDER       function identities are not strictly sorted
+//   31 RESERVED_OWNER       intrinsic owner rule violated in either direction
+//   32 BAD_OPTIONAL_TAG     an explicit 0/1 presence tag is neither
+//   33 DESCRIPTOR_ELEMENTS  one semantic descriptor or its cumulative scope
+//                           exceeds the reference's 2^40 element bound
+// ===========================================================================
+
+// ---- declared bounds ------------------------------------------------------
+
+pub fn mv_max_input() -> i64 {
+    10485760
+}
+
+pub fn mv_max_prefix() -> i64 {
+    65536
+}
+
+pub fn mv_max_uleb_value() -> i64 {
+    4611686018427387903
+}
+
+pub fn mv_budget_base() -> i64 {
+    1048576
+}
+
+pub fn mv_budget_cap() -> i64 {
+    134217728
+}
+
+pub fn mv_max_descriptor_elements() -> i64 {
+    1099511627776
+}
+
+// ---- state record ---------------------------------------------------------
+// st+0 cursor   st+8 value   st+16 status   st+24 remaining allocation budget
+// st+32 last descriptor elements   st+40 schema cumulative elements
+// st+48 module-value/function-signature cumulative elements
+
+pub fn mv_st_cursor(st: i64) -> i64 {
+    __mind_load_i64(st + 0)
+}
+
+pub fn mv_st_value(st: i64) -> i64 {
+    __mind_load_i64(st + 8)
+}
+
+pub fn mv_st_status(st: i64) -> i64 {
+    __mind_load_i64(st + 16)
+}
+
+pub fn mv_fail(st: i64, code: i64) -> i64 {
+    __mind_store_i64(st + 16, code);
+    code
+}
+
+pub fn mv_st_budget(st: i64) -> i64 {
+    __mind_load_i64(st + 24)
+}
+
+pub fn mv_st_elements(st: i64) -> i64 {
+    __mind_load_i64(st + 32)
+}
+
+// Add the last descriptor's semantic element cost to one reference-owned
+// scope. `slot` is st+40 for all schema fields, or st+48 for module values plus
+// all function parameters/returns. Subtract before adding so no admitted input
+// can overflow i64 while checking the smaller 2^40 contract.
+pub fn mv_add_elements(st: i64, slot: i64) -> i64 {
+    let item: i64 = mv_st_elements(st);
+    let total: i64 = __mind_load_i64(st + slot);
+    if item > mv_max_descriptor_elements() - total {
+        return mv_fail(st, 33);
+    }
+    __mind_store_i64(st + slot, total + item);
+    0
+}
+
+// Deduct `amount` from the reference decoder's remaining allocation budget.
+// Returns 0, or 22 with the status set when the budget is breached. Charges are
+// applied in the reference's order so that a body which exhausts the budget
+// does so at the same point here.
+pub fn mv_charge(st: i64, amount: i64) -> i64 {
+    let left: i64 = __mind_load_i64(st + 24) - amount;
+    if left < 0 {
+        return mv_fail(st, 22);
+    }
+    __mind_store_i64(st + 24, left);
+    0
+}
+
+// ---- input ----------------------------------------------------------------
+
+// read(2) may return short; loop until `want` or EOF. Returns bytes read.
+pub fn mv_read_all(fd: i64, buf: i64, want: i64, got: i64) -> i64 {
+    if got >= want {
+        return got;
+    }
+    let n: i64 = __mind_read(fd, buf + got, want - got, 0 - 1);
+    if n <= 0 {
+        return got;
+    }
+    mv_read_all(fd, buf, want, got + n)
+}
+
+// ---- ULEB128 --------------------------------------------------------------
+
+// Decode a minimal ULEB128 at `pos`. On success stores the next cursor at st+0
+// and the value at st+8 and returns 0; otherwise stores and returns the cause.
+//
+// `mul` is 128^idx, carried instead of shifting so the accumulation is a plain
+// multiply-add. idx is capped at 8, i.e. at most nine bytes / 63 value bits,
+// which is the declared narrowing against the reference's ten-byte u64 form.
+pub fn mv_uleb(buf: i64, len: i64, pos: i64, idx: i64, acc: i64, mul: i64, st: i64) -> i64 {
+    if pos >= len {
+        return mv_fail(st, 10);
+    }
+    if idx > 8 {
+        return mv_fail(st, 14);
+    }
+    let b: i64 = __mind_load_i8(buf + pos);
+    let acc2: i64 = acc + (b & 127) * mul;
+    if acc2 < 0 {
+        return mv_fail(st, 17);
+    }
+    if acc2 > mv_max_uleb_value() {
+        return mv_fail(st, 17);
+    }
+    if b < 128 {
+        if idx > 0 {
+            if b == 0 {
+                return mv_fail(st, 13);
+            }
+        }
+        __mind_store_i64(st + 0, pos + 1);
+        __mind_store_i64(st + 8, acc2);
+        __mind_store_i64(st + 16, 0);
+        return 0;
+    }
+    mv_uleb(buf, len, pos + 1, idx + 1, acc2, mul * 128, st)
+}
+
+// Canonical minimal ULEB128 encoder. Writes at `pos`, returns the next offset.
+pub fn mv_put_uleb(buf: i64, pos: i64, v: i64) -> i64 {
+    let rest: i64 = v >> 7;
+    if rest == 0 {
+        __mind_store_i8(buf + pos, v & 127);
+        return pos + 1;
+    }
+    __mind_store_i8(buf + pos, (v & 127) + 128);
+    mv_put_uleb(buf, pos + 1, rest)
+}
+
+// ---- UTF-8 ----------------------------------------------------------------
+
+pub fn mv_cont(buf: i64, i: i64, lo: i64, hi: i64) -> i64 {
+    let b: i64 = __mind_load_i8(buf + i);
+    if b < lo {
+        return 0;
+    }
+    if b > hi {
+        return 0;
+    }
+    1
+}
+
+// Validate [pos, end) as UTF-8. Returns 1 when valid, 0 otherwise.
+pub fn mv_utf8(buf: i64, pos: i64, end: i64) -> i64 {
+    if pos >= end {
+        return 1;
+    }
+    let b: i64 = __mind_load_i8(buf + pos);
+    if b < 128 {
+        return mv_utf8(buf, pos + 1, end);
+    }
+    if b < 194 {
+        return 0;
+    }
+    if b < 224 {
+        if pos + 2 > end {
+            return 0;
+        }
+        if mv_cont(buf, pos + 1, 128, 191) == 0 {
+            return 0;
+        }
+        return mv_utf8(buf, pos + 2, end);
+    }
+    if b < 240 {
+        if pos + 3 > end {
+            return 0;
+        }
+        if b == 224 {
+            if mv_cont(buf, pos + 1, 160, 191) == 0 {
+                return 0;
+            }
+        }
+        if b == 237 {
+            if mv_cont(buf, pos + 1, 128, 159) == 0 {
+                return 0;
+            }
+        }
+        if b != 224 {
+            if b != 237 {
+                if mv_cont(buf, pos + 1, 128, 191) == 0 {
+                    return 0;
+                }
+            }
+        }
+        if mv_cont(buf, pos + 2, 128, 191) == 0 {
+            return 0;
+        }
+        return mv_utf8(buf, pos + 3, end);
+    }
+    if b > 244 {
+        return 0;
+    }
+    if pos + 4 > end {
+        return 0;
+    }
+    if b == 240 {
+        if mv_cont(buf, pos + 1, 144, 191) == 0 {
+            return 0;
+        }
+    }
+    if b == 244 {
+        if mv_cont(buf, pos + 1, 128, 143) == 0 {
+            return 0;
+        }
+    }
+    if b != 240 {
+        if b != 244 {
+            if mv_cont(buf, pos + 1, 128, 191) == 0 {
+                return 0;
+            }
+        }
+    }
+    if mv_cont(buf, pos + 2, 128, 191) == 0 {
+        return 0;
+    }
+    if mv_cont(buf, pos + 3, 128, 191) == 0 {
+        return 0;
+    }
+    mv_utf8(buf, pos + 4, end)
+}
+
+// ---- byte-lexicographic compare -------------------------------------------
+
+// Compare buf[a, a+alen) with buf[b, b+blen): 0 when a < b strictly, else 1.
+// Shorter-is-less on a shared prefix, matching a byte-slice ordering.
+pub fn mv_strictly_less(buf: i64, a: i64, alen: i64, b: i64, blen: i64, i: i64) -> i64 {
+    if i >= alen {
+        if i >= blen {
+            return 0;
+        }
+        return 1;
+    }
+    if i >= blen {
+        return 0;
+    }
+    let x: i64 = __mind_load_i8(buf + a + i);
+    let y: i64 = __mind_load_i8(buf + b + i);
+    if x < y {
+        return 1;
+    }
+    if x > y {
+        return 0;
+    }
+    mv_strictly_less(buf, a, alen, b, blen, i + 1)
+}
+
+// ---- string table: validating walk ----------------------------------------
+
+// Walk `n` remaining entries starting at `pos`. `prev` / `prevlen` describe the
+// previous entry (prevlen < 0 means there is none). `budget` is the reference
+// allocation budget's remaining charge. On success stores the end cursor at
+// st+0 and returns 0; otherwise stores and returns the cause.
+// `tab` receives one 16-byte row per admitted entry -- its offset in `buf` and
+// its length -- so that later sections can resolve a string index without
+// re-walking the table. `idx` is the row being written.
+pub fn mv_walk_strings(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    prev: i64,
+    prevlen: i64,
+    budget: i64,
+    tab: i64,
+    idx: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        __mind_store_i64(st + 16, 0);
+        __mind_store_i64(st + 24, budget);
+        return 0;
+    }
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    let slen: i64 = mv_st_value(st);
+    let body: i64 = mv_st_cursor(st);
+    if slen > len - body {
+        return mv_fail(st, 10);
+    }
+    let budget2: i64 = budget - slen;
+    if budget2 < 0 {
+        return mv_fail(st, 22);
+    }
+    if mv_utf8(buf, body, body + slen) == 0 {
+        return mv_fail(st, 21);
+    }
+    if prevlen >= 0 {
+        if mv_strictly_less(buf, prev, prevlen, body, slen, 0) == 0 {
+            return mv_fail(st, 19);
+        }
+    }
+    __mind_store_i64(tab + 16 * idx + 0, body);
+    __mind_store_i64(tab + 16 * idx + 8, slen);
+    mv_walk_strings(
+        buf,
+        len,
+        body + slen,
+        n - 1,
+        body,
+        slen,
+        budget2,
+        tab,
+        idx + 1,
+        st
+    )
+}
+
+// ---- string table: index resolution ---------------------------------------
+
+pub fn mv_str_off(tab: i64, i: i64) -> i64 {
+    __mind_load_i64(tab + 16 * i + 0)
+}
+
+pub fn mv_str_len(tab: i64, i: i64) -> i64 {
+    __mind_load_i64(tab + 16 * i + 8)
+}
+
+// Read a ULEB string index at `pos`, refuse one that names no entry, and charge
+// the reference's owned-projection cost of eight bytes per referenced byte.
+// Stores the end cursor at st+0 and the index at st+8.
+pub fn mv_string_ref(buf: i64, len: i64, pos: i64, nstr: i64, tab: i64, st: i64) -> i64 {
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    let idx: i64 = mv_st_value(st);
+    if idx >= nstr {
+        return mv_fail(st, 23);
+    }
+    mv_charge(st, mv_str_len(tab, idx) * 8)
+}
+
+// 1 when the component is nonempty and contains no '/', '\\' or "..", which is
+// the reference's wire-safe identity predicate. No normalization is applied:
+// the bytes are judged exactly as supplied.
+pub fn mv_ident_ok(buf: i64, off: i64, n: i64, i: i64) -> i64 {
+    if n <= 0 {
+        return 0;
+    }
+    if i >= n {
+        return 1;
+    }
+    let c: i64 = __mind_load_i8(buf + off + i);
+    if c == 47 {
+        return 0;
+    }
+    if c == 92 {
+        return 0;
+    }
+    if c == 46 {
+        if i + 1 < n {
+            if __mind_load_i8(buf + off + i + 1) == 46 {
+                return 0;
+            }
+        }
+    }
+    mv_ident_ok(buf, off, n, i + 1)
+}
+
+// ---- string table: canonical re-emission ----------------------------------
+
+pub fn mv_copy(src: i64, dst: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return n;
+    }
+    __mind_store_i8(dst + i, __mind_load_i8(src + i));
+    mv_copy(src, dst, n, i + 1)
+}
+
+// Re-emit `n` entries read from `inbuf` at `ipos` into `outbuf` at `opos`.
+// Returns the next output offset. Only called after mv_walk_strings admitted
+// the same bytes, so every read here is in bounds.
+pub fn mv_emit_strings(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let slen: i64 = mv_st_value(st);
+    let body: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, slen);
+    mv_copy(inbuf + body, outbuf + o1, slen, 0);
+    mv_emit_strings(inbuf, outbuf, body + slen, o1 + slen, n - 1, st)
+}
+
+// ---- type descriptors -----------------------------------------------------
+
+// Validate one type descriptor at `pos`, mirroring the reference read_type_expr.
+// `nschema` bounds record references and `sch` supplies their identity string
+// indices so the projection charge matches. Stores the end cursor at st+0 and
+// the reference semantic element cost at st+32.
+//
+// The scalar, record-reference, fixed-array and dynamic-array tags are the four
+// the core codec defines; every other tag is refused rather than skipped.
+pub fn mv_type_expr(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    depth: i64,
+    nschema: i64,
+    sch: i64,
+    tab: i64,
+    st: i64
+) -> i64 {
+    if depth > 64 {
+        return mv_fail(st, 24);
+    }
+    let rc0: i64 = mv_charge(st, 160);
+    if rc0 != 0 {
+        return rc0;
+    }
+    if pos >= len {
+        return mv_fail(st, 10);
+    }
+    let tag: i64 = __mind_load_i8(buf + pos);
+    if tag == 0 {
+        if pos + 1 >= len {
+            return mv_fail(st, 10);
+        }
+        let scalar: i64 = __mind_load_i8(buf + pos + 1);
+        if scalar < 0 {
+            return mv_fail(st, 25);
+        }
+        if scalar > 8 {
+            return mv_fail(st, 25);
+        }
+        __mind_store_i64(st + 0, pos + 2);
+        __mind_store_i64(st + 32, 1);
+        return 0;
+    }
+    if tag == 1 {
+        let rc: i64 = mv_uleb(buf, len, pos + 1, 0, 0, 1, st);
+        if rc != 0 {
+            return rc;
+        }
+        let idx: i64 = mv_st_value(st);
+        let end: i64 = mv_st_cursor(st);
+        if idx >= nschema {
+            return mv_fail(st, 23);
+        }
+        let owner: i64 = __mind_load_i64(sch + 16 * idx + 0);
+        let name: i64 = __mind_load_i64(sch + 16 * idx + 8);
+        let olen: i64 = mv_str_len(tab, owner);
+        let nlen: i64 = mv_str_len(tab, name);
+        let rcc: i64 = mv_charge(st, olen * 8 + nlen * 8);
+        if rcc != 0 {
+            return rcc;
+        }
+        __mind_store_i64(st + 0, end);
+        __mind_store_i64(st + 32, 1);
+        return 0;
+    }
+    if tag == 2 {
+        let rc: i64 = mv_uleb(buf, len, pos + 1, 0, 0, 1, st);
+        if rc != 0 {
+            return rc;
+        }
+        let extent: i64 = mv_st_value(st);
+        let end: i64 = mv_st_cursor(st);
+        if extent > 4294967295 {
+            return mv_fail(st, 17);
+        }
+        let rce: i64 = mv_type_expr(buf, len, end, depth + 1, nschema, sch, tab, st);
+        if rce != 0 {
+            return rce;
+        }
+        let child: i64 = mv_st_elements(st);
+        if extent == 0 {
+            __mind_store_i64(st + 32, 0);
+            return 0;
+        }
+        if child > mv_max_descriptor_elements() / extent {
+            return mv_fail(st, 33);
+        }
+        __mind_store_i64(st + 32, child * extent);
+        return 0;
+    }
+    if tag == 3 {
+        let rce: i64 = mv_type_expr(buf, len, pos + 1, depth + 1, nschema, sch, tab, st);
+        if rce != 0 {
+            return rce;
+        }
+        let child: i64 = mv_st_elements(st);
+        if child >= mv_max_descriptor_elements() {
+            return mv_fail(st, 33);
+        }
+        __mind_store_i64(st + 32, child + 1);
+        return 0;
+    }
+    mv_fail(st, 25)
+}
+
+// ---- schema identity headers ----------------------------------------------
+
+// Walk `n` remaining schema identity headers, each a pair of string indices.
+//
+// Strict order is checked on the INDICES. That is exactly the reference's byte
+// comparison of the identities, and not an approximation of it: the string
+// table has already been admitted as unique and sorted by UTF-8 bytes, so index
+// order and byte order are the same relation. If that table property is ever
+// weakened this comparison stops being equivalent, which is why the string walk
+// refuses a non-sorted table before any of this runs.
+pub fn mv_walk_schema_headers(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    prevo: i64,
+    prevn: i64,
+    nstr: i64,
+    tab: i64,
+    sch: i64,
+    idx: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc1: i64 = mv_string_ref(buf, len, pos, nstr, tab, st);
+    if rc1 != 0 {
+        return rc1;
+    }
+    let owner: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let rc2: i64 = mv_string_ref(buf, len, p1, nstr, tab, st);
+    if rc2 != 0 {
+        return rc2;
+    }
+    let name: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    if mv_ident_ok(buf, mv_str_off(tab, owner), mv_str_len(tab, owner), 0) == 0 {
+        return mv_fail(st, 27);
+    }
+    if mv_ident_ok(buf, mv_str_off(tab, name), mv_str_len(tab, name), 0) == 0 {
+        return mv_fail(st, 27);
+    }
+    if prevo >= 0 {
+        if owner < prevo {
+            return mv_fail(st, 26);
+        }
+        if owner == prevo {
+            if name <= prevn {
+                return mv_fail(st, 26);
+            }
+        }
+    }
+    __mind_store_i64(sch + 16 * idx + 0, owner);
+    __mind_store_i64(sch + 16 * idx + 8, name);
+    mv_walk_schema_headers(
+        buf, len, p2, n - 1, owner, name, nstr, tab, sch, idx + 1, st
+    )
+}
+
+// ---- schema field lists ---------------------------------------------------
+
+// 1 when `idx` already appears among the first `n` recorded field names. Field
+// names are string indices and the table is unique, so a repeated index is
+// exactly a repeated name.
+pub fn mv_seen(fld: i64, n: i64, idx: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    if __mind_load_i64(fld + 8 * i) == idx {
+        return 1;
+    }
+    mv_seen(fld, n, idx, i + 1)
+}
+
+// Walk the field list of ONE schema. `seen` counts the names already recorded
+// in `fld` for this schema, which is what makes the duplicate check per-schema
+// rather than global -- two schemas may each declare a field of the same name.
+pub fn mv_walk_fields(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    seen: i64,
+    nstr: i64,
+    nschema: i64,
+    tab: i64,
+    sch: i64,
+    fld: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc1: i64 = mv_string_ref(buf, len, pos, nstr, tab, st);
+    if rc1 != 0 {
+        return rc1;
+    }
+    let name: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    if mv_str_len(tab, name) <= 0 {
+        return mv_fail(st, 27);
+    }
+    if mv_seen(fld, seen, name, 0) == 1 {
+        return mv_fail(st, 28);
+    }
+    __mind_store_i64(fld + 8 * seen, name);
+    let rc2: i64 = mv_type_expr(buf, len, p1, 0, nschema, sch, tab, st);
+    if rc2 != 0 {
+        return rc2;
+    }
+    let rce: i64 = mv_add_elements(st, 40);
+    if rce != 0 {
+        return rce;
+    }
+    let p2: i64 = mv_st_cursor(st);
+    mv_walk_fields(
+        buf, len, p2, n - 1, seen + 1, nstr, nschema, tab, sch, fld, st
+    )
+}
+
+// Walk every schema's field list, in header order.
+pub fn mv_walk_schemas(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    nstr: i64,
+    nschema: i64,
+    tab: i64,
+    sch: i64,
+    fld: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    let k: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    if k > len - p1 {
+        return mv_fail(st, 10);
+    }
+    if k > mv_max_prefix() {
+        return mv_fail(st, 17);
+    }
+    let rcc: i64 = mv_charge(st, k * 192);
+    if rcc != 0 {
+        return rcc;
+    }
+    let rcf: i64 = mv_walk_fields(buf, len, p1, k, 0, nstr, nschema, tab, sch, fld, st);
+    if rcf != 0 {
+        return rcf;
+    }
+    let p2: i64 = mv_st_cursor(st);
+    mv_walk_schemas(buf, len, p2, n - 1, nstr, nschema, tab, sch, fld, st)
+}
+
+// ---- function declarations ------------------------------------------------
+
+// The i-th byte of the reserved intrinsic owner "__mind_intrinsic".
+pub fn mv_reserved_byte(i: i64) -> i64 {
+    if i == 0 {
+        return 95;
+    }
+    if i == 1 {
+        return 95;
+    }
+    if i == 2 {
+        return 109;
+    }
+    if i == 3 {
+        return 105;
+    }
+    if i == 4 {
+        return 110;
+    }
+    if i == 5 {
+        return 100;
+    }
+    if i == 6 {
+        return 95;
+    }
+    if i == 7 {
+        return 105;
+    }
+    if i == 8 {
+        return 110;
+    }
+    if i == 9 {
+        return 116;
+    }
+    if i == 10 {
+        return 114;
+    }
+    if i == 11 {
+        return 105;
+    }
+    if i == 12 {
+        return 110;
+    }
+    if i == 13 {
+        return 115;
+    }
+    if i == 14 {
+        return 105;
+    }
+    if i == 15 {
+        return 99;
+    }
+    0 - 1
+}
+
+// 1 when the bytes at (off, n) are exactly the reserved intrinsic owner.
+pub fn mv_is_reserved_owner(buf: i64, off: i64, n: i64, i: i64) -> i64 {
+    if n != 16 {
+        return 0;
+    }
+    if i >= 16 {
+        return 1;
+    }
+    if __mind_load_i8(buf + off + i) != mv_reserved_byte(i) {
+        return 0;
+    }
+    mv_is_reserved_owner(buf, off, n, i + 1)
+}
+
+// Walk `n` signature parameters, each a semantic type descriptor. The wire
+// grammar for a semantic type is the schema field grammar, so the same walker
+// admits both; the reference keeps two functions over one encoding.
+pub fn mv_walk_params(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    nschema: i64,
+    sch: i64,
+    tab: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_type_expr(buf, len, pos, 0, nschema, sch, tab, st);
+    if rc != 0 {
+        return rc;
+    }
+    let rce: i64 = mv_add_elements(st, 48);
+    if rce != 0 {
+        return rce;
+    }
+    let p1: i64 = mv_st_cursor(st);
+    mv_walk_params(buf, len, p1, n - 1, nschema, sch, tab, st)
+}
+
+// Walk `n` remaining function declarations. Order is checked on the identity
+// string indices for the same reason it is for schemas.
+pub fn mv_walk_functions(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    prevo: i64,
+    prevn: i64,
+    nstr: i64,
+    nschema: i64,
+    tab: i64,
+    sch: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc1: i64 = mv_string_ref(buf, len, pos, nstr, tab, st);
+    if rc1 != 0 {
+        return rc1;
+    }
+    let owner: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let rc2: i64 = mv_string_ref(buf, len, p1, nstr, tab, st);
+    if rc2 != 0 {
+        return rc2;
+    }
+    let name: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    let ooff: i64 = mv_str_off(tab, owner);
+    let olen: i64 = mv_str_len(tab, owner);
+    if mv_ident_ok(buf, ooff, olen, 0) == 0 {
+        return mv_fail(st, 27);
+    }
+    if mv_ident_ok(buf, mv_str_off(tab, name), mv_str_len(tab, name), 0) == 0 {
+        return mv_fail(st, 27);
+    }
+    if prevo >= 0 {
+        if owner < prevo {
+            return mv_fail(st, 30);
+        }
+        if owner == prevo {
+            if name <= prevn {
+                return mv_fail(st, 30);
+            }
+        }
+    }
+    if p2 >= len {
+        return mv_fail(st, 10);
+    }
+    let kind: i64 = __mind_load_i8(buf + p2);
+    if kind < 0 {
+        return mv_fail(st, 29);
+    }
+    if kind > 2 {
+        return mv_fail(st, 29);
+    }
+    // The reserved owner and the intrinsic kind imply each other. Both
+    // directions are refused, so neither a disguised intrinsic nor an ordinary
+    // function wearing the reserved owner is admitted.
+    let reserved: i64 = mv_is_reserved_owner(buf, ooff, olen, 0);
+    if kind == 2 {
+        if reserved == 0 {
+            return mv_fail(st, 31);
+        }
+    }
+    if kind != 2 {
+        if reserved == 1 {
+            return mv_fail(st, 31);
+        }
+    }
+    let rc3: i64 = mv_uleb(buf, len, p2 + 1, 0, 0, 1, st);
+    if rc3 != 0 {
+        return rc3;
+    }
+    let nparam: i64 = mv_st_value(st);
+    let p3: i64 = mv_st_cursor(st);
+    if nparam > len - p3 {
+        return mv_fail(st, 10);
+    }
+    let rcc: i64 = mv_charge(st, nparam * 128);
+    if rcc != 0 {
+        return rcc;
+    }
+    let rc4: i64 = mv_walk_params(buf, len, p3, nparam, nschema, sch, tab, st);
+    if rc4 != 0 {
+        return rc4;
+    }
+    let p4: i64 = mv_st_cursor(st);
+    if p4 >= len {
+        return mv_fail(st, 10);
+    }
+    let present: i64 = __mind_load_i8(buf + p4);
+    if present == 0 {
+        return mv_walk_functions(
+            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, st
+        );
+    }
+    if present != 1 {
+        return mv_fail(st, 32);
+    }
+    let rc5: i64 = mv_type_expr(buf, len, p4 + 1, 0, nschema, sch, tab, st);
+    if rc5 != 0 {
+        return rc5;
+    }
+    let rce: i64 = mv_add_elements(st, 48);
+    if rce != 0 {
+        return rce;
+    }
+    let p5: i64 = mv_st_cursor(st);
+    mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, st)
+}
+
+// ---- schema section: canonical re-emission --------------------------------
+
+// Re-emit one type descriptor, regenerating every ULEB rather than copying it,
+// so a non-minimal encoding in the input cannot survive into the output and
+// still compare equal. Stores the next input offset at st+0, returns the next
+// output offset. Only called after mv_type_expr admitted the same bytes.
+pub fn mv_emit_type(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> i64 {
+    let tag: i64 = __mind_load_i8(inbuf + ipos);
+    __mind_store_i8(outbuf + opos, tag);
+    if tag == 0 {
+        __mind_store_i8(outbuf + opos + 1, __mind_load_i8(inbuf + ipos + 1));
+        __mind_store_i64(st + 0, ipos + 2);
+        return opos + 2;
+    }
+    if tag == 1 {
+        mv_uleb(inbuf, ipos + 12, ipos + 1, 0, 0, 1, st);
+        let v: i64 = mv_st_value(st);
+        return mv_put_uleb(outbuf, opos + 1, v);
+    }
+    if tag == 2 {
+        mv_uleb(inbuf, ipos + 12, ipos + 1, 0, 0, 1, st);
+        let v: i64 = mv_st_value(st);
+        let e: i64 = mv_st_cursor(st);
+        let o1: i64 = mv_put_uleb(outbuf, opos + 1, v);
+        return mv_emit_type(inbuf, outbuf, e, o1, st);
+    }
+    mv_emit_type(inbuf, outbuf, ipos + 1, opos + 1, st)
+}
+
+pub fn mv_emit_schema_headers(
+    inbuf: i64,
+    outbuf: i64,
+    ipos: i64,
+    opos: i64,
+    n: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let owner: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_uleb(inbuf, p1 + 12, p1, 0, 0, 1, st);
+    let name: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, owner);
+    let o2: i64 = mv_put_uleb(outbuf, o1, name);
+    mv_emit_schema_headers(inbuf, outbuf, p2, o2, n - 1, st)
+}
+
+pub fn mv_emit_fields(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let name: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, name);
+    let o2: i64 = mv_emit_type(inbuf, outbuf, p1, o1, st);
+    let p2: i64 = mv_st_cursor(st);
+    mv_emit_fields(inbuf, outbuf, p2, o2, n - 1, st)
+}
+
+pub fn mv_emit_schema_bodies(
+    inbuf: i64,
+    outbuf: i64,
+    ipos: i64,
+    opos: i64,
+    n: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let k: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, k);
+    let o2: i64 = mv_emit_fields(inbuf, outbuf, p1, o1, k, st);
+    let p2: i64 = mv_st_cursor(st);
+    mv_emit_schema_bodies(inbuf, outbuf, p2, o2, n - 1, st)
+}
+
+pub fn mv_emit_params(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    let o1: i64 = mv_emit_type(inbuf, outbuf, ipos, opos, st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_emit_params(inbuf, outbuf, p1, o1, n - 1, st)
+}
+
+pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let owner: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    mv_uleb(inbuf, p1 + 12, p1, 0, 0, 1, st);
+    let name: i64 = mv_st_value(st);
+    let p2: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, owner);
+    let o2: i64 = mv_put_uleb(outbuf, o1, name);
+    __mind_store_i8(outbuf + o2, __mind_load_i8(inbuf + p2));
+    mv_uleb(inbuf, p2 + 13, p2 + 1, 0, 0, 1, st);
+    let nparam: i64 = mv_st_value(st);
+    let p3: i64 = mv_st_cursor(st);
+    let o3: i64 = mv_put_uleb(outbuf, o2 + 1, nparam);
+    let o4: i64 = mv_emit_params(inbuf, outbuf, p3, o3, nparam, st);
+    let p4: i64 = mv_st_cursor(st);
+    let present: i64 = __mind_load_i8(inbuf + p4);
+    __mind_store_i8(outbuf + o4, present);
+    if present == 0 {
+        return mv_emit_functions(inbuf, outbuf, p4 + 1, o4 + 1, n - 1, st);
+    }
+    let o5: i64 = mv_emit_type(inbuf, outbuf, p4 + 1, o4 + 1, st);
+    let p5: i64 = mv_st_cursor(st);
+    mv_emit_functions(inbuf, outbuf, p5, o5, n - 1, st)
+}
+
+// ---- byte comparison ------------------------------------------------------
+
+pub fn mv_equal(a: i64, b: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 1;
+    }
+    if __mind_load_i8(a + i) != __mind_load_i8(b + i) {
+        return 0;
+    }
+    mv_equal(a, b, n, i + 1)
+}
+
+// ---- argv ----------------------------------------------------------------
+
+// Does argv[i] equal "--dump"? Compared byte by byte against a NUL terminator.
+pub fn mv_is_dump(p: i64) -> i64 {
+    if __mind_load_i8(p + 0) != 45 {
+        return 0;
+    }
+    if __mind_load_i8(p + 1) != 45 {
+        return 0;
+    }
+    if __mind_load_i8(p + 2) != 100 {
+        return 0;
+    }
+    if __mind_load_i8(p + 3) != 117 {
+        return 0;
+    }
+    if __mind_load_i8(p + 4) != 109 {
+        return 0;
+    }
+    if __mind_load_i8(p + 5) != 112 {
+        return 0;
+    }
+    if __mind_load_i8(p + 6) != 0 {
+        return 0;
+    }
+    1
+}
+
+// ---- driver ---------------------------------------------------------------
+
+pub fn main() -> i64 {
+    if __mind_argc() < 2 {
+        return 2;
+    }
+    let fd: i64 = __mind_open(__mind_argv(1));
+    if fd < 0 {
+        return 3;
+    }
+
+    let cap: i64 = mv_max_input() + 2;
+    let inbuf: i64 = __mind_alloc(cap + 16);
+    let len: i64 = mv_read_all(fd, inbuf, cap, 0);
+
+    // Oversize is decided before any decoding, exactly as the reference does.
+    if len > mv_max_input() {
+        return 17;
+    }
+
+    let st: i64 = __mind_alloc(64);
+    __mind_store_i64(st + 40, 0);
+    __mind_store_i64(st + 48, 0);
+
+    // --- header ---
+    if len < 4 {
+        return 10;
+    }
+    if __mind_load_i8(inbuf + 0) != 77 {
+        return 11;
+    }
+    if __mind_load_i8(inbuf + 1) != 73 {
+        return 11;
+    }
+    if __mind_load_i8(inbuf + 2) != 67 {
+        return 11;
+    }
+    if __mind_load_i8(inbuf + 3) != 51 {
+        return 11;
+    }
+    if len < 5 {
+        return 10;
+    }
+    if __mind_load_i8(inbuf + 4) != 4 {
+        return 12;
+    }
+
+    // --- required-surface bits ---
+    let rc1: i64 = mv_uleb(inbuf, len, 5, 0, 0, 1, st);
+    if rc1 != 0 {
+        return rc1;
+    }
+    let surface: i64 = mv_st_value(st);
+    let after_surface: i64 = mv_st_cursor(st);
+    // KNOWN_SURFACE_BITS is REQUIRED_STD_SURFACE only, i.e. bit 0.
+    if surface > 1 {
+        return 15;
+    }
+    if surface == 1 {
+        return 16;
+    }
+
+    // --- allocation budget, mirroring min(128 MiB, 1 MiB + 32 * input) ---
+    let raw_budget: i64 = mv_budget_base() + 32 * len;
+    let budget0: i64 = if raw_budget > mv_budget_cap() {
+        mv_budget_cap()
+    } else {
+        raw_budget
+    };
+
+    // --- string table ---
+    let rc2: i64 = mv_uleb(inbuf, len, after_surface, 0, 0, 1, st);
+    if rc2 != 0 {
+        return rc2;
+    }
+    let count: i64 = mv_st_value(st);
+    let table_start: i64 = mv_st_cursor(st);
+    // The reference refuses a count that cannot fit in the remaining bytes
+    // before allocating anything for it.
+    if count > len - table_start {
+        return 10;
+    }
+    let budget1: i64 = budget0 - count * 32;
+    if budget1 < 0 {
+        return 22;
+    }
+    // Declared narrowing: every entry costs at least one length byte, so a table
+    // larger than the admitted prefix cannot fit in a prefix this mirror will
+    // accept. Refusing it here bounds the index table before it is allocated.
+    if count > mv_max_prefix() {
+        return 17;
+    }
+    let tab: i64 = __mind_alloc(16 * count + 16);
+    let rc3: i64 = mv_walk_strings(inbuf, len, table_start, count, 0, 0 - 1, budget1, tab, 0, st);
+    if rc3 != 0 {
+        return rc3;
+    }
+    let after_strings: i64 = mv_st_cursor(st);
+
+    // --- schema identity headers ---
+    let rc4: i64 = mv_uleb(inbuf, len, after_strings, 0, 0, 1, st);
+    if rc4 != 0 {
+        return rc4;
+    }
+    let nschema: i64 = mv_st_value(st);
+    let sch_start: i64 = mv_st_cursor(st);
+    if nschema > len - sch_start {
+        return 10;
+    }
+    if nschema > mv_max_prefix() {
+        return 17;
+    }
+    let rc5: i64 = mv_charge(st, nschema * 256);
+    if rc5 != 0 {
+        return rc5;
+    }
+    let sch: i64 = __mind_alloc(16 * nschema + 16);
+    let fld: i64 = __mind_alloc(8 * mv_max_prefix() + 16);
+    let rc6: i64 = mv_walk_schema_headers(
+        inbuf, len, sch_start, nschema, 0 - 1, 0 - 1, count, tab, sch, 0, st
+    );
+    if rc6 != 0 {
+        return rc6;
+    }
+    let bodies_start: i64 = mv_st_cursor(st);
+
+    // --- schema field lists ---
+    let rc7: i64 = mv_walk_schemas(
+        inbuf, len, bodies_start, nschema, count, nschema, tab, sch, fld, st
+    );
+    if rc7 != 0 {
+        return rc7;
+    }
+    let after_schemas: i64 = mv_st_cursor(st);
+
+    // --- function declarations ---
+    let rc8: i64 = mv_uleb(inbuf, len, after_schemas, 0, 0, 1, st);
+    if rc8 != 0 {
+        return rc8;
+    }
+    let nfunc: i64 = mv_st_value(st);
+    let fn_start: i64 = mv_st_cursor(st);
+    if nfunc > len - fn_start {
+        return 10;
+    }
+    let rc9: i64 = mv_charge(st, nfunc * 320);
+    if rc9 != 0 {
+        return rc9;
+    }
+    let rc10: i64 = mv_walk_functions(
+        inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, st
+    );
+    if rc10 != 0 {
+        return rc10;
+    }
+    let prefix_len: i64 = mv_st_cursor(st);
+    if prefix_len > mv_max_prefix() {
+        return 17;
+    }
+
+    // --- checked canonical re-emission of exactly the consumed prefix ---
+    let outbuf: i64 = __mind_alloc(mv_max_prefix() + 16);
+    __mind_store_i8(outbuf + 0, 77);
+    __mind_store_i8(outbuf + 1, 73);
+    __mind_store_i8(outbuf + 2, 67);
+    __mind_store_i8(outbuf + 3, 51);
+    __mind_store_i8(outbuf + 4, 4);
+    let o1: i64 = mv_put_uleb(outbuf, 5, surface);
+    let o2: i64 = mv_put_uleb(outbuf, o1, count);
+    let o3: i64 = mv_emit_strings(inbuf, outbuf, table_start, o2, count, st);
+    let o4: i64 = mv_put_uleb(outbuf, o3, nschema);
+    let o5: i64 = mv_emit_schema_headers(inbuf, outbuf, sch_start, o4, nschema, st);
+    let hdr_end: i64 = mv_st_cursor(st);
+    let o6: i64 = mv_emit_schema_bodies(inbuf, outbuf, hdr_end, o5, nschema, st);
+    let o7: i64 = mv_put_uleb(outbuf, o6, nfunc);
+    let o8: i64 = mv_emit_functions(inbuf, outbuf, fn_start, o7, nfunc, st);
+
+    if o8 != prefix_len {
+        return 18;
+    }
+    if mv_equal(inbuf, outbuf, prefix_len, 0) == 0 {
+        return 18;
+    }
+
+    // The re-emitted bytes are offered to the caller so the byte comparison can
+    // be redone outside this process rather than taken on its word.
+    if __mind_argc() > 2 {
+        if mv_is_dump(__mind_argv(2)) == 1 {
+            __mind_write(1, outbuf, o8, 0 - 1);
+        }
+    }
+
+    // Anything past the declared prefix is refused, never silently accepted.
+    if prefix_len != len {
+        return 20;
+    }
+    0
+}
