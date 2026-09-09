@@ -221,15 +221,14 @@ def main():
                 if name.startswith("pos_"):
                     dump = run_bounded([str(elf_path), str(path), "--dump"])
                     emitted = dump.stdout
-                    # The expected length is the REFERENCE decoder's consumed boundary,
-                    # published in the manifest. Comparing against data[:len(emitted)]
-                    # would be self-lengthed: a mirror emitting a SHORTER but correct
-                    # prefix would satisfy it, and a truncating mutant would survive.
-                    # The dump run must exit with the SAME code the vector expects.
-                    # Requiring 0 would be wrong: a vector whose remainder is refused
-                    # exits 20 and still emits a complete, correct prefix first. What
-                    # must not pass is a dump whose process failed differently from the
-                    # verdict the reference decided.
+            # The expected length is published in the manifest by a SECOND
+            # implementation (the oracle), not by the program under test and not
+            # by the reference decoder -- the reference consumes the whole body,
+            # so it cannot supply this subset boundary. Comparing against
+            # data[:len(emitted)] would be self-lengthed: a mirror emitting a
+            # SHORTER but correct prefix would satisfy it, and a truncating
+            # mutant would survive. The generator carries the reference-derived
+            # whole-body assertion that this leg cannot make.
                     if dump.returncode != expected:
                         failures.append(
                             f"{name}: --dump exited {dump.returncode}, expected "

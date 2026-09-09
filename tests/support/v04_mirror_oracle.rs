@@ -289,11 +289,18 @@ pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), St
     let mut exports: Vec<usize> = Vec::new();
     for _ in 0..export_count {
         let index = read_uleb(body, &mut pos)? as usize;
-        if exports.last().is_some_and(|previous| *previous >= index) {
-            return Err("export references are not strictly sorted".to_string());
-        }
         if index >= strings.len() {
             return Err("export names no string".to_string());
+        }
+        // Order is compared on the export NAME BYTES here, deliberately unlike
+        // the mirror, which compares string indices. Both are correct given a
+        // unique byte-sorted string table, and checking them differently is the
+        // point: a review found this section had converged on the same shortcut
+        // in both implementations, so a shared mistake would have cancelled out.
+        if let Some(previous) = exports.last() {
+            if strings[*previous].as_slice() >= strings[index].as_slice() {
+                return Err("export references are not strictly sorted".to_string());
+            }
         }
         exports.push(index);
     }

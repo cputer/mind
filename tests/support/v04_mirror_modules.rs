@@ -151,6 +151,31 @@ pub(super) fn prefix_has_multibyte_uleb(prefix: &[u8]) -> bool {
     multi
 }
 
+/// A module carrying `count` exports. Exports are the only strings this module
+/// contributes, so their string-table indices are 0..count, i.e. CONSECUTIVE
+/// and, once `count` exceeds 128, reaching a MULTI-BYTE ULEB index.
+///
+/// Both properties are load-bearing. Every other positive in the corpus has at
+/// most one export sitting at index 0, which leaves an emitter that always
+/// writes 0, and an order rule that demands a gap between successive indices,
+/// indistinguishable from the correct code.
+pub(super) fn module_with_export_count(count: usize) -> IRModule {
+    let mut module = module_value_only();
+    for index in 0..count {
+        module.exports.insert(format!("e{index:04}"));
+    }
+    module
+}
+
+/// A module whose `next_id` needs a MULTI-BYTE ULEB. `next_id` is the first
+/// field in the body that is not bounded by the remaining byte count, so a
+/// single-byte-only emitter survives every other positive.
+pub(super) fn module_with_wide_next_id() -> IRModule {
+    let mut module = module_value_only();
+    module.next_id = 300;
+    module
+}
+
 pub(super) fn module_with_export_name_len(length: usize) -> IRModule {
     let mut module = module_value_only();
     module.exports.insert("x".repeat(length));

@@ -10,9 +10,10 @@
 // the prefix decoded AND re-encoded byte for byte AND the artifact contained
 // nothing past the declared prefix.
 //
-// WHAT THIS IS NOT. It is not a whole-codec mirror. Everything after function
-// declarations — next_id, exports, instructions, compatibility counts and
-// module semantic value rows — is DECLARED OUT OF SCOPE and REFUSED with its own exit
+// WHAT THIS IS NOT. It is not a whole-codec mirror. Module next_id and the
+// export list ARE now decoded, validated and re-emitted. Everything after them
+// — instructions, the four reserved compatibility counts and module semantic
+// value rows — is DECLARED OUT OF SCOPE and REFUSED with its own exit
 // code (20), never silently accepted. A `0x04` artifact from the reference
 // encoder therefore exits 20 here, with its prefix proven byte-identical; it
 // does not exit 0, because this program cannot certify the rest.
@@ -20,7 +21,13 @@
 // DECLARED NARROWINGS vs the reference decoder, stated rather than hidden:
 //   * ULEB128 values are admitted up to 2^62-1. The reference admits the full
 //     u64 range. A larger value is refused as a limit breach (exit 17), never
-//     wrapped. Every field this prefix carries is far below that bound.
+//     wrapped. This WAS unreachable while every field was a count bounded by
+//     the remaining byte span. It no longer is: `next_id` is the first field
+//     the grammar does not bound that way, so a body declaring next_id above
+//     2^62-1 is refused here (exit 17, or exit 14 past nine bytes) while the
+//     reference admits it and re-emits it. That is a real, constructible
+//     divergence, stated rather than hidden. The reference's own
+//     next_id == usize::MAX refusal is pre-empted by these limits.
 //   * The re-emission buffer is bounded at 65536 bytes; a longer prefix is
 //     refused as a limit breach (exit 17).
 //   * The input buffer is bounded at MAX_MIC3_INPUT + 2; anything longer is
@@ -86,8 +93,8 @@
 //                           exceeds the reference's 2^40 element bound
 //   34 INTRINSIC_CONTRACT   reserved intrinsic has no exact registered
 //                           name or `(i64...) -> i64` signature
-// ===========================================================================
 //   35 EXPORT_ORDER         export references are not strictly increasing
+// ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
 
@@ -1325,6 +1332,10 @@ pub fn mv_walk_exports(
     mv_walk_exports(buf, len, p1, n - 1, idx, nstr, tab, st)
 }
 
+// Re-emit `n` export references. Only called after mv_walk_exports admitted the
+// same bytes, so every read here is in bounds and the discarded mv_uleb status
+// cannot be an error. Without that precondition a failed decode would leave
+// st+0 and st+8 stale and this loop would write from garbage.
 pub fn mv_emit_exports(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, ipos);

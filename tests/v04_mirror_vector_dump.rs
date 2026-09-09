@@ -49,15 +49,21 @@ struct Vector {
     note: &'static str,
 }
 
-/// The exact prefix length the REFERENCE decoder consumes for `bytes`, or 0 when
-/// the reference refuses it.
+/// The prefix length the ORACLE consumes for `bytes`, or 0 when it refuses.
 ///
-/// This exists because comparing a program's output against
-/// `input[..output.len()]` is self-lengthed: a mirror that emitted a SHORTER but
-/// correct prefix would satisfy it. The expected length has to come from
-/// somewhere the mirror cannot influence, so it is derived here and published in
-/// the manifest for the harness to enforce.
-fn reference_consumed_len(bytes: &[u8]) -> usize {
+/// NAMED HONESTLY, after a review found the previous name and comment claimed
+/// this was the reference decoder's number. It is not, and it cannot be: the
+/// reference consumes the WHOLE body, so for a full-body vector it returns the
+/// total length, not the boundary of the subset this mirror certifies.
+///
+/// What it IS, and why it is still worth having: a length produced by a SECOND
+/// implementation the mirror cannot influence. That defeats the self-lengthed
+/// comparison -- checking output against `input[..output.len()]`, which any
+/// short-but-correct prefix satisfies. What it does NOT defeat is a boundary
+/// error the oracle and the mirror share. The full-body vectors carry a
+/// separate reference-derived assertion for exactly that reason; see the
+/// cross-check below.
+fn oracle_consumed_len(bytes: &[u8]) -> usize {
     match rederive_prefix(bytes) {
         Ok((_, prefix_len, _)) => prefix_len,
         Err(_) => 0,
@@ -637,6 +643,20 @@ fn v04_prefix_vectors() {
             // The prefix-only vectors are truncated bodies: the reference parses
             // the WHOLE body, so only the full-body vectors can be accepted by it.
             if vector.name.starts_with("pos_full_body") {
+                // REFERENCE-DERIVED, and deliberately not the oracle: the
+                // reference must consume the vector ENTIRELY. A boundary error
+                // the oracle and the mirror happened to share would still be
+                // caught here, because this number comes from neither of them.
+                if let Ok(parsed) = &verdict {
+                    assert_eq!(
+                        parsed.consumed,
+                        vector.bytes.len(),
+                        "{} must be consumed entirely by the reference decoder",
+                        vector.name
+                    );
+                }
+            }
+            if vector.name.starts_with("pos_full_body") {
                 assert!(
                     verdict.is_ok(),
                     "{} must parse under the reference decoder",
@@ -662,7 +682,7 @@ fn v04_prefix_vectors() {
             refused += 1;
         }
     }
-    assert_eq!(accepted, 5, "five full-body positives");
+    assert_eq!(accepted, 6, "six full-body positives");
     assert!(refused >= 14, "at least fourteen refusals, got {refused}");
 
     // --- write the corpus ------------------------------------------------
@@ -690,7 +710,7 @@ fn v04_prefix_vectors() {
             vector.expect,
             vector.bytes.len(),
             digest,
-            reference_consumed_len(&vector.bytes),
+            oracle_consumed_len(&vector.bytes),
             vector.note
         ));
     }
