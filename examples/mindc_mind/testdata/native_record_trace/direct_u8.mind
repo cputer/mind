@@ -1,0 +1,7 @@
+struct R {
+    xs: [u8; 3],
+}
+fn main() -> i64 {
+    let r: R = R { xs: [0, 44, 255] };
+    return r.xs[1];
+}

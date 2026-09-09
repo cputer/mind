@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1796 | **Est. tokens:** ~3444141
-**Generated:** 2026-09-09 20:42 UTC
+**Files:** 1809 | **Est. tokens:** ~3450684
+**Generated:** 2026-09-09 22:22 UTC
 
 ## Token Budget Guide
 
@@ -22,14 +22,14 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~30587 |
+| `./` | 33 | ~30631 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~37194 |
+| `.github/workflows/` | 9 | ~37207 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -68,11 +68,12 @@
 | `examples/lexer/` | 6 | ~8888 |
 | `examples/mind_mirror_v04/` | 2 | ~3836 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3862 |
-| `examples/mindc_mind/` | 173 | ~445750 |
+| `examples/mindc_mind/` | 174 | ~450281 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
 | `examples/mindc_mind/testdata/native_record_array/` | 42 | ~2926 |
+| `examples/mindc_mind/testdata/native_record_trace/` | 12 | ~1869 |
 | `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2138 |
 | `examples/native/` | 4 | ~1440 |
 | `examples/parser/` | 5 | ~17923 |
@@ -81,7 +82,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 31 | ~116834 |
+| `scripts/` | 31 | ~116920 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -214,7 +215,7 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `.editorconfig` (~51 tok, small) — root = true
 - `.gitattributes` (~130 tok, small) — # Enforce LF line endings for all text so byte-exact tests (fmt idempotence,
-- `.gitignore` (~906 tok, large) — # Rust
+- `.gitignore` (~950 tok, large) — # Rust
 - `.sembleignore` (~72 tok, small) — # semble code-search ignore list
 - `ARCHITECTURE.md` (~300 tok, medium) — MIND Architecture (high level)
 - `AUDIT_REPORT.md` (~1151 tok, large) — Audit Report
@@ -271,7 +272,7 @@
 
 - `bench-gate.yml` (~2417 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~25338 tok, huge) — name: CI
+- `ci.yml` (~25351 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -649,7 +650,7 @@
 - `.gitignore` (~5 tok, tiny) — __pycache__/
 - `EXPECTED.md` (~773 tok, large) — Phase 6.5 Stage 5 — Expected IR Text (APEX)
 - `FIXED_POINT_REPORT.md` (~1770 tok, huge) — Phase 6.5 — Bootstrap Fixed-Point Report
-- `SMOKE_WIRING.tsv` (~3757 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
+- `SMOKE_WIRING.tsv` (~3822 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
 - `VERDICT_SHAPE_RESIDUAL.txt` (~1100 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `_diagnostic_project.py` (~376 tok, medium) — Owned CLI projects for diagnostic smoke fixtures."""
 - `_frozen_native_oracle.py` (~384 tok, medium) — Integrity-checked frozen references for the native ELF smoke."""
@@ -671,7 +672,7 @@
 - `cutover_coverage_measure.py` (~3255 tok, huge)
 - `div_shift_cmp_edge_smoke.py` (~1846 tok, huge)
 - `enum_netverify.py` (~1957 tok, huge) — # Canonical independent net-verify harness for C-LIKE ENUMS in the native-ELF backend.
-- `fast_keystone.sh` (~3842 tok, huge) — fast_keystone.sh — fast LOCAL front-end keystone gate for the pure-MIND self-host
+- `fast_keystone.sh` (~3876 tok, huge) — fast_keystone.sh — fast LOCAL front-end keystone gate for the pure-MIND self-host
 - `field_store_netverify.py` (~1413 tok, large) — # Canonical independent value harness for struct field STORES (`p.x = v`) in the
 - `fixed_point_smoke.py` (~3275 tok, huge)
 - `fixture.mind` (~183 tok, small) — Phase 6.4 emit_ir smoke fixture.
@@ -757,6 +758,7 @@
 - `self_host_native_narrowint_smoke.py` (~1656 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 truncating
 - `self_host_native_narrowwrap_smoke.py` (~1673 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 two's-complement
 - `self_host_native_record_array_smoke.py` (~2437 tok, huge) — Focused pure-MIND native fixed-array record-field gate."""
+- `self_host_native_record_trace_smoke.py` (~4432 tok, huge) — Canonical-trace contract for record-field reads, incl. the fixed-array case.
 - `self_host_native_scalar_f32_smoke.py` (~1548 tok, huge) — Phase C1-remainder f32 rung — native-ELF scalar SINGLE-precision chain.
 - `self_host_native_scalar_f64_smoke.py` (~1301 tok, large) — RI-B2 f64 rung (#108) — native-ELF scalar STRICT-FP f64 CHAIN.
 - `self_host_native_scalar_narrow_smoke.py` (~1800 tok, huge) — RI-D / #10 native-float SLICE 1a — native-ELF SATURATING f64 -> signed NARROW
@@ -882,6 +884,20 @@
 - `wrong_owner_param_refuse.mind` (~59 tok, small) — fn read_a(r: A) -> i64 {
 - `wrong_owner_return_refuse.mind` (~50 tok, small) — fn make() -> A {
 - `zero_extent_refuse.mind` (~23 tok, tiny) — fn main() -> i64 {
+### `examples/mindc_mind/testdata/native_record_trace/`
+
+- `MANIFEST.txt` (~430 tok, medium) — # Canonical record-trace fixtures — recorded evidence bound to its input.
+- `README.md` (~670 tok, large) — Canonical record-trace fixtures
+- `constant_oob.mind` (~28 tok, tiny) — fn main() -> i64 {
+- `copy_i64.mind` (~35 tok, tiny) — fn main() -> i64 {
+- `direct_i64.mind` (~42 tok, tiny) — fn main() -> i64 {
+- `direct_i64_prefold.mind` (~158 tok, small) — direct_i64.mind plus the intrinsic name literals, so the field prefold takes
+- `direct_u8.mind` (~28 tok, tiny) — fn main() -> i64 {
+- `reference.mind` (~212 tok, medium) — fn direct_i64_reference() -> i64 {
+- `scalar_owner.mind` (~41 tok, tiny) — fn main() -> i64 {
+- `scalar_owner_named.mind` (~157 tok, small) — The prefold passes rewrite field reads into `__mind_load_i64` calls whose
+- `wrong_owner.mind` (~40 tok, tiny) — fn main() -> i64 {
+- `wrong_type.mind` (~28 tok, tiny) — fn main() -> i64 {
 ### `examples/mindc_mind/testdata/`
 
 - `rh_f64_aggregate_canary.mind` (~876 tok, large) — RH f64-aggregate self-host/native canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
@@ -964,7 +980,7 @@
 - `cfg_gate_wiring_lint.py` (~4265 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7653 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~9384 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~9470 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~2217 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~4342 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the

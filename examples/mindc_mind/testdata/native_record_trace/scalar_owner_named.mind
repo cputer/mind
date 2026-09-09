@@ -1,0 +1,16 @@
+// The prefold passes rewrite field reads into `__mind_load_i64` calls whose
+// callee span must be resolvable by the strtab and emit passes. When a module
+// does not itself spell `__mind_alloc` / `__mind_store_i64` / `__mind_load_i64`,
+// those spans come from build_src_intrinsics' appended copy instead. This
+// fixture carries the literals so the ORDINARY in-source span route is covered
+// alongside scalar_owner.mind, which covers the appended-copy route.
+struct Owner {
+    pre: i64,
+    mid: i64,
+    post: i64,
+}
+
+fn main() -> i64 {
+    let o: Owner = Owner { pre: 5, mid: 22, post: 7 };
+    return o.mid + o.post;
+}

@@ -1,0 +1,18 @@
+# Canonical record-trace fixtures — recorded evidence bound to its input.
+# A row is valid only for the exact source bytes named by size+sha256; edit a
+# fixture and the gate fails until its row is re-derived (--bless).
+# role: trace     = canonical bytes must equal --emit-mic3; the executable must exit as recorded
+#       blocked   = must stay 0 bytes on BOTH paths (fixed-array record layout not modelled yet)
+#       refuse    = must stay 0 bytes on BOTH paths (wrong type / unproven owner / constant OOB)
+#       evaluator = ordinary `mindc test` fixture; expected_exit is the test count
+# name	role	size_bytes	source_sha256	trace_sha256	expected_exit
+constant_oob	refuse	111	5adafd05a8cbe5d7fc4963e56ee549f29e94e38332e51fb7a0b281bc4e0a4c91	-	-
+copy_i64	blocked	138	9edb0c84f23e6dd409ed3f6a596806aee47d4cb374850b4f3808f3c69d363619	-	-
+direct_i64	blocked	166	488d3d0cc6d7a3dfd88fa05fedaadff400c8083e8e79cc0d0cca1a656e8bc959	-	-
+direct_i64_prefold	blocked	629	bb75f49fcf9e8f10ddd4db222b6c3a06f510e9e8deab762fe136feb22193dbae	-	-
+direct_u8	blocked	110	329745fa15bd8bd6400b1274444cab8b99b64536dc6c7049b17080332df92406	-	-
+reference	evaluator	847	936f2f4cbe3a3d33dcd9073ce50e4b5b76be600ed9a461216a9cdc7e9cd50bf8	-	5
+scalar_owner	trace	164	d6b3af32db4ebf05884447359da5817376a32d2a778d3d64d460c85103fc3c30	2a229e7205b3efa7fd73484385cbe401d3c0150ef8c58ca3f33648ec7044d4a2	29
+scalar_owner_named	trace	627	27c1ecfbde3036dd3ad0bf351c5d77a135f6682943f6f15be91a27c3452b26f9	2a229e7205b3efa7fd73484385cbe401d3c0150ef8c58ca3f33648ec7044d4a2	29
+wrong_owner	refuse	160	06f5c6f36a02efc3cf114669f66da5cc3a7fda5aa385ee1d73914c1d51691516	-	-
+wrong_type	refuse	111	3c398acdf2e29a3e02985a35ac5cd4b0a827b7f9b7dbf43dec2f92d14f457852	-	-

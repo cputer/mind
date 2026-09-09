@@ -1169,7 +1169,8 @@ jobs:
             self_host_if_region_carry_smoke \
             self_host_native_fp_call_smoke \
             self_host_native_fp_field_smoke \
-            self_host_native_record_array_smoke; do
+            self_host_native_record_array_smoke \
+            self_host_native_record_trace_smoke; do
             echo "=== $s ==="
             if MINDC_SO=/tmp/libmindc_mind_self_host.so \
                MINDC_BIN="${{ github.workspace }}/target/release/mindc" \

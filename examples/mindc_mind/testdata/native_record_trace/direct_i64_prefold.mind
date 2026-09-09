@@ -1,0 +1,15 @@
+// direct_i64.mind plus the intrinsic name literals, so the field prefold takes
+// its in-source span route instead of build_src_intrinsics' appended copy:
+// `__mind_alloc`, `__mind_store_i64`, `__mind_load_i64`. Without the canonical
+// layout precondition this shape emitted a 203-byte module against the
+// reference's 279 — a valid-looking artifact with the wrong bytes. It must
+// stay at zero until the fixed-array record layout is modelled canonically.
+struct R {
+    pre: i64,
+    xs: [i64; 3],
+    post: i64,
+}
+fn main() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33], post: 7 };
+    return r.xs[1] + r.post;
+}

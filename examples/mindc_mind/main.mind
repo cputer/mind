@@ -1423,6 +1423,14 @@ pub fn ast_new_call(span_lo: i64, span_hi: i64, callee: i64, args_vec_addr: i64,
     __mind_store_i64(n + 32, args_vec_addr);
     __mind_store_i64(n + 40, 0);
     __mind_store_i64(n + 48, args_len);
+    // +56 = per-kind annotation slot, and ast_call is a kind that READS it
+    // (cached_narrow_expr_code's width cache; field_build_load_call's resolved
+    // -load provenance bit). `__mind_alloc` is plain malloc, NOT zeroed, so an
+    // unwritten slot is heap residue and a reader would branch on whatever the
+    // previous owner of those bytes left behind. Same rule the other
+    // +56-reading constructors (ast_new_leaf / ast_new_fn_def /
+    // ast_new_struct_lit) already follow.
+    __mind_store_i64(n + 56, 0);
     n
 }
 
@@ -19170,7 +19178,32 @@ pub fn field_build_load_call(recv_node: i64, fidx: i64, load_lo: i64, load_hi: i
     let callee: i64 = ast_new_leaf(ast_ident(), load_lo, load_hi);
     let args: i64 = __mind_alloc(8);
     __mind_store_i64(args + 0, addr);
-    ast_new_call(0, 0, callee, args, 1)
+    let call: i64 = ast_new_call(0, 0, callee, args, 1);
+    // Heap-only provenance bit: this call was synthesized by the resolved field
+    // pass. It is never serialized. The index flattener uses it to admit exactly
+    // this call-bearing array base without opening arbitrary source calls.
+    __mind_store_i64(call + 56, 1);
+    call
+}
+
+// True only for the resolved synthetic load emitted by field_build_load_call.
+// Source-authored calls retain annotation zero and remain behind the existing
+// call-in-index refusal until general structural-slot accounting is completed.
+pub fn is_resolved_field_load_call(node: i64, src: i64) -> i64 {
+    if ast_kind(node) != ast_call() {
+        return 0;
+    }
+    if __mind_load_i64(node + 56) != 1 {
+        return 0;
+    }
+    if ast_aux(node) != 1 {
+        return 0;
+    }
+    let callee: i64 = ast_child0(node);
+    if ast_span_hi(callee) - ast_span_lo(callee) != 15 {
+        return 0;
+    }
+    load_name_matches_at(src, ast_span_lo(callee), 0)
 }
 
 // Recursively rewrite every resolvable `recv.field` node under `node` into the
@@ -19184,6 +19217,177 @@ pub fn strip_parens(node: i64) -> i64 {
         return strip_parens(ast_child0(node));
     }
     node
+}
+
+// Find the initializer of the same local binding selected by field_recv_ty.
+// This deliberately mirrors find_let_ty_in_stmts' traversal.  It is used
+// only by the fixed-array field-index admission below, where a declared owner
+// alone is insufficient: `let a: A = b` must not authorize A's array layout.
+pub fn find_let_init_in_stmts(stmts_addr: i64, stmts_len: i64, src: i64, recv_lo: i64, recv_hi: i64, i: i64) -> i64 {
+    if i >= stmts_len {
+        return 0;
+    }
+    let stmt: i64 = __mind_load_i64(stmts_addr + i * 8);
+    let k: i64 = ast_kind(stmt);
+    if k == ast_let() {
+        let name: i64 = ast_child0(stmt);
+        if span_bytes_equal(src, recv_lo, recv_hi, ast_span_lo(name), ast_span_hi(name)) == 1 {
+            return ast_child2(stmt);
+        }
+    }
+    if k == ast_if() {
+        let then_blk: i64 = ast_child1(stmt);
+        if ast_kind(then_blk) == ast_block() {
+            let ti: i64 = find_let_init_in_stmts(ast_child0(then_blk), ast_aux(then_blk), src, recv_lo, recv_hi, 0);
+            if ti != 0 {
+                return ti;
+            }
+        }
+        let else_blk: i64 = ast_child2(stmt);
+        if else_blk != 0 {
+            if ast_kind(else_blk) == ast_block() {
+                let ei: i64 = find_let_init_in_stmts(ast_child0(else_blk), ast_aux(else_blk), src, recv_lo, recv_hi, 0);
+                if ei != 0 {
+                    return ei;
+                }
+            }
+        }
+    }
+    find_let_init_in_stmts(stmts_addr, stmts_len, src, recv_lo, recv_hi, i + 1)
+}
+
+// Prove that an ident receiver denotes its declared record owner. Parameters
+// take authority from their signature. A local takes authority only from the
+// desugared struct-literal constructor span and must agree with its annotation;
+// calls, aliases, and unannotated/unknown initializers remain unsupported.
+pub fn fixed_field_recv_owner_ok(fn_node: i64, src: i64, recv: i64, declared_ty: i64) -> i64 {
+    let params_addr: i64 = ast_child1(fn_node);
+    let n_params: i64 = ast_aux(fn_node) / 2;
+    if resolve_param(params_addr, n_params, src, ast_span_lo(recv), ast_span_hi(recv)) >= 0 {
+        return 1;
+    }
+    let body: i64 = ast_child2(fn_node);
+    if ast_kind(body) != ast_block() {
+        return 0;
+    }
+    let init: i64 = find_let_init_in_stmts(ast_child0(body), ast_aux(body), src, ast_span_lo(recv), ast_span_hi(recv), 0);
+    let actual_ty: i64 = let_struct_ty_from_init(src, init);
+    if actual_ty == 0 {
+        return 0;
+    }
+    span_bytes_equal(src, ast_span_lo(declared_ty), ast_span_hi(declared_ty), ast_span_lo(actual_ty), ast_span_hi(actual_ty))
+}
+
+// Does the CANONICAL trace model struct `k`'s record layout?
+//
+// The reference lowers a record with a fixed-array field INLINE — one canonical
+// slot per element — from CONSTRUCTION onward, and this tree's struct-literal
+// desugar still lays every field out one slot wide. Measured on this commit
+// against `mindc --emit-mic3`, on sources carrying the intrinsic name literals
+// so the prefold engages:
+//
+//   struct R { pre: i64, xs: [i64; 3] }  let r = R { .. };  return 1;
+//       -> 129 self-host bytes vs 170 reference bytes  (CONSTRUCTION alone)
+//   the same record, `return r.pre;`     -> 147 vs 188
+//   struct R { pre, xs: [i64; 3], post }, `return r.xs[1] + r.post;`
+//       -> 203 vs 279 (the reference stream also carries the __mind_oob_check
+//          guard call this path never emits)
+//
+// while an all-scalar record of the same shape is byte-EQUAL (192 vs 192). The
+// divergence is therefore the fixed-array record LAYOUT, not the field read and
+// not the index. Admitting the indexed read on such a record would turn today's
+// fail-closed refusal into a valid-looking module carrying the WRONG bytes.
+// Bound by MIND-CONSTITUTION §I — fail closed over wrong bytes.
+//
+// deferred: this precondition shuts the indexed-read admission for every record
+//   the reference widens inline, which today is every fixed-array record, so the
+//   admission machinery below is reachable only once the gap closes. Upgrade
+//   path: give slit_desugar_module the reference's per-element slot map and emit
+//   the ArrayLoad bounds-check call, then delete this precondition and flip
+//   examples/mindc_mind/testdata/native_record_trace's blocked fixtures to
+//   byte-equal positives.
+pub fn srt_canonical_layout_modelled(t: i64, k: i64, j: i64) -> i64 {
+    if j >= srt_field_count(t, k) {
+        return 1;
+    }
+    if srt_field_array_kind(t, k, j) == 1 {
+        return 0;
+    }
+    srt_canonical_layout_modelled(t, k, j + 1)
+}
+
+// Layout agreement for a field RECEIVER: the declared owner must be a record the
+// canonical prefold's one-slot-per-field map actually describes. An unresolvable
+// receiver answers 0 as well, so a caller that has not already proven its owner
+// keeps a fail-closed fall-through instead of folding a guess.
+pub fn field_owner_layout_modelled(fn_node: i64, src: i64, srt: i64, recv_lo: i64, recv_hi: i64) -> i64 {
+    let ty: i64 = field_recv_ty(fn_node, src, recv_lo, recv_hi);
+    if ty == 0 {
+        return 0;
+    }
+    let k: i64 = srt_find_by_name(srt, src, ast_span_lo(ty), ast_span_hi(ty), 0);
+    if k < 0 {
+        return 0;
+    }
+    srt_canonical_layout_modelled(srt, k, 0)
+}
+
+// Resolve an indexed record-field base to a stable registry key k*field_cap+j.
+// The key is returned only for an exact supported fixed i64/u8 field and a
+// receiver whose defining owner is proven above. No physical native offset is
+// used here: canonical MIC3 retains the reference record slot j*8.
+pub fn fixed_field_array_key(fn_node: i64, src: i64, srt: i64, field: i64) -> i64 {
+    if ast_kind(field) != ast_field() {
+        return 0 - 1;
+    }
+    let recv: i64 = strip_parens(ast_child0(field));
+    if ast_kind(recv) != ast_ident() {
+        return 0 - 1;
+    }
+    let ty: i64 = field_recv_ty(fn_node, src, ast_span_lo(recv), ast_span_hi(recv));
+    if ty == 0 {
+        return 0 - 1;
+    }
+    if fixed_field_recv_owner_ok(fn_node, src, recv, ty) == 0 {
+        return 0 - 1;
+    }
+    let sk: i64 = srt_find_by_name(srt, src, ast_span_lo(ty), ast_span_hi(ty), 0);
+    if sk < 0 {
+        return 0 - 1;
+    }
+    if srt_canonical_layout_modelled(srt, sk, 0) == 0 {
+        return 0 - 1;
+    }
+    let fi: i64 = srt_field_index(srt, sk, src, ast_child1(field), ast_child2(field), 0);
+    if fi < 0 {
+        return 0 - 1;
+    }
+    if srt_field_native_array_ok(srt, src, sk, fi) == 0 {
+        return 0 - 1;
+    }
+    sk * srt_field_cap() + fi
+}
+
+// Refuse a statically out-of-range literal before constructing canonical bytes.
+// Dynamic indices retain the reference ArrayLoad contract; the native executable
+// path applies its separate runtime guard.
+pub fn fixed_field_index_literal_ok(src: i64, idx: i64, extent: i64) -> i64 {
+    let bare: i64 = strip_parens(idx);
+    if ast_kind(bare) != ast_int_lit() {
+        return 1;
+    }
+    let value: i64 = if ast_child1(bare) == 1 {
+        ast_child0(bare)
+    } else {
+        parse_int_span(src, ast_span_lo(bare), ast_span_hi(bare), 0)
+    };
+    if value < 0 {
+        return 0;
+    }
+    if value >= extent {
+        return 0;
+    }
+    1
 }
 
 pub fn field_rewrite_expr(node: i64, src: i64, srt: i64, fn_node: i64, load_lo: i64, load_hi: i64) -> i64 {
@@ -19203,6 +19407,29 @@ pub fn field_rewrite_expr(node: i64, src: i64, srt: i64, fn_node: i64, load_lo: 
                     return field_build_load_call(recv, ast_child0(idx), load_lo, load_hi);
                 }
             }
+            return node;
+        }
+        // Canonical record-array read: resolve `recv.field` against the exact
+        // declared owner/schema, lower the field value to the reference
+        // `__mind_load_i64(recv + field_index*8)` pointer, and leave the outer
+        // index for flatten_expr_env's ordinary ArrayLoad descriptor. This
+        // closes the trace path without changing the MIC3 byte grammar.
+        let field: i64 = strip_parens(ast_child0(node));
+        if ast_kind(field) == ast_field() {
+            let key: i64 = fixed_field_array_key(fn_node, src, srt, field);
+            if key < 0 {
+                return node;
+            }
+            let sk: i64 = key / srt_field_cap();
+            let fi: i64 = key - sk * srt_field_cap();
+            if fixed_field_index_literal_ok(src, ast_child1(node), srt_field_array_len(srt, sk, fi)) == 0 {
+                return node;
+            }
+            let recv: i64 = ast_child0(field);
+            let loaded: i64 = field_build_load_call(recv, fi, load_lo, load_hi);
+            __mind_store_i64(node + 24, loaded);
+            let idx: i64 = field_rewrite_expr(ast_child1(node), src, srt, fn_node, load_lo, load_hi);
+            __mind_store_i64(node + 32, idx);
             return node;
         }
     }
@@ -19227,6 +19454,10 @@ pub fn field_rewrite_expr(node: i64, src: i64, srt: i64, fn_node: i64, load_lo: 
                 if oty != 0 {
                     let ok: i64 = srt_find_by_name(srt, src, ast_span_lo(oty), ast_span_hi(oty), 0);
                     if ok >= 0 {
+                        // Same canonical-layout precondition as the direct read below.
+                        if srt_canonical_layout_modelled(srt, ok, 0) == 0 {
+                            return node;
+                        }
                         let cidx: i64 = srt_field_index(srt, ok, src, ast_child1(node), ast_child2(node), 0);
                         if cidx >= 0 {
                             return field_build_load_call(bare, cidx, load_lo, load_hi);
@@ -19241,6 +19472,15 @@ pub fn field_rewrite_expr(node: i64, src: i64, srt: i64, fn_node: i64, load_lo: 
             // Unresolvable field (e.g. `.a` on a non-struct i64 receiver): the oracle lowers
             // it to a CONST 0 placeholder, not a load. Match that with a synthetic int-lit 0.
             return mk_syn_intlit(0);
+        }
+        // CANONICAL LAYOUT PRECONDITION (see srt_canonical_layout_modelled). The
+        // reference widens a fixed-array record INLINE, so `field_index * 8` is
+        // not where its later fields live and the construction itself already
+        // diverges. Folding the read anyway produced a valid-looking module with
+        // the WRONG bytes (measured: 178 self-host against 219 reference for a
+        // plain sibling read). Leave the node unfolded so the module fails closed.
+        if field_owner_layout_modelled(fn_node, src, srt, ast_span_lo(bare), ast_span_hi(bare)) == 0 {
+            return node;
         }
         return field_build_load_call(bare, fidx, load_lo, load_hi);
     }
@@ -23012,7 +23252,9 @@ pub fn flatten_ast_lv(node: i64, buf: i64, params_addr: i64, n_params: i64, node
             return 0 - 1;
         }
         if subtree_contains_call(ast_child0(node)) == 1 {
-            return 0 - 1;
+            if is_resolved_field_load_call(ast_child0(node), buf) == 0 {
+                return 0 - 1;
+            }
         }
         if subtree_contains_call(ast_child1(node)) == 1 {
             return 0 - 1;
@@ -23154,7 +23396,9 @@ pub fn count_nonparam_nodes_lv(node: i64, buf: i64, params_addr: i64, n_params: 
             return 0 - 1;
         }
         if subtree_contains_call(ast_child0(node)) == 1 {
-            return 0 - 1;
+            if is_resolved_field_load_call(ast_child0(node), buf) == 0 {
+                return 0 - 1;
+            }
         }
         if subtree_contains_call(ast_child1(node)) == 1 {
             return 0 - 1;
@@ -23544,8 +23788,11 @@ pub fn flatten_expr_env(node: i64, src: i64, params_addr: i64, n_params: i64, no
         if ast_kind(ast_child0(node)) == ast_neg() {
             return 0 - 1;
         }
+        // Resolved record-field loads are the only call-bearing base admitted.
         if subtree_contains_call(ast_child0(node)) == 1 {
-            return 0 - 1;
+            if is_resolved_field_load_call(ast_child0(node), src) == 0 {
+                return 0 - 1;
+            }
         }
         if subtree_contains_call(ast_child1(node)) == 1 {
             return 0 - 1;
@@ -43097,7 +43344,17 @@ pub fn nb_build_mic3_from_tokens(tokens: Vec, src_addr: i64, src_len: i64, user_
     let ccell: i64 = __mind_alloc(8);
     __mind_store_i64(ccell, 0);
     __mind_store_i64(offs + 0, 0);
-    let _sb: i64 = nb_strtab_build(strbuf, offs, ccell, src_addr, tconst, items_addr, items_len, kept, n_kept, 0);
+    // src_use, NOT src_addr. When the module source does not itself contain the
+    // literals `__mind_alloc` / `__mind_store_i64` / `__mind_load_i64`, the two
+    // preprocessing passes above rewrite against build_src_intrinsics' COPY,
+    // which carries those names appended past src_len, and every callee they
+    // synthesise spans that tail. Reading those spans out of src_addr walks past
+    // the end of the caller's buffer: measured on this commit, a two-field record
+    // program emitted a 151-byte module whose CONTENT differed on every call
+    // inside one process — heap residue interned as a callee name. src_use IS
+    // src_addr whenever the names are present (every gated input, main.mind
+    // included), so this is inert there and byte-identity is unmoved.
+    let _sb: i64 = nb_strtab_build(strbuf, offs, ccell, src_use, tconst, items_addr, items_len, kept, n_kept, 0);
     let _si: i64 = srt_intern_all_sorted(strbuf, offs, ccell, src_addr, srt, 0);
     let ncount: i64 = __mind_load_i64(ccell);
     let total_externs: i64 = nb_sum_extern_fns(src_addr, items_addr, items_len, 0, 0);
@@ -43108,7 +43365,9 @@ pub fn nb_build_mic3_from_tokens(tokens: Vec, src_addr: i64, src_len: i64, user_
     let s5: EmitState = emit_uleb128(s4, items_len + items_len + n_kept + total_externs);
     let ok_cell: i64 = __mind_alloc(8);
     __mind_store_i64(ok_cell, 1);
-    let s6: EmitState = nb_emit_items(s5, src_addr, items_addr, items_len, strbuf, offs, ncount, tconst, kept, n_kept, ok_cell, 0);
+    // src_use for the same reason as nb_strtab_build above: emission resolves the
+    // synthesised callee spans against the SAME buffer the prefold wrote them for.
+    let s6: EmitState = nb_emit_items(s5, src_use, items_addr, items_len, strbuf, offs, ncount, tconst, kept, n_kept, ok_cell, 0);
     if __mind_load_i64(ok_cell) == 0 {
         return es_new();
     }

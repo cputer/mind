@@ -113,6 +113,9 @@ examples/mindc_mind/mindfuzz_self_host_staged/
 # intended feature profile; the broad `mindc check std/ examples/` walk must
 # not turn deliberate refusal cases into production-check failures.
 /examples/mindc_mind/testdata/native_record_array/
+# Canonical record-array trace fixtures — same rule: deliberate refusal
+# programs are gate inputs, not production examples.
+/examples/mindc_mind/testdata/native_record_trace/
 # mind-mem's local recall index (a SQLite cache built from this checkout on
 # demand). Machine-local and regenerable; it is not an input to any gate.
 /.mind-mem-index/

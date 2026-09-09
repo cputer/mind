@@ -1,0 +1,9 @@
+struct R {
+    pre: i64,
+    xs: [i64; 3],
+    post: i64,
+}
+fn main() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33], post: 7 };
+    return r.xs[1] + r.post;
+}

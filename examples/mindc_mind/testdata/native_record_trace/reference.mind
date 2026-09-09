@@ -1,0 +1,50 @@
+struct R {
+    pre: i64,
+    xs: [i64; 3],
+    post: i64,
+}
+
+#[test]
+fn direct_i64_reference() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33], post: 7 };
+    return r.xs[1] + r.post == 29;
+}
+
+struct C {
+    xs: [i64; 3],
+}
+
+#[test]
+fn copy_i64_reference() -> i64 {
+    let r: C = C { xs: [11, 22, 33] };
+    let ys: [i64; 3] = r.xs;
+    return ys[1] == 22;
+}
+
+struct U {
+    xs: [u8; 3],
+}
+
+#[test]
+fn direct_u8_reference() -> i64 {
+    let r: U = U { xs: [0, 44, 255] };
+    return r.xs[1] == 44;
+}
+
+struct Owner {
+    pre: i64,
+    mid: i64,
+    post: i64,
+}
+
+#[test]
+fn scalar_owner_reference() -> i64 {
+    let o: Owner = Owner { pre: 5, mid: 22, post: 7 };
+    return o.mid + o.post == 29;
+}
+
+#[test]
+fn scalar_owner_mutated_reference() -> i64 {
+    let o: Owner = Owner { pre: 5, mid: 23, post: 7 };
+    return o.mid + o.post == 30;
+}

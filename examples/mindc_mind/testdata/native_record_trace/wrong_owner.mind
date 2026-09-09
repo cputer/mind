@@ -1,0 +1,11 @@
+struct A {
+    xs: [i64; 2],
+}
+struct B {
+    xs: [i64; 3],
+}
+fn main() -> i64 {
+    let b: B = B { xs: [11, 22, 33] };
+    let a: A = b;
+    return a.xs[1];
+}

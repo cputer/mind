@@ -1,0 +1,10 @@
+struct Owner {
+    pre: i64,
+    mid: i64,
+    post: i64,
+}
+
+fn main() -> i64 {
+    let o: Owner = Owner { pre: 5, mid: 22, post: 7 };
+    return o.mid + o.post;
+}
