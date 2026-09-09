@@ -335,3 +335,28 @@ fn canonical_parameters_agree_with_their_declaration() {
         );
     }
 }
+
+/// A semantic row may only type a value its own scope DEFINES, and a nested
+/// function body does not define the scope that encloses it.
+///
+/// The reference collects definitions per scope and explicitly does not descend
+/// into a FnDef body when doing so, so a value produced inside a nested function
+/// is outside the enclosing function's scope. The nested fixture is the witness
+/// for that isolation: an implementation that scanned nested bodies as if they
+/// were siblings would accept it.
+#[test]
+fn canonical_rows_reference_only_values_their_scope_defines() {
+    for (name, needle) in [
+        ("neg_module_row_outside_scope", "<module>"),
+        ("neg_function_row_defined_in_nested_only", "m::f"),
+    ] {
+        let path = format!("examples/mind_mirror_v04/testdata/semantic/{name}.mic3");
+        let bytes = std::fs::read(&path).expect("negative fixture");
+        let error = parse_mic3_body(&bytes).expect_err("value outside scope");
+        assert!(
+            error.message.contains("outside function scope") && error.message.contains(needle),
+            "{name}: the scope must be the diagnosed cause: {}",
+            error.message
+        );
+    }
+}

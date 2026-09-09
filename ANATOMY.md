@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1750 | **Est. tokens:** ~3445381
-**Generated:** 2026-09-09 14:30 UTC
+**Files:** 1750 | **Est. tokens:** ~3447738
+**Generated:** 2026-09-09 15:37 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~104635 |
+| `docs/` | 37 | ~104667 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -66,8 +66,8 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~26440 |
-| `examples/mind_mirror_v04/testdata/` | 2 | ~3601 |
+| `examples/mind_mirror_v04/` | 3 | ~28385 |
+| `examples/mind_mirror_v04/testdata/` | 2 | ~3686 |
 | `examples/mindc_mind/` | 172 | ~442925 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 396 | ~805001 |
+| `tests/` | 396 | ~805296 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -473,7 +473,7 @@
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
 - `ir-stability.md` (~1763 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
-- `mic3-v04-draft.md` (~1853 tok, huge) — MIC3 `0x04` core codec — implementation draft
+- `mic3-v04-draft.md` (~1885 tok, huge) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -638,12 +638,12 @@
 ### `examples/mind_mirror_v04/`
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
-- `mic3_v04_prefix_mirror.mind` (~22605 tok, huge) — ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~24550 tok, huge) — ===========================================================================
 - `mirror_gate.py` (~3051 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
 - `MANIFEST.tsv` (~2715 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
-- `SEMANTIC_MANIFEST.tsv` (~886 tok, large) — # name	expected_exit	bytes	sha256	consumed	note
+- `SEMANTIC_MANIFEST.tsv` (~971 tok, large) — # name	expected_exit	bytes	sha256	consumed	note
 ### `examples/mindc_mind/`
 
 - `.gitignore` (~5 tok, tiny) — __pycache__/
@@ -2385,7 +2385,7 @@
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) — Copyright 2025 STARGA Inc.
 - `v04_mirror_vector_dump.rs` (~7866 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `v04_value_id_boundary.rs` (~3355 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_value_id_boundary.rs` (~3650 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) — Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.

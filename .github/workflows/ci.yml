@@ -1783,8 +1783,8 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Pure-MIND v04 scoped semantic boundary gate
-        # Twenty-three verdicts plus seven byte comparisons, separate from wire parity.
-        run: python3 scripts/run_gate.py --min-asserted 30 examples/mind_mirror_v04/mirror_gate.py --semantic
+        # Twenty-five verdicts plus seven byte comparisons, separate from wire parity.
+        run: python3 scripts/run_gate.py --min-asserted 32 examples/mind_mirror_v04/mirror_gate.py --semantic
         working-directory: ${{ github.workspace }}
 
   sdlc_integrity:
