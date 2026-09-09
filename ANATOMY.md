@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1747 | **Est. tokens:** ~3420323
-**Generated:** 2026-09-09 10:15 UTC
+**Files:** 1747 | **Est. tokens:** ~3420393
+**Generated:** 2026-09-09 11:15 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~37099 |
+| `.github/workflows/` | 9 | ~37064 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~104045 |
+| `docs/` | 37 | ~104150 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -268,7 +268,7 @@
 - `required-ci-jobs.tsv` (~745 tok, large) — # required-ci-jobs.tsv — the CI jobs that MUST have passed on the exact commit
 ### `.github/workflows/`
 
-- `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
+- `bench-gate.yml` (~2417 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
 - `ci.yml` (~25208 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
@@ -471,7 +471,7 @@
 - `gpu.md` (~387 tok, medium) — GPU backend profile
 - `install.md` (~1012 tok, large) — Installing mindc
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
-- `ir-stability.md` (~1658 tok, huge) — IR stability contract
+- `ir-stability.md` (~1763 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
 - `mic3-v04-draft.md` (~1368 tok, large) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND

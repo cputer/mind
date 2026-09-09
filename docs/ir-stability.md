@@ -120,12 +120,17 @@ backend.execute(&ir);
 
 ## Bench-gate enforcement
 
-Because the parser sits on the AOT compile path (and historically on the
-runtime hot path), regressions are policed by
-`.github/workflows/bench-gate.yml` against the frozen baseline at
-`.bench-baseline-2026-04-28-pratt.txt`. The threshold is **+2% mean** on
-any of `small_matmul / medium_mlp / large_network`. See
-[docs/versioning.md](versioning.md) for the rationale.
+The reference MIND implementation's CI bench gate measures the T1 frontend
+(`cargo bench --bench compiler --no-default-features`) for
+`small_matmul`, `medium_mlp`, and `large_network` against the frozen
+correctness floor `.bench-baseline-2026-06-01-correctness.txt`. It applies a
+one-sided **+10% regression threshold**: any speedup passes, while a
+trustworthy result above the threshold is a decision-triggering regression.
+Criterion spread above **12%** is inconclusive, and the canonical pipeline
+must provide all three present, trustworthy fixture comparisons. This is a
+no-regression guard; it does not establish or require a speedup objective.
+The comparator supports an optional separately published champion reference,
+but the current workflow supplies only the correctness floor.
 
 ## Cross-repo coordination
 
