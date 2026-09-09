@@ -39,6 +39,36 @@ struct Narrow { xs: [u8; 4], sibling: i64 }
 struct SignedNarrow { xs: [i8; 4] }
 struct Narrow16 { xs: [u16; 4], sibling: i64 }
 struct SignedNarrow16 { xs: [i16; 4], sibling: i64 }
+struct AccessTrace { order: i64 }
+
+fn traced_receiver(t: AccessTrace, s: Narrow) -> Narrow {
+    t.order = t.order * 10 + 1
+    return s
+}
+
+fn traced_index(t: AccessTrace) -> i64 {
+    t.order = t.order * 10 + 2
+    return 1
+}
+
+fn traced_value(t: AccessTrace) -> i64 {
+    t.order = t.order * 10 + 3
+    return 255
+}
+
+pub fn narrow_read_once() -> i64 {
+    let t = AccessTrace { order: 0 }
+    let s = Narrow { xs: [0, 128, 127, 255], sibling: 900 }
+    let got = traced_receiver(t, s).xs[traced_index(t)]
+    return t.order * 1000 + got
+}
+
+pub fn narrow_write_once() -> i64 {
+    let t = AccessTrace { order: 0 }
+    let s = Narrow { xs: [0, 128, 127, 255], sibling: 900 }
+    traced_receiver(t, s).xs[traced_index(t)] = traced_value(t)
+    return t.order * 10000 + s.xs[1] + s.sibling
+}
 
 fn read_struct(s: S) -> i64 {
     let a = s.xs
@@ -246,6 +276,11 @@ fn fixed_array_struct_fields_run_native_artifact() {
             lib.get(b"narrow_u16_run").expect("load narrow_u16_run");
         let narrow_i16_run: Symbol<unsafe extern "C" fn() -> i64> =
             lib.get(b"narrow_i16_run").expect("load narrow_i16_run");
+        let narrow_read_once: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_read_once").expect("load narrow_read_once");
+        let narrow_write_once: Symbol<unsafe extern "C" fn() -> i64> = lib
+            .get(b"narrow_write_once")
+            .expect("load narrow_write_once");
         assert_eq!(run(), 16 + 9 + 12 + 84 + 6 + 9 + 9 + 6 + 12 + 13);
         assert_eq!(float_run().to_bits(), 2.5f64.to_bits());
         assert_eq!(float_signed_zero().to_bits(), (-0.0f64).to_bits());
@@ -260,6 +295,10 @@ fn fixed_array_struct_fields_run_native_artifact() {
         // untouched sibling. i16 loads sign-extend, including 65535 -> -1.
         assert_eq!(narrow_u16_run(), 263_040);
         assert_eq!(narrow_i16_run(), -31_872);
+        // Decimal event digits detect duplicated, omitted or reordered receiver,
+        // index and RHS evaluation. The write also preserves the sibling field.
+        assert_eq!(narrow_read_once(), 12_128);
+        assert_eq!(narrow_write_once(), 1_231_155);
     }
 }
 

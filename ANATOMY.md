@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1743 | **Est. tokens:** ~3406199
-**Generated:** 2026-09-09 10:03 UTC
+**Files:** 1743 | **Est. tokens:** ~3406538
+**Generated:** 2026-09-09 10:06 UTC
 
 ## Token Budget Guide
 
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 394 | ~792595 |
+| `tests/` | 394 | ~792934 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -1661,7 +1661,7 @@
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_narrow_assignment_types.rs` (~376 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct_field_run.rs` (~6437 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct_field_run.rs` (~6776 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
