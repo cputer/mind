@@ -214,7 +214,7 @@ def main():
                     continue
                 proc = run_bounded([str(elf_path), str(path)])
                 got = proc.returncode
-                status = "ok" if got == expected else "MISMATCH"
+                status = "[PASS]" if got == expected else "[FAIL]"
                 if got != expected:
                     failures.append(f"{name}: expected exit {expected}, got {got}")
                 note_extra = ""
@@ -252,6 +252,7 @@ def main():
                         )
                     else:
                         dumped += 1
+                        print(f"[PASS] {name}: exact reference-length prefix bytes")
                         note_extra = f"  reemit={len(emitted)}B byte-identical"
                         if expected == 20 and len(emitted) >= len(data):
                             failures.append(
@@ -271,7 +272,7 @@ def main():
             for f in failures:
                 print(f"  - {f}")
             return 1
-        print("PASS: all vectors matched the reference-decided verdicts")
+        print("Complete: all vectors matched the reference-decided verdicts")
         return 0
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

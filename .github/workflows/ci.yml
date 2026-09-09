@@ -1710,6 +1710,12 @@ jobs:
           exit "$rc"
         working-directory: ${{ github.workspace }}
 
+      - name: Pure-MIND v04 prefix and intrinsic differential gate
+        # Uses the committed native compiler and reference-generated corpus.
+        # Forty-eight verdicts plus ten prefix comparisons must execute.
+        run: python3 scripts/run_gate.py --min-asserted 58 examples/mind_mirror_v04/mirror_gate.py
+        working-directory: ${{ github.workspace }}
+
   sdlc_integrity:
     name: SDLC gate integrity (merge + enforcement pairing)
     runs-on: ubuntu-latest

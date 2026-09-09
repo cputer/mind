@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1789 | **Est. tokens:** ~3402447
-**Generated:** 2026-09-09 05:41 UTC
+**Files:** 1789 | **Est. tokens:** ~3402561
+**Generated:** 2026-09-09 05:49 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~885 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~36355 |
+| `.github/workflows/` | 9 | ~36447 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~15206 |
+| `examples/mind_mirror_v04/` | 3 | ~15228 |
 | `examples/mind_mirror_v04/testdata/` | 48 | ~2583 |
 | `examples/mindc_mind/` | 172 | ~441747 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
@@ -270,7 +270,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~24464 tok, huge) — name: CI
+- `ci.yml` (~24556 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -639,7 +639,7 @@
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
 - `mic3_v04_prefix_mirror.mind` (~11522 tok, huge) — ===========================================================================
-- `mirror_gate.py` (~2900 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
+- `mirror_gate.py` (~2922 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
 - `MANIFEST.tsv` (~1803 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
