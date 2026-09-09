@@ -107,16 +107,16 @@ GATED_EVENTS = ("push", "pull_request")
 # 250 -> 251 -> 250: the exec_semantics_markers.sh extraction was reversed.
 # Historical rationale moved to docs/gates/exec-semantics-tiers.md; the shell
 # functions remain together in exec_semantics_gate.sh, below its source ceiling.
-# 252 -> 257 includes the new advance runner and its focused LOOP harness split:
-# the stable runner delegates its 35 controls to one shared fixture module
-# and two cohesive case modules, while the loop smoke's legacy Rust-seeded
-# publication path lives in its own helper. These are reviewed support/test
-# modules for existing gates, not new product surfaces; each remains below the
-# 800-line source ceiling and the stable runner commands stay unchanged.
+# 252 -> 257 adds five advance/LOOP modules under the same source ceilings.
 # 257 -> 258 adds self_host_alias_controls_smoke.py for alias/scope/join controls.
 # 258 -> 259 adds the required, non-vacuous two-feature pqc_hybrid_ci.sh gate.
 # 259 -> 260 adds the required pure-MIND v04 prefix mirror gate driver.
-HARNESS_CEILING = 260
+# The signing publication also adds pqc_hybrid_cli_ci.sh, the required three-OS
+# gate for actual-CLI signing controls. It pins the exact test names, requires
+# each to pass once, and requires the final tally, so cfg-out tests cannot report
+# a false zero-pass success. It gates the shipped binary separately from the
+# library gate. Both tracked controls are retained in the ratchet.
+HARNESS_CEILING = 261
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.

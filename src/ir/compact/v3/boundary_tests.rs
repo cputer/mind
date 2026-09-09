@@ -4,9 +4,8 @@
 use super::evidence::MAP_SENTINEL;
 use super::{
     Determinism, Mic3EnvelopeError, Mic3NonCanonical, emit_mic3, emit_mic3_checked,
-    emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked,
-    emit_mic3_with_signed_evidence_checked, mic3_canonical_check, parse_mic3, parse_mic3_body,
-    parse_mic3_envelope, parse_mic3_prefix,
+    emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked, mic3_canonical_check,
+    parse_mic3, parse_mic3_body, parse_mic3_envelope, parse_mic3_prefix,
 };
 use crate::ir::evidence::{ir_trace_hash, ir_trace_hash_checked};
 use crate::ir::{IRModule, Instr, ValueId};
@@ -234,7 +233,8 @@ fn checked_body_hash_and_evidence_seams_carry_v04_metadata() {
     let body = emit_mic3_checked(&module).expect("v0x04 body");
     assert_eq!(body[4], super::MIC3_VERSION_V04);
     ir_trace_hash_checked(&module).expect("v0x04 trace hash");
-    for artifact in [
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let mut artifacts = vec![
         emit_mic3_with_evidence_checked(
             &module,
             "cpu",
@@ -243,15 +243,6 @@ fn checked_body_hash_and_evidence_seams_carry_v04_metadata() {
             "test-toolchain",
         )
         .expect("v0x04 evidence"),
-        emit_mic3_with_signed_evidence_checked(
-            &module,
-            "cpu",
-            None,
-            Determinism::Deterministic,
-            "test-toolchain",
-            &[7; 32],
-        )
-        .expect("signed v0x04 evidence"),
         emit_mic3_with_evidence_and_receipts(
             &module,
             "cpu",
@@ -263,7 +254,61 @@ fn checked_body_hash_and_evidence_seams_carry_v04_metadata() {
             &[],
         )
         .expect("v0x04 evidence with receipts"),
-    ] {
+    ];
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let artifacts = vec![
+        emit_mic3_with_evidence_checked(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "test-toolchain",
+        )
+        .expect("v0x04 evidence"),
+        emit_mic3_with_evidence_and_receipts(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "test-toolchain",
+            None,
+            &[],
+            &[],
+        )
+        .expect("v0x04 evidence with receipts"),
+    ];
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    artifacts.push(
+        super::emit_mic3_with_signed_evidence_scheme(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "test-toolchain",
+            &super::evidence::SigningKey::PqcHybrid {
+                mldsa87: [7; 32],
+                slhdsa: [8; 96],
+            },
+        )
+        .expect("signed v0x04 evidence"),
+    );
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    assert!(
+        format!(
+            "{:?}",
+            super::emit_mic3_with_signed_evidence_checked(
+                &module,
+                "cpu",
+                None,
+                Determinism::Deterministic,
+                "test-toolchain",
+                &[7; 32],
+            )
+            .expect_err("retired Ed signing must refuse")
+        )
+        .contains("SchemeRetired")
+    );
+    for artifact in artifacts {
         parse_mic3_envelope(&artifact).expect("v0x04 evidence envelope");
         mic3_canonical_check(&artifact).expect("v0x04 canonical evidence");
     }

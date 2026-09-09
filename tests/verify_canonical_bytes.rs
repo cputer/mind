@@ -31,7 +31,9 @@
 //! artifact and byte-compares against the input, so distinct byte streams can
 //! never share one verdict.
 //!
-//! Every assertion here is on the EXIT CODE (fail-closed), not on message text.
+//! Bare builds exercise canonical unsigned evidence. The explicit PQC CI run
+//! exercises the same mutations on a valid, dual-key-pinned hybrid signature.
+//! Every rejection assertion is on the EXIT CODE (fail-closed).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,14 +41,20 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
-/// Ed25519 seed used to sign the fixtures. A throwaway test-only value; it
-/// signs nothing outside this file.
-const SEED: &str = "7777777777777777777777777777777777777777777777777777777777777771";
-
 const PROGRAM: &str = "fn add(a: i64, b: i64) -> i64 { a + b }\n";
 
 fn mindc() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_mindc"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mindc"));
+    for key in [
+        "MIND_EVIDENCE_ED25519_KEY",
+        "MIND_EVIDENCE_MLDSA_KEY",
+        "MIND_EVIDENCE_MLDSA87_KEY",
+        "MIND_EVIDENCE_SLHDSA_KEY",
+        "MIND_EVIDENCE_VERIFY_PUBKEYS",
+    ] {
+        cmd.env_remove(key);
+    }
+    cmd
 }
 
 fn write_src(dir: &Path) -> PathBuf {
@@ -93,50 +101,68 @@ fn emit_attested(dir: &Path) -> PathBuf {
     out
 }
 
-/// Signed + attested, plus the embedded pubkey to pin on verify.
-fn emit_signed(dir: &Path) -> (PathBuf, String) {
+/// Canonical evidence under test: unsigned on a bare build, or the supported
+/// dual-PQC signature when both crypto features are compiled. CI runs both.
+#[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+fn emit_evidence_case(dir: &Path) -> (PathBuf, Option<Vec<String>>) {
+    assert!(
+        std::env::var_os("MIND_TEST_REQUIRE_PQC").is_none(),
+        "this run requires the PQC signing features; unsigned controls cannot substitute"
+    );
+    (emit_attested(dir), None)
+}
+
+#[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+fn emit_evidence_case(dir: &Path) -> (PathBuf, Option<Vec<String>>) {
     let out = dir.join("signed.mic3");
     let res = mindc()
-        .arg(write_src(dir).to_str().unwrap())
+        .arg(write_src(dir))
         .arg("--emit-evidence")
-        .arg(out.to_str().unwrap())
-        .env("MIND_EVIDENCE_ED25519_KEY", SEED)
+        .arg(&out)
+        .env("MIND_EVIDENCE_MLDSA87_KEY", "77".repeat(32))
+        .env("MIND_EVIDENCE_SLHDSA_KEY", "22".repeat(96))
         .output()
-        .expect("spawn mindc --emit-evidence (signed)");
+        .expect("spawn hybrid evidence emitter");
     assert!(
         res.status.success(),
-        "signed --emit-evidence failed: {}",
+        "hybrid emit failed: {}",
         String::from_utf8_lossy(&res.stderr)
     );
-
-    // Recover the pubkey from the pristine artifact rather than hardcoding a
-    // derived value: the test then pins the key that actually signed it.
-    let v = mindc()
+    let inspected = mindc()
         .arg("verify")
-        .arg(out.to_str().unwrap())
+        .arg(&out)
         .output()
-        .expect("spawn mindc verify");
-    let stdout = String::from_utf8_lossy(&v.stdout).to_string();
-    let pubkey = stdout
-        .lines()
-        .find_map(|l| l.strip_prefix("signature_ed25519_pubkey:"))
-        .unwrap_or_else(|| panic!("no signature_ed25519_pubkey in verify output:\n{stdout}"))
-        .trim()
-        .to_string();
+        .expect("inspect evidence");
+    let stdout = String::from_utf8_lossy(&inspected.stdout);
+    let keys = ["signature_mldsa87_pubkey:", "signature_slhdsa_pubkey:"]
+        .iter()
+        .map(|prefix| {
+            stdout
+                .lines()
+                .find_map(|line| line.strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix} in {stdout}"))
+                .trim()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(keys.iter().all(|key| !key.is_empty()));
     assert_eq!(
-        pubkey.len(),
-        64,
-        "expected a 32-byte hex pubkey, got {pubkey:?}"
+        verify(&out, Some(&keys)),
+        0,
+        "the unmodified supported hybrid must be trusted with both keys"
     );
-    (out, pubkey)
+    (out, Some(keys))
 }
 
 /// `mindc verify` on `path`, pinning `pubkey` when supplied. Returns the exit code.
-fn verify(path: &Path, pubkey: Option<&str>) -> i32 {
+fn verify(path: &Path, pubkey: Option<&[String]>) -> i32 {
     let mut cmd = mindc();
     cmd.arg("verify").arg(path.to_str().unwrap());
     if let Some(pk) = pubkey {
-        cmd.arg("--signer-pubkey").arg(pk).arg("--require-signed");
+        for key in pk {
+            cmd.arg("--signer-pubkey").arg(key);
+        }
+        cmd.arg("--require-signed");
     }
     let res = cmd.output().expect("spawn mindc verify");
     res.status.code().unwrap_or(-1)
@@ -162,7 +188,7 @@ fn mutate(src: &Path, name: &str, f: impl FnOnce(&mut Vec<u8>)) -> PathBuf {
 // ─── The finding's headline case, in all three artifact shapes ────────────────
 
 #[test]
-fn appended_byte_is_rejected_in_plain_attested_and_signed_shapes() {
+fn appended_byte_is_rejected_in_available_evidence_shapes() {
     let dir = tempdir().unwrap();
 
     let plain = emit_plain(dir.path());
@@ -191,17 +217,17 @@ fn appended_byte_is_rejected_in_plain_attested_and_signed_shapes() {
         "attested artifact || b\"X\" must be REJECTED (exit 1)"
     );
 
-    let (signed, pubkey) = emit_signed(dir.path());
+    let (signed, pubkey) = emit_evidence_case(dir.path());
     assert_eq!(
-        verify(&signed, Some(&pubkey)),
+        verify(&signed, pubkey.as_deref()),
         0,
-        "pristine signed+pinned artifact must verify"
+        "pristine evidence case must verify"
     );
     let signed_x = mutate(&signed, "signed_x.mic3", |b| b.push(b'X'));
     assert_eq!(
-        verify(&signed_x, Some(&pubkey)),
+        verify(&signed_x, pubkey.as_deref()),
         1,
-        "signed+pinned artifact || b\"X\" must be REJECTED (exit 1)"
+        "evidence case || b\"X\" must be REJECTED (exit 1)"
     );
 }
 
@@ -212,14 +238,14 @@ fn padding_to_the_input_ceiling_is_rejected() {
     // The size cap is `len > MAX_MIC3_INPUT`, so padding to EXACTLY the ceiling
     // slipped past it and the trailing bytes were then ignored by the MAP parser.
     let dir = tempdir().unwrap();
-    let (signed, pubkey) = emit_signed(dir.path());
+    let (signed, pubkey) = emit_evidence_case(dir.path());
     let cap = libmind::ir::compact::MAX_MIC3_INPUT;
     let padded = mutate(&signed, "padded.mic3", |b| b.resize(cap, b'A'));
     assert_eq!(fs::metadata(&padded).unwrap().len() as usize, cap);
     assert_eq!(
-        verify(&padded, Some(&pubkey)),
+        verify(&padded, pubkey.as_deref()),
         1,
-        "signed artifact padded to the input ceiling must be REJECTED (exit 1)"
+        "evidence artifact padded to the input ceiling must be REJECTED (exit 1)"
     );
 }
 
@@ -230,7 +256,7 @@ fn non_minimal_map_count_uleb_is_rejected() {
     // as `[0x09]` does, so the decoded entries — and therefore the preimage and
     // the signature — are unchanged.
     let dir = tempdir().unwrap();
-    let (signed, pubkey) = emit_signed(dir.path());
+    let (signed, pubkey) = emit_evidence_case(dir.path());
     let bytes = fs::read(&signed).unwrap();
 
     // Locate the sentinel the way the library does — the epilogue begins exactly
@@ -250,7 +276,7 @@ fn non_minimal_map_count_uleb_is_rejected() {
     fs::write(&out, &padded).unwrap();
 
     assert_eq!(
-        verify(&out, Some(&pubkey)),
+        verify(&out, pubkey.as_deref()),
         1,
         "non-minimal MAP count ULEB must be REJECTED (exit 1)"
     );
@@ -263,7 +289,7 @@ fn wire_version_downgrade_is_rejected() {
     // IR re-emits at the CURRENT version, and both the trace_hash and the
     // signature still check out. Only the literal-byte compare catches it.
     let dir = tempdir().unwrap();
-    let (signed, pubkey) = emit_signed(dir.path());
+    let (signed, pubkey) = emit_evidence_case(dir.path());
     let version = fs::read(&signed).unwrap()[4];
     assert!(
         version > 1,
@@ -271,7 +297,7 @@ fn wire_version_downgrade_is_rejected() {
     );
     let down = mutate(&signed, "downgrade.mic3", |b| b[4] = 0x01);
     assert_eq!(
-        verify(&down, Some(&pubkey)),
+        verify(&down, pubkey.as_deref()),
         1,
         "wire-version downgrade must be REJECTED (exit 1)"
     );
@@ -284,7 +310,7 @@ fn normalised_away_body_flip_is_rejected() {
     // true. Scan the body for any such byte and require every one of them to be
     // rejected — the whole point is that NO byte of the artifact is free.
     let dir = tempdir().unwrap();
-    let (signed, pubkey) = emit_signed(dir.path());
+    let (signed, pubkey) = emit_evidence_case(dir.path());
     let bytes = fs::read(&signed).unwrap();
     let body_len = map_sentinel_offset(&bytes);
 
@@ -292,7 +318,7 @@ fn normalised_away_body_flip_is_rejected() {
     for i in 0..body_len {
         let flipped = mutate(&signed, "bodyflip.mic3", |b| b[i] ^= 0x01);
         assert_eq!(
-            verify(&flipped, Some(&pubkey)),
+            verify(&flipped, pubkey.as_deref()),
             1,
             "body byte {i} flipped must be REJECTED (exit 1)"
         );
@@ -310,7 +336,7 @@ fn canonical_check_accepts_what_the_emitter_produces() {
     for path in [
         emit_plain(dir.path()),
         emit_attested(dir.path()),
-        emit_signed(dir.path()).0,
+        emit_evidence_case(dir.path()).0,
     ] {
         let bytes = fs::read(&path).unwrap();
         assert_eq!(
@@ -326,7 +352,7 @@ fn canonical_check_accepts_what_the_emitter_produces() {
 fn canonical_check_rejects_every_finding_mutation() {
     use libmind::ir::compact::{Mic3NonCanonical, mic3_canonical_check};
     let dir = tempdir().unwrap();
-    let (signed, _pk) = emit_signed(dir.path());
+    let (signed, _pk) = emit_evidence_case(dir.path());
     let bytes = fs::read(&signed).unwrap();
 
     let mut appended = bytes.clone();

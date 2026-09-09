@@ -2,11 +2,13 @@
 // Licensed under the Apache License, Version 2.0.
 
 use super::{
-    Determinism, EvidenceEmitError, MAX_MIC3_INPUT, MIC3_VERSION_V04, Mic3EncodeError,
-    SignatureStatus, emit_mic3, emit_mic3_checked, emit_mic3_with_evidence_and_receipts,
-    emit_mic3_with_evidence_checked, emit_mic3_with_signed_evidence_checked, mic3_canonical_check,
-    mic3_evidence_report, mic3_signature_status, parse_mic3_body, parse_mic3_prefix,
+    Determinism, EvidenceEmitError, MAX_MIC3_INPUT, MIC3_VERSION_V04, Mic3EncodeError, emit_mic3,
+    emit_mic3_checked, emit_mic3_with_evidence_and_receipts, emit_mic3_with_evidence_checked,
+    emit_mic3_with_signed_evidence_checked, mic3_canonical_check, mic3_evidence_report,
+    parse_mic3_body, parse_mic3_prefix,
 };
+#[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+use super::{SignatureStatus, mic3_signature_status};
 use crate::ir::evidence::ir_trace_hash_checked;
 use crate::ir::{IRModule, Instr, ValueId};
 use crate::types::{
@@ -15,188 +17,9 @@ use crate::types::{
     SchemaRegistryBuilder, SemanticType, TypeExpr,
 };
 
-fn i64_type() -> SemanticType {
-    SemanticType::Scalar(ScalarType::I64)
-}
-
-fn decode_hex(hex: &str) -> Vec<u8> {
-    hex.as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII hex"), 16).unwrap())
-        .collect()
-}
-
-fn declaration(identity: FunctionIdentity, kind: FunctionKind) -> FunctionDeclaration {
-    FunctionDeclaration::new(
-        identity,
-        kind,
-        FunctionSignature::new(vec![i64_type()], Some(i64_type())),
-    )
-}
-
-fn semantic(identity: FunctionIdentity, values: &[usize]) -> Box<FunctionSemanticTypes> {
-    let mut semantic = FunctionSemanticTypes::new(identity);
-    for value in values {
-        semantic
-            .set_value_type(ValueId(*value), i64_type())
-            .expect("unique function type");
-    }
-    Box::new(semantic)
-}
-
-fn scoped_module(omit_step_value: bool) -> IRModule {
-    let mut schemas = SchemaRegistryBuilder::default();
-    for owner in ["ownerA", "ownerB"] {
-        schemas
-            .add_schema(SchemaDraft::new(
-                SchemaIdentity::new(owner, "Pair"),
-                vec![
-                    FieldDraft::new("z", TypeExpr::Scalar(ScalarType::I64)),
-                    FieldDraft::new("a", TypeExpr::Scalar(ScalarType::Bool)),
-                ],
-            ))
-            .expect("schema");
-    }
-    let mut bundle = CanonicalModuleTypes::new(schemas.finish().expect("registry"));
-    let main = FunctionIdentity::new("entry", "main");
-    let local_step = FunctionIdentity::new("ownerA", "step");
-    let external_step = FunctionIdentity::new("ownerB", "step");
-    for (identity, kind) in [
-        (main.clone(), FunctionKind::Local),
-        (local_step.clone(), FunctionKind::Local),
-        (external_step.clone(), FunctionKind::External),
-    ] {
-        bundle
-            .add_declaration(declaration(identity, kind))
-            .expect("declaration");
-    }
-    bundle
-        .set_module_value_type(ValueId(0), i64_type())
-        .expect("module %0");
-
-    let mut module = IRModule::new();
-    let module_zero = module.fresh();
-    assert_eq!(module_zero, ValueId(0));
-    module.instrs.push(Instr::ConstI64(module_zero, 9));
-    module.instrs.push(Instr::Output(module_zero));
-    module.instrs.push(Instr::FnDef {
-        name: "step".to_string(),
-        params: vec![("x".to_string(), ValueId(0))],
-        ret_id: Some(ValueId(0)),
-        body: vec![Instr::Return {
-            value: Some(ValueId(0)),
-        }],
-        reap_threshold: None,
-        semantic_types: Some(semantic(
-            local_step,
-            if omit_step_value { &[] } else { &[0] },
-        )),
-        #[cfg(feature = "std-surface")]
-        value_types: std::collections::BTreeMap::new(),
-    });
-    module.instrs.push(Instr::FnDef {
-        name: "main".to_string(),
-        params: vec![("x".to_string(), ValueId(0))],
-        ret_id: Some(ValueId(1)),
-        body: vec![
-            Instr::Call {
-                dst: ValueId(1),
-                name: "step".to_string(),
-                args: vec![ValueId(0)],
-                resolved_callee: Some(Box::new(external_step)),
-            },
-            Instr::Return {
-                value: Some(ValueId(1)),
-            },
-        ],
-        reap_threshold: None,
-        semantic_types: Some(semantic(main, &[0, 1])),
-        #[cfg(feature = "std-surface")]
-        value_types: std::collections::BTreeMap::new(),
-    });
-    module.canonical_types = Some(Box::new(bundle));
-    module
-}
-
-fn module_value_only() -> IRModule {
-    let registry = SchemaRegistryBuilder::default()
-        .finish()
-        .expect("empty registry");
-    let mut bundle = CanonicalModuleTypes::new(registry);
-    bundle
-        .set_module_value_type(ValueId(0), i64_type())
-        .expect("module type");
-    let mut module = IRModule::new();
-    let value = module.fresh();
-    module.instrs.push(Instr::ConstI64(value, 42));
-    module.canonical_types = Some(Box::new(bundle));
-    module
-}
-
-fn module_with_export_name_len(length: usize) -> IRModule {
-    let mut module = module_value_only();
-    module.exports.insert("x".repeat(length));
-    module
-}
-
-fn largest_body_at_most(limit: usize) -> (IRModule, Vec<u8>) {
-    let mut low = 0usize;
-    let mut high = MAX_MIC3_INPUT - 1;
-    while low < high {
-        let candidate = low + (high - low).div_ceil(2);
-        let module = module_with_export_name_len(candidate);
-        if let Ok(bytes) = emit_mic3_checked(&module) {
-            if bytes.len() <= limit {
-                low = candidate;
-                continue;
-            }
-        }
-        high = candidate - 1;
-    }
-    let module = module_with_export_name_len(low);
-    let bytes = emit_mic3_checked(&module).expect("largest admitted body");
-    assert!(bytes.len() <= limit);
-    (module, bytes)
-}
-
-fn descriptor_only_module(reverse: bool) -> IRModule {
-    let left = SchemaDraft::new(
-        SchemaIdentity::new("ownerA", "Node"),
-        vec![
-            FieldDraft::new(
-                "z",
-                TypeExpr::DynamicArray {
-                    element: Box::new(TypeExpr::RecordRef(SchemaIdentity::new("ownerB", "Node"))),
-                },
-            ),
-            FieldDraft::new("a", TypeExpr::Scalar(ScalarType::Bool)),
-        ],
-    );
-    let right = SchemaDraft::new(
-        SchemaIdentity::new("ownerB", "Node"),
-        vec![FieldDraft::new(
-            "back",
-            TypeExpr::FixedArray {
-                extent: 2,
-                element: Box::new(TypeExpr::RecordRef(SchemaIdentity::new("ownerA", "Node"))),
-            },
-        )],
-    );
-    let mut registry = SchemaRegistryBuilder::default();
-    let drafts = if reverse {
-        [right, left]
-    } else {
-        [left, right]
-    };
-    for draft in drafts {
-        registry.add_schema(draft).expect("schema draft");
-    }
-    let mut module = IRModule::new();
-    module.canonical_types = Some(Box::new(CanonicalModuleTypes::new(
-        registry.finish().expect("cyclic registry"),
-    )));
-    module
-}
+#[path = "v04_test_support.rs"]
+mod support;
+use support::*;
 
 #[test]
 fn v04_roundtrip_preserves_owner_signature_call_and_three_value_zero_scopes() {
@@ -260,20 +83,39 @@ fn v04_checked_evidence_and_signature_consumers_validate_complete_artifacts() {
     assert!(report.trace_hash_valid, "v0x04 trace hash must validate");
     mic3_canonical_check(&evidence).expect("v0x04 evidence must be canonical");
 
-    let signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let signed = super::emit_mic3_with_signed_evidence_scheme(
         &module,
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("signed v0x04 evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let signed = {
+        let err = super::emit_mic3_with_signed_evidence_checked(
+            &module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-test",
+            &[7; 32],
+        )
+        .expect_err("retired Ed signing must refuse");
+        assert!(format!("{err:?}").contains("SchemeRetired"));
+        evidence.clone()
+    };
     let signed_report = mic3_evidence_report(&signed).expect("signed v0x04 report");
     assert!(
         signed_report.trace_hash_valid,
         "signed v0x04 trace hash must validate"
     );
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     assert!(
         matches!(
             mic3_signature_status(&signed),
@@ -295,15 +137,22 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         "v04-cap-test",
     )
     .expect("small unsigned evidence");
-    let small_signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let small_signed = super::emit_mic3_with_signed_evidence_scheme(
         &module_value_only(),
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-cap-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("small signed evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let small_signed = small_unsigned.clone();
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     let unsigned_map_len = small_unsigned.len() - small_body.len();
     let signed_map_len = small_signed.len() - small_body.len();
 
@@ -320,27 +169,36 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         "v04-cap-test",
     )
     .expect("near-limit unsigned evidence");
-    let near_signed = emit_mic3_with_signed_evidence_checked(
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    let near_signed = super::emit_mic3_with_signed_evidence_scheme(
         &near_module,
         "cpu",
         None,
         Determinism::Deterministic,
         "v04-cap-test",
-        &[7; 32],
+        &super::evidence::SigningKey::PqcHybrid {
+            mldsa87: [7; 32],
+            slhdsa: [8; 96],
+        },
     )
     .expect("near-limit signed evidence");
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    let near_signed = near_unsigned.clone();
     assert!(near_unsigned.len() <= MAX_MIC3_INPUT);
     assert!(near_signed.len() <= MAX_MIC3_INPUT);
-    assert!(near_signed.len() > MAX_MIC3_INPUT - signed_map_len - 256);
-    assert!(
-        mic3_evidence_report(&near_signed)
-            .expect("near-limit report")
-            .trace_hash_valid
-    );
-    assert!(matches!(
-        mic3_signature_status(&near_signed),
-        Ok(SignatureStatus::Valid(_))
-    ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    {
+        assert!(near_signed.len() > MAX_MIC3_INPUT - signed_map_len - 256);
+        assert!(
+            mic3_evidence_report(&near_signed)
+                .expect("near-limit report")
+                .trace_hash_valid
+        );
+        assert!(matches!(
+            mic3_signature_status(&near_signed),
+            Ok(SignatureStatus::Valid(_))
+        ));
+    }
     mic3_canonical_check(&near_unsigned).expect("near-limit unsigned canonical");
     mic3_canonical_check(&near_signed).expect("near-limit signed canonical");
 
@@ -361,19 +219,38 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         unsigned_error,
         EvidenceEmitError::ArtifactTooLarge { .. }
     ));
-    let signed_error = emit_mic3_with_signed_evidence_checked(
-        &oversized_module,
-        "cpu",
-        None,
-        Determinism::Deterministic,
-        "v04-cap-test",
-        &[7; 32],
-    )
-    .expect_err("oversized signed envelope must refuse");
-    assert!(matches!(
-        signed_error,
-        EvidenceEmitError::ArtifactTooLarge { .. }
-    ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
+    {
+        let signed_error = super::emit_mic3_with_signed_evidence_scheme(
+            &oversized_module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-cap-test",
+            &super::evidence::SigningKey::PqcHybrid {
+                mldsa87: [7; 32],
+                slhdsa: [8; 96],
+            },
+        )
+        .expect_err("oversized signed envelope must refuse");
+        assert!(matches!(
+            signed_error,
+            EvidenceEmitError::ArtifactTooLarge { .. }
+        ));
+    }
+    #[cfg(not(all(feature = "evidence-mldsa", feature = "evidence-slhdsa")))]
+    {
+        let retired_error = super::emit_mic3_with_signed_evidence_checked(
+            &oversized_module,
+            "cpu",
+            None,
+            Determinism::Deterministic,
+            "v04-cap-test",
+            &[7; 32],
+        )
+        .expect_err("retired Ed signing must refuse");
+        assert!(format!("{retired_error:?}").contains("SchemeRetired"));
+    }
     let receipts_error = emit_mic3_with_evidence_and_receipts(
         &oversized_module,
         "cpu",
@@ -389,6 +266,7 @@ fn checked_evidence_caps_complete_artifact_before_map_append() {
         receipts_error,
         EvidenceEmitError::ArtifactTooLarge { .. }
     ));
+    #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     assert!(unsigned_map_len < signed_map_len);
 }
 
