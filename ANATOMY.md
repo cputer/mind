@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1742 | **Est. tokens:** ~3404280
-**Generated:** 2026-09-09 10:02 UTC
+**Files:** 1743 | **Est. tokens:** ~3406199
+**Generated:** 2026-09-09 10:03 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~103990 |
+| `docs/` | 37 | ~104045 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -128,12 +128,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 4 | ~14244 |
-| `src/type_checker/` | 17 | ~56166 |
-| `src/type_checker/slice_abi/` | 3 | ~10768 |
+| `src/type_checker/` | 17 | ~56336 |
+| `src/type_checker/slice_abi/` | 3 | ~11245 |
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 393 | ~791378 |
+| `tests/` | 394 | ~792595 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -461,7 +461,7 @@
 ### `docs/`
 
 - `determinism.md` (~4368 tok, huge) — The Determinism Contract
-- `errors.md` (~1283 tok, large) — MIND Core Error Model
+- `errors.md` (~1338 tok, large) — MIND Core Error Model
 - `ffi-runtime.md` (~529 tok, large) — FFI & Runtime Integration
 ### `docs/gates/`
 
@@ -1343,12 +1343,12 @@
 - `qualified_imports.rs` (~268 tok, medium) — Feature-neutral span-scoped qualified import predicates for name resolution.
 - `resolve.rs` (~15095 tok, huge) — Copyright 2025 STARGA Inc.
 - `return_checks.rs` (~1244 tok, large) — Copyright 2025 STARGA Inc.
-- `slice_abi.rs` (~7414 tok, huge) — Copyright 2025 STARGA Inc.
+- `slice_abi.rs` (~7584 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
 
-- `borrow_flow.rs` (~7116 tok, huge) — Copyright 2025 STARGA Inc.
-- `owner_assignment.rs` (~1112 tok, large) — Copyright 2026 STARGA Inc.
-- `provenance.rs` (~2540 tok, huge) — Copyright 2026 STARGA Inc.
+- `borrow_flow.rs` (~7081 tok, huge) — Copyright 2025 STARGA Inc.
+- `owner_assignment.rs` (~1145 tok, large) — Copyright 2026 STARGA Inc.
+- `provenance.rs` (~3019 tok, huge) — Copyright 2026 STARGA Inc.
 ### `src/type_checker/`
 
 - `stdlib_signatures.rs` (~620 tok, large) — Copyright 2025-2026 STARGA Inc.
@@ -1659,8 +1659,9 @@
 - `fail_open_skip_site_ratchet.rs` (~8472 tok, huge) — Copyright 2025 STARGA Inc.
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
+- `fixed_array_narrow_assignment_types.rs` (~376 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
-- `fixed_array_struct_field_run.rs` (~5596 tok, huge) — Copyright 2026 STARGA Inc.
+- `fixed_array_struct_field_run.rs` (~6437 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
