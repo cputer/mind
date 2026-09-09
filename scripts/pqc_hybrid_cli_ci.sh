@@ -35,6 +35,7 @@ expected_tests=(
   "an_invalid_ascii_32_byte_seed_refuses_for_both_readers"
   "a_non_ascii_32_byte_seed_refuses_for_both_readers"
   "a_wrong_length_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
+  "an_invalid_ascii_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
   "a_non_ascii_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
 )
 # The non-UTF-8 environment control uses OsStringExt and is available on Unix
