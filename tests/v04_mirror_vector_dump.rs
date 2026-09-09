@@ -17,6 +17,8 @@
 use std::path::PathBuf;
 
 use libmind::ir::compact::v3::{emit_mic3_checked, parse_mic3_prefix};
+#[path = "support/v04_mirror_body_vectors.rs"]
+mod body_vectors;
 #[path = "support/v04_mirror_descriptor_vectors.rs"]
 mod descriptor_vectors;
 #[path = "support/v04_mirror_intrinsic_vectors.rs"]
@@ -88,6 +90,7 @@ mod code {
     pub const BAD_OPTIONAL_TAG: u32 = 32;
     pub const DESCRIPTOR_ELEMENTS: u32 = 33;
     pub const INTRINSIC_CONTRACT: u32 = 34;
+    pub const EXPORT_ORDER: u32 = 35;
 }
 fn splice_surface(prefix: &[u8], replacement: &[u8]) -> Vec<u8> {
     // The surface field starts at offset 5; find its end by walking continuations.
@@ -618,6 +621,7 @@ fn v04_prefix_vectors() {
     }
 
     intrinsic_vectors::add_intrinsic_vectors(&mut vectors);
+    body_vectors::append(&mut vectors);
 
     // --- reference-decoder cross-check on every vector -------------------
     //

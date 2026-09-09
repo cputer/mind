@@ -87,6 +87,7 @@
 //   34 INTRINSIC_CONTRACT   reserved intrinsic has no exact registered
 //                           name or `(i64...) -> i64` signature
 // ===========================================================================
+//   35 EXPORT_ORDER         export references are not strictly increasing
 
 // ---- declared bounds ------------------------------------------------------
 
@@ -1279,6 +1280,63 @@ pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, 
     mv_emit_functions(inbuf, outbuf, p5, o5, n - 1, st)
 }
 
+// ---- module next_id and exports -------------------------------------------
+
+// Walk `n` remaining export references. Each is a string index, and the indices
+// must be STRICTLY increasing.
+//
+// The reference collects exports into a set, so a repeated or descending index
+// would be absorbed silently on a set round-trip and the body would still
+// "mean" the same module. The ordering rule is what makes the encoding
+// canonical, so it is checked here on the wire values themselves, before any
+// set could hide it.
+pub fn mv_walk_exports(
+    buf: i64,
+    len: i64,
+    pos: i64,
+    n: i64,
+    prev: i64,
+    nstr: i64,
+    tab: i64,
+    st: i64
+) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, pos);
+        return 0;
+    }
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    let idx: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    if prev >= 0 {
+        if idx <= prev {
+            return mv_fail(st, 35);
+        }
+    }
+    if idx >= nstr {
+        return mv_fail(st, 23);
+    }
+    let rcc: i64 = mv_charge(st, mv_str_len(tab, idx) * 8);
+    if rcc != 0 {
+        return rcc;
+    }
+    mv_walk_exports(buf, len, p1, n - 1, idx, nstr, tab, st)
+}
+
+pub fn mv_emit_exports(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
+    if n <= 0 {
+        __mind_store_i64(st + 0, ipos);
+        return opos;
+    }
+    mv_uleb(inbuf, ipos + 12, ipos, 0, 0, 1, st);
+    let idx: i64 = mv_st_value(st);
+    let p1: i64 = mv_st_cursor(st);
+    let o1: i64 = mv_put_uleb(outbuf, opos, idx);
+    mv_emit_exports(inbuf, outbuf, p1, o1, n - 1, st)
+}
+
 // ---- byte comparison ------------------------------------------------------
 
 pub fn mv_equal(a: i64, b: i64, n: i64, i: i64) -> i64 {
@@ -1474,6 +1532,34 @@ pub fn main() -> i64 {
     if rc10 != 0 {
         return rc10;
     }
+    let after_functions: i64 = mv_st_cursor(st);
+
+    // --- module next_id ---
+    let rc11: i64 = mv_uleb(inbuf, len, after_functions, 0, 0, 1, st);
+    if rc11 != 0 {
+        return rc11;
+    }
+    let next_id: i64 = mv_st_value(st);
+    let after_next_id: i64 = mv_st_cursor(st);
+
+    // --- exports ---
+    let rc12: i64 = mv_uleb(inbuf, len, after_next_id, 0, 0, 1, st);
+    if rc12 != 0 {
+        return rc12;
+    }
+    let nexport: i64 = mv_st_value(st);
+    let ex_start: i64 = mv_st_cursor(st);
+    if nexport > len - ex_start {
+        return 10;
+    }
+    let rc13: i64 = mv_charge(st, nexport * 32);
+    if rc13 != 0 {
+        return rc13;
+    }
+    let rc14: i64 = mv_walk_exports(inbuf, len, ex_start, nexport, 0 - 1, count, tab, st);
+    if rc14 != 0 {
+        return rc14;
+    }
     let prefix_len: i64 = mv_st_cursor(st);
     if prefix_len > mv_max_prefix() {
         return 17;
@@ -1495,8 +1581,11 @@ pub fn main() -> i64 {
     let o6: i64 = mv_emit_schema_bodies(inbuf, outbuf, hdr_end, o5, nschema, st);
     let o7: i64 = mv_put_uleb(outbuf, o6, nfunc);
     let o8: i64 = mv_emit_functions(inbuf, outbuf, fn_start, o7, nfunc, st);
+    let o9: i64 = mv_put_uleb(outbuf, o8, next_id);
+    let o10: i64 = mv_put_uleb(outbuf, o9, nexport);
+    let o11: i64 = mv_emit_exports(inbuf, outbuf, ex_start, o10, nexport, st);
 
-    if o8 != prefix_len {
+    if o11 != prefix_len {
         return 18;
     }
     if mv_equal(inbuf, outbuf, prefix_len, 0) == 0 {
@@ -1507,7 +1596,7 @@ pub fn main() -> i64 {
     // be redone outside this process rather than taken on its word.
     if __mind_argc() > 2 {
         if mv_is_dump(__mind_argv(2)) == 1 {
-            __mind_write(1, outbuf, o8, 0 - 1);
+            __mind_write(1, outbuf, o11, 0 - 1);
         }
     }
 

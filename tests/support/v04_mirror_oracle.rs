@@ -277,6 +277,26 @@ pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), St
         };
         functions.push((owner, name, kind, parameters, returns));
     }
+
+    // --- module next_id and exports ---
+    //
+    // Export references are string indices that must be STRICTLY increasing.
+    // The reference keeps exports in a set, so a repeated or descending index
+    // would be absorbed silently on a set round-trip; the ordering rule is what
+    // makes the encoding canonical, and it is checked here on the wire values.
+    let next_id = read_uleb(body, &mut pos)? as usize;
+    let export_count = read_uleb(body, &mut pos)? as usize;
+    let mut exports: Vec<usize> = Vec::new();
+    for _ in 0..export_count {
+        let index = read_uleb(body, &mut pos)? as usize;
+        if exports.last().is_some_and(|previous| *previous >= index) {
+            return Err("export references are not strictly sorted".to_string());
+        }
+        if index >= strings.len() {
+            return Err("export names no string".to_string());
+        }
+        exports.push(index);
+    }
     let prefix_len = pos;
 
     let mut out = Vec::new();
@@ -316,6 +336,11 @@ pub(super) fn rederive_prefix(body: &[u8]) -> Result<(Vec<u8>, usize, usize), St
                 out.extend_from_slice(descriptor);
             }
         }
+    }
+    write_uleb(&mut out, next_id as u64);
+    write_uleb(&mut out, exports.len() as u64);
+    for index in &exports {
+        write_uleb(&mut out, *index as u64);
     }
     Ok((out, prefix_len, strings.len()))
 }
