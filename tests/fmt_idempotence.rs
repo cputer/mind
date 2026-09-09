@@ -259,6 +259,10 @@ const BARE_LEGACY_PARSE_SKIPS: &[&str] = &[
     "examples/mindc_mind/testdata/native_record_array/extent_overflow_refuse.mind",
     "examples/mindc_mind/testdata/native_record_array/record_param_loop.mind",
     "examples/mindc_mind/testdata/native_record_array/reference.mind",
+    // These loop fixtures also require std-surface; the enabled-profile
+    // formatter pass below must parse and format them successfully.
+    "examples/mindc_mind/testdata/native_record_array/reference_u8.mind",
+    "examples/mindc_mind/testdata/native_record_array/u8_direct_loop.mind",
     "examples/policy.mind",
     "examples/remizov_benchmark.mind",
     "examples/remizov_gpu.mind",

@@ -102,6 +102,23 @@ def _scalar_identity(lib: ctypes.CDLL) -> None:
     print(f"  PASS scalar bytes {hashlib.sha256(got).hexdigest()[:16]}")
 
 
+def _check_positive(source: bytes, path: pathlib.Path) -> None:
+    # Test data are excluded from the production example walk. Copy the exact
+    # bytes outside that ignored tree and prove this path is actually consumed.
+    mindc = pathlib.Path(os.environ.get("MINDC_BIN", _REPO / "target/release/mindc"))
+    command = [str(mindc), "check", "--no-fmt", "--no-lint", str(path)]
+    path.write_bytes(source)
+    checked = subprocess.run(command, capture_output=True, timeout=30, check=False)
+    if checked.returncode != 0:
+        raise AssertionError(f"{path.name}: reference check refused: {checked.stderr[-800:]!r}")
+    path.write_bytes(source + b"\nfn deliberately_malformed( {\n")
+    malformed = subprocess.run(command, capture_output=True, timeout=30, check=False)
+    path.write_bytes(source)
+    if malformed.returncode == 0:
+        raise AssertionError(f"{path.name}: reference check did not consume its input")
+    print(f"  PASS reference check and input-consumption control {path.name}")
+
+
 def main() -> int:
     so = resolve_so()
     lib = ctypes.CDLL(str(so))
@@ -129,6 +146,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="mind-native-record-array-") as td:
         scratch = pathlib.Path(td)
         for name, expected in positives.items():
+            _check_positive(_source(name), scratch / f"{name}.mind")
             first = _compile(lib, _source(name))
             second = _compile(lib, _source(name))
             if not first or first != second:
