@@ -2080,8 +2080,9 @@ pub fn mv_reserved_zero(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
 // The reference validates ONE descriptor budget over module_values chained with
 // every declaration's signature parameters and return type
 // (canonical_types.rs). A function's own scoped rows are NOT in that chain --
-// they carry a separate per-function budget enforced elsewhere -- so the module
-// rows pass 48 and a FnDef's scoped rows pass 0. Charging both into 48 would
+// they carry a separate per-function budget enforced by the Rust reference
+// decoder, not this mirror -- so module rows pass 48 and a FnDef's scoped rows
+// pass 0. Charging both into 48 would
 // refuse valid bodies; charging neither, which is what this did before, admits
 // a body one element over the shared limit.
 pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nschema: i64, sch: i64, tab: i64, slot: i64, st: i64) -> i64 {
