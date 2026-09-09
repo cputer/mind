@@ -383,3 +383,31 @@ fn canonical_rows_reference_only_values_their_scope_defines() {
         );
     }
 }
+
+/// Each function's own scoped rows carry their own element allowance.
+///
+/// The reference restarts this count at every function, so it is neither the
+/// shared module scope nor a single running total. Two positives pin the two
+/// ways that can be got wrong: a nested function must not spend its parent's
+/// allowance, and two siblings must not share one.
+#[test]
+fn each_function_has_its_own_scoped_element_allowance() {
+    for name in [
+        "pos_nested_function_own_budget",
+        "pos_sibling_functions_own_budget",
+    ] {
+        let path = format!("examples/mind_mirror_v04/testdata/semantic/{name}.mic3");
+        let bytes = std::fs::read(&path).expect("positive fixture");
+        parse_mic3_body(&bytes).unwrap_or_else(|e| panic!("{name} must parse: {}", e.message));
+    }
+
+    let over = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/neg_function_rows_exceed_budget.mic3"
+    );
+    let error = parse_mic3_body(over).expect_err("function rows over the element bound");
+    assert!(
+        error.message.contains("invalid semantic shape"),
+        "the per-function element bound must be the diagnosed cause: {}",
+        error.message
+    );
+}

@@ -138,6 +138,8 @@
 //                            declared signature descriptor at that position
 //   51 VALUE_OUTSIDE_SCOPE   a semantic row types a value that nothing in that
 //                            scope defines
+//   52 FUNCTION_ELEMENTS     one function's own scoped rows exceed the element
+//                            bound, counted per function and reset per frame
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -186,6 +188,10 @@ pub fn mv_max_descriptor_elements() -> i64 {
 // st+8448 whether a Return was decoded at module scope (verdict deferred: the
 //         reference's rule is conditional on authority, which is not decidable
 //         until the module semantic rows have been read)
+// st+8456+depth*8 that FnDef's OWN scoped-row element total. Depth-indexed and
+//         zeroed on entry, because the reference restarts this count at each
+//         function: it is not the shared module scope and must not fall back to
+//         it, and a nested function must not spend its parent's allowance.
 
 pub fn mv_st_cursor(st: i64) -> i64 {
     __mind_load_i64(st + 0)
@@ -227,10 +233,17 @@ pub fn mv_bytes_equal(buf: i64, left: i64, right: i64, n: i64) -> i64 {
 // all function parameters/returns. Subtract before adding so no admitted input
 // can overflow i64 while checking the smaller 2^40 contract.
 pub fn mv_add_elements(st: i64, slot: i64) -> i64 {
+    mv_add_elements_as(st, slot, 33)
+}
+
+// As mv_add_elements, but reporting `code` on breach. The per-function scope
+// carries its own cause because the reference reports a different error there
+// than for the shared bundle scope.
+pub fn mv_add_elements_as(st: i64, slot: i64, code: i64) -> i64 {
     let item: i64 = mv_st_elements(st);
     let total: i64 = __mind_load_i64(st + slot);
     if item > mv_max_descriptor_elements() - total {
-        return mv_fail(st, 33);
+        return mv_fail(st, code);
     }
     __mind_store_i64(st + slot, total + item);
     0
@@ -2074,7 +2087,13 @@ pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nsche
         return rct;
     }
     if slot != 0 {
-        let rce: i64 = mv_add_elements(st, slot);
+        // A per-function slot lies at or above the depth-indexed base and
+        // carries its own cause; the shared bundle slot keeps 33.
+        let rce: i64 = if slot >= 8456 {
+            mv_add_elements_as(st, slot, 52)
+        } else {
+            mv_add_elements(st, slot)
+        };
         if rce != 0 {
             return rce;
         }
@@ -2395,7 +2414,10 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         if rcr != 0 {
             return rcr;
         }
-        let result: i64 = mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, 0, st);
+        __mind_store_i64(st + 8456 + depth * 8, 0);
+        let result: i64 = mv_walk_value_rows(
+            buf, len, p10, nrow, 0 - 1, nschema, sch, tab, 8456 + depth * 8, st
+        );
         if result == 0 {
             if __mind_load_i64(st + 112) == 1 {
                 if __mind_load_i64(st + 104) == 0 {
@@ -2730,7 +2752,7 @@ pub fn main() -> i64 {
         return 17;
     }
 
-    let st: i64 = __mind_alloc(8456);
+    let st: i64 = __mind_alloc(10504);
     __mind_store_i64(st + 40, 0);
     __mind_store_i64(st + 48, 0);
     __mind_store_i64(st + 64, 0);

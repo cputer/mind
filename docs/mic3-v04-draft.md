@@ -111,14 +111,16 @@ scope is refused rather than satisfied by the wider table. The return diagnosis
 is conditional on authority: an authority-free body is refused for the missing
 authority. Neither path accepts an authority-free v0x04 body. Every semantic row
 must type a value its own scope defines, and a nested function body does not
-define the scope enclosing it. The
+define the scope enclosing it. Each function's scoped rows also carry their own
+element allowance, restarted per function, so neither a nested function nor a
+sibling spends another's. The
 uniqueness rule is module-wide rather than per-function: the reference keeps one
 identity set for the whole instruction stream, so a second definition is refused
 whether it appears beside the first or nested inside it, and both cases are
 pinned. Nested functions retain independent return IDs. Module semantic rows share one cumulative element scope with every
 declaration's signature, while a function's own scoped rows stay outside it.
 CI executes 72 wire
-vectors and 26 semantic vectors, with exact re-emission checks on every positive
+vectors and 29 semantic vectors, with exact re-emission checks on every positive
 fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.

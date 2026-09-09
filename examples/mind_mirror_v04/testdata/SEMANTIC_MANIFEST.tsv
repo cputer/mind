@@ -25,3 +25,6 @@ neg_parameter_type_module_fallback	49	52	9660eb39a3e9e91e0c4e3af163979c626182f8a
 pos_function_distinct_param_types	0	49	bbf2b8a3f97797944da729d8bef2d3380e2ed9caf0e089cbb0d4bb8846d35942	49	distinct parameter types pin positional order
 neg_module_row_outside_scope	51	23	7e876b7f63b04f7d772f06e01b3e959c8d029f90d022788478c5c25aff6a5619	23	semantic module row types a value nothing defines
 neg_function_row_defined_in_nested_only	51	60	954e83ae76543e0f09783446db9b45fd52e419d72c3b570770ab0264f24612a8	60	nested-frame isolation: a nested body does not define the enclosing scope
+neg_function_rows_exceed_budget	52	77	4531780f0eb6d4bf6f1f4876e005b551dc9644575c5301c58afd1881500a113a	77	one function's scoped rows exceed the element bound
+pos_nested_function_own_budget	0	107	5d04bef14c0f15e8b079e7e90cee06addaa2fa09dfa3fd81e59de818ad412ec4	107	nested frame isolation: parent and nested each get a full allowance
+pos_sibling_functions_own_budget	0	107	1a7df0864ae7bf03b36c13a2c7cdf22ec0333356ede08c1a97a76495512d1db5	107	per-frame reset: siblings do not share an allowance
