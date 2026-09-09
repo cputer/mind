@@ -13,8 +13,10 @@ byte span so a registered name longer than 32 bytes cannot alias a same-prefix,
 same-length mutation.
 
 Oracle construction (machine-checked, no hand table):
-  1. The STD_SURFACE_INTRINSICS table (name, arity) is PARSED from the Rust
-     source src/intrinsics.rs at run time — table drift fails loud.
+  1. The Rust/MLIR-selectable subset of STD_SURFACE_INTRINSICS is PARSED from
+     the Rust source src/intrinsics.rs at run time — table drift fails loud.
+     Declared native-only rows retain their arity for live source generation,
+     but do not suppress E2024.
   2. Every case's expected verdict is recomputed from the exact Rust rule
      (`name.startswith("__mind_") and name not in table`).
   3. Every case is ALSO driven through the LIVE `mindc check` oracle: a
@@ -58,12 +60,15 @@ PREFIX = "__mind_"
 LONG_REGISTRY_NAME = "__mind_nerve_blas_matmul_score_q16_i64"
 
 
-def parse_table_source(src):
-    """Parse the actual IntrinsicSpec declarations (name -> arity).
+def parse_registry_source(src):
+    """Parse declared and Rust/MLIR-selectable intrinsic tables.
 
     The registry used to be a tuple table, but its current declarations carry
     contract metadata in constructors.  Parse those declarations directly so
-    adding or changing a constructor changes this oracle's input.
+    adding or changing a constructor changes this oracle's input.  Legacy,
+    `frozen_value`, `frozen_discard`, and `frozen_io` rows are Rust/MLIR-
+    selectable; `frozen_native_*` rows are deliberately native-only and
+    therefore remain in E2024's domain.
     """
     m = re.search(
         r"const STD_SURFACE_INTRINSICS: &\[IntrinsicSpec\] = &\[(.*?)\n\];",
@@ -75,7 +80,7 @@ def parse_table_source(src):
     body = m.group(1)
     entries = []
     entries.extend(
-        (name, int(arity))
+        ("legacy", name, int(arity))
         for name, arity in re.findall(
             r'IntrinsicSpec::legacy\s*\(\s*"([^"]+)"\s*,\s*(\d+)\s*,',
             body,
@@ -83,9 +88,9 @@ def parse_table_source(src):
     )
     arities = {"NO_I64": 0, "ONE_I64": 1, "TWO_I64": 2, "FOUR_I64": 4}
     entries.extend(
-        (name, arities[arity])
-        for name, arity in re.findall(
-            r"IntrinsicSpec::(?:frozen_native_value|frozen_value|frozen_native_only|"
+        (kind, name, arities[arity])
+        for kind, name, arity in re.findall(
+            r"IntrinsicSpec::(frozen_native_value|frozen_value|frozen_native_only|"
             r'frozen_discard|frozen_io)\s*\(\s*"([^"]+)"\s*,\s*"[^"]+"\s*,\s*'
             r"(NO_I64|ONE_I64|TWO_I64|FOUR_I64)\s*,",
             body,
@@ -111,16 +116,30 @@ def parse_table_source(src):
         )
     if len(entries) < 30:
         raise ValueError(f"implausibly small parsed table ({len(entries)} entries)")
-    table = {name: int(arity) for name, arity in entries}
-    if len(table) != len(entries):
+    declared = {name: int(arity) for _, name, arity in entries}
+    if len(declared) != len(entries):
         raise ValueError("duplicate names in STD_SURFACE_INTRINSICS")
-    long_names = sorted(name for name in table if len(name.encode()) > 32)
+    rust_mlir = {
+        name: int(arity)
+        for kind, name, arity in entries
+        if kind not in {"frozen_native_value", "frozen_native_only"}
+    }
+    if len(rust_mlir) < 30:
+        raise ValueError(
+            f"implausibly small Rust/MLIR-selectable table ({len(rust_mlir)} entries)"
+        )
+    long_names = sorted(name for name in declared if len(name.encode()) > 32)
     if long_names != [LONG_REGISTRY_NAME]:
         raise ValueError(
             "FAIL: unsupported >32-byte registry rows; regenerate the full-span "
             f"twin for {long_names!r}"
         )
-    return table
+    return rust_mlir, declared
+
+
+def parse_table_source(src):
+    """Parse the exact table whose members suppress E2024."""
+    return parse_registry_source(src)[0]
 
 
 def registry_source():
@@ -129,7 +148,7 @@ def registry_source():
 
 
 def parse_table():
-    """Parse STD_SURFACE_INTRINSICS declarations from the Rust source."""
+    """Parse Rust/MLIR-selectable declarations from the Rust source."""
     try:
         return parse_table_source(registry_source())
     except ValueError as error:
@@ -145,16 +164,19 @@ def registry_mutation_control(source, table, span_fn):
     registered call.  If the parser silently falls back to a stale list, this
     control fails.
     """
+    declaration = 'IntrinsicSpec::legacy("__mind_blas_dot_f32", 3, Det::Pure)'
     mutated_source = source.replace(
-        '"__mind_argc", "argc"', '"__mind_argc_mutated", "argc"', 1
+        declaration,
+        'IntrinsicSpec::legacy("__mind_blas_dot_f32_mutated", 3, Det::Pure)',
+        1,
     )
     if mutated_source == source:
-        raise SystemExit("FAIL: registry mutation did not find __mind_argc declaration")
+        raise SystemExit("FAIL: registry mutation did not find selectable declaration")
     try:
         mutated = parse_table_source(mutated_source)
     except ValueError as error:
         raise SystemExit(f"FAIL: registry mutation cannot be parsed: {error}") from error
-    name = "__mind_argc"
+    name = "__mind_blas_dot_f32"
     name_bytes = name.encode()
     name_buf = ctypes.create_string_buffer(name_bytes, len(name_bytes))
     actual = span_fn(ctypes.addressof(name_buf), len(name_bytes))
@@ -181,9 +203,9 @@ def enc(name):
     return words + [len(b)]
 
 
-def live_oracle(mindc, name, table, workdir):
+def live_oracle(mindc, name, declared, workdir):
     """Run `mindc check` on a source calling `name`; 1 iff E2024 is emitted."""
-    arity = table.get(name, 1)
+    arity = declared.get(name, 1)
     args = ", ".join(["1"] * arity) if arity else ""
     src = f"fn main() -> i64 {{\n    let p: i64 = {name}({args});\n    return 0;\n}}\n"
     path = os.path.join(workdir, "case.mind")
@@ -196,11 +218,15 @@ def live_oracle(mindc, name, table, workdir):
     return 1 if "E2024" in out else 0
 
 
-def build_cases(table):
+def build_cases(table, declared):
     cases = []
-    # Every registered entry: must be 0 (no E2024).
+    # Every Rust/MLIR-selectable entry: must be 0 (no E2024).
     for name in sorted(table):
-        cases.append((name, "registered entry"))
+        cases.append((name, "Rust/MLIR-selectable entry"))
+    # Native-only declarations remain valid registry rows for the frozen native
+    # emitter, but they are intentionally warnings for the Rust/MLIR surface.
+    for name in sorted(set(declared) - set(table)):
+        cases.append((name, "declared FrozenNative-only entry"))
     # Per-entry mutations: suffix + last-char truncation (positives for the
     # __mind_-prefixed ones; the truncation of a prefixed name stays prefixed
     # unless it collides with another registered entry).
@@ -253,8 +279,17 @@ def build_so():
 
 def main():
     source = registry_source()
-    table = parse_table_source(source)
-    print(f"table: {len(table)} STD_SURFACE_INTRINSICS entries parsed from intrinsics.rs")
+    table, declared = parse_registry_source(source)
+    native_only = set(declared) - set(table)
+    if native_only != {"__mind_argc", "__mind_argv"}:
+        raise SystemExit(
+            "FAIL: unexpected FrozenNative-only E2024 partition: "
+            f"{sorted(native_only)!r}"
+        )
+    print(
+        f"table: {len(table)} Rust/MLIR-selectable of {len(declared)} "
+        "STD_SURFACE_INTRINSICS entries parsed from intrinsics.rs"
+    )
     so, built = build_so()
     st = os.stat(so)
     print(f"SO: {so} ({st.st_size} bytes)")
@@ -276,7 +311,7 @@ def main():
     registry_mutation_control(source, table, span_fn)
 
     mindc = resolve_mindc()
-    cases = build_cases(table)
+    cases = build_cases(table, declared)
     total = fails = positives = negatives = 0
     with tempfile.TemporaryDirectory() as workdir:
         for name, note in cases:
@@ -285,7 +320,7 @@ def main():
             name_buf = ctypes.create_string_buffer(name_bytes, len(name_bytes))
             got = span_fn(ctypes.addressof(name_buf), len(name_bytes))
             exp = rust_rule(name, table)
-            live = live_oracle(mindc, name, table, workdir)
+            live = live_oracle(mindc, name, declared, workdir)
             total += 1
             ok = check(
                 got == exp == live,
