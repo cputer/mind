@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1750 | **Est. tokens:** ~3441788
-**Generated:** 2026-09-09 13:01 UTC
+**Files:** 1750 | **Est. tokens:** ~3442541
+**Generated:** 2026-09-09 13:44 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~37136 |
+| `.github/workflows/` | 9 | ~37137 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~104539 |
+| `docs/` | 37 | ~104575 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -66,8 +66,8 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~24914 |
-| `examples/mind_mirror_v04/testdata/` | 2 | ~3318 |
+| `examples/mind_mirror_v04/` | 3 | ~25109 |
+| `examples/mind_mirror_v04/testdata/` | 2 | ~3441 |
 | `examples/mindc_mind/` | 172 | ~442925 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 396 | ~804113 |
+| `tests/` | 396 | ~804511 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -270,7 +270,7 @@
 
 - `bench-gate.yml` (~2417 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~25280 tok, huge) — name: CI
+- `ci.yml` (~25281 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -473,7 +473,7 @@
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
 - `ir-stability.md` (~1763 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
-- `mic3-v04-draft.md` (~1757 tok, huge) — MIC3 `0x04` core codec — implementation draft
+- `mic3-v04-draft.md` (~1793 tok, huge) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -638,11 +638,11 @@
 ### `examples/mind_mirror_v04/`
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
-- `mic3_v04_prefix_mirror.mind` (~21079 tok, huge) — ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~21274 tok, huge) — ===========================================================================
 - `mirror_gate.py` (~3051 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
-- `MANIFEST.tsv` (~2592 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
+- `MANIFEST.tsv` (~2715 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
 - `SEMANTIC_MANIFEST.tsv` (~726 tok, large) — # name	expected_exit	bytes	sha256	consumed	note
 ### `examples/mindc_mind/`
 
@@ -2385,7 +2385,7 @@
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) — Copyright 2025 STARGA Inc.
 - `v04_mirror_vector_dump.rs` (~7844 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `v04_value_id_boundary.rs` (~2489 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_value_id_boundary.rs` (~2887 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) — Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.

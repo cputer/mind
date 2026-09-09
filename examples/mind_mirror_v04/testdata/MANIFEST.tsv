@@ -68,3 +68,6 @@ neg_duplicate_exports	35	24	3debecbc58795c99c0c9fe6e6869e97d28c2c15462c7600261c4
 neg_export_out_of_bounds	23	23	98f47ad0dc090f5b94c2c5722e64a1a89d2eacc0f79be28fa89ba7a3f8dc0ffb	0	export names string 5 of 2
 neg_truncated_exports	10	23	c035ffeb8098a12f1633a442ebede4cebab8e3631b7fd207a50f2be29967ebdd	0	declares two exports and supplies one
 neg_truncated_before_next_id	10	20	3ed0b9fbbf927c1728cb6547968bedaa527b079ab2cc453daade6b959980844b	0	body ends where next_id must begin
+pos_module_row_element_boundary	0	56	b8f23502195aa9e8602989d8430ae50c3be39d42ba7fa46912ca1ee2a60ba140	56	module rows share the signature element scope: exactly 2^40
+neg_module_row_cumulative_elements	33	59	aef224a5d2ae389090ccfb148d9c6409d3986b6fbd8e5174afd824cf2ff07a6d	59	module row pushes the shared scope to 2^40 + 1
+pos_function_rows_outside_shared_scope	0	70	db5a488889c1c741e966628acd9bc6b5d1eabd52711b89687891c9a1c1c04c92	70	a function's scoped rows are NOT in the shared element scope

@@ -1593,7 +1593,17 @@ pub fn mv_reserved_zero(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
 // value id. Used for a function's own scoped table. When return validation is
 // active, the row carrying the declared ret_id must reproduce the declaration's
 // exact descriptor bytes.
-pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nschema: i64, sch: i64, tab: i64, st: i64) -> i64 {
+// `slot` names the cumulative element accumulator these rows contribute to, or
+// 0 for rows that contribute to none.
+//
+// The reference validates ONE descriptor budget over module_values chained with
+// every declaration's signature parameters and return type
+// (canonical_types.rs). A function's own scoped rows are NOT in that chain --
+// they carry a separate per-function budget enforced elsewhere -- so the module
+// rows pass 48 and a FnDef's scoped rows pass 0. Charging both into 48 would
+// refuse valid bodies; charging neither, which is what this did before, admits
+// a body one element over the shared limit.
+pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nschema: i64, sch: i64, tab: i64, slot: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1613,6 +1623,12 @@ pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nsche
     if rct != 0 {
         return rct;
     }
+    if slot != 0 {
+        let rce: i64 = mv_add_elements(st, slot);
+        if rce != 0 {
+            return rce;
+        }
+    }
     let p2: i64 = mv_st_cursor(st);
     if __mind_load_i64(st + 112) == 1 {
         if vid == __mind_load_i64(st + 80) {
@@ -1627,7 +1643,7 @@ pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nsche
             __mind_store_i64(st + 104, 1)
         }
     }
-    mv_walk_value_rows(buf, len, p2, n - 1, vid, nschema, sch, tab, st)
+    mv_walk_value_rows(buf, len, p2, n - 1, vid, nschema, sch, tab, slot, st)
 }
 
 // `n` FnDef parameters, each a string reference and a value id.
@@ -1929,7 +1945,7 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         if rcr != 0 {
             return rcr;
         }
-        let result: i64 = mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, st);
+        let result: i64 = mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, 0, st);
         if result == 0 {
             if __mind_load_i64(st + 112) == 1 {
                 if __mind_load_i64(st + 104) == 0 {
@@ -2472,7 +2488,7 @@ pub fn main() -> i64 {
     if rc23 != 0 {
         return rc23;
     }
-    let rc24: i64 = mv_walk_value_rows(inbuf, len, row_start, nrow, 0 - 1, nschema, sch, tab, st);
+    let rc24: i64 = mv_walk_value_rows(inbuf, len, row_start, nrow, 0 - 1, nschema, sch, tab, 48, st);
     if rc24 != 0 {
         return rc24;
     }

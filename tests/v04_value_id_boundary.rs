@@ -261,3 +261,37 @@ fn canonical_body_without_semantic_authority_is_refused() {
         error.message
     );
 }
+
+/// Module semantic rows share ONE cumulative element scope with every
+/// declaration's signature, and a function's own scoped rows do not.
+///
+/// Three fixtures pin both directions of that scoping decision, because each
+/// direction fails differently and each needs its own witness:
+///   * exactly 2^40 across signatures alone is accepted;
+///   * one module row on top of it is refused, which is what proves module rows
+///     are IN the shared scope;
+///   * a function's scoped row on top of it is accepted, which is what proves
+///     those rows are OUT of it. Without this third fixture a mirror that
+///     wrongly charged function rows into the shared scope passed every vector;
+///     measured, it did.
+#[test]
+fn shared_element_scope_covers_module_rows_but_not_function_rows() {
+    let boundary =
+        include_bytes!("../examples/mind_mirror_v04/testdata/pos_module_row_element_boundary.mic3");
+    parse_mic3_body(boundary).expect("exactly 2^40 elements is admissible");
+
+    let outside = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/pos_function_rows_outside_shared_scope.mic3"
+    );
+    parse_mic3_body(outside).expect("function scoped rows are outside the shared scope");
+
+    let over = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/neg_module_row_cumulative_elements.mic3"
+    );
+    let error = parse_mic3_body(over).expect_err("2^40 + 1 across the shared scope");
+    assert!(
+        error.message.contains("element count exceeds"),
+        "the element bound must be the diagnosed cause: {}",
+        error.message
+    );
+}
