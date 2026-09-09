@@ -31,9 +31,10 @@
 //
 // A body this program exits 0 on is therefore WIRE-CANONICAL — it decoded, and
 // its canonical re-encoding is byte-identical to the bytes consumed — and
-// nothing stronger is claimed. Content past the body is still refused (20). A `0x04` artifact from the reference
-// encoder therefore exits 20 here, with its prefix proven byte-identical; it
-// does not exit 0, because this program cannot certify the rest.
+// nothing stronger is claimed. Content past the body is still refused (20).
+// A complete `0x04` artifact from the reference encoder is read through the
+// module rows and exits 0 when no trailing bytes remain; this still does not
+// certify the semantic predicates listed above.
 //
 // DECLARED NARROWINGS vs the reference decoder, stated rather than hidden:
 //   * ULEB128 values are admitted up to 2^62-1. The reference admits the full
@@ -59,13 +60,15 @@
 // string-table slots (32 each), string bytes (1 each), schema headers (256
 // each), schema fields (192 each), type descriptors (160 each) and the
 // eight-bytes-per-referenced-byte owned-projection charge. The reference's
-// final whole-body "canonical re-emission" charge is NOT applied here: it is
-// levied once the whole body is admitted, which this subset does not yet do.
+// final whole-body "canonical re-emission" charge is NOT applied here. The
+// mirror performs the byte comparison, but does not model that separate
+// reference allocation charge.
 // Semantic descriptors use the separate reference limit of 2^40 elements:
 // fixed arrays multiply, dynamic arrays add one, RecordRef costs one, and every
 // nested shape is checked before its parent. Schema fields share one cumulative
 // scope; function signatures share the future module-value scope. Module value
-// rows remain outside this bounded prefix and are still refused as remainder.
+// rows are decoded and re-emitted in the complete-body path; semantic
+// validation of those rows remains outside this mirror's wire-only contract.
 //
 // SUBSET NOTE. Written in the tail-recursive, immutable, i64-only subset the
 // frozen pure-MIND native compiler accepts: no `while`, no mutation, no structs,

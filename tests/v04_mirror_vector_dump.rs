@@ -118,6 +118,20 @@ fn splice_surface(prefix: &[u8], replacement: &[u8]) -> Vec<u8> {
 
 #[test]
 fn v04_prefix_vectors() {
+    // The exact depth-boundary fixtures intentionally reach 255 recursive
+    // instruction frames. Give the reference decoder room to report the
+    // protocol boundary instead of turning the test process's default stack
+    // size into an unrelated failure.
+    std::thread::Builder::new()
+        .name("v04-prefix-vectors".to_string())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(v04_prefix_vectors_inner)
+        .expect("spawn v0x04 vector test")
+        .join()
+        .expect("v0x04 vector test thread");
+}
+
+fn v04_prefix_vectors_inner() {
     let mut vectors: Vec<Vector> = Vec::new();
 
     // --- positive control: the reference encoder really produces 0x04 ---
@@ -158,8 +172,8 @@ fn v04_prefix_vectors() {
         "scoped fixture must carry a real string table, got {strings_scoped}"
     );
 
-    // Positives: a prefix-only artifact is fully certifiable (exit 0); the full
-    // body is prefix-identical but carries content past the declared subset.
+    // Positives: both the independently re-derived body bytes and the complete
+    // encoder artifacts are checked through the same complete-body boundary.
     vectors.push(Vector {
         name: "pos_prefix_empty_strings",
         bytes: prefix_small.clone(),
@@ -176,13 +190,13 @@ fn v04_prefix_vectors() {
         name: "pos_full_body_small",
         bytes: full_small.clone(),
         expect: code::OK_EXACT,
-        note: "real encoder body: prefix verified, remainder explicitly refused",
+        note: "real encoder body: complete body verified byte-for-byte",
     });
     vectors.push(Vector {
         name: "pos_full_body_scoped",
         bytes: full_scoped.clone(),
         expect: code::OK_EXACT,
-        note: "real encoder body: prefix verified, remainder explicitly refused",
+        note: "real encoder body: complete body verified byte-for-byte",
     });
 
     // A real encoder body whose string table carries a 200-byte entry, so the
@@ -670,8 +684,9 @@ fn v04_prefix_vectors() {
             // flip is the visible signal that complete-body decoding landed.
             assert!(
                 verdict.is_ok(),
-                "{} must parse under the reference decoder",
-                vector.name
+                "{} must parse under the reference decoder: {:?}",
+                vector.name,
+                verdict.as_ref().err()
             );
             accepted += 1;
         } else {
@@ -685,10 +700,10 @@ fn v04_prefix_vectors() {
         }
     }
     assert_eq!(
-        accepted, 15,
+        accepted, 20,
         "every positive is a complete body, plus the trailing-bytes vector"
     );
-    assert!(refused >= 14, "at least fourteen refusals, got {refused}");
+    assert!(refused >= 49, "at least forty-nine refusals, got {refused}");
 
     // --- write the corpus ------------------------------------------------
     let Ok(dir) = std::env::var("MIND_V04_VECTOR_DIR") else {

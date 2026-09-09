@@ -1,8 +1,8 @@
 # name	expected_exit	bytes	sha256	consumed	note
 pos_prefix_empty_strings	0	23	15b5b1d0685d82e5b007e8a3ec6943984cba78835fc5565e2688d7ea5030d9b4	23	header + empty string table, nothing beyond the declared subset
 pos_prefix_scoped	0	163	09b77746a34cad37f9ae5b9fbabce6f2e2d7817ecbaaff8410c0d6b1decfe878	163	header + 6+ sorted strings, nothing beyond the declared subset
-pos_full_body_small	0	23	15b5b1d0685d82e5b007e8a3ec6943984cba78835fc5565e2688d7ea5030d9b4	23	real encoder body: prefix verified, remainder explicitly refused
-pos_full_body_scoped	0	163	09b77746a34cad37f9ae5b9fbabce6f2e2d7817ecbaaff8410c0d6b1decfe878	163	real encoder body: prefix verified, remainder explicitly refused
+pos_full_body_small	0	23	15b5b1d0685d82e5b007e8a3ec6943984cba78835fc5565e2688d7ea5030d9b4	23	real encoder body: complete body verified byte-for-byte
+pos_full_body_scoped	0	163	09b77746a34cad37f9ae5b9fbabce6f2e2d7817ecbaaff8410c0d6b1decfe878	163	real encoder body: complete body verified byte-for-byte
 pos_prefix_long_string	0	226	c47068f176f5a1aea6b946cd34dba8129825f02026430e6d9172ab1ac09a89c5	226	header + one 200-byte string: multi-byte ULEB length field
 pos_full_body_long_string	0	226	c47068f176f5a1aea6b946cd34dba8129825f02026430e6d9172ab1ac09a89c5	226	real encoder body with a multi-byte ULEB string length
 pos_prefix_element_boundary	0	37	408aedd729b5fe477addee7dd7c162e36cb9edc56061270f93c3bb56607e1286	37	reference-built nested fixed arrays total exactly 2^40 elements
@@ -47,8 +47,15 @@ neg_intrinsic_wrong_arity	34	50	9daeff1a39ce954d24c44431ba9ca80b330db1267a69a827
 neg_intrinsic_wrong_param_type	34	52	990fe1aa8c14903ee4de66f6f29d4910e069c48a70245780725d27d4d94b83aa	52	load_i64 parameter is i32 instead of i64
 neg_intrinsic_wrong_return_type	34	52	03cb13c4cce5603dfbaebb6966f0277dbde818083ee62778c8252c63ccf9041c	52	load_i64 return is i32 instead of i64
 neg_intrinsic_missing_return	34	53	4c9e94c3d0ea61fa415dd40fff009c9973ffda22083ddcc9d8ae3120495b854e	53	store_i64 omits its historical i64 wire return
+pos_full_body_nesting_at_limit	0	5525	e2c94807efc703e2c668c5b75b92d40ca6e7f02f9bea1b764293abbd9f10a93d	5525	256 nested FnDefs: innermost read at depth 255, the last admitted
+neg_nesting_one_over_limit	36	5548	8cb330bc4cbf3099df6740ec8130fe406a9af112e9020cd3ece9dc98a7fb4c5d	0	257 nested FnDefs: innermost read at depth 256
+pos_full_body_zero_instructions	0	24	25f0084585849215272703231e64a7e77cc692b13a335384175c06f6e06f4150	24	zero instructions with one authority-bearing module row
+pos_full_body_one_instruction	0	23	15b5b1d0685d82e5b007e8a3ec6943984cba78835fc5565e2688d7ea5030d9b4	23	one ConstI64 instruction: one 320-byte logical charge
+pos_full_body_two_instructions	0	29	28a51c468d5e49e307b4c099e49a262826cc8a26eb37b58dcbc5bac473e6fb32	29	two ConstI64 instructions: two 320-byte charges, exactly 640
+pos_full_body_multibyte_value_id	0	26	db8f1522a184942b3d8671ab5962156150a85da124d17b980cf34c4a3b545d79	26	ConstI64 destination and semantic row ValueId 300 use multi-byte ULEBs
+neg_instruction_count_exceeds_remaining	10	12	7eef694f1a1c121cc7290ab14d7215ac0df9f1cf1769b91cefd59b079baa54b8	0	instruction count 2 exceeds the zero remaining instruction bytes
 pos_prefix_consecutive_exports	0	937	a62e087defb6483888ebd51ea5b638f76b7b6963f6117915d9889d8f7f9cd356	937	130 exports: consecutive indices and multi-byte index ULEBs
-pos_full_body_consecutive_exports	0	937	a62e087defb6483888ebd51ea5b638f76b7b6963f6117915d9889d8f7f9cd356	937	same body entire: prefix verified, remainder refused
+pos_full_body_consecutive_exports	0	937	a62e087defb6483888ebd51ea5b638f76b7b6963f6117915d9889d8f7f9cd356	937	same complete body: canonical bytes compared through the body end
 pos_full_body_const_f64	0	30	58a1f66381ab1c3431856d963b89752b6bd785b618d2c744d9d47c50072b729b	30	ConstF64: the only fixed-width eight-byte payload in the grammar
 pos_prefix_wide_next_id	0	24	da5ac19729cde9452fa78420906f3849b909e28eb861fb6fbec7867357993652	24	next_id 300, a multi-byte ULEB the emitter must widen
 neg_unknown_opcode	37	23	c08584370ba87b6ba461530d54a81a329ee364aca32cfb8bf016156c3ff856f9	0	tensor opcode is outside the core scalar subset
