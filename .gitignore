@@ -107,6 +107,12 @@ examples/*/target/
 /a.out
 .wrangler/
 examples/mindc_mind/mindfuzz_self_host_staged/
+
+# Native record-array refusal and reference programs are test corpus inputs,
+# not production examples. Their dedicated native gate executes them with the
+# intended feature profile; the broad `mindc check std/ examples/` walk must
+# not turn deliberate refusal cases into production-check failures.
+/examples/mindc_mind/testdata/native_record_array/
 # mind-mem's local recall index (a SQLite cache built from this checkout on
 # demand). Machine-local and regenerable; it is not an input to any gate.
 /.mind-mem-index/

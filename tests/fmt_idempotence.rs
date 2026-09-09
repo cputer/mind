@@ -227,6 +227,7 @@ const BARE_E1042_REFUSALS: &[&str] = &[
     "examples/parser/main.mind",
     "examples/remizov_feynman.mind",
     "examples/typecheck/main.mind",
+    "examples/mindc_mind/testdata/native_record_array/computed_i64_bitwise.mind",
 ];
 
 #[cfg(not(feature = "std-surface"))]
@@ -255,6 +256,9 @@ const BARE_LEGACY_PARSE_SKIPS: &[&str] = &[
     // a measured legacy parse skip rather than silently treating it as an
     // unexpected corpus regression.
     "examples/mindc_mind/testdata/backend_native_bridge/while_sum.mind",
+    "examples/mindc_mind/testdata/native_record_array/extent_overflow_refuse.mind",
+    "examples/mindc_mind/testdata/native_record_array/record_param_loop.mind",
+    "examples/mindc_mind/testdata/native_record_array/reference.mind",
     "examples/policy.mind",
     "examples/remizov_benchmark.mind",
     "examples/remizov_gpu.mind",

@@ -1945,7 +1945,10 @@ jobs:
     name: Mindcraft check (RFC 0007 Phase 6)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Blocking gate: `mindc check` over std/ + examples/ must be error-clean.
+    # Blocking gate: `mindc check` over std/ + production examples/ must be
+    # error-clean. Deliberate native record-array refusal/reference programs
+    # live under the VCS-ignored test corpus and are exercised by their
+    # dedicated native gate above.
     # Cross-module import resolution (see the build step) lets the project-level
     # check see symbols declared in sibling std modules, so the tree now checks
     # with zero error-severity diagnostics — the `continue-on-error` rollout flag
