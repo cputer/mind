@@ -91,7 +91,11 @@ impl Case {
         let out = cmd.output().expect("spawn mindc");
         (
             out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ),
         )
     }
 
@@ -107,7 +111,11 @@ impl Case {
         let output = cmd.output().expect("spawn mindc");
         (
             output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr).into_owned(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
         )
     }
 
@@ -753,15 +761,103 @@ fn a_historical_old_hybrid_is_rejected_but_still_inspectable() {
     );
 }
 
+fn assert_bad_32_byte_seed(env_name: &str, seed: &str, label: &str) {
+    let c = Case::new();
+    let (code, output) = c.emit(label, &[(env_name, seed)]);
+    assert_ne!(
+        code, 0,
+        "malformed 32-byte seed must refuse for {env_name}: {output}"
+    );
+    assert!(
+        !c.exists(label),
+        "refusal must leave no artifact for {env_name}"
+    );
+    assert!(
+        !output.contains(seed),
+        "diagnostics must not echo the configured seed for {env_name}: {output}"
+    );
+}
+
+/// Both 32-byte readers reject a wrong-length value before signing.
+#[test]
+fn a_wrong_length_32_byte_seed_refuses_for_both_readers() {
+    for (index, env_name) in ["MIND_EVIDENCE_MLDSA87_KEY", "MIND_EVIDENCE_MLDSA_KEY"]
+        .into_iter()
+        .enumerate()
+    {
+        assert_bad_32_byte_seed(
+            env_name,
+            "bad-32-byte-length-sentinel-7f3b",
+            &format!("bad-32-length-{index}.mic3"),
+        );
+    }
+}
+
+/// A 64-byte ASCII value with a non-hex character must be reported as malformed,
+/// rather than reaching a byte-offset panic or silently becoming unsigned.
+#[test]
+fn an_invalid_ascii_32_byte_seed_refuses_for_both_readers() {
+    let malformed = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    for (index, env_name) in ["MIND_EVIDENCE_MLDSA87_KEY", "MIND_EVIDENCE_MLDSA_KEY"]
+        .into_iter()
+        .enumerate()
+    {
+        assert_bad_32_byte_seed(env_name, malformed, &format!("bad-32-ascii-{index}.mic3"));
+    }
+}
+
+/// A byte-length-64 non-ASCII value must fail before the hex parser slices it.
+#[test]
+fn a_non_ascii_32_byte_seed_refuses_for_both_readers() {
+    let malformed = "é".repeat(32);
+    for (index, env_name) in ["MIND_EVIDENCE_MLDSA87_KEY", "MIND_EVIDENCE_MLDSA_KEY"]
+        .into_iter()
+        .enumerate()
+    {
+        assert_bad_32_byte_seed(
+            env_name,
+            &malformed,
+            &format!("bad-32-nonascii-{index}.mic3"),
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_non_utf8_32_byte_seed_refuses_for_both_readers() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    for (index, env_name) in ["MIND_EVIDENCE_MLDSA87_KEY", "MIND_EVIDENCE_MLDSA_KEY"]
+        .into_iter()
+        .enumerate()
+    {
+        let c = Case::new();
+        let raw = OsString::from_vec(vec![0xff; 64]);
+        let label = format!("bad-32-utf8-{index}.mic3");
+        let (code, output) = c.emit_with_os_seed(&label, env_name, &raw);
+        assert_ne!(
+            code, 0,
+            "non-UTF-8 32-byte seed must refuse for {env_name}: {output}"
+        );
+        assert!(!c.exists(&label), "refusal must leave no artifact");
+        assert!(
+            output.contains("not valid UTF-8") && !output.contains("ff"),
+            "diagnostics must identify encoding without echoing bytes: {output}"
+        );
+    }
+}
+
 /// A malformed 96-byte seed is rejected before the output path is created.
 #[test]
 fn a_wrong_length_slhdsa_seed_refuses_without_an_artifact_or_seed_leak() {
     let c = Case::new();
+    let malformed = "SLHDSA_BAD_LENGTH_SENTINEL_7f3b";
     let (code, err) = c.emit(
         "bad-length.mic3",
         &[
             ("MIND_EVIDENCE_MLDSA87_KEY", TEST_MLDSA87_SEED),
-            ("MIND_EVIDENCE_SLHDSA_KEY", "aa"),
+            ("MIND_EVIDENCE_SLHDSA_KEY", malformed),
         ],
     );
     assert_ne!(code, 0, "wrong-length SLH seed must refuse: {err}");
@@ -769,7 +865,10 @@ fn a_wrong_length_slhdsa_seed_refuses_without_an_artifact_or_seed_leak() {
         !c.exists("bad-length.mic3"),
         "refusal must leave no artifact"
     );
-    assert!(err.contains("192") && !err.contains("aaaaaaaa"));
+    assert!(
+        err.contains("192") && !err.contains(malformed),
+        "the refusal must report length without echoing the configured seed: {err}"
+    );
 }
 
 /// A value with 192 UTF-8 bytes but non-ASCII characters must take the ASCII

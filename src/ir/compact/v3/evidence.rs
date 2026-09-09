@@ -460,23 +460,26 @@ pub fn emit_mic3_with_signed_evidence_checked(
 /// The [`SigningKey`] selects the scheme. Retired Ed25519 and old hybrid values
 /// are accepted as historical/API representations only and return
 /// [`EvidenceEmitError::SchemeRetired`]; the supported signing choices are
-/// ML-DSA-65 and the ML-DSA-87 + SLH-DSA-SHAKE-256s hybrid. A supported artifact is
-/// tagged with the matching `signature.scheme` (`alg`) value so a verifier is
-/// crypto-agile (OMB M-26-15). Every supported scheme signs the SAME payload (the canonical provenance
-/// preimage: mic@3 anchor + all other `evidence_chain.*` keys), so the
+/// ML-DSA-65 and the ML-DSA-87 + SLH-DSA-SHAKE-256s hybrid. A supported artifact
+/// is tagged with the matching `signature.scheme` (`alg`) value so a verifier is
+/// crypto-agile (OMB M-26-15). Every supported scheme signs the SAME payload
+/// (the canonical provenance preimage: mic@3 anchor + all other `evidence_chain.*`
+/// keys), so the
 /// `trace_hash` — and therefore the determinism/keystone gate — is identical
 /// across all schemes and versus the unsigned path.
 ///
 /// # Determinism
 ///
-/// Ed25519 (RFC 8032) and ML-DSA (FIPS-204 deterministic variant, all-zero rnd)
-/// are both byte-reproducible, so the whole artifact is reproducible.
+/// ML-DSA (FIPS-204 deterministic variant, all-zero rnd) and SLH-DSA (FIPS-205)
+/// are byte-reproducible, so the whole supported artifact is reproducible. The
+/// retired Ed25519 and old hybrid variants are refused before signing.
 ///
 /// # Errors
 ///
-/// Returns `Err` if a PQC scheme is requested on a build compiled WITHOUT the
-/// `evidence-mldsa` feature (fail-closed: never emit an unsigned artifact when a
-/// signature was requested).
+/// Returns `Err` if a retired scheme is requested, or if a PQC scheme is
+/// requested on a build compiled without its required `evidence-mldsa` and/or
+/// `evidence-slhdsa` feature (fail-closed: never emit an unsigned artifact when
+/// a signature was requested).
 pub fn emit_mic3_with_signed_evidence_scheme(
     ir: &IRModule,
     substrate: &str,
@@ -3455,37 +3458,46 @@ mod tests {
         }
     }
 
-    // (aa) Cross-substrate: the same IR + same seed yields a byte-identical signed
-    //      artifact regardless of the declared substrate label — the signature is a
-    //      pure function of (seed, trace_hash), and the trace_hash is substrate-free.
-    #[cfg(feature = "evidence-mldsa")]
+    // (aa) Cross-substrate: the supported pair preserves the body and trace anchor
+    //      across substrate labels, while the signed envelope differs because the
+    //      authenticated provenance preimage includes the substrate.
     #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
-    fn hybrid_signature_is_substrate_independent() {
-        // RETIREMENT ASSERTION. This test previously exercised a tamper or
-        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
-        // vehicle. That hybrid can no longer be signed, so the invariant is
-        // now unreachable through it: no substrate can produce the retired hybrid.
-        //
-        // The invariant itself is NOT lost — it is covered for the supported
-        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
-        // requires Malformed. What this test now pins is the retirement: the
-        // emitter refuses, by name, and produces no artifact.
-        let err = emit_mic3_with_signed_evidence_scheme(
-            &mod_binop(),
+    fn hybrid_signature_preserves_body_across_substrates() {
+        let ir = mod_binop();
+        let x86 = emit_mic3_with_signed_evidence_scheme(
+            &ir,
             "x86_avx2",
             None,
             Determinism::Deterministic,
             "0.8.0",
-            &SigningKey::Hybrid {
-                ed25519: TEST_SEED,
-                mldsa65: TEST_MLDSA_SEED,
-            },
+            &pqc_hybrid_key(),
         )
-        .expect_err("the retired hybrid must never sign");
-        assert!(
-            matches!(err, EvidenceEmitError::SchemeRetired(SIG_SCHEME_HYBRID)),
-            "must refuse as retired, by name, got {err:?}"
+        .expect("supported pair must sign for x86");
+        let arm = emit_mic3_with_signed_evidence_scheme(
+            &ir,
+            "arm_neon",
+            None,
+            Determinism::Deterministic,
+            "0.8.0",
+            &pqc_hybrid_key(),
+        );
+        let arm = arm.expect("supported pair must sign for arm");
+        let x86_end = find_map_sentinel(&x86).expect("x86 MAP sentinel");
+        let arm_end = find_map_sentinel(&arm).expect("arm MAP sentinel");
+        assert_eq!(
+            &x86[..x86_end],
+            &arm[..arm_end],
+            "supported signing must preserve the mic@3 body across substrates"
+        );
+        assert_eq!(
+            mic3_evidence_report(&x86).unwrap().trace_hash,
+            mic3_evidence_report(&arm).unwrap().trace_hash,
+            "the trace anchor must remain substrate-independent"
+        );
+        assert_ne!(
+            x86, arm,
+            "the authenticated substrate field must distinguish full signed artifacts"
         );
     }
 

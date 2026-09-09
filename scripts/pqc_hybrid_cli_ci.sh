@@ -31,13 +31,21 @@ expected_tests=(
   "rewriting_the_scheme_tag_to_an_unknown_value_is_rejected"
   "the_cli_signs_with_the_pqc_hybrid_and_the_cli_verifies_it"
   "a_historical_old_hybrid_is_rejected_but_still_inspectable"
+  "a_wrong_length_32_byte_seed_refuses_for_both_readers"
+  "an_invalid_ascii_32_byte_seed_refuses_for_both_readers"
+  "a_non_ascii_32_byte_seed_refuses_for_both_readers"
   "a_wrong_length_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
   "a_non_ascii_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
 )
 # The non-UTF-8 environment control uses OsStringExt and is available on Unix
 # runners. Windows still executes every portable malformed-seed control.
 case "$(uname -s)" in
-  Linux|Darwin) expected_tests+=("a_non_utf8_slhdsa_seed_refuses_without_an_artifact_or_seed_leak") ;;
+  Linux|Darwin)
+    expected_tests+=(
+      "a_non_utf8_32_byte_seed_refuses_for_both_readers"
+      "a_non_utf8_slhdsa_seed_refuses_without_an_artifact_or_seed_leak"
+    )
+    ;;
 esac
 expected_count="${#expected_tests[@]}"
 expected_listing="$(printf '%s\n' "${expected_tests[@]}" | LC_ALL=C sort)"

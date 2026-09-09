@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1735 | **Est. tokens:** ~3376095
-**Generated:** 2026-09-09 05:03 UTC
+**Files:** 1735 | **Est. tokens:** ~3376963
+**Generated:** 2026-09-09 05:26 UTC
 
 ## Token Budget Guide
 
@@ -78,7 +78,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 31 | ~115991 |
+| `scripts/` | 31 | ~116053 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 393 | ~791494 |
+| `tests/` | 393 | ~792300 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -932,7 +932,7 @@
 
 - `operand_visitor_parity_lint.py` (~1198 tok, large) — Fail closed when the two IR operand visitors drift apart.
 - `pqc_hybrid_ci.sh` (~663 tok, large) — Required-CI execution gate for the existing MIC3 two-leg PQC-hybrid controls.
-- `pqc_hybrid_cli_ci.sh` (~1080 tok, large) — Required-CI execution gate for the actual-CLI PQC-hybrid signing controls.
+- `pqc_hybrid_cli_ci.sh` (~1142 tok, large) — Required-CI execution gate for the actual-CLI PQC-hybrid signing controls.
 - `preflight.sh` (~9404 tok, huge) — preflight.sh — local CI-parity gate. Run before pushing to avoid red CI.
 - `quick_perf.sh` (~734 tok, large) — quick_perf.sh — FAST one-sided compile-speed criterion gate.
 - `ri_d1_mlir_free_gate.sh` (~2136 tok, huge) — RI-D1 gate assertion #1 — MLIR is un-linkable on the native path (fail-closed
@@ -2013,7 +2013,7 @@
 - `pattern_guard_run.rs` (~899 tok, large) — Copyright 2025 STARGA Inc. Licensed under the Apache License, Version 2.0.
 - `phase_g_keystone_bootstrap.rs` (~7667 tok, huge) — Copyright 2025 STARGA Inc.
 - `pipeline.rs` (~1476 tok, large) — Copyright 2025 STARGA Inc.
-- `pqc_hybrid_cli_signing.rs` (~7897 tok, huge) — End-to-end CLI controls for post-quantum hybrid artifact signing.
+- `pqc_hybrid_cli_signing.rs` (~8703 tok, huge) — End-to-end CLI controls for post-quantum hybrid artifact signing.
 - `project_function_resolution.rs` (~1475 tok, large) — Copyright 2026 STARGA Inc.
 - `public_cpu_native_link.rs` (~1528 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `qualified_enum_run.rs` (~3922 tok, huge) — Copyright 2025 STARGA Inc.
