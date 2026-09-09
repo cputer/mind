@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1789 | **Est. tokens:** ~3402561
-**Generated:** 2026-09-09 05:49 UTC
+**Files:** 1742 | **Est. tokens:** ~3401783
+**Generated:** 2026-09-09 06:04 UTC
 
 ## Token Budget Guide
 
@@ -67,7 +67,7 @@
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
 | `examples/mind_mirror_v04/` | 3 | ~15228 |
-| `examples/mind_mirror_v04/testdata/` | 48 | ~2583 |
+| `examples/mind_mirror_v04/testdata/` | 1 | ~1803 |
 | `examples/mindc_mind/` | 172 | ~441747 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
@@ -80,7 +80,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 30 | ~114847 |
+| `scripts/` | 30 | ~114849 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -643,53 +643,6 @@
 ### `examples/mind_mirror_v04/testdata/`
 
 - `MANIFEST.tsv` (~1803 tok, huge) â€” # name	expected_exit	bytes	sha256	consumed	note
-- `neg_bad_magic.mic3` (~26 tok, tiny) â€” MIC4	PairalphaentrymainownerAownerBstepxzeta
-- `neg_bad_return_present_tag.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
-- `neg_bad_utf8_string.mic3` (~3 tok, tiny) â€” MIC3Ã(
-- `neg_duplicate_field.mic3` (~17 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_duplicate_strings.mic3` (~5 tok, tiny) â€” MIC3alphaalpha
-- `neg_dynamic_over_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
-- `neg_empty_schema_owner.mic3` (~6 tok, tiny) â€” MIC3Pairf
-- `neg_function_cumulative_elements.mic3` (~14 tok, tiny) â€” MIC3entrymain€€ €€@€€ €€@
-- `neg_intrinsic_missing_return.mic3` (~14 tok, tiny) â€” MIC3__mind_intrinsic	store_i64
-- `neg_intrinsic_without_reserved_owner.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
-- `neg_intrinsic_wrong_arity.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
-- `neg_intrinsic_wrong_param_type.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
-- `neg_intrinsic_wrong_return_type.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
-- `neg_non_minimal_surface.mic3` (~26 tok, tiny) â€” MIC3€	PairalphaentrymainownerAownerBstepxzeta
-- `neg_overlong_surface.mic3` (~29 tok, tiny) â€” MIC3€€€€€€€€€€€€	PairalphaentrymainownerAownerBstepxzeta
-- `neg_path_like_function_owner.mic3` (~6 tok, tiny) â€” MIC3A..Bmain
-- `neg_path_like_schema_owner.mic3` (~7 tok, tiny) â€” MIC3A..BPairf
-- `neg_reserved_owner_not_intrinsic.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
-- `neg_schema_cumulative_elements.mic3` (~14 tok, tiny) â€” MIC3ABabc€€ €€@€€ €€@
-- `neg_schema_descriptor_product.mic3` (~11 tok, tiny) â€” MIC3ABfÿÿÿÿÿÿÿÿ
-- `neg_schema_ref_out_of_bounds.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_std_surface_required.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_string_count_overruns.mic3` (~3 tok, tiny) â€” MIC3€€€€€ 
-- `neg_string_length_overruns.mic3` (~4 tok, tiny) â€” MIC3€€€€€ ab
-- `neg_truncated_header.mic3` (~1 tok, tiny) â€” MIC3
-- `neg_truncated_schema_headers.mic3` (~15 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_truncated_string_bytes.mic3` (~25 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_unknown_function_kind.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
-- `neg_unknown_intrinsic.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicevil
-- `neg_unknown_scalar_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta	
-- `neg_unknown_surface_bits.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_unknown_type_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_unsorted_functions.mic3` (~14 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
-- `neg_unsorted_schemas.mic3` (~19 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_unsorted_strings.mic3` (~14 tok, tiny) â€” MIC3	alphaPairentrymainownerAownerBstepxzeta
-- `neg_wrong_version.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `neg_zero_extent_hides_product.mic3` (~11 tok, tiny) â€” MIC3ABfÿÿÿÿÿÿÿÿ
-- `pos_full_body_element_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
-- `pos_full_body_intrinsic_catalog.mic3` (~51 tok, small) â€” MIC3__mind_intrinsicallocargcargvload8load_i64openreadstore8	store_i
-- `pos_full_body_long_string.mic3` (~57 tok, small) â€” MIC3Èxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-- `pos_full_body_scoped.mic3` (~41 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
-- `pos_full_body_small.mic3` (~6 tok, tiny) â€” MIC3T
-- `pos_prefix_element_boundary.mic3` (~8 tok, tiny) â€” MIC3ABf€€@€€@
-- `pos_prefix_empty_strings.mic3` (~3 tok, tiny) â€” MIC3
-- `pos_prefix_long_string.mic3` (~53 tok, small) â€” MIC3Èxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-- `pos_prefix_record_ref_cost_one.mic3` (~6 tok, tiny) â€” MIC3ABf
-- `pos_prefix_scoped.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 ### `examples/mindc_mind/`
 
 - `.gitignore` (~5 tok, tiny) â€” __pycache__/
@@ -961,7 +914,7 @@
 
 - `ai_attribution_patterns.sh` (~1536 tok, huge) â€” shellcheck shell=bash
 - `anatomy-hook.sh` (~1811 tok, huge) â€” STARGA author guard (chained first: a wrong-identity commit must never be created).
-- `anatomy.sh` (~2451 tok, huge) â€” anatomy â€” Generate ANATOMY.md for any repo
+- `anatomy.sh` (~2453 tok, huge) â€” anatomy â€” Generate ANATOMY.md for any repo
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) â€” Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7653 tok, huge) â€” Docs-claim CI gate â€” fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) â€” check_commit_messages.sh <rev-range> â€” no model or tool credit in commit

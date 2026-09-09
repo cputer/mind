@@ -159,7 +159,7 @@ filter_files() {
     
     # Skip binary files
     case "$file" in
-      *.png|*.jpg|*.jpeg|*.gif|*.ico|*.woff|*.woff2|*.ttf|*.eot|*.svg|*.mp3|*.mp4|*.zip|*.tar|*.gz|*.bz2|*.xz|*.pyc|*.pyo|*.so|*.dylib|*.dll|*.exe|*.o|*.a|*.wasm|*.db|*.sqlite|*.lock) continue ;;
+      *.png|*.jpg|*.jpeg|*.gif|*.ico|*.woff|*.woff2|*.ttf|*.eot|*.svg|*.mp3|*.mp4|*.zip|*.tar|*.gz|*.bz2|*.xz|*.pyc|*.pyo|*.so|*.dylib|*.dll|*.exe|*.o|*.a|*.wasm|*.db|*.sqlite|*.lock|*.mic3) continue ;;
     esac
     
     # Skip excluded patterns
