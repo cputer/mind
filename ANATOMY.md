@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1719 | **Est. tokens:** ~3332868
-**Generated:** 2026-09-09 00:12 UTC
+**Files:** 1720 | **Est. tokens:** ~3333737
+**Generated:** 2026-09-09 00:34 UTC
 
 ## Token Budget Guide
 
@@ -131,7 +131,7 @@
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 390 | ~776479 |
+| `tests/` | 390 | ~777067 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -183,7 +183,7 @@
 | `tests/mindfuzz_cross_substrate/known_environmental/` | 2 | ~556 |
 | `tests/mindfuzz_cross_substrate/reproducers/` | 2 | ~375 |
 | `tests/mindfuzz_cross_substrate/staged/` | 15 | ~2832 |
-| `tests/native_bridge_support/` | 1 | ~1114 |
+| `tests/native_bridge_support/` | 2 | ~1395 |
 | `tests/runtime/` | 2 | ~135 |
 | `tests/selfhost_gaps/` | 163 | ~10627 |
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
@@ -1970,11 +1970,12 @@
 - `narrowing_check.rs` (~438 tok, medium) — Regression test for the silent i64->i32 narrowing miscompile found by MIND-Fuzz
 ### `tests/native_bridge_support/`
 
+- `draining_native_compiler.rs` (~281 tok, medium) — Host-native compiler fixture for admission-only controls.
 - `mod.rs` (~1114 tok, large) — Shared harness for the native module-bridge integration controls.
 ### `tests/`
 
 - `native_closure_admission.rs` (~3941 tok, huge) — Copyright 2025 STARGA Inc.
-- `native_default_profile_imports.rs` (~2840 tok, huge) — Default-feature-profile controls for the native backend's import admission.
+- `native_default_profile_imports.rs` (~3428 tok, huge) — Default-feature-profile controls for the native backend's import admission.
 - `native_module_bridge_controls.rs` (~7889 tok, huge) — Native module-bridge controls: SOURCE RESOLUTION and ADMISSION.
 - `native_module_bridge_visibility_controls.rs` (~3459 tok, huge) — Native module-bridge controls: VISIBILITY, EMIT KIND, CROSS-INVOCATION
 - `native_opt_wiring.rs` (~1953 tok, huge) — Copyright 2025 STARGA Inc.

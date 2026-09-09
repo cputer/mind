@@ -8,8 +8,8 @@
 //!
 //! What it guards, measured on the pre-fix binary before the fix landed:
 //! a source declaring a dependency the build cannot resolve COMPILED AND RAN.
-//! `import\tabsent_module;` and `use absent_module;` each produced a 397-byte
-//! ELF, sha256 `0ade9696...`, which ran with exit 1. The old detector was a
+//! `import\tabsent_module;` and `use absent_module;` each reached the native
+//! bridge's 397-byte ELF fixture, which ran with exit 1. The old detector was a
 //! source-text scan, `lines().map(trim_start).any(|l| l.starts_with("import "))`,
 //! and it missed both spellings: the grammar accepts any whitespace after the
 //! keyword, and `use` is parsed by `parse_use` into the very same `Node::Import`.
@@ -24,11 +24,46 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 const MINDC: &str = env!("CARGO_BIN_EXE_mindc");
 
 fn repo_path(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+}
+
+fn native_fixture() -> PathBuf {
+    static FIXTURE: OnceLock<PathBuf> = OnceLock::new();
+    FIXTURE
+        .get_or_init(|| {
+            let dir = tempfile::tempdir().expect("native fixture directory");
+            let root = dir.keep();
+            let output = root.join(if cfg!(windows) {
+                "draining_native_compiler.exe"
+            } else {
+                "draining_native_compiler"
+            });
+            let status = Command::new("rustc")
+                .args([
+                    "--edition",
+                    "2024",
+                    "--crate-name",
+                    "draining_native_compiler",
+                ])
+                .arg(repo_path(
+                    "tests/native_bridge_support/draining_native_compiler.rs",
+                ))
+                .arg("-o")
+                .arg(&output)
+                .status()
+                .expect("compile native fixture");
+            assert!(
+                status.success(),
+                "native fixture compilation failed: {status}"
+            );
+            output
+        })
+        .clone()
 }
 
 struct Project {
@@ -62,11 +97,16 @@ impl Project {
         self.dir.path()
     }
 
+    fn captured_image(&self) -> PathBuf {
+        self.root().join("captured-native-image.bin")
+    }
+
     /// (exit code, stderr, artifact bytes)
     fn build(&self, main_src: &str) -> (i32, String, Option<Vec<u8>>) {
         std::fs::write(self.root().join("src/main.mind"), main_src).expect("write main");
         let out = self.root().join("out.elf");
         let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_file(self.captured_image());
         let res = Command::new(MINDC)
             .args([
                 "build",
@@ -80,10 +120,8 @@ impl Project {
             .arg(&out)
             .current_dir(self.root())
             .env("MINDC_STD_DIR", repo_path("std"))
-            .env(
-                "MINDC_NATIVE_ELF",
-                repo_path("examples/mindc_mind/testdata/selfhost_loop/stage1.elf"),
-            )
+            .env("MINDC_NATIVE_ELF", native_fixture())
+            .env("MIND_NATIVE_TEST_CAPTURE", self.captured_image())
             .output()
             .expect("spawn mindc");
         (
@@ -111,12 +149,21 @@ fn assert_refused(label: &str, got: (i32, String, Option<Vec<u8>>)) {
     );
 }
 
+fn assert_fixture_drained(p: &Project, source: &str) {
+    let captured = std::fs::read(p.captured_image())
+        .expect("the successful fixture must capture the complete image");
+    assert!(
+        captured.ends_with(source.as_bytes()),
+        "the fixture must consume the complete user source before emitting"
+    );
+}
+
 /// The exact spelling from the independent review. A tab after the keyword is a
 /// real `Node::Import`; the old text scan required a literal space.
 ///
 /// MUTATION: restore `lines().any(|l| l.starts_with("import "))` in the
 /// featureless `resolve_native_sources` and this test goes red by BUILDING --
-/// measured, 397-byte ELF sha256 0ade9696..., run exit 1.
+/// measured, 397-byte ELF fixture, run exit 1.
 #[test]
 fn a_tab_after_the_import_keyword_is_still_an_import() {
     let p = Project::new();
@@ -157,12 +204,14 @@ fn the_plain_spelling_is_refused_too() {
 #[test]
 fn a_std_only_import_is_not_a_local_dependency_and_builds() {
     let p = Project::new();
-    let (code, err, art) = p.build("import std.math;\n\nfn main() -> i64 {\n    return 7;\n}\n");
+    let src = "import std.math;\n\nfn main() -> i64 {\n    return 7;\n}\n";
+    let (code, err, art) = p.build(src);
     assert_eq!(
         code, 0,
         "a std-only import must build in any profile: {err}"
     );
     assert!(art.is_some(), "a successful build must emit an artifact");
+    assert_fixture_drained(&p, src);
 }
 
 /// The single-file corpus must not move. This is the byte anchor: the same
@@ -170,7 +219,8 @@ fn a_std_only_import_is_not_a_local_dependency_and_builds() {
 #[test]
 fn a_plain_single_file_still_builds_and_is_unaffected() {
     let p = Project::new();
-    let (code, err, art) = p.build("fn main() -> i64 {\n    return 7;\n}\n");
+    let src = "fn main() -> i64 {\n    return 7;\n}\n";
+    let (code, err, art) = p.build(src);
     assert_eq!(code, 0, "a single file must build with no resolver: {err}");
     let bytes = art.expect("artifact");
     assert_eq!(
@@ -179,6 +229,23 @@ fn a_plain_single_file_still_builds_and_is_unaffected() {
         "the single-file artifact size is the pinned corpus anchor; a change here \
          means the detector rewrite moved bytes it must not touch"
     );
+    assert_fixture_drained(&p, src);
+}
+
+/// A small source can fit in a pipe even when a child exits before reading it.
+/// This source is deliberately larger than a typical pipe buffer, so the
+/// positive control proves the fixture drains the stream before it emits.
+#[test]
+fn a_large_source_is_drained_before_the_fixture_emits() {
+    let p = Project::new();
+    let src = format!(
+        "{}fn main() -> i64 {{\n    return 7;\n}}\n",
+        "// native image drain control\n".repeat(8192)
+    );
+    let (code, err, art) = p.build(&src);
+    assert_eq!(code, 0, "a large source must build: {err}");
+    assert_eq!(art.expect("artifact").len(), 397);
+    assert_fixture_drained(&p, &src);
 }
 
 /// A source this build cannot parse has no enumerable imports, so it is refused
