@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1730 | **Est. tokens:** ~3364146
-**Generated:** 2026-09-09 04:16 UTC
+**Files:** 1730 | **Est. tokens:** ~3363442
+**Generated:** 2026-09-09 04:56 UTC
 
 ## Token Budget Guide
 
@@ -82,7 +82,7 @@
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
-| `sdk/ts/mic-map/` | 6 | ~16202 |
+| `sdk/ts/mic-map/` | 6 | ~15498 |
 | `sdk/ts/mic-map/dist/` | 36 | ~29044 |
 | `sdk/ts/mic-map/scripts/` | 1 | ~499 |
 | `sdk/ts/mic-map/src/` | 9 | ~12181 |
@@ -992,7 +992,7 @@
 - `varint.js.map` (~554 tok, large) — {"version":3,"file":"varint.js","sourceRoot":"","sources":["../src/varint.ts"],"
 ### `sdk/ts/mic-map/`
 
-- `package-lock.json` (~13043 tok, huge) — Keys: name, version, lockfileVersion, requires, packages
+- `package-lock.json` (~12339 tok, huge) — Keys: name, version, lockfileVersion, requires, packages
 - `package.json` (~210 tok, medium) — Keys: name, version, description, type, private
 ### `sdk/ts/mic-map/scripts/`
 
