@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1750 | **Est. tokens:** ~3448926
-**Generated:** 2026-09-09 15:44 UTC
+**Files:** 1750 | **Est. tokens:** ~3448927
+**Generated:** 2026-09-09 15:54 UTC
 
 ## Token Budget Guide
 
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~29275 |
+| `examples/mind_mirror_v04/` | 3 | ~29276 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3739 |
 | `examples/mindc_mind/` | 172 | ~442925 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
@@ -639,7 +639,7 @@
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
 - `mic3_v04_prefix_mirror.mind` (~25440 tok, huge) — ===========================================================================
-- `mirror_gate.py` (~3051 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
+- `mirror_gate.py` (~3052 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
 - `MANIFEST.tsv` (~2715 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note

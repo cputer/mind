@@ -22,7 +22,7 @@ Usage:
   python3 examples/mind_mirror_v04/mirror_gate.py [--mutate <sed-expr>]
 
 `--semantic` runs the separate module ValueId and function-metadata controls;
-the default manifest remains the 69-vector wire-canonical corpus.
+the default manifest selects the wire-canonical corpus in MANIFEST.tsv.
 """
 
 import hashlib
