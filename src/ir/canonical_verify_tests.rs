@@ -335,29 +335,6 @@ fn intrinsic_authority_is_explicit_and_reserved() {
 }
 
 #[test]
-fn declared_intrinsic_identity_is_the_only_intrinsic_bypass() {
-    let registry = SchemaRegistryBuilder::default().finish().expect("registry");
-    let mut bundle = CanonicalModuleTypes::new(registry);
-    let intrinsic = FunctionIdentity::new("__mind_intrinsic", "load_i64");
-    bundle
-        .add_declaration(FunctionDeclaration::new(
-            intrinsic.clone(),
-            FunctionKind::Intrinsic,
-            FunctionSignature::new(Vec::new(), None),
-        ))
-        .expect("reserved intrinsic declaration");
-    let mut module = IRModule::new();
-    module.instrs.push(Instr::Call {
-        dst: ValueId(0),
-        name: "load_i64".to_string(),
-        args: Vec::new(),
-        resolved_callee: Some(Box::new(intrinsic)),
-    });
-    module.canonical_types = Some(Box::new(bundle));
-    assert_eq!(verify_canonical_metadata(&module), Ok(()));
-}
-
-#[test]
 fn populated_metadata_selects_the_checked_v04_boundary() {
     let registry = SchemaRegistryBuilder::default()
         .finish()

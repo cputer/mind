@@ -647,6 +647,15 @@ pub enum SchemaError {
     DuplicateFunction { identity: FunctionIdentity },
     #[error("intrinsic declaration uses a non-reserved identity: {identity}")]
     InvalidIntrinsicIdentity { identity: FunctionIdentity },
+    #[error("unknown canonical intrinsic contract: {identity}")]
+    UnknownIntrinsic { identity: FunctionIdentity },
+    #[error("canonical intrinsic signature does not match its registry contract: {identity}")]
+    IntrinsicSignatureMismatch { identity: FunctionIdentity },
+    #[error("canonical intrinsic is not supported by backend profile {profile}: {identity}")]
+    IntrinsicProfileMismatch {
+        identity: FunctionIdentity,
+        profile: &'static str,
+    },
     #[error("function identity does not match its registry key: {identity}")]
     FunctionIdentityMismatch { identity: FunctionIdentity },
     #[error("invalid semantic type in function {identity}")]
@@ -691,10 +700,63 @@ pub(crate) fn identity_component_is_valid(component: &str) -> bool {
 fn validate_function_declaration(declaration: &FunctionDeclaration) -> Result<(), SchemaError> {
     let reserved_owner = "__mind_intrinsic";
     match declaration.kind {
-        FunctionKind::Intrinsic if declaration.identity.owner != reserved_owner => {
-            Err(SchemaError::InvalidIntrinsicIdentity {
-                identity: declaration.identity.clone(),
-            })
+        FunctionKind::Intrinsic => {
+            if declaration.identity.owner != reserved_owner {
+                return Err(SchemaError::InvalidIntrinsicIdentity {
+                    identity: declaration.identity.clone(),
+                });
+            }
+            // Canonical declarations are backend-neutral on the wire. The
+            // FrozenNative profile selects the bounded first-cut contract
+            // vocabulary here; validating a declaration does not itself grant
+            // native execution capability. Other profile queries use the
+            // explicit seam below and refuse closed.
+            validate_intrinsic_profile(
+                &declaration.identity,
+                crate::intrinsics::IntrinsicProfile::FrozenNative,
+            )?;
+            let Some(contract) = crate::intrinsics::intrinsic_contract(&declaration.identity.name)
+            else {
+                return Err(SchemaError::UnknownIntrinsic {
+                    identity: declaration.identity.clone(),
+                });
+            };
+            let parameters_match = contract.parameters.len()
+                == declaration.signature.params().len()
+                && contract
+                    .parameters
+                    .iter()
+                    .zip(declaration.signature.params())
+                    .all(|(expected, actual)| {
+                        matches!(
+                            (expected, actual),
+                            (
+                                crate::intrinsics::IntrinsicValueType::I64,
+                                SemanticType::Scalar(ScalarType::I64)
+                            )
+                        )
+                    });
+            let result_matches = match contract.result {
+                crate::intrinsics::IntrinsicResult::I64 => declaration
+                    .signature
+                    .return_type()
+                    .is_some_and(|ty| matches!(ty, SemanticType::Scalar(ScalarType::I64))),
+                crate::intrinsics::IntrinsicResult::DiscardOnly => {
+                    // The v04 wire ABI remains `(i64...) -> i64` for stores.
+                    // DiscardOnly is a native result-use rule enforced by
+                    // later admission, not a unit return type.
+                    declaration
+                        .signature
+                        .return_type()
+                        .is_some_and(|ty| matches!(ty, SemanticType::Scalar(ScalarType::I64)))
+                }
+            };
+            if !parameters_match || !result_matches {
+                return Err(SchemaError::IntrinsicSignatureMismatch {
+                    identity: declaration.identity.clone(),
+                });
+            }
+            Ok(())
         }
         FunctionKind::Local | FunctionKind::External
             if declaration.identity.owner == reserved_owner =>
@@ -706,6 +768,8 @@ fn validate_function_declaration(declaration: &FunctionDeclaration) -> Result<()
         _ => Ok(()),
     }
 }
+
+pub(crate) use super::canonical_intrinsic_validation::validate_intrinsic_profile;
 
 fn validate_descriptor_budget<'a, I>(schemas: &SchemaRegistry, types: I) -> Result<(), SchemaError>
 where

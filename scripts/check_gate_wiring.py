@@ -113,17 +113,14 @@ GATED_EVENTS = ("push", "pull_request")
 # publication path lives in its own helper. These are reviewed support/test
 # modules for existing gates, not new product surfaces; each remains below the
 # 800-line source ceiling and the stable runner commands stay unchanged.
-# 257 -> 258 adds self_host_alias_controls_smoke.py for alias collisions,
-# scope isolation and typed joins, below the unchanged 800-line source ceiling.
+# 257 -> 258 adds self_host_alias_controls_smoke.py for alias/scope/join controls.
 # 258 -> 259 adds the required, non-vacuous two-feature pqc_hybrid_ci.sh gate.
-# 259 -> 260 adds its sibling pqc_hybrid_cli_ci.sh, the required three-OS gate for
-# the actual-CLI signing controls. Same class and same contract as the entry
-# above: it asks libtest which tests the target contains before executing, pins
-# the exact set of names, requires each to pass exactly once, and requires the
-# exact final tally, so a target silently cfg'd out cannot report a cheerful
-# zero-passed success. It gates the shipped binary rather than the library,
-# which the library gate cannot do, so folding the two together would lose the
-# distinction rather than save a file.
+# 259 -> 260 adds the required pure-MIND v04 prefix mirror gate driver.
+# The signing publication also adds pqc_hybrid_cli_ci.sh, the required three-OS
+# gate for actual-CLI signing controls. It pins the exact test names, requires
+# each to pass once, and requires the final tally, so cfg-out tests cannot report
+# a false zero-pass success. It gates the shipped binary separately from the
+# library gate.
 HARNESS_CEILING = 260
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would

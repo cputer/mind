@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1735 | **Est. tokens:** ~3377506
-**Generated:** 2026-09-09 05:58 UTC
+**Files:** 1744 | **Est. tokens:** ~3416053
+**Generated:** 2026-09-09 08:16 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~36830 |
+| `.github/workflows/` | 9 | ~36922 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -66,7 +66,9 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mindc_mind/` | 172 | ~441747 |
+| `examples/mind_mirror_v04/` | 3 | ~15405 |
+| `examples/mind_mirror_v04/testdata/` | 1 | ~1803 |
+| `examples/mindc_mind/` | 172 | ~442925 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -78,7 +80,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 31 | ~116053 |
+| `scripts/` | 31 | ~115992 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -89,7 +91,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 10 | ~48435 |
+| `src/` | 11 | ~51968 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -108,7 +110,7 @@
 | `src/exec/` | 3 | ~5522 |
 | `src/ffi/` | 3 | ~5541 |
 | `src/fmt/` | 3 | ~24052 |
-| `src/ir/` | 9 | ~95842 |
+| `src/ir/` | 9 | ~95624 |
 | `src/ir/compact/` | 3 | ~15351 |
 | `src/ir/compact/v2/` | 9 | ~45363 |
 | `src/ir/compact/v3/` | 14 | ~76544 |
@@ -128,10 +130,10 @@
 | `src/test/` | 4 | ~14244 |
 | `src/type_checker/` | 17 | ~56166 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 8 | ~18062 |
+| `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 393 | ~792843 |
+| `tests/` | 394 | ~800164 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -164,7 +166,6 @@
 | `tests/cross_substrate_identity/struct-handle-roundtrip/` | 2 | ~746 |
 | `tests/cross_substrate_identity/u64-ops/` | 2 | ~1054 |
 | `tests/fixtures/` | 6 | ~228 |
-| `tests/fixtures/evidence/` | 3 | ~1615 |
 | `tests/fixtures/f64_abi_negative/` | 3 | ~192 |
 | `tests/fixtures/nerve_numerics/` | 11 | ~968 |
 | `tests/fixtures/selfhost_policy/` | 13 | ~315 |
@@ -190,7 +191,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
-| `tests/support/` | 1 | ~773 |
+| `tests/support/` | 5 | ~9204 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -269,7 +270,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~24939 tok, huge) — name: CI
+- `ci.yml` (~25031 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -634,6 +635,14 @@
 - `lorenz_q16.mind` (~1091 tok, large) — Deterministic Q16.16 fixed-point Lorenz-attractor integrator (forward Euler).
 - `mandelbrot.mind` (~1019 tok, large) — Deterministic IEEE-754 float64 Mandelbrot escape-count renderer.
 - `mandelbrot_strict.mind` (~982 tok, large) — Strict-f64 Mandelbrot escape-count checksum — a determinism-wedge demo.
+### `examples/mind_mirror_v04/`
+
+- `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
+- `mic3_v04_prefix_mirror.mind` (~11699 tok, huge) — ===========================================================================
+- `mirror_gate.py` (~2922 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
+### `examples/mind_mirror_v04/testdata/`
+
+- `MANIFEST.tsv` (~1803 tok, huge) — # name	expected_exit	bytes	sha256	consumed	note
 ### `examples/mindc_mind/`
 
 - `.gitignore` (~5 tok, tiny) — __pycache__/
@@ -787,7 +796,7 @@
 - `self_host_tc_let_infer_smoke.py` (~2132 tok, huge) — self_host_tc_let_infer_smoke — three-leg gate for the T1 type-inference port.
 - `self_host_tc_narrowing_smoke.py` (~1042 tok, large)
 - `self_host_tc_scope_frame_smoke.py` (~5756 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
-- `self_host_tc_self_host_only_call_smoke.py` (~2314 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
+- `self_host_tc_self_host_only_call_smoke.py` (~3492 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
 - `self_host_tc_shape_annot_compat_smoke.py` (~1943 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
 - `self_host_tc_shape_rules_smoke.py` (~2149 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
 - `self_host_tc_std_export_smoke.py` (~3500 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
@@ -905,11 +914,11 @@
 
 - `ai_attribution_patterns.sh` (~1536 tok, huge) — shellcheck shell=bash
 - `anatomy-hook.sh` (~1811 tok, huge) — STARGA author guard (chained first: a wrong-identity commit must never be created).
-- `anatomy.sh` (~2451 tok, huge) — anatomy — Generate ANATOMY.md for any repo
+- `anatomy.sh` (~2453 tok, huge) — anatomy — Generate ANATOMY.md for any repo
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7653 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~9530 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~9467 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~2217 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~4342 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
@@ -1161,11 +1170,12 @@
 - `printer.rs` (~17300 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `intrinsics.rs` (~10409 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsic_contract.rs` (~2968 tok, huge) — Copyright 2025 STARGA Inc.
+- `intrinsics.rs` (~10966 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
 - `canonical_verify.rs` (~6429 tok, huge) — Copyright 2025 STARGA Inc.
-- `canonical_verify_tests.rs` (~7045 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_verify_tests.rs` (~6827 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/ir/compact/`
 
 - `emit.rs` (~4693 tok, huge) — Copyright 2025 STARGA Inc.
@@ -1216,7 +1226,7 @@
 - `verify.rs` (~21216 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `lib.rs` (~1110 tok, large) — Copyright 2025 STARGA Inc.
+- `lib.rs` (~1118 tok, large) — Copyright 2025 STARGA Inc.
 - `linalg.rs` (~2025 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/lint/`
 
@@ -1347,10 +1357,12 @@
 - `type_display.rs` (~628 tok, large) — Copyright 2026 STARGA Inc.
 ### `src/types/`
 
-- `canonical.rs` (~214 tok, medium) — Copyright 2025 STARGA Inc.
+- `canonical.rs` (~256 tok, medium) — Copyright 2025 STARGA Inc.
+- `canonical_intrinsic_tests.rs` (~1418 tok, large) — Copyright 2025 STARGA Inc.
+- `canonical_intrinsic_validation.rs` (~446 tok, medium) — Copyright 2025 STARGA Inc.
 - `canonical_registry.rs` (~5107 tok, huge) — Copyright 2025 STARGA Inc.
 - `canonical_tests.rs` (~3544 tok, huge)
-- `canonical_types.rs` (~5766 tok, huge) — Copyright 2025 STARGA Inc.
+- `canonical_types.rs` (~6538 tok, huge) — Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) — Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) — Copyright 2025 STARGA Inc.
 - `mod.rs` (~1132 tok, large) — Copyright 2025 STARGA Inc.
@@ -1653,11 +1665,6 @@
 ### `tests/fixtures/`
 
 - `autodiff.mind` (~55 tok, small) — Minimal differentiable program for the --emit-grad-ir CLI test.
-### `tests/fixtures/evidence/`
-
-- `historical_ed25519_signed.mic3` (~108 tok, small) — MIC3mainM	evidence_chain.determinismdeterministic
-- `historical_hybrid_ed25519_mldsa65_signed.mic3` (~1439 tok, large) — MIC3mainMevidence_chain.determinismdeterministic
-- `unsigned_reference.mic3` (~68 tok, small) — MIC3mainMevidence_chain.determinismdeterministic
 ### `tests/fixtures/f64_abi_negative/`
 
 - `README.md` (~146 tok, small) — f64 call-ABI negative control (paired with the #298 self-host f64 MLIR surface)
@@ -1763,7 +1770,7 @@
 ### `tests/`
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_idempotence.rs` (~4683 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_idempotence.rs` (~4734 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_ir_preservation.rs` (~3956 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
@@ -2330,6 +2337,10 @@
 ### `tests/support/`
 
 - `g2_policy_rejections.rs` (~773 tok, large) — Copyright 2026 STARGA Inc.
+- `v04_mirror_descriptor_vectors.rs` (~1853 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_intrinsic_vectors.rs` (~1361 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_modules.rs` (~1411 tok, large) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_oracle.rs` (~3806 tok, huge) — Copyright 2025-2026 STARGA Inc.
 ### `tests/`
 
 - `target_cerebras.rs` (~340 tok, medium) — Cerebras backend target — first-class surface tests.
@@ -2368,6 +2379,7 @@
 - `typo_reject.rs` (~1127 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) — Copyright 2025 STARGA Inc.
+- `v04_mirror_vector_dump.rs` (~7270 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) — Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.
