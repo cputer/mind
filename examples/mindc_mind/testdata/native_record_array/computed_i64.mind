@@ -1,0 +1,12 @@
+struct R {
+    xs: [i64; 3],
+}
+
+fn twice(x: i64) -> i64 {
+    return x * 2;
+}
+
+fn main() -> i64 {
+    let r: R = R { xs: [1 + 2, twice(4), (3 * 5) - 1] };
+    return r.xs[0] + r.xs[1] + r.xs[2];
+}

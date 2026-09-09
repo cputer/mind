@@ -182,6 +182,7 @@ chk "failclosed (poison boundary + float refusal)"   python3 examples/mindc_mind
 chk "closure_netverify (unresolved-callee fail-closed)" python3 examples/mindc_mind/closure_netverify.py
 chk "fp_call (float call-return/args + unresolved-callee 0B)" python3 examples/mindc_mind/self_host_native_fp_call_smoke.py
 chk "fp_field (float struct-field read (SSE))" python3 examples/mindc_mind/self_host_native_fp_field_smoke.py
+chk "record_array (inline fixed i64 array fields)" python3 examples/mindc_mind/self_host_native_record_array_smoke.py
 chk "scalar_narrow (RI-D #10 sat f64->i8/i16/i32 clamp)" python3 examples/mindc_mind/self_host_native_scalar_narrow_smoke.py
 
 rm -f "$DIR_SO" "$MT_SO"

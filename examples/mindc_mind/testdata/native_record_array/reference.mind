@@ -1,0 +1,71 @@
+struct R {
+    pre: i64,
+    xs: [i64; 3],
+    post: i64,
+}
+#[test]
+fn direct_reference() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33], post: 7 };
+    return r.xs[1] + r.post == 29;
+}
+#[test]
+fn copy_out_reference() -> i64 {
+    let r: R = R { pre: 5, xs: [11, 22, 33], post: 7 };
+    let a: [i64; 3] = r.xs;
+    a[0] = 99;
+    return r.xs[0] + a[0] + r.post == 117;
+}
+
+struct A {
+    xs: [i64; 2],
+}
+
+fn total_a(r: A) -> i64 {
+    let mut i: i64 = 0;
+    let mut sum: i64 = 0;
+    while i < 2 {
+        sum = sum + r.xs[i];
+        i = i + 1;
+    }
+    return sum;
+}
+
+fn make_a() -> A {
+    return A { xs: [2, 5] };
+}
+
+#[test]
+fn record_param_reference() -> i64 {
+    let a: A = A { xs: [5, 8] };
+    return total_a(a) == 13;
+}
+
+#[test]
+fn record_param_copy_reference() -> i64 {
+    let r: A = A { xs: [1, 2] };
+    let a: [i64; 2] = r.xs;
+    a[0] = 20;
+    return a[0] + a[1] + r.xs[0] == 23;
+}
+
+#[test]
+fn record_return_reference() -> i64 {
+    return make_a().xs[1] == 5;
+}
+
+struct A {
+    xs: [i64; 2],
+    sibling: i64,
+}
+
+struct B {
+    xs: [i64; 3],
+    sibling: i64,
+}
+
+#[test]
+fn owner_layout_reference() -> i64 {
+    let a: A = A { xs: [1, 2], sibling: 10 };
+    let b: B = B { xs: [3, 4, 5], sibling: 20 };
+    return a.sibling + b.xs[2] + b.sibling == 35;
+}

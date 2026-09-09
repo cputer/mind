@@ -1146,7 +1146,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
 
-      - name: Grown-subset capability gates (refs / field stores / enums / Option / closures / fail-closed / branch carry / float ABI)
+      - name: Grown-subset capability gates (refs / records / enums / Option / closures / fail-closed / branch carry / float ABI)
         # THE ONLY regression gate for the "grown subset" — constructs main.mind
         # does not itself use, so neither the self-host LOOP nor the native-ELF
         # byte-identity keystone above ever exercises them. A miscompile here is
@@ -1168,7 +1168,8 @@ jobs:
             self_host_failclosed_smoke \
             self_host_if_region_carry_smoke \
             self_host_native_fp_call_smoke \
-            self_host_native_fp_field_smoke; do
+            self_host_native_fp_field_smoke \
+            self_host_native_record_array_smoke; do
             echo "=== $s ==="
             if MINDC_SO=/tmp/libmindc_mind_self_host.so \
                MINDC_BIN="${{ github.workspace }}/target/release/mindc" \

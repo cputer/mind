@@ -3761,6 +3761,21 @@ pub fn parse_field_assign_or_expr(toks: Vec, pos: i64, buf: i64) -> ParseResult 
     let pf: ParseResult = parse_postfix(toks, pos, buf);
     let target: i64 = pr_node(pf);
     let after_pf: i64 = pr_pos(pf);
+    // Preserve an indexed-field write as an explicit index-assign node. Native
+    // lowering rejects this value-copy shape until record-array writeback is
+    // defined; parsing it as an equality expression would silently drop the
+    // write and produce a successful wrong-value ELF.
+    if ast_kind(target) == ast_index() {
+        if tok_kind(toks, after_pf) == tk_eq() {
+            let irhs: ParseResult = parse_expr(toks, after_pf + 1, buf);
+            let after_irhs: i64 = pr_pos(irhs);
+            let ia: i64 = ast_new_index_assign(ast_span_lo(target), ast_span_hi(pr_node(irhs)), ast_child0(target), ast_child1(target), pr_node(irhs));
+            if tok_kind(toks, after_irhs) == tk_semi() {
+                return pr_new(after_irhs + 1, ia);
+            }
+            return pr_new(after_irhs, ia);
+        }
+    }
     if ast_kind(target) == ast_field() {
         if tok_kind(toks, after_pf) == tk_eq() {
             let frhs: ParseResult = parse_expr(toks, after_pf + 1, buf);
@@ -28300,8 +28315,12 @@ pub fn selftest_full_strtab_byte(src_addr: i64, src_len: i64, i: i64, j: i64) ->
 //     slot[0]                     : span_lo of struct k's NAME
 //     slot[1]                     : span_hi of struct k's NAME
 //     slot[2]                     : field count of struct k (fc)
-//     slot[3 + 2*j + 0]           : span_lo of field j's name
-//     slot[3 + 2*j + 1]           : span_hi of field j's name
+//     slot[3 + 8*j + 0]           : span_lo of field j's name
+//     slot[3 + 8*j + 1]           : span_hi of field j's name
+//     slot[3 + 8*j + 2..3]        : field type's leading-token span
+//     slot[3 + 8*j + 4]           : 1 for an exact `[T; N]`, else 0
+//     slot[3 + 8*j + 5..6]        : fixed-array element-type span
+//     slot[3 + 8*j + 7]           : fixed-array extent
 // Capacity is fixed at 16 structs * 16 fields each, comfortably covering any
 // source in main.mind's own grammar.
 // ===========================================================================
@@ -28314,10 +28333,11 @@ pub fn srt_field_cap() -> i64 {
     16
 }
 
-// Words per struct slot: name_lo + name_hi + field_count + field_cap*4 words
-// (each field: name_lo, name_hi, type_name_lo, type_name_hi).
+// Words per struct slot: name_lo + name_hi + field_count + field_cap*8 words.
+// The four additive words retain fixed-array syntax needed by native record
+// layout. They are heap metadata only; scalar records emit the same bytes.
 pub fn srt_slot_words() -> i64 {
-    3 + srt_field_cap() * 4
+    3 + srt_field_cap() * 8
 }
 
 pub fn srt_alloc() -> i64 {
@@ -28349,21 +28369,37 @@ pub fn srt_field_count(t: i64, k: i64) -> i64 {
 }
 
 pub fn srt_field_lo(t: i64, k: i64, j: i64) -> i64 {
-    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 4 + 0) * 8)
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 0) * 8)
 }
 
 pub fn srt_field_hi(t: i64, k: i64, j: i64) -> i64 {
-    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 4 + 1) * 8)
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 1) * 8)
 }
 
 // span of field j's declared TYPE name (the `T` in `name: T`); (0,0) when the
 // field carries no `: type` (never in main.mind's clean struct bodies).
 pub fn srt_field_type_lo(t: i64, k: i64, j: i64) -> i64 {
-    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 4 + 2) * 8)
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 2) * 8)
 }
 
 pub fn srt_field_type_hi(t: i64, k: i64, j: i64) -> i64 {
-    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 4 + 3) * 8)
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 3) * 8)
+}
+
+pub fn srt_field_array_kind(t: i64, k: i64, j: i64) -> i64 {
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 4) * 8)
+}
+
+pub fn srt_field_array_elem_lo(t: i64, k: i64, j: i64) -> i64 {
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 5) * 8)
+}
+
+pub fn srt_field_array_elem_hi(t: i64, k: i64, j: i64) -> i64 {
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 6) * 8)
+}
+
+pub fn srt_field_array_len(t: i64, k: i64, j: i64) -> i64 {
+    __mind_load_i64(t + (srt_slot_base(k) + 3 + j * 8 + 7) * 8)
 }
 
 // Resolve field j's declared TYPE name to a struct index in `t`, or -1 when the
@@ -28377,6 +28413,97 @@ pub fn srt_field_type_sk(t: i64, src: i64, k: i64, j: i64) -> i64 {
         return 0 - 1;
     }
     srt_find_by_name(t, src, tlo, thi, 0)
+}
+
+// Native record arrays are deliberately bounded to the already-proven 4096-cell
+// native fixed-array surface. This is a capability bound, not a language limit.
+pub fn srt_native_array_cap() -> i64 {
+    4096
+}
+
+// Parse a decimal extent without overflowing before the capability check.
+// Returns -1 for separators in invalid positions, non-digits, zero, or > cap.
+pub fn srt_parse_extent(src: i64, lo: i64, hi: i64, acc: i64, seen: i64) -> i64 {
+    if lo >= hi {
+        if seen != 1 {
+            return 0 - 1;
+        }
+        if acc < 1 {
+            return 0 - 1;
+        }
+        return acc;
+    }
+    let b: i64 = load_byte(src, lo);
+    if b == 95 {
+        if seen != 1 {
+            return 0 - 1;
+        }
+        return srt_parse_extent(src, lo + 1, hi, acc, 2);
+    }
+    if b < 48 {
+        return 0 - 1;
+    }
+    if b > 57 {
+        return 0 - 1;
+    }
+    let d: i64 = b - 48;
+    if acc > (srt_native_array_cap() - d) / 10 {
+        return 0 - 1;
+    }
+    srt_parse_extent(src, lo + 1, hi, acc * 10 + d, 1)
+}
+
+// Initial read-only native record-array slice: exact i64 cells only. Narrow
+// cells, aliases and aggregate cells remain explicit capability refusals.
+pub fn srt_field_native_array_ok(t: i64, src: i64, k: i64, j: i64) -> i64 {
+    if srt_field_array_kind(t, k, j) != 1 {
+        return 0;
+    }
+    let n: i64 = srt_field_array_len(t, k, j);
+    if n < 1 {
+        return 0;
+    }
+    if n > srt_native_array_cap() {
+        return 0;
+    }
+    pnt_span_is_i64(src, srt_field_array_elem_lo(t, k, j), srt_field_array_elem_hi(t, k, j))
+}
+
+pub fn srt_field_native_width(t: i64, src: i64, k: i64, j: i64) -> i64 {
+    if srt_field_array_kind(t, k, j) == 0 {
+        return 8;
+    }
+    if srt_field_native_array_ok(t, src, k, j) == 0 {
+        return 0 - 1;
+    }
+    srt_field_array_len(t, k, j) * 8
+}
+
+pub fn srt_field_native_offset(t: i64, src: i64, k: i64, j: i64) -> i64 {
+    srt_field_native_offset_rest(t, src, k, j, 0, 0)
+}
+
+pub fn srt_field_native_offset_rest(t: i64, src: i64, k: i64, j: i64, i: i64, acc: i64) -> i64 {
+    if i >= j {
+        return acc;
+    }
+    let w: i64 = srt_field_native_width(t, src, k, i);
+    if w < 0 {
+        return 0 - 1;
+    }
+    srt_field_native_offset_rest(t, src, k, j, i + 1, acc + w)
+}
+
+pub fn srt_struct_native_size(t: i64, src: i64, k: i64) -> i64 {
+    let nf: i64 = srt_field_count(t, k);
+    let off: i64 = srt_field_native_offset(t, src, k, nf);
+    if off < 0 {
+        return 0 - 1;
+    }
+    if off < 8 {
+        return 8;
+    }
+    off
 }
 
 // Append a struct with name span (nlo, nhi) and zero fields, returning its index.
@@ -28394,15 +28521,19 @@ pub fn srt_push_struct(t: i64, nlo: i64, nhi: i64) -> i64 {
 
 // Append a field: name span (flo, fhi) + declared-type name span (tlo, thi) to
 // struct k, bumping its field count. (tlo,thi)=(0,0) for a field with no `: type`.
-pub fn srt_push_field(t: i64, k: i64, flo: i64, fhi: i64, tlo: i64, thi: i64) -> i64 {
+pub fn srt_push_field(t: i64, k: i64, flo: i64, fhi: i64, tlo: i64, thi: i64, ak: i64, elo: i64, ehi: i64, alen: i64) -> i64 {
     let fc: i64 = srt_field_count(t, k);
     if fc >= srt_field_cap() {
         return t;
     }
-    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 4 + 0) * 8, flo);
-    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 4 + 1) * 8, fhi);
-    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 4 + 2) * 8, tlo);
-    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 4 + 3) * 8, thi);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 0) * 8, flo);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 1) * 8, fhi);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 2) * 8, tlo);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 3) * 8, thi);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 4) * 8, ak);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 5) * 8, elo);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 6) * 8, ehi);
+    __mind_store_i64(t + (srt_slot_base(k) + 3 + fc * 8 + 7) * 8, alen);
     __mind_store_i64(t + (srt_slot_base(k) + 2) * 8, fc + 1);
     t
 }
@@ -28410,7 +28541,7 @@ pub fn srt_push_field(t: i64, k: i64, flo: i64, fhi: i64, tlo: i64, thi: i64) ->
 // Parse the `name: type` field pairs of struct k's body into the registry `t`.
 // `pos` points just past `{`; ends at `}`. Retains each field-NAME span. Mirrors
 // sft_parse_fields exactly but writes into struct k's slot. Tail-recursive.
-pub fn srt_parse_fields(toks: Vec, pos: i64, t: i64, k: i64) -> i64 {
+pub fn srt_parse_fields(toks: Vec, src: i64, pos: i64, t: i64, k: i64) -> i64 {
     if at_eof(toks, pos) == 1 {
         return t;
     }
@@ -28437,15 +28568,61 @@ pub fn srt_parse_fields(toks: Vec, pos: i64, t: i64, k: i64) -> i64 {
         } else {
             0
         };
-        let _t: i64 = srt_push_field(t, k, tok_lo(toks, pos), tok_hi(toks, pos), tlo, thi);
+        let is_arr: i64 = if has_colon == 1 {
+            if tok_kind(toks, pos + 2) == tk_lbracket() {
+                if tok_kind(toks, pos + 3) == tk_ident() {
+                    if tok_kind(toks, pos + 4) == tk_semi() {
+                        if tok_kind(toks, pos + 5) == tk_int() {
+                            if tok_kind(toks, pos + 6) == tk_rbracket() {
+                                1
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        let elo: i64 = if is_arr == 1 {
+            tok_lo(toks, pos + 3)
+        } else {
+            0
+        };
+        let ehi: i64 = if is_arr == 1 {
+            tok_hi(toks, pos + 3)
+        } else {
+            0
+        };
+        let alen: i64 = if is_arr == 1 {
+            srt_parse_extent(src, tok_lo(toks, pos + 5), tok_hi(toks, pos + 5), 0, 0)
+        } else {
+            0
+        };
+        let _t: i64 = srt_push_field(t, k, tok_lo(toks, pos), tok_hi(toks, pos), tlo, thi, is_arr, elo, ehi, alen);
+        if is_arr == 1 {
+            if tok_kind(toks, pos + 7) == tk_comma() {
+                return srt_parse_fields(toks, src, pos + 8, t, k);
+            }
+            return srt_parse_fields(toks, src, pos + 7, t, k);
+        }
         if has_colon == 1 {
             if tok_kind(toks, pos + 3) == tk_comma() {
-                return srt_parse_fields(toks, pos + 4, t, k);
+                return srt_parse_fields(toks, src, pos + 4, t, k);
             }
-            return srt_parse_fields(toks, pos + 3, t, k);
+            return srt_parse_fields(toks, src, pos + 3, t, k);
         }
     }
-    srt_parse_fields(toks, pos + 1, t, k)
+    srt_parse_fields(toks, src, pos + 1, t, k)
 }
 
 // Scan the token stream collecting EVERY `struct Name { fields }` into the
@@ -28461,7 +28638,7 @@ pub fn srt_collect(toks: Vec, buf: i64, pos: i64, t: i64) -> i64 {
         if is_struct_kw(buf, lo, hi) == 1 {
             // pos = struct kw, pos+1 = Name, pos+2 = `{`, fields start at pos+3.
             let k: i64 = srt_push_struct(t, tok_lo(toks, pos + 1), tok_hi(toks, pos + 1));
-            let _t: i64 = srt_parse_fields(toks, pos + 3, t, k);
+            let _t: i64 = srt_parse_fields(toks, buf, pos + 3, t, k);
             // Skip past this struct body to avoid re-scanning its inner idents.
             let after: i64 = skip_to_rbrace(toks, pos + 3);
             return srt_collect(toks, buf, after, t);
@@ -33258,17 +33435,33 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         // consumed but never read). The struct value IS the ptr slot.
         let fields_addr: i64 = ast_child1(node);
         let nfields: i64 = ast_aux(node);
+        let ssrt: i64 = __mind_load_i64(lcell + 24);
+        let ssk: i64 = srt_find_by_name(ssrt, buf, ast_child0(node), ast_child2(node), 0);
+        let ssize0: i64 = if ssk < 0 {
+            nfields * 8
+        } else {
+            srt_struct_native_size(ssrt, buf, ssk)
+        };
+        if ssize0 < 0 {
+            __mind_store_i64(lcell + 80, 1)
+        }
+        let ssize: i64 = if ssize0 < 0 {
+            nfields * 8
+        } else {
+            ssize0
+        };
         // CONST 8 (element size).
         let sz_id: i64 = st.next_id;
         let a1: String = nb_push(st.code, 72);
         let a2: String = nb_push(a1, 184);
         let a3: String = nb_i64le(a2, 8);
         let a4: String = nb_store_rax(a3, nb_slot_disp(sz_id));
-        // CONST n_fields.
+        // CONST allocation words. Equal to n_fields for a scalar-only record;
+        // fixed arrays contribute one 8-byte word per inline element.
         let nf_id: i64 = sz_id + 1;
         let b1: String = nb_push(a4, 72);
         let b2: String = nb_push(b1, 184);
-        let b3: String = nb_i64le(b2, nfields);
+        let b3: String = nb_i64le(b2, ssize / 8);
         let b4: String = nb_store_rax(b3, nb_slot_disp(nf_id));
         // MUL(sz, nf) -> alloc size.
         let mul_id: i64 = nf_id + 1;
@@ -33373,6 +33566,25 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         // self-compile, integer native-ELF oracle byte-identical.
         let ix_base: i64 = ast_child0(node);
         let ix_idx: i64 = ast_child1(node);
+        // Field-backed arrays require exact schema authority. A literal-shaped
+        // runtime value is insufficient for an alias or unsupported element
+        // type. Likewise, an identifier must retain an array descriptor; this
+        // refuses call/parameter/alias paths whose length/layout was discarded.
+        if ast_kind(ix_base) == ast_field() {
+            if nb_field_array_status_r(ast_child0(ix_base), ix_base, buf, lets, lcell) != 1 {
+                __mind_store_i64(lcell + 80, 1)
+            }
+        }
+        if ast_kind(ix_base) == ast_ident() {
+            let ix_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(ix_base), ast_span_hi(ix_base));
+            if ix_desc == 0 {
+                __mind_store_i64(lcell + 80, 1)
+            } else {
+                if ast_kind(ix_desc) != ast_array_lit() {
+                    __mind_store_i64(lcell + 80, 1)
+                }
+            }
+        }
         let s_xb: NbState = nb_expr(st, buf, ix_base, params_addr, n_params, calls, lets, lcell);
         let xb_id: i64 = s_xb.last_id;
         let s_xi: NbState = nb_expr(s_xb, buf, ix_idx, params_addr, n_params, calls, lets, lcell);
@@ -33467,6 +33679,15 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
             __mind_store_i64(lcell + 80, 1);
             return nb_emit_const0(s_recv);
         }
+        let array_status: i64 = nb_field_array_status_r(recv, node, buf, lets, lcell);
+        if array_status < 0 {
+            __mind_store_i64(lcell + 80, 1);
+            return nb_emit_const0(s_recv);
+        }
+        if array_status == 1 {
+            let n: i64 = nb_field_array_len_r(recv, node, buf, lets, lcell);
+            return nb_materialize_field_array(s_recv, ptr_id, off, n);
+        }
         // RI-D2 S-D: an f64/f32 struct field READ returns a FLOAT-tagged value. Classify
         // the field's dtype from the struct binding (nb_field_dtype, value-node based for
         // a struct-literal binding); a FLOAT field loads through the SSE register file
@@ -33526,6 +33747,14 @@ pub fn nb_expr(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         if nb_is_blas_dot_i16_v(buf, ast_span_lo(callee), ast_span_hi(callee)) == 1 {
             let c_bi: String = nb_emit_blas_dot_i16(sa.code, __mind_load_i64(ids + 0 * 8), __mind_load_i64(ids + 1 * 8), __mind_load_i64(ids + 2 * 8), id);
             return NbState { code: c_bi, next_id: id + 10, last_id: id, ncalls: sa.ncalls };
+        }
+        // Source-defined record transport must retain the exact declaration
+        // owner when an either side carries a fixed-array field. Dtype INT and
+        // equal physical widths are insufficient: both also describe unrelated
+        // record handles. Keep lowering for id lockstep, but poison the whole
+        // artifact when owner provenance is missing, ambiguous, or mismatched.
+        if nb_call_record_owner_args_ok(callee, args_addr, args_len, buf, lets, lcell, 0) == 0 {
+            __mind_store_i64(lcell + 80, 1)
         }
         // Caller-side System-V sequence for args_len args (mirror src/native/mod.rs
         // Call arm, lines 929-955), in EXACT byte order:
@@ -34189,7 +34418,12 @@ pub fn nb_field_offset(recv: i64, field_node: i64, buf: i64, lets: i64, lcell: i
     if didx < 0 {
         return 0 - 1;
     }
-    didx * 8
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(slit), ast_child2(slit), 0);
+    if sk < 0 {
+        return didx * 8;
+    }
+    srt_field_native_offset(srt, buf, sk, didx)
 }
 
 // Read-side receiver DESCRIPTOR for `recv.field`:
@@ -34237,6 +34471,9 @@ pub fn nb_field_type_desc(field_node: i64, buf: i64, lets: i64, lcell: i64) -> i
         if ast_kind(vslot) == ast_struct_lit() {
             return vslot;
         }
+        if ast_kind(vslot) == ast_array_lit() {
+            return vslot;
+        }
         return 0;
     }
     if vslot < 0 {
@@ -34256,6 +34493,179 @@ pub fn nb_field_recv_desc_r(recv: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
         return nb_field_type_desc(recv, buf, lets, lcell);
     }
     nb_struct_desc_from_call(recv, buf, __mind_load_i64(lcell + 24), __mind_load_i64(lcell + 16))
+}
+
+// Count source structs whose name matches [lo,hi). Owner proof requires one
+// declaration: first-match lookup alone would silently authorize duplicate
+// source names with potentially different layouts.
+pub fn nb_srt_name_count(srt: i64, buf: i64, lo: i64, hi: i64, k: i64, acc: i64) -> i64 {
+    if k >= srt_count(srt) {
+        return acc;
+    }
+    let next: i64 = if span_bytes_equal(buf, lo, hi, srt_name_lo(srt, k), srt_name_hi(srt, k)) == 1 {
+        acc + 1
+    } else {
+        acc
+    };
+    nb_srt_name_count(srt, buf, lo, hi, k + 1, next)
+}
+
+// Unique source-language struct identity by declaration-table row. Returns -1
+// for no struct and -2 for duplicate/ambiguous declarations.
+pub fn nb_srt_unique_by_name(srt: i64, buf: i64, lo: i64, hi: i64) -> i64 {
+    let count: i64 = nb_srt_name_count(srt, buf, lo, hi, 0, 0);
+    if count == 0 {
+        return 0 - 1;
+    }
+    if count != 1 {
+        return 0 - 2;
+    }
+    srt_find_by_name(srt, buf, lo, hi, 0)
+}
+
+pub fn nb_srt_has_fixed_array(srt: i64, sk: i64, j: i64) -> i64 {
+    if sk < 0 {
+        return 0;
+    }
+    if j >= srt_field_count(srt, sk) {
+        return 0;
+    }
+    if srt_field_array_kind(srt, sk, j) == 1 {
+        return 1;
+    }
+    nb_srt_has_fixed_array(srt, sk, j + 1)
+}
+
+// Prove the unique source struct owner of a value expression. This follows
+// only retained AST/descriptor provenance: direct literals, typed params/lets,
+// declared struct-return calls, struct-typed fields, and parentheses. It never
+// derives an owner from an SSA slot, dtype default, function identity, or
+// physical layout coincidence. Returns -1 when the value is not proven to be a
+// struct and -2 when the source owner is ambiguous.
+pub fn nb_expr_struct_owner(node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let k: i64 = ast_kind(node);
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    if k == ast_struct_lit() {
+        return nb_srt_unique_by_name(srt, buf, ast_child0(node), ast_child2(node));
+    }
+    if k == ast_ident() {
+        let desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(node), ast_span_hi(node));
+        if desc == 0 {
+            return 0 - 1;
+        }
+        return nb_srt_unique_by_name(srt, buf, ast_child0(desc), ast_child2(desc));
+    }
+    if k == ast_call() {
+        let desc: i64 = nb_struct_desc_from_call(node, buf, srt, __mind_load_i64(lcell + 16));
+        if desc == 0 {
+            return 0 - 1;
+        }
+        return nb_srt_unique_by_name(srt, buf, ast_child0(desc), ast_child2(desc));
+    }
+    if k == ast_field() {
+        let desc: i64 = nb_field_type_desc(node, buf, lets, lcell);
+        if desc == 0 {
+            return 0 - 1;
+        }
+        return nb_srt_unique_by_name(srt, buf, ast_child0(desc), ast_child2(desc));
+    }
+    if k == ast_paren() {
+        return nb_expr_struct_owner(ast_child0(node), buf, lets, lcell);
+    }
+    0 - 1
+}
+
+// Check source-defined regular-call arguments against the callee's declared
+// struct owners. This slice is activated only when the expected or actual
+// record has a fixed-array field, preserving established scalar/non-array
+// record calls. Unknown owner provenance then refuses. An unresolved callee is
+// outside this source-FnDef check; intrinsic/profile admission remains on its
+// existing path.
+pub fn nb_call_record_owner_args_ok(callee: i64, args_addr: i64, args_len: i64, buf: i64, lets: i64, lcell: i64, i: i64) -> i64 {
+    let at: i64 = __mind_load_i64(lcell + 88);
+    if at == 0 {
+        return 0;
+    }
+    let ordered: i64 = nb_at_native_ordered(at);
+    let n_fns: i64 = nb_at_native_n_fns(at);
+    let fk: i64 = nb_last_def_idx(buf, ordered, n_fns, ast_span_lo(callee), ast_span_hi(callee), 0, 0 - 1);
+    if fk < 0 {
+        return 1;
+    }
+    let fnode: i64 = __mind_load_i64(ordered + fk * 8);
+    let n_params: i64 = ast_aux(fnode) / 2;
+    if args_len != n_params {
+        return 0;
+    }
+    if i >= args_len {
+        return 1;
+    }
+    let pnode: i64 = __mind_load_i64(ast_child1(fnode) + i * 8);
+    let pty: i64 = ast_child1(pnode);
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let expected: i64 = nb_srt_unique_by_name(srt, buf, ast_span_lo(pty), ast_span_hi(pty));
+    if expected == 0 - 2 {
+        return 0;
+    }
+    let arg: i64 = __mind_load_i64(args_addr + i * 8);
+    let actual: i64 = nb_expr_struct_owner(arg, buf, lets, lcell);
+    if actual == 0 - 2 {
+        return 0;
+    }
+    let expected_array: i64 = nb_srt_has_fixed_array(srt, expected, 0);
+    let actual_array: i64 = nb_srt_has_fixed_array(srt, actual, 0);
+    if expected_array == 1 {
+        if actual != expected {
+            return 0;
+        }
+    } else {
+        if actual_array == 1 {
+            return 0;
+        }
+    }
+    nb_call_record_owner_args_ok(callee, args_addr, args_len, buf, lets, lcell, i + 1)
+}
+
+// Match a reachable return value to the enclosing function's declared source
+// record owner whenever either side is an array-bearing record. Scalar and
+// established non-array record returns stay outside this focused admission.
+pub fn nb_return_record_owner_ok(value: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let at: i64 = __mind_load_i64(lcell + 88);
+    if at == 0 {
+        return 0;
+    }
+    let current: i64 = nb_at_native_current(at);
+    if current == 0 {
+        return 0;
+    }
+    let frt: i64 = __mind_load_i64(lcell + 16);
+    let name: i64 = ast_child0(current);
+    let fk: i64 = frt_find(frt, buf, ast_span_lo(name), ast_span_hi(name), 0);
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let expected: i64 = if fk < 0 {
+        0 - 1
+    } else {
+        nb_srt_unique_by_name(srt, buf, frt_retty_lo(frt, fk), frt_retty_hi(frt, fk))
+    };
+    if expected == 0 - 2 {
+        return 0;
+    }
+    let actual: i64 = nb_expr_struct_owner(value, buf, lets, lcell);
+    if actual == 0 - 2 {
+        return 0;
+    }
+    let expected_array: i64 = nb_srt_has_fixed_array(srt, expected, 0);
+    let actual_array: i64 = nb_srt_has_fixed_array(srt, actual, 0);
+    if expected_array == 1 {
+        if actual != expected {
+            return 0;
+        }
+    } else {
+        if actual_array == 1 {
+            return 0;
+        }
+    }
+    1
 }
 
 // Read-side field byte offset — like nb_field_offset (ident receiver) but ALSO
@@ -34282,7 +34692,65 @@ pub fn nb_field_offset_r(recv: i64, field_node: i64, buf: i64, lets: i64, lcell:
     if didx < 0 {
         return 0 - 1;
     }
-    didx * 8
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(slit), ast_child2(slit), 0);
+    if sk < 0 {
+        return didx * 8;
+    }
+    srt_field_native_offset(srt, buf, sk, didx)
+}
+
+// Classify a resolved field as a fixed array for the native record ABI.
+//  1 = exact supported `[i64; N]`, 0 = ordinary scalar/record field,
+// -1 = fixed-array syntax outside this initial capability slice. Resolution is
+// through the receiver's owner/type descriptor and the source registry; a value
+// node's runtime shape alone never grants layout authority.
+pub fn nb_field_array_status_r(recv: i64, field_node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let slit: i64 = nb_field_recv_desc_r(recv, buf, lets, lcell);
+    if slit == 0 {
+        return 0;
+    }
+    let fidx: i64 = nb_slit_field_index(slit, buf, ast_child1(field_node), ast_child2(field_node));
+    if fidx < 0 {
+        return 0;
+    }
+    let didx: i64 = nb_slit_decl_index(slit, buf, __mind_load_i64(lcell + 24), ast_child1(field_node), ast_child2(field_node), fidx);
+    if didx < 0 {
+        return 0;
+    }
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(slit), ast_child2(slit), 0);
+    if sk < 0 {
+        return 0;
+    }
+    if srt_field_array_kind(srt, sk, didx) == 0 {
+        return 0;
+    }
+    if srt_field_native_array_ok(srt, buf, sk, didx) == 0 {
+        return 0 - 1;
+    }
+    1
+}
+
+pub fn nb_field_array_len_r(recv: i64, field_node: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
+    let slit: i64 = nb_field_recv_desc_r(recv, buf, lets, lcell);
+    if slit == 0 {
+        return 0 - 1;
+    }
+    let fidx: i64 = nb_slit_field_index(slit, buf, ast_child1(field_node), ast_child2(field_node));
+    if fidx < 0 {
+        return 0 - 1;
+    }
+    let didx: i64 = nb_slit_decl_index(slit, buf, __mind_load_i64(lcell + 24), ast_child1(field_node), ast_child2(field_node), fidx);
+    if didx < 0 {
+        return 0 - 1;
+    }
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(slit), ast_child2(slit), 0);
+    if sk < 0 {
+        return 0 - 1;
+    }
+    srt_field_array_len(srt, sk, didx)
 }
 
 // RI-D2 S-D: classify a field READ `recv.field`'s dtype (FLOAT for an f64/f32 field,
@@ -34356,6 +34824,131 @@ pub fn nb_field_read_fp(code: String, next_id: i64, ptr_id: i64, off: i64, ncall
     NbState { code: e3, next_id: ld_id + 1, last_id: ld_id, ncalls: ncalls }
 }
 
+// Return one only for binary operators whose result is an i64 when both
+// operands are proven i64. Comparisons deliberately return zero because their
+// result is bool even when both operands are integers.
+pub fn nb_binop_yields_i64(op: i64) -> i64 {
+    if op == op_add() {
+        return 1;
+    }
+    if op == op_sub() {
+        return 1;
+    }
+    if op == op_mul() {
+        return 1;
+    }
+    if op == op_div() {
+        return 1;
+    }
+    if op == op_mod() {
+        return 1;
+    }
+    if op == op_bitand() {
+        return 1;
+    }
+    if op == op_bitor() {
+        return 1;
+    }
+    if op == op_bitxor() {
+        return 1;
+    }
+    if op == op_shl() {
+        return 1;
+    }
+    if op == op_shr() {
+        return 1;
+    }
+    0
+}
+
+// Prove that an expression produces an i64 scalar representation before its
+// value is copied into an inline `[i64; N]` record field. The native dtype
+// table's INT default is not proof: aggregate handles, bools, and unknown
+// values also fall through to that tag. This deliberately admits only source
+// shapes whose declaration or operands establish i64. Unproven let aliases,
+// aggregates, floats, arrays, and value-if expressions refuse the containing
+// native module instead of storing their raw 64-bit representation as i64.
+pub fn nb_expr_proven_i64(node: i64, buf: i64, params_addr: i64, n_params: i64, lets: i64, lcell: i64) -> i64 {
+    let k: i64 = ast_kind(node);
+    if k == ast_int_lit() {
+        return 1;
+    }
+    if k == ast_paren() {
+        return nb_expr_proven_i64(ast_child0(node), buf, params_addr, n_params, lets, lcell);
+    }
+    if k == ast_neg() {
+        return nb_expr_proven_i64(ast_child0(node), buf, params_addr, n_params, lets, lcell);
+    }
+    if k == ast_binop() {
+        if nb_binop_yields_i64(ast_aux(node)) == 0 {
+            return 0;
+        }
+        if nb_expr_proven_i64(ast_child0(node), buf, params_addr, n_params, lets, lcell) == 1 {
+            return nb_expr_proven_i64(ast_child1(node), buf, params_addr, n_params, lets, lcell);
+        }
+        return 0;
+    }
+    if k == ast_ident() {
+        // A let-bound scalar's width=64 is ambiguous (i64/f64/bool/handle), so
+        // only an exact parameter annotation is authoritative in this slice.
+        if nb_lets_lookup(lets, lcell, buf, ast_span_lo(node), ast_span_hi(node)) >= 0 {
+            return 0;
+        }
+        let pi: i64 = resolve_param(params_addr, n_params, buf, ast_span_lo(node), ast_span_hi(node));
+        if pi < 0 {
+            return 0;
+        }
+        let pnode: i64 = __mind_load_i64(params_addr + pi * 8);
+        let pty: i64 = ast_child1(pnode);
+        return pnt_span_is_i64(buf, ast_span_lo(pty), ast_span_hi(pty));
+    }
+    if k == ast_call() {
+        let frt: i64 = __mind_load_i64(lcell + 16);
+        let callee: i64 = ast_child0(node);
+        let fk: i64 = frt_find(frt, buf, ast_span_lo(callee), ast_span_hi(callee), 0);
+        if fk < 0 {
+            return 0;
+        }
+        return pnt_span_is_i64(buf, frt_retty_lo(frt, fk), frt_retty_hi(frt, fk));
+    }
+    if k == ast_field() {
+        let recv: i64 = ast_child0(node);
+        let desc: i64 = nb_field_recv_desc_r(recv, buf, lets, lcell);
+        if desc == 0 {
+            return 0;
+        }
+        let fi: i64 = nb_slit_field_index(desc, buf, ast_child1(node), ast_child2(node));
+        if fi < 0 {
+            return 0;
+        }
+        let srt: i64 = __mind_load_i64(lcell + 24);
+        let sk: i64 = srt_find_by_name(srt, buf, ast_child0(desc), ast_child2(desc), 0);
+        if sk < 0 {
+            return 0;
+        }
+        let di: i64 = nb_slit_decl_index(desc, buf, srt, ast_child1(node), ast_child2(node), fi);
+        if di < 0 {
+            return 0;
+        }
+        if srt_field_array_kind(srt, sk, di) == 1 {
+            return 0;
+        }
+        return pnt_span_is_i64(buf, srt_field_type_lo(srt, sk, di), srt_field_type_hi(srt, sk, di));
+    }
+    0
+}
+
+pub fn nb_array_elems_proven_i64(elems_addr: i64, nelems: i64, i: i64, buf: i64, params_addr: i64, n_params: i64, lets: i64, lcell: i64) -> i64 {
+    if i >= nelems {
+        return 1;
+    }
+    let elem: i64 = __mind_load_i64(elems_addr + i * 8);
+    if nb_expr_proven_i64(elem, buf, params_addr, n_params, lets, lcell) == 0 {
+        return 0;
+    }
+    nb_array_elems_proven_i64(elems_addr, nelems, i + 1, buf, params_addr, n_params, lets, lcell)
+}
+
 // Emit each struct-literal field's store, in SOURCE order. For field i: emit the
 // value expr -> val slot ; addr = (i==0 ? ptr_id : CONST(8*i)+ADD(ptr,off)) ;
 // __mind_store_i64(addr, val) — the store's own dst id is consumed (the front-end
@@ -34370,6 +34963,39 @@ pub fn nb_struct_fields(st: NbState, buf: i64, snode: i64, fields_addr: i64, nfi
     // the declared layout, mirroring the Rust oracle's canonical order).
     let si: i64 = nb_slit_src_index(snode, buf, __mind_load_i64(lcell + 24), i);
     let value_node: i64 = __mind_load_i64(fields_addr + (si * 3 + 2) * 8);
+    let srt: i64 = __mind_load_i64(lcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(snode), ast_child2(snode), 0);
+    let off: i64 = if sk < 0 {
+        i * 8
+    } else {
+        srt_field_native_offset(srt, buf, sk, i)
+    };
+    let is_array: i64 = if sk < 0 {
+        0
+    } else {
+        srt_field_array_kind(srt, sk, i)
+    };
+    if is_array == 1 {
+        let ok: i64 = srt_field_native_array_ok(srt, buf, sk, i);
+        let alen: i64 = srt_field_array_len(srt, sk, i);
+        if ok == 0 {
+            __mind_store_i64(lcell + 80, 1)
+        }
+        if ast_kind(value_node) != ast_array_lit() {
+            __mind_store_i64(lcell + 80, 1)
+        }
+        if ast_kind(value_node) == ast_array_lit() {
+            if ast_aux(value_node) != alen {
+                __mind_store_i64(lcell + 80, 1)
+            }
+            if nb_array_elems_proven_i64(ast_child1(value_node), ast_aux(value_node), 0, buf, params_addr, n_params, lets, lcell) == 0 {
+                __mind_store_i64(lcell + 80, 1)
+            }
+        }
+        let sv_arr: NbState = nb_expr(st, buf, value_node, params_addr, n_params, calls, lets, lcell);
+        let copied: NbState = nb_copy_array_cells(sv_arr, sv_arr.last_id, 0, ptr_id, off, alen, 0);
+        return nb_struct_fields(copied, buf, snode, fields_addr, nfields, i + 1, ptr_id, params_addr, n_params, calls, lets, lcell);
+    }
     // Lower the field value -> its slot.
     let sv: NbState = nb_expr(st, buf, value_node, params_addr, n_params, calls, lets, lcell);
     let val_id: i64 = sv.last_id;
@@ -34379,12 +35005,72 @@ pub fn nb_struct_fields(st: NbState, buf: i64, snode: i64, fields_addr: i64, nfi
     // fields are read afterward — that shape confuses the value tracker into
     // dropping the code handle). field 0 stores at the base ptr; field i>0 first
     // materialises addr = ptr + 8*i (CONST + ADD).
-    if i == 0 {
+    if off == 0 {
         let s_after: NbState = nb_struct_field_store0(sv.code, sv.next_id, ptr_id, val_id, val_nc);
         return nb_struct_fields(s_after, buf, snode, fields_addr, nfields, i + 1, ptr_id, params_addr, n_params, calls, lets, lcell);
     }
-    let s_after: NbState = nb_struct_field_store_off(sv.code, sv.next_id, ptr_id, val_id, val_nc, i * 8);
+    let s_after: NbState = nb_struct_field_store_off(sv.code, sv.next_id, ptr_id, val_id, val_nc, off);
     nb_struct_fields(s_after, buf, snode, fields_addr, nfields, i + 1, ptr_id, params_addr, n_params, calls, lets, lcell)
+}
+
+// Copy `n` 8-byte scalar cells from a temporary fixed-array value into the
+// owning record's inline field at `dst_off`. This makes record construction a
+// value copy; the temporary array handle is never stored in the record.
+pub fn nb_copy_array_cells(st: NbState, src_ptr: i64, src_base: i64, dst_ptr: i64, dst_base: i64, n: i64, i: i64) -> NbState {
+    if i >= n {
+        return st;
+    }
+    let src_off: i64 = src_base + i * 8;
+    if src_off == 0 {
+        let val_id0: i64 = st.next_id;
+        let l10: String = nb_emit_load_i64(st.code, nb_slot_disp(src_ptr));
+        let l20: String = nb_store_rax(l10, nb_slot_disp(val_id0));
+        let after_load0: NbState = NbState { code: l20, next_id: val_id0 + 1, last_id: val_id0, ncalls: st.ncalls };
+        let dst_off0: i64 = dst_base + i * 8;
+        if dst_off0 == 0 {
+            let after_store0: NbState = nb_struct_field_store0(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls);
+            return nb_copy_array_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+        }
+        let after_store0: NbState = nb_struct_field_store_off(after_load0.code, after_load0.next_id, dst_ptr, val_id0, after_load0.ncalls, dst_off0);
+        return nb_copy_array_cells(after_store0, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+    }
+    let s_addr: NbState = nb_field_addr(st.code, st.next_id, src_ptr, src_off, st.ncalls);
+    let val_id: i64 = s_addr.next_id;
+    let l1: String = nb_emit_load_i64(s_addr.code, nb_slot_disp(s_addr.last_id));
+    let l2: String = nb_store_rax(l1, nb_slot_disp(val_id));
+    let after_load: NbState = NbState { code: l2, next_id: val_id + 1, last_id: val_id, ncalls: s_addr.ncalls };
+    let dst_off: i64 = dst_base + i * 8;
+    if dst_off == 0 {
+        let after_store: NbState = nb_struct_field_store0(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls);
+        return nb_copy_array_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1);
+    }
+    let after_store: NbState = nb_struct_field_store_off(after_load.code, after_load.next_id, dst_ptr, val_id, after_load.ncalls, dst_off);
+    nb_copy_array_cells(after_store, src_ptr, src_base, dst_ptr, dst_base, n, i + 1)
+}
+
+// Copy an inline fixed-array field out to a fresh value block. The returned
+// pointer owns independent cells, matching reference evaluator value semantics.
+pub fn nb_materialize_field_array(st: NbState, src_ptr: i64, src_off: i64, n: i64) -> NbState {
+    let sz_id: i64 = st.next_id;
+    let a1: String = nb_push(st.code, 72);
+    let a2: String = nb_push(a1, 184);
+    let a3: String = nb_i64le(a2, 8);
+    let a4: String = nb_store_rax(a3, nb_slot_disp(sz_id));
+    let n_id: i64 = sz_id + 1;
+    let b1: String = nb_push(a4, 72);
+    let b2: String = nb_push(b1, 184);
+    let b3: String = nb_i64le(b2, n);
+    let b4: String = nb_store_rax(b3, nb_slot_disp(n_id));
+    let mul_id: i64 = n_id + 1;
+    let m1: String = nb_load_rax(b4, nb_slot_disp(sz_id));
+    let m2: String = nb_arith_rax_mem(m1, op_mul(), nb_slot_disp(n_id));
+    let m3: String = nb_store_rax(m2, nb_slot_disp(mul_id));
+    let ptr_id: i64 = mul_id + 1;
+    let al1: String = nb_emit_alloc(m3, nb_slot_disp(mul_id));
+    let al2: String = nb_store_rax(al1, nb_slot_disp(ptr_id));
+    let allocated: NbState = NbState { code: al2, next_id: ptr_id + 1, last_id: ptr_id, ncalls: st.ncalls };
+    let copied: NbState = nb_copy_array_cells(allocated, src_ptr, src_off, ptr_id, 0, n, 0);
+    NbState { code: copied.code, next_id: copied.next_id, last_id: ptr_id, ncalls: copied.ncalls }
 }
 
 // Append `n` raw source bytes buf[lo..lo+n) into the module rodata accumulator
@@ -34525,6 +35211,19 @@ pub fn nb_index_oob(base: i64, idx: i64, buf: i64, lets: i64, lcell: i64) -> i64
         }
         return 0;
     }
+    if ast_kind(base) == ast_field() {
+        let fdesc: i64 = nb_field_type_desc(base, buf, lets, lcell);
+        if fdesc == 0 {
+            return 0;
+        }
+        if ast_kind(fdesc) != ast_array_lit() {
+            return 0;
+        }
+        if iv >= ast_aux(fdesc) {
+            return 1;
+        }
+        return 0;
+    }
     if ast_kind(base) != ast_ident() {
         return 0;
     }
@@ -34553,6 +35252,16 @@ pub fn nb_index_oob(base: i64, idx: i64, buf: i64, lets: i64, lcell: i64) -> i64
 pub fn nb_index_len(base: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
     if ast_kind(base) == ast_array_lit() {
         return ast_aux(base);
+    }
+    if ast_kind(base) == ast_field() {
+        let fdesc: i64 = nb_field_type_desc(base, buf, lets, lcell);
+        if fdesc == 0 {
+            return 0 - 1;
+        }
+        if ast_kind(fdesc) != ast_array_lit() {
+            return 0 - 1;
+        }
+        return ast_aux(fdesc);
     }
     if ast_kind(base) != ast_ident() {
         return 0 - 1;
@@ -34646,6 +35355,19 @@ pub fn nb_index_elem_dtype(base: i64, buf: i64, lets: i64, lcell: i64) -> i64 {
         }
         if ast_aux(base) >= 1 {
             return nb_node_dtype(__mind_load_i64(ast_child1(base)));
+        }
+        return nb_dtype_int();
+    }
+    if ast_kind(base) == ast_field() {
+        let fdesc: i64 = nb_field_type_desc(base, buf, lets, lcell);
+        if fdesc == 0 {
+            return nb_dtype_int();
+        }
+        if ast_kind(fdesc) != ast_array_lit() {
+            return nb_dtype_int();
+        }
+        if ast_aux(fdesc) >= 1 {
+            return nb_node_dtype(__mind_load_i64(ast_child1(fdesc)));
         }
         return nb_dtype_int();
     }
@@ -35970,6 +36692,9 @@ pub fn nb_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         if nb_is_addr_of_expr(ret_operand) == 1 {
             __mind_store_i64(lcell + 80, 1)
         }
+        if nb_return_record_owner_ok(ret_operand, buf, lets, lcell) == 0 {
+            __mind_store_i64(lcell + 80, 1)
+        }
         if is_any_value_if_expr(ret_operand) == 1 {
             let sv: NbState = nb_if_value(st, buf, ret_operand, params_addr, n_params, calls, is_entry, jmps, jcell, lets, lcell, srt, loops, lpcell);
             let rvdt: i64 = nb_node_dtype_tbl(ret_operand, __mind_load_i64(lcell + 8), lets, lcell, buf, params_addr, n_params);
@@ -36259,6 +36984,22 @@ pub fn nb_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
         let w_base: i64 = ast_child0(node);
         let w_idx: i64 = ast_child1(node);
         let w_rhs: i64 = ast_child2(node);
+        // This slice exposes record-array fields by value. An indexed write
+        // through `record.field` would mutate only a temporary copy, so refuse
+        // it until an explicit ArrayStore/borrow contract exists.
+        if ast_kind(w_base) == ast_field() {
+            __mind_store_i64(lcell + 80, 1)
+        }
+        if ast_kind(w_base) == ast_ident() {
+            let w_desc: i64 = nb_lets_lookup_slit(lets, lcell, buf, ast_span_lo(w_base), ast_span_hi(w_base));
+            if w_desc == 0 {
+                __mind_store_i64(lcell + 80, 1)
+            } else {
+                if ast_kind(w_desc) != ast_array_lit() {
+                    __mind_store_i64(lcell + 80, 1)
+                }
+            }
+        }
         let s_wb: NbState = nb_expr(st, buf, w_base, params_addr, n_params, calls, lets, lcell);
         let wb_id: i64 = s_wb.last_id;
         let s_wi: NbState = nb_expr(s_wb, buf, w_idx, params_addr, n_params, calls, lets, lcell);
@@ -36344,6 +37085,14 @@ pub fn nb_stmt(st: NbState, buf: i64, node: i64, params_addr: i64, n_params: i64
             // the walk crash-free (its output is discarded on refusal).
             __mind_store_i64(lcell + 80, 1);
             return nb_emit_const0(s_fb);
+        }
+        // Whole-field fixed-array stores are not part of this slice. Refuse
+        // rather than overwriting the first inline cell with an array handle.
+        if nb_field_array_status_r(fa_recv, fa_t, buf, lets, lcell) != 0 {
+            __mind_store_i64(lcell + 80, 1)
+        }
+        if ast_kind(fa_v) == ast_array_lit() {
+            __mind_store_i64(lcell + 80, 1)
         }
         // i64-only: a FLOAT field target refuses (the store would drop the SSE
         // classification), as does a FLOAT rhs below.
@@ -37271,6 +38020,11 @@ pub fn nb_count_expr(next_id: i64, buf: i64, node: i64, params_addr: i64, n_para
         let recv: i64 = ast_child0(node);
         let after_recv: i64 = nb_count_expr(next_id, buf, recv, params_addr, n_params, clets, clcell);
         let off: i64 = nb_field_offset_r(recv, node, buf, clets, clcell);
+        let array_status: i64 = nb_field_array_status_r(recv, node, buf, clets, clcell);
+        if array_status == 1 {
+            let n: i64 = nb_field_array_len_r(recv, node, buf, clets, clcell);
+            return nb_count_array_cell_copy(after_recv + 4, off, 0, n, 0);
+        }
         if off <= 0 {
             // offset 0, or UNSUPPORTED (-1, fail-closed): counted as the
             // offset-0 single load. The unsupported case's count is irrelevant
@@ -37425,10 +38179,47 @@ pub fn nb_count_struct_fields(next_id: i64, buf: i64, snode: i64, fields_addr: i
     let si: i64 = nb_slit_src_index(snode, buf, __mind_load_i64(clcell + 24), i);
     let value_node: i64 = __mind_load_i64(fields_addr + (si * 3 + 2) * 8);
     let after_val: i64 = nb_count_expr(next_id, buf, value_node, params_addr, n_params, clets, clcell);
+    let srt: i64 = __mind_load_i64(clcell + 24);
+    let sk: i64 = srt_find_by_name(srt, buf, ast_child0(snode), ast_child2(snode), 0);
+    let off: i64 = if sk < 0 {
+        i * 8
+    } else {
+        srt_field_native_offset(srt, buf, sk, i)
+    };
+    if sk >= 0 {
+        if srt_field_array_kind(srt, sk, i) == 1 {
+            let after_copy: i64 = nb_count_array_cell_copy(after_val, 0, off, srt_field_array_len(srt, sk, i), 0);
+            return nb_count_struct_fields(after_copy, buf, snode, fields_addr, nfields, i + 1, params_addr, n_params, clets, clcell);
+        }
+    }
     // i==0 stores at the base ptr (no addr instrs); i>0 adds CONST+ADD (2 ids).
     // Computed via a helper (if-statement) to stay in the self-host subset.
-    let after_addr: i64 = nb_field_addr_ids(after_val, i);
+    let after_addr: i64 = if off == 0 {
+        after_val
+    } else {
+        after_val + 2
+    };
     nb_count_struct_fields(after_addr + 1, buf, snode, fields_addr, nfields, i + 1, params_addr, n_params, clets, clcell)
+}
+
+// Count one pointer-to-inline-cell copy. Source element zero needs only its
+// load; later elements need CONST+ADD+load. Destination offset zero needs only
+// its store; every nonzero destination needs CONST+ADD+store.
+pub fn nb_count_array_cell_copy(next_id: i64, src_base: i64, dst_base: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return next_id;
+    }
+    let src_ids: i64 = if src_base + i * 8 == 0 {
+        1
+    } else {
+        3
+    };
+    let dst_ids: i64 = if dst_base + i * 8 == 0 {
+        1
+    } else {
+        3
+    };
+    nb_count_array_cell_copy(next_id + src_ids + dst_ids, src_base, dst_base, n, i + 1)
 }
 
 // Count the ids each array-literal element's store contributes (mirror
@@ -38180,6 +38971,35 @@ pub fn nb_at_add(at: i64, lo: i64, hi: i64) -> i64 {
     __mind_store_i64(at, n + 1);
     0
 }
+
+// Native owner-validation context follows the fixed address-taken table. It is
+// compiler heap metadata only: no target instruction or wire byte depends on
+// these words. Keeping it on the existing atab side-channel avoids widening
+// every expression/statement signature. Hand-rolled drivers with atab==0
+// retain their existing scalar behavior and cannot claim record-owner proof.
+pub fn nb_at_native_ctx_off() -> i64 {
+    16 + 1024 * 2 * 8
+}
+
+pub fn nb_at_set_native_ctx(at: i64, ordered: i64, n_fns: i64, current: i64) -> i64 {
+    let off: i64 = nb_at_native_ctx_off();
+    __mind_store_i64(at + off + 0, ordered);
+    __mind_store_i64(at + off + 8, n_fns);
+    __mind_store_i64(at + off + 16, current);
+    0
+}
+
+pub fn nb_at_native_ordered(at: i64) -> i64 {
+    __mind_load_i64(at + nb_at_native_ctx_off() + 0)
+}
+
+pub fn nb_at_native_n_fns(at: i64) -> i64 {
+    __mind_load_i64(at + nb_at_native_ctx_off() + 8)
+}
+
+pub fn nb_at_native_current(at: i64) -> i64 {
+    __mind_load_i64(at + nb_at_native_ctx_off() + 16)
+}
 pub fn nb_at_contains(at: i64, buf: i64, lo: i64, hi: i64) -> i64 {
     if at == 0 {
         return 0;
@@ -38869,6 +39689,15 @@ pub fn nb_finish_body(st0: NbState, is_entry: i64, stmts_addr: i64, stmts_len: i
     NbState { code: r2, next_id: st0.next_id, last_id: st0.last_id, ncalls: st0.ncalls }
 }
 
+// Synthetic descriptor for an admitted fixed i64 array field. It carries the
+// declared extent in ast_aux and one synthetic i64 element solely so the shared
+// index dtype helpers can prove the scalar representation without source guesses.
+pub fn nb_fixed_array_decl_descriptor(n: i64) -> i64 {
+    let elems: i64 = __mind_alloc(8);
+    __mind_store_i64(elems, mk_syn_intlit(0));
+    ast_new_array_lit(0, 0, elems, n)
+}
+
 // Build a synthetic ast_struct_lit-SHAPED descriptor node for struct `k` in the
 // `srt` registry, so a struct-typed PARAMETER binds to it in the let-env exactly
 // like a let-bound struct literal does. nb_slit_field_index reads only child1
@@ -38886,9 +39715,9 @@ pub fn nb_struct_decl_descriptor(srt: i64, src: i64, k: i64) -> i64 {
     __mind_store_i64(n + 0, ast_struct_lit());
     __mind_store_i64(n + 8, 0);
     __mind_store_i64(n + 16, 0);
-    __mind_store_i64(n + 24, 0);
+    __mind_store_i64(n + 24, srt_name_lo(srt, k));
     __mind_store_i64(n + 32, fields_addr);
-    __mind_store_i64(n + 40, 0);
+    __mind_store_i64(n + 40, srt_name_hi(srt, k));
     __mind_store_i64(n + 48, nf);
     __mind_store_i64(n + 56, 0);
     n
@@ -38911,10 +39740,14 @@ pub fn nb_fill_decl_triples(srt: i64, src: i64, k: i64, nf: i64, fields_addr: i6
     // struct-LITERAL descriptor's positive value-node slot and the dtype classifier
     // (nb_field_dtype, value_node <= 0 -> INT) stay unambiguous.
     let fsk: i64 = srt_field_type_sk(srt, src, k, j);
-    let enc: i64 = if fsk < 0 {
-        0
+    let enc: i64 = if srt_field_native_array_ok(srt, src, k, j) == 1 {
+        nb_fixed_array_decl_descriptor(srt_field_array_len(srt, k, j))
     } else {
-        0 - (fsk + 2)
+        if fsk < 0 {
+            0
+        } else {
+            0 - (fsk + 2)
+        }
     };
     __mind_store_i64(fields_addr + (j * 3 + 2) * 8, enc);
     nb_fill_decl_triples(srt, src, k, nf, fields_addr, j + 1)
@@ -39524,9 +40357,10 @@ pub fn nb_lower_fn(buf: i64, node: i64, is_entry: i64, calls: i64, ncalls0: i64,
     // this body), built BEFORE the count walk so the count-side capture-copy
     // accounting (nb_bind_mints_slot) sees it. Empty for main.mind's own prefix-
     // `&`-free source — zero count-side or emit-side effect during self-compile.
-    let atab: i64 = __mind_alloc(16 + 1024 * 2 * 8);
+    let atab: i64 = __mind_alloc(16 + 1024 * 2 * 8 + 24);
     __mind_store_i64(atab, 0);
     __mind_store_i64(atab + 8, 0);
+    let _nctx: i64 = nb_at_set_native_ctx(atab, ordered, n_fns, node);
     let _ats: i64 = nb_at_scan_stmts(atab, buf, stmts_addr, stmts_len, 0);
     __mind_store_i64(clcell0 + 88, atab);
     // Register struct-typed params into the count-lets FIRST, so the field-access
@@ -39720,6 +40554,18 @@ pub fn nb_lower_fn(buf: i64, node: i64, is_entry: i64, calls: i64, ncalls0: i64,
 
     // Body.
     let st_body0: NbState = nb_block_stmts(st_p, buf, stmts_addr, stmts_len, 0, params_addr, n_params, calls, is_entry, jmps, jcell, lets, lcell, srt, loops, lpcell);
+
+    // Validate the implicit trailing return after the body walk has populated
+    // the let/parameter descriptor environment. Explicit returns are checked
+    // in nb_stmt, including those nested in reachable control-flow regions.
+    if nb_last_emits_return(stmts_addr, stmts_len) == 0 {
+        if stmts_len > 0 {
+            let tail_value: i64 = __mind_load_i64(stmts_addr + (stmts_len - 1) * 8);
+            if nb_return_record_owner_ok(tail_value, buf, lets, lcell) == 0 {
+                __mind_store_i64(lcell + 80, 1)
+            }
+        }
+    }
 
     // Implicit tail-return (mirror src/native::lower_fn:1155-1162). Routed through a
     // tail-return helper (NOT a `let s: NbState = if {..} else {..}` value-if — that

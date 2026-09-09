@@ -1,0 +1,8 @@
+struct R {
+    xs: [i64; 4],
+}
+
+fn main() -> i64 {
+    let r: R = R { xs: [7 & 3, 8 | 2, 7 ^ 3, 1 << 3] };
+    return r.xs[0] + r.xs[1] + r.xs[2] + r.xs[3];
+}

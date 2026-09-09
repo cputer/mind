@@ -1,0 +1,5 @@
+struct R { xs: [i64; 0] }
+fn main() -> i64 {
+    let r: R = R { xs: [] };
+    return 0;
+}

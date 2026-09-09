@@ -1,0 +1,11 @@
+struct A {
+    xs: [i64; 2],
+}
+
+fn make() -> A {
+    return A { xs: [2, 5] };
+}
+
+fn main() -> i64 {
+    return make().xs[1];
+}

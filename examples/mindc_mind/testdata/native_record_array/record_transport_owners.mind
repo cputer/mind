@@ -1,0 +1,23 @@
+struct A {
+    pre: i64,
+    xs: [i64; 2],
+}
+
+struct B {
+    xs: [i64; 3],
+    pre: i64,
+}
+
+fn read_a(r: A) -> i64 {
+    return r.pre + r.xs[1];
+}
+
+fn read_b(r: B) -> i64 {
+    return r.xs[2] + r.pre;
+}
+
+fn main() -> i64 {
+    let a: A = A { pre: 10, xs: [1, 2] };
+    let b: B = B { xs: [3, 4, 5], pre: 20 };
+    return read_a(a) + read_b(b);
+}
