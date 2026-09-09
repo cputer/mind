@@ -712,6 +712,7 @@ fn v04_prefix_vectors_inner() {
 
     intrinsic_vectors::add_intrinsic_vectors(&mut vectors);
     body_vectors::append(&mut vectors);
+    descriptor_vectors::append_shared_scope(&mut vectors);
 
     // --- reference-decoder cross-check on every vector -------------------
     //
@@ -765,10 +766,13 @@ fn v04_prefix_vectors_inner() {
         }
     }
     assert_eq!(
-        accepted, 20,
+        accepted, 22,
         "every positive is a complete body, plus the trailing-bytes vector"
     );
-    assert!(refused >= 49, "at least forty-nine refusals, got {refused}");
+    assert_eq!(
+        refused, 50,
+        "every declared negative reaches a reference refusal"
+    );
 
     let manifest = manifest_for(&vectors);
     validate_committed_corpus(&vectors, &manifest);

@@ -190,3 +190,69 @@ pub(super) fn append(vectors: &mut Vec<Vector>) {
         note: "two 2^39 parameters reach the boundary; scalar return exceeds it",
     });
 }
+
+/// Shared-budget witnesses, built from grammar fields rather than reading the
+/// committed fixture bytes. The reference decoder checks each complete body.
+pub(super) fn append_shared_scope(vectors: &mut Vec<Vector>) {
+    let half = fixed_i64(&[1 << 19, 1 << 20]);
+    let mut boundary = synthetic_head(&["entry", "main"]);
+    write_uleb(&mut boundary, 0); // schemas
+    write_uleb(&mut boundary, 1); // declarations
+    write_uleb(&mut boundary, 0); // owner: entry
+    write_uleb(&mut boundary, 1); // name: main
+    boundary.push(1); // external declaration, no definition required
+    write_uleb(&mut boundary, 2); // signature parameters
+    boundary.extend_from_slice(&half);
+    boundary.extend_from_slice(&half);
+    boundary.push(0); // no return descriptor
+    write_uleb(&mut boundary, 1); // next_id
+    write_uleb(&mut boundary, 0); // exports
+    write_uleb(&mut boundary, 1); // instructions
+    boundary.extend_from_slice(&[1, 0, 84]); // ConstI64 %0 = 42
+    boundary.extend_from_slice(&[0; 5]); // four legacy tables, module rows
+    let parsed = parse_mic3_prefix(&boundary).expect("shared budget exactly 2^40");
+    assert_eq!(parsed.consumed, boundary.len());
+
+    let mut over = boundary.clone();
+    *over.last_mut().expect("module row count") = 1;
+    over.extend_from_slice(&[0, 0, 1]); // module %0: Scalar(I64), cost one
+    require_reference_budget_refusal("neg_module_row_cumulative_elements", &over);
+    vectors.push(Vector {
+        name: "pos_module_row_element_boundary",
+        bytes: boundary,
+        expect: code::OK_EXACT,
+        note: "module rows share the signature element scope: exactly 2^40",
+    });
+    vectors.push(Vector {
+        name: "neg_module_row_cumulative_elements",
+        bytes: over,
+        expect: code::DESCRIPTOR_ELEMENTS,
+        note: "module row pushes the shared scope to 2^40 + 1",
+    });
+
+    let mut local = synthetic_head(&["f", "g", "m"]);
+    write_uleb(&mut local, 0); // schemas
+    write_uleb(&mut local, 2); // declarations
+    local.extend_from_slice(&[2, 0, 0, 0, 0]); // local m::f, no params/return
+    local.extend_from_slice(&[2, 1, 1, 2]); // external m::g, two parameters
+    local.extend_from_slice(&half);
+    local.extend_from_slice(&half);
+    local.push(0); // no return descriptor
+    local.extend_from_slice(&[0, 0, 1]); // next_id, exports, one instruction
+    local.extend_from_slice(&[0x15, 0, 0, 0, 0, 1]); // FnDef f, one body instruction
+    local.push(1); // ConstI64
+    write_uleb(&mut local, 300); // function-local destination
+    write_uleb(&mut local, 84); // zigzag(42)
+    local.extend_from_slice(&[0, 0, 1]); // legacy array types, identity f, one row
+    write_uleb(&mut local, 300);
+    local.extend_from_slice(&[0, 1]); // Scalar(I64)
+    local.extend_from_slice(&[0; 5]); // module legacy tables and semantic rows
+    let parsed = parse_mic3_prefix(&local).expect("local rows outside shared budget");
+    assert_eq!(parsed.consumed, local.len());
+    vectors.push(Vector {
+        name: "pos_function_rows_outside_shared_scope",
+        bytes: local,
+        expect: code::OK_EXACT,
+        note: "a function's scoped rows are NOT in the shared element scope",
+    });
+}
