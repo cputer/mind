@@ -7,15 +7,15 @@
 # and outputs and is reproducible by re-running the same mode on the same
 # tree. No timestamp is recorded: it could not be re-derived and would only
 # make this file differ from itself.
-# advanced_from_seed_sha256	af263c70ce04e4e569c59ed2d85e0f336af16515fd27a929feb899ab2ce074bd
-# combined_source_sha256	a65ba640ce52fc27950e883826642c07af9b193a6288d6f08e11ad79434a16be
-# combined_source_bytes	3051121
+# advanced_from_seed_sha256	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
+# combined_source_sha256	6d8f25adab4fab88a4ef6bce36d3252946594c3def1baa244118e72929c8cf07
+# combined_source_bytes	3065714
 # user_lo	381050
-# stage1_sha256	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
-# stage2_sha256	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
-# stage3_sha256	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
-# oracle_sha256	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
+# stage1_sha256	2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c
+# stage2_sha256	2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c
+# stage3_sha256	2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c
+# oracle_sha256	2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c
 # oracle_provenance	env-verified
 #
 # name	size_bytes	sha256
-stage1.elf	2439591	72b936221a5e931798685ae24b25ced7fecb93cfba306574c26be367ec03471e
+stage1.elf	2449067	2e3d4bf28fb087100d76ef89f117babbf0e864ab8d65fd09dbb92e6faa3eee4c
