@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1789 | **Est. tokens:** ~3402364
-**Generated:** 2026-09-09 05:28 UTC
+**Files:** 1789 | **Est. tokens:** ~3402447
+**Generated:** 2026-09-09 05:41 UTC
 
 ## Token Budget Guide
 
@@ -80,7 +80,7 @@
 | `experiments/global-vs-local/` | 7 | ~6487 |
 | `mind/std/cognitive/` | 4 | ~3529 |
 | `runtime-support/` | 1 | ~21930 |
-| `scripts/` | 30 | ~114764 |
+| `scripts/` | 30 | ~114847 |
 | `scripts/mind-vs-rust/` | 3 | ~933 |
 | `scripts/mind-vs-rust/src/` | 1 | ~2372 |
 | `scripts/sdlc/` | 2 | ~2845 |
@@ -965,7 +965,7 @@
 - `cfg_gate_wiring_lint.py` (~3358 tok, huge) — Fail closed when a feature-gated integration test is wired to no CI selector.
 - `check_claims.py` (~7653 tok, huge) — Docs-claim CI gate — fail if any public surface drifts from config/capabilities.toml.
 - `check_commit_messages.sh` (~1428 tok, large) — check_commit_messages.sh <rev-range> — no model or tool credit in commit
-- `check_gate_wiring.py` (~9383 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
+- `check_gate_wiring.py` (~9466 tok, huge) — Wiring lint: a whole-tree gate's CI trigger must cover every path it scans.
 - `check_json_not_evidence.sh` (~813 tok, large) — Wedge-integrity gate: JSON is never an evidence-hash preimage.
 - `check_no_ai_attribution.sh` (~2217 tok, huge) — Public-artifact hygiene gate: no AI tool/model named as having AUTHORED or
 - `check_release_gating.py` (~4342 tok, huge) — check_release_gating.py — machine-checked supply-chain contract for the
