@@ -37,3 +37,11 @@ The reference checker reports known fixed-array field length and element-type
 mismatches before lowering. Its auxiliary facts respect local scopes, constants,
 range variables and branch tails; unsupported facts remain deferred. This check
 does not broaden the native profile or turn unknown types into native evidence.
+
+The native execution controls exercise `selftest_native_elf_h`, which receives
+its trace hash from the caller. They verify the emitter's behavior and do not
+establish standalone compiler support. On `direct.mind`, that entry emits a
+1,938-byte ELF while `selftest_native_elf_u`, which computes its own canonical
+trace hash, returns no artifact. The standalone bootstrap also refuses this
+fixture. Closing the self-computed trace path remains necessary before this
+record-array slice can be promoted for standalone native consumers.

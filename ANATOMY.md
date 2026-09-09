@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1749 | **Est. tokens:** ~3424101
-**Generated:** 2026-09-09 16:43 UTC
+**Files:** 1793 | **Est. tokens:** ~3437235
+**Generated:** 2026-09-09 16:56 UTC
 
 ## Token Budget Guide
 
@@ -22,14 +22,14 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~30499 |
+| `./` | 33 | ~30587 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~37138 |
+| `.github/workflows/` | 9 | ~37194 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -68,10 +68,11 @@
 | `examples/lexer/` | 6 | ~8888 |
 | `examples/mind_mirror_v04/` | 2 | ~3836 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3862 |
-| `examples/mindc_mind/` | 172 | ~442925 |
+| `examples/mindc_mind/` | 173 | ~445433 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
+| `examples/mindc_mind/testdata/native_record_array/` | 42 | ~2926 |
 | `examples/mindc_mind/testdata/selfhost_loop/` | 2 | ~2138 |
 | `examples/native/` | 4 | ~1440 |
 | `examples/parser/` | 5 | ~17923 |
@@ -128,12 +129,12 @@
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 4 | ~14244 |
-| `src/type_checker/` | 17 | ~56336 |
+| `src/type_checker/` | 18 | ~61407 |
 | `src/type_checker/slice_abi/` | 3 | ~11245 |
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 396 | ~805835 |
+| `tests/` | 396 | ~808320 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -213,7 +214,7 @@
 - `.bench-pre-pratt.txt` (~32 tok, tiny) — === captured pre-Pratt baseline (Phase 10.5 in main) ===
 - `.editorconfig` (~51 tok, small) — root = true
 - `.gitattributes` (~130 tok, small) — # Enforce LF line endings for all text so byte-exact tests (fmt idempotence,
-- `.gitignore` (~818 tok, large) — # Rust
+- `.gitignore` (~906 tok, large) — # Rust
 - `.sembleignore` (~72 tok, small) — # semble code-search ignore list
 - `ARCHITECTURE.md` (~300 tok, medium) — MIND Architecture (high level)
 - `AUDIT_REPORT.md` (~1151 tok, large) — Audit Report
@@ -270,7 +271,7 @@
 
 - `bench-gate.yml` (~2417 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~25282 tok, huge) — name: CI
+- `ci.yml` (~25338 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -648,7 +649,7 @@
 - `.gitignore` (~5 tok, tiny) — __pycache__/
 - `EXPECTED.md` (~773 tok, large) — Phase 6.5 Stage 5 — Expected IR Text (APEX)
 - `FIXED_POINT_REPORT.md` (~1770 tok, huge) — Phase 6.5 — Bootstrap Fixed-Point Report
-- `SMOKE_WIRING.tsv` (~3716 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
+- `SMOKE_WIRING.tsv` (~3757 tok, huge) — # SMOKE_WIRING.tsv — the CHECKED contract for where each examples/mindc_mind s
 - `VERDICT_SHAPE_RESIDUAL.txt` (~1100 tok, large) — # VERDICT_SHAPE_RESIDUAL.txt — the DECLARED, shrink-only residual of the
 - `_diagnostic_project.py` (~376 tok, medium) — Owned CLI projects for diagnostic smoke fixtures."""
 - `_frozen_native_oracle.py` (~384 tok, medium) — Integrity-checked frozen references for the native ELF smoke."""
@@ -670,7 +671,7 @@
 - `cutover_coverage_measure.py` (~3255 tok, huge)
 - `div_shift_cmp_edge_smoke.py` (~1846 tok, huge)
 - `enum_netverify.py` (~1957 tok, huge) — # Canonical independent net-verify harness for C-LIKE ENUMS in the native-ELF backend.
-- `fast_keystone.sh` (~3812 tok, huge) — fast_keystone.sh — fast LOCAL front-end keystone gate for the pure-MIND self-host
+- `fast_keystone.sh` (~3842 tok, huge) — fast_keystone.sh — fast LOCAL front-end keystone gate for the pure-MIND self-host
 - `field_store_netverify.py` (~1413 tok, large) — # Canonical independent value harness for struct field STORES (`p.x = v`) in the
 - `fixed_point_smoke.py` (~3275 tok, huge)
 - `fixture.mind` (~183 tok, small) — Phase 6.4 emit_ir smoke fixture.
@@ -755,6 +756,7 @@
 - `self_host_native_narrow_paramret_smoke.py` (~2029 tok, huge) — Byte-behavior smoke for narrow-int (i8/i16/i32) PARAM + RETURN auto-wrap in the
 - `self_host_native_narrowint_smoke.py` (~1656 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 truncating
 - `self_host_native_narrowwrap_smoke.py` (~1673 tok, huge) — Roadmap C2 narrow-int native-ELF rung — user-reachable i8/i16/i32 two's-complement
+- `self_host_native_record_array_smoke.py` (~2437 tok, huge) — Focused pure-MIND native fixed-array record-field gate."""
 - `self_host_native_scalar_f32_smoke.py` (~1548 tok, huge) — Phase C1-remainder f32 rung — native-ELF scalar SINGLE-precision chain.
 - `self_host_native_scalar_f64_smoke.py` (~1301 tok, large) — RI-B2 f64 rung (#108) — native-ELF scalar STRICT-FP f64 CHAIN.
 - `self_host_native_scalar_narrow_smoke.py` (~1800 tok, huge) — RI-D / #10 native-float SLICE 1a — native-ELF SATURATING f64 -> signed NARROW
@@ -836,6 +838,50 @@
 - `recursion.elf` (~175 tok, small) — ELF> @@@8
 - `struct_field.elf` (~166 tok, small) — ELF> @@@8
 - `value_if.elf` (~147 tok, small) — ELF> @@@8
+### `examples/mindc_mind/testdata/native_record_array/`
+
+- `README.md` (~760 tok, large) — Pure-MIND native record-array fixtures
+- `aggregate_refuse.mind` (~33 tok, tiny) — fn main() -> i64 {
+- `alias_refuse.mind` (~28 tok, tiny) — fn main() -> i64 {
+- `computed_i64.mind` (~50 tok, small) — fn twice(x: i64) -> i64 {
+- `computed_i64_bitwise.mind` (~40 tok, tiny) — fn main() -> i64 {
+- `constant_oob.mind` (~25 tok, tiny) — fn main() -> i64 {
+- `copy_out.mind` (~51 tok, small) — fn main() -> i64 {
+- `direct.mind` (~42 tok, tiny) — fn main() -> i64 {
+- `duplicate_owner_refuse.mind` (~46 tok, tiny) — fn read(r: A) -> i64 {
+- `extent_cap_refuse.mind` (~24 tok, tiny) — fn main() -> i64 {
+- `extent_overflow_refuse.mind` (~29 tok, tiny) — fn main() -> i64 {
+- `field_store_refuse.mind` (~30 tok, tiny) — fn main() -> i64 {
+- `i64_field_aggregate_refuse.mind` (~38 tok, tiny) — fn main() -> i64 {
+- `i64_field_comparison_refuse.mind` (~29 tok, tiny) — fn main() -> i64 {
+- `i64_field_float_refuse.mind` (~28 tok, tiny) — fn main() -> i64 {
+- `i64_field_not_refuse.mind` (~27 tok, tiny) — fn main() -> i64 {
+- `narrow_refuse.mind` (~25 tok, tiny) — fn main() -> i64 {
+- `nonliteral_refuse.mind` (~32 tok, tiny) — fn main() -> i64 {
+- `owners.mind` (~65 tok, small) — fn main() -> i64 {
+- `record_param_copy.mind` (~54 tok, small) — fn copied(r: A) -> i64 {
+- `record_param_loop.mind` (~68 tok, small) — fn total(r: A) -> i64 {
+- `record_return.mind` (~32 tok, tiny) — fn make() -> A {
+- `record_transport_owners.mind` (~87 tok, small) — fn read_a(r: A) -> i64 {
+- `reference.mind` (~320 tok, medium) — fn direct_reference() -> i64 {
+- `reference_u8.mind` (~201 tok, medium) — fn total(p: Packet) -> i64 {
+- `return_extent_refuse.mind` (~32 tok, tiny) — fn make() -> A {
+- `runtime_oob.mind` (~30 tok, tiny) — fn main() -> i64 {
+- `u8_aggregate_refuse.mind` (~42 tok, tiny) — fn main() -> i64 {
+- `u8_alias_refuse.mind` (~37 tok, tiny) — fn main() -> i64 {
+- `u8_comparison_refuse.mind` (~35 tok, tiny) — fn main() -> i64 {
+- `u8_constant_oob_refuse.mind` (~33 tok, tiny) — fn main() -> i64 {
+- `u8_copy_out.mind` (~61 tok, small) — fn main() -> i64 {
+- `u8_direct_loop.mind` (~95 tok, small) — fn total(p: Packet) -> i64 {
+- `u8_float_refuse.mind` (~34 tok, tiny) — fn main() -> i64 {
+- `u8_not_refuse.mind` (~33 tok, tiny) — fn main() -> i64 {
+- `u8_record_return.mind` (~56 tok, small) — fn make() -> Packet {
+- `u8_runtime_oob.mind` (~38 tok, tiny) — fn main() -> i64 {
+- `u8_unproven_let_refuse.mind` (~38 tok, tiny) — fn main() -> i64 {
+- `u8_wrong_owner_refuse.mind` (~66 tok, small) — fn read_a(p: A) -> i64 {
+- `wrong_owner_param_refuse.mind` (~59 tok, small) — fn read_a(r: A) -> i64 {
+- `wrong_owner_return_refuse.mind` (~50 tok, small) — fn make() -> A {
+- `zero_extent_refuse.mind` (~23 tok, tiny) — fn main() -> i64 {
 ### `examples/mindc_mind/testdata/`
 
 - `rh_f64_aggregate_canary.mind` (~876 tok, large) — RH f64-aggregate self-host/native canary (RH_REQUIRED_F64_AGGREGATE_SURFACE).
@@ -1332,7 +1378,8 @@
 - `top_level.rs` (~339 tok, medium) — Copyright 2025-2026 STARGA Inc.
 ### `src/type_checker/`
 
-- `array_lengths.rs` (~1813 tok, huge) — Copyright 2026 STARGA Inc.
+- `array_control_flow.rs` (~1096 tok, large) — Copyright 2026 STARGA Inc.
+- `array_lengths.rs` (~5788 tok, huge) — Copyright 2026 STARGA Inc.
 - `canonical_facts.rs` (~2797 tok, huge) — Copyright 2026 STARGA Inc.
 - `canonical_macro.rs` (~58 tok, small) — Copyright 2026 STARGA Inc.
 - `cross_module_types.rs` (~453 tok, medium) — Copyright 2026 STARGA Inc.
@@ -1662,7 +1709,7 @@
 - `ffi_header.rs` (~221 tok, medium) — Copyright 2025 STARGA Inc.
 - `fixed_array_binding_lengths.rs` (~462 tok, medium) — Copyright 2026 STARGA Inc.
 - `fixed_array_narrow_assignment_types.rs` (~376 tok, medium) — Copyright 2026 STARGA Inc.
-- `fixed_array_return_lengths.rs` (~747 tok, large) — Copyright 2026 STARGA Inc.
+- `fixed_array_return_lengths.rs` (~3080 tok, huge) — Copyright 2026 STARGA Inc.
 - `fixed_array_struct_field_run.rs` (~6776 tok, huge) — Copyright 2026 STARGA Inc.
 ### `tests/fixtures/`
 
@@ -1772,7 +1819,7 @@
 ### `tests/`
 
 - `fmt_comment_placement.rs` (~2772 tok, huge) — Copyright 2025 STARGA Inc.
-- `fmt_idempotence.rs` (~4734 tok, huge) — Copyright 2025 STARGA Inc.
+- `fmt_idempotence.rs` (~4886 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_ir_preservation.rs` (~3956 tok, huge) — Copyright 2025 STARGA Inc.
 - `fmt_module_block_item_preserved.rs` (~926 tok, large) — Regression: `mindc fmt` must not drop item declarations nested inside a
 - `fmt_stdlib_stability.rs` (~2754 tok, huge) — Copyright 2025 STARGA Inc.
