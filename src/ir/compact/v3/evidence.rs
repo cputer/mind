@@ -219,13 +219,9 @@ pub use super::mldsa::ENV_MLDSA_SEED;
 
 /// Which signature scheme(s) to embed, selected from the operator-supplied seeds.
 ///
-/// This is the crypto-agility surface (OMB M-26-15): the caller picks a scheme and
-/// the encoder tags the artifact with the corresponding `signature.scheme` value so
-/// a verifier can dispatch. `Ed25519` and `Hybrid` are retained as historical
-/// decoding/API representations, but are permanently retired from signing and
-/// trust verification. All supported variants sign the SAME payload — the 32-byte
-/// canonical mic@3 `trace_hash` — so the anchor (Constitution Article IV) is
-/// untouched regardless of scheme.
+/// The scheme selects verification of the canonical provenance preimage;
+/// signing leaves the mic@3 trace anchor unchanged. `Ed25519` and `Hybrid`
+/// remain historical API representations, retired from signing and trust.
 #[derive(Debug, Clone)]
 pub enum SigningKey {
     /// Retired classical Ed25519 (32-byte seed), retained for historical/API
@@ -233,17 +229,15 @@ pub enum SigningKey {
     Ed25519([u8; 32]),
     /// Post-quantum ML-DSA-65 (32-byte FIPS-204 keygen seed ξ).
     MlDsa65([u8; 32]),
-    /// Retired hybrid: sign with BOTH; retained for historical/API representation
-    /// only. A verifier reports the artifact as retired rather than trusted.
+    /// Retired hybrid representation; never emitted or trusted.
     Hybrid {
         /// Ed25519 seed.
         ed25519: [u8; 32],
         /// ML-DSA-65 keygen seed ξ.
         mldsa65: [u8; 32],
     },
-    /// Bulletproof PQC-hybrid: sign with BOTH ML-DSA-87 and SLH-DSA-SHAKE-256s;
-    /// a verifier requires BOTH to verify (AND). Two independent post-quantum
-    /// foundations. The max-security release profile.
+    /// ML-DSA-87 AND SLH-DSA-SHAKE-256s: both must verify. This release profile
+    /// combines lattice and hash-based post-quantum signatures.
     PqcHybrid {
         /// ML-DSA-87 keygen seed ξ (32 bytes).
         mldsa87: [u8; 32],
@@ -408,9 +402,7 @@ pub fn emit_mic3_with_evidence_and_receipts(
 /// Ed25519 signing is permanently retired. This infallible wrapper therefore
 /// intentionally panics on every signing attempt; callers that need a structured
 /// result must use [`emit_mic3_with_signed_evidence_checked`] or the scheme API.
-///
-/// The function remains available so historical source/API consumers fail
-/// explicitly rather than silently producing a different scheme.
+/// Historical callers fail explicitly instead of silently changing schemes.
 ///
 /// ## Anchor invariant (Constitution Article IV)
 ///
@@ -1050,19 +1042,9 @@ pub enum SignatureStatus {
     /// `signature.*` keys present and well-formed, but at least one required
     /// signature does NOT verify over the stored `trace_hash`. Fail-closed.
     Invalid,
-    /// The artifact is signed under a scheme that has been PERMANENTLY RETIRED
-    /// from supported signing and trust verification (Ed25519 and the old
-    /// Ed25519+ML-DSA-65 hybrid).
-    ///
-    /// This is deliberately its own status rather than `Malformed` or `Absent`.
-    /// The bytes are well formed and were once a real signature, so calling them
-    /// malformed would misdescribe them, and calling them absent would silently
-    /// demote a signed artifact to an unsigned one — which is exactly the quiet
-    /// downgrade the retirement exists to prevent. A caller must be able to say
-    /// "this was signed, under a scheme we no longer trust".
-    ///
-    /// Historical artifacts remain decodable for INSPECTION; that is not the
-    /// same as verification, and this status never counts as success.
+    /// A retired Ed25519 or Ed25519+ML-DSA-65 scheme: inspectable but never
+    /// trusted. Distinct from `Malformed` and `Absent`, so retirement cannot
+    /// silently downgrade a historical signature to unsigned acceptance.
     Retired(&'static str),
     /// `signature.*` keys present but structurally unusable — unknown scheme,
     /// wrong key/signature length, or a missing companion key. Fail-closed.
@@ -3196,15 +3178,8 @@ mod tests {
     #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn hybrid_round_trip_requires_both() {
-        // RETIREMENT ASSERTION. This test previously exercised a tamper or
-        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
-        // vehicle. That hybrid can no longer be signed, so the invariant is
-        // now unreachable through it: the old Ed25519+ML-DSA-65 hybrid cannot be signed at all.
-        //
-        // The invariant itself is NOT lost — it is covered for the supported
-        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
-        // requires Malformed. What this test now pins is the retirement: the
-        // emitter refuses, by name, and produces no artifact.
+        // The retired hybrid refuses before emission. Supported-pair tamper and
+        // downgrade behavior is covered by `pqc_hybrid_non_degradable`.
         let err = emit_mic3_with_signed_evidence_scheme(
             &mod_binop(),
             "x86_avx2",
@@ -3229,15 +3204,8 @@ mod tests {
     #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn hybrid_tamper_mldsa_half_fails_closed() {
-        // RETIREMENT ASSERTION. This test previously exercised a tamper or
-        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
-        // vehicle. That hybrid can no longer be signed, so the invariant is
-        // now unreachable through it: there is no retired-hybrid artifact left to tamper with.
-        //
-        // The invariant itself is NOT lost — it is covered for the supported
-        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
-        // requires Malformed. What this test now pins is the retirement: the
-        // emitter refuses, by name, and produces no artifact.
+        // The retired hybrid refuses before emission. Supported-pair tamper and
+        // downgrade behavior is covered by `pqc_hybrid_non_degradable`.
         let err = emit_mic3_with_signed_evidence_scheme(
             &mod_binop(),
             "x86_avx2",
@@ -3660,15 +3628,8 @@ mod tests {
     #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn scheme_downgrade_strip_mldsa_half_fails_closed() {
-        // RETIREMENT ASSERTION. This test previously exercised a tamper or
-        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
-        // vehicle. That hybrid can no longer be signed, so the invariant is
-        // now unreachable through it: the retired hybrid cannot be minted, so its halves cannot be stripped.
-        //
-        // The invariant itself is NOT lost — it is covered for the supported
-        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
-        // requires Malformed. What this test now pins is the retirement: the
-        // emitter refuses, by name, and produces no artifact.
+        // The retired hybrid refuses before emission. Supported-pair tamper and
+        // downgrade behavior is covered by `pqc_hybrid_non_degradable`.
         let err = emit_mic3_with_signed_evidence_scheme(
             &mod_binop(),
             "x86_avx2",
@@ -3695,15 +3656,8 @@ mod tests {
     #[cfg(all(feature = "evidence-mldsa", feature = "evidence-slhdsa"))]
     #[test]
     fn scheme_names_no_mldsa_but_mldsa_half_present_is_malformed() {
-        // RETIREMENT ASSERTION. This test previously exercised a tamper or
-        // downgrade invariant using the old Ed25519+ML-DSA-65 hybrid as its
-        // vehicle. That hybrid can no longer be signed, so the invariant is
-        // now unreachable through it: the retired hybrid cannot be minted to create the mismatch.
-        //
-        // The invariant itself is NOT lost — it is covered for the supported
-        // pair by `pqc_hybrid_non_degradable`, which strips either real leg and
-        // requires Malformed. What this test now pins is the retirement: the
-        // emitter refuses, by name, and produces no artifact.
+        // The retired hybrid refuses before emission. Supported-pair tamper and
+        // downgrade behavior is covered by `pqc_hybrid_non_degradable`.
         let err = emit_mic3_with_signed_evidence_scheme(
             &mod_binop(),
             "x86_avx2",

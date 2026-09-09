@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — retire classical evidence signing
+- Ed25519 and the historical Ed25519 + ML-DSA-65 hybrid now refuse at the
+  checked signing APIs and at trust verification. Historical artifacts remain
+  inspectable, with an explicit retired-scheme result.
+- The supported release profile requires both ML-DSA-87 and
+  SLH-DSA-SHAKE-256s. CLI controls check both signer keys, tampering,
+  malformed seed input, and refusal of a missing signature leg.
+- Signing remains opt-in. Production key custody and signed-release
+  publication remain pending.
+
 ### Added — registry-backed intrinsic contracts
 - Canonical intrinsic declarations now use one exact registry contract under
   the reserved owner `__mind_intrinsic`. The first-cut logical/physical rows
