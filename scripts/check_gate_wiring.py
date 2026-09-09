@@ -120,8 +120,8 @@ GATED_EVENTS = ("push", "pull_request")
 # gate for actual-CLI signing controls. It pins the exact test names, requires
 # each to pass once, and requires the final tally, so cfg-out tests cannot report
 # a false zero-pass success. It gates the shipped binary separately from the
-# library gate.
-HARNESS_CEILING = 260
+# library gate. Both tracked controls are retained in the ratchet.
+HARNESS_CEILING = 261
 # Read as a git PATHSPEC against the index: the tree on disk carries untracked
 # scratch files whose count is nobody's contract, and a working-tree glob would
 # make this gate's verdict depend on what happens to be lying around.
