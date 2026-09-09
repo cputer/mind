@@ -6,15 +6,20 @@
 //! `native_module_bridge_visibility_controls.rs`; the two files share
 //! `tests/native_bridge_support/`.
 //!
-//! Split purely to stay under the 800-line ceiling. No test, assertion or
-//! fixture was changed, dropped or weakened in the split.
+//! On Linux x86-64 positive cases execute the real native image. Other hosts
+//! execute the host-native drain fixture and still exercise source admission,
+//! refusal ownership, artifact handling, and complete image transport.
+//!
+//! Split purely to stay under the 800-line ceiling. Source fixtures and refusal
+//! assertions are unchanged; positive result checks use the target-aware helper.
 #![cfg(all(feature = "cross-module-imports", feature = "std-surface"))]
 
 mod native_bridge_support;
-use native_bridge_support::{Project, run};
+use native_bridge_support::{Project, assert_native_result};
 
 /// THE MILESTONE: a real project whose entry imports a sibling compiles natively
-/// and executes. This is the exact shape that produced
+/// and executes on Linux x86-64 (other hosts verify admission and transport).
+/// This is the exact shape that produced
 /// "accepts exactly one source file (got 0)" before the bridge was wired.
 #[test]
 fn local_import_compiles_and_executes() {
@@ -31,7 +36,7 @@ fn local_import_compiles_and_executes() {
     assert_eq!(code, 0, "multi-module native build must succeed: {err}");
     let bytes = artifact.expect("artifact written");
     assert_eq!(&bytes[0..4], b"\x7fELF", "must be a real ELF");
-    assert_eq!(run(&bytes), 7, "helper(6) == 7");
+    assert_native_result(&p, &bytes, 7, "helper(6) == 7");
     assert!(
         err.contains("2 linked module(s)"),
         "the bridge must report the resolved closure size, got: {err}"
@@ -48,7 +53,7 @@ fn single_file_still_builds_and_runs() {
     let (code, err, artifact) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "single-file native build must succeed: {err}");
     let bytes = artifact.expect("artifact");
-    assert_eq!(run(&bytes), 7);
+    assert_native_result(&p, &bytes, 7, "single-file result");
     assert!(
         !err.contains("linked module(s)"),
         "a single file must NOT go through project resolution: {err}"
@@ -229,7 +234,7 @@ fn explicit_path_and_manifest_entry_produce_identical_artifacts() {
         a, b,
         "the two invocation forms must produce identical bytes"
     );
-    assert_eq!(run(&a), 7);
+    assert_native_result(&p, &a, 7, "explicit-path result");
 }
 
 /// TRANSITIVE positive: main -> mid -> leaf, three linked modules, executes.
@@ -256,7 +261,8 @@ fn transitive_import_chain_executes() {
         err.contains("3 linked module(s)"),
         "all three modules linked: {err}"
     );
-    assert_eq!(run(&art.expect("artifact")), 7);
+    let bytes = art.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "transitive import result");
 }
 
 /// A CYCLIC import terminates and executes rather than hanging or refusing.
@@ -277,7 +283,8 @@ fn cyclic_imports_terminate_and_execute() {
     );
     let (code, err, art) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "a cycle must terminate, not refuse or hang: {err}");
-    assert_eq!(run(&art.expect("artifact")), 5);
+    let bytes = art.expect("artifact");
+    assert_native_result(&p, &bytes, 5, "cyclic import result");
 }
 
 /// LIMITATION, pinned so it is visible rather than folklore: `pub const` is
@@ -339,7 +346,8 @@ fn pub_const_is_refused_by_the_frozen_profile_anywhere() {
         ok, 0,
         "a non-pub const in a sibling must still build: {err}"
     );
-    assert_eq!(run(&ok_art.expect("artifact")), 7);
+    let bytes = ok_art.expect("artifact");
+    assert_native_result(&q, &bytes, 7, "non-pub const control result");
 }
 
 /// EXPORT BOUNDARY. A callee its owning module does not export is refused, in
@@ -497,7 +505,8 @@ fn source_escaping_the_project_root_is_refused() {
     // Control FIRST: without the escaping link this project builds and runs.
     let (ok, err, art) = p.build_native("src/main.mind");
     assert_eq!(ok, 0, "the clean project must build first: {err}");
-    assert_eq!(run(&art.expect("artifact")), 7);
+    let bytes = art.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "clean project result");
 
     // Now plant an in-project symlink pointing outside the root.
     std::os::unix::fs::symlink(
@@ -616,7 +625,8 @@ fn an_ordinary_imported_body_is_unaffected_by_the_owner_check() {
         code, 0,
         "an ordinary two-module program must still build: {err}"
     );
-    assert_eq!(run(&artifact.expect("artifact")), 7);
+    let bytes = artifact.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "ordinary imported body result");
 }
 
 /// An imported TYPE ALIAS is owner-bearing and is refused before lowering.
@@ -740,5 +750,6 @@ fn a_harmless_imported_scalar_body_still_builds_and_runs() {
     );
     let (code, err, artifact) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "an ordinary imported body must still build: {err}");
-    assert_eq!(run(&artifact.expect("artifact")), 7);
+    let bytes = artifact.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "harmless imported scalar result");
 }

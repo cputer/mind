@@ -8,12 +8,16 @@
 //! `native_module_bridge_controls.rs`; the two files share
 //! `tests/native_bridge_support/`.
 //!
-//! Split purely to stay under the 800-line ceiling. No test, assertion or
-//! fixture was changed, dropped or weakened in the split.
+//! On Linux x86-64 positive cases execute the real native image. Other hosts
+//! execute the host-native drain fixture and still exercise visibility, refusal,
+//! artifact, and complete image-transport controls.
+//!
+//! Split purely to stay under the 800-line ceiling. Source fixtures and refusal
+//! assertions are unchanged; positive result checks use the target-aware helper.
 #![cfg(all(feature = "cross-module-imports", feature = "std-surface"))]
 
 mod native_bridge_support;
-use native_bridge_support::{Project, run};
+use native_bridge_support::{Project, assert_native_result};
 
 #[test]
 fn unexported_callee_is_refused_in_parity_with_check() {
@@ -51,7 +55,8 @@ fn exported_callee_still_builds() {
     );
     let (code, err, artifact) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "the exported callee must still build: {err}");
-    assert_eq!(run(&artifact.expect("artifact")), 7);
+    let bytes = artifact.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "exported callee result");
 }
 
 #[test]
@@ -121,7 +126,8 @@ fn a_comment_mentioning_a_call_does_not_refuse() {
     );
     let (code, err, artifact) = p.build_native("src/main.mind");
     assert_eq!(code, 0, "a comment is not a call; this must build: {err}");
-    assert_eq!(run(&artifact.expect("artifact")), 7);
+    let bytes = artifact.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "comment-only call result");
 }
 
 #[test]
@@ -149,7 +155,8 @@ fn executable_emit_still_builds() {
     p.write("src/main.mind", "fn main() -> i64 {\n    return 7;\n}\n");
     let (code, err, artifact) = p.build_native_emit("src/main.mind", "binary");
     assert_eq!(code, 0, "{err}");
-    assert_eq!(run(&artifact.expect("artifact")), 7);
+    let bytes = artifact.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "executable emit result");
 }
 
 #[test]
@@ -182,7 +189,8 @@ fn captured_private_still_refuses_when_disk_is_made_public() {
     );
     let (code2, err2, art2) = p.build_native("src/main.mind");
     assert_eq!(code2, 0, "the now-legal program must build: {err2}");
-    assert_eq!(run(&art2.expect("artifact")), 105);
+    let bytes = art2.expect("artifact");
+    assert_native_result(&p, &bytes, 105, "captured-private legal result");
 }
 
 #[test]
@@ -198,7 +206,8 @@ fn removed_dependency_refuses() {
     );
     let (ok_code, err, art) = p.build_native("src/main.mind");
     assert_eq!(ok_code, 0, "positive control must build first: {err}");
-    assert_eq!(run(&art.expect("artifact")), 7);
+    let bytes = art.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "removed-dependency positive result");
 
     std::fs::remove_file(p.root().join("src/helper.mind")).expect("remove dependency");
     let (code, err2, artifact) = p.build_native("src/main.mind");
@@ -226,7 +235,8 @@ fn retargeted_dependency_changes_the_verdict() {
     );
     let (a, _, art_a) = p.build_native("src/main.mind");
     assert_eq!(a, 0);
-    assert_eq!(run(&art_a.expect("artifact")), 7);
+    let bytes = art_a.expect("artifact");
+    assert_native_result(&p, &bytes, 7, "initial dependency result");
 
     // Same module name, different body: 6 + 10 = 16, not 7.
     p.write(
@@ -235,10 +245,12 @@ fn retargeted_dependency_changes_the_verdict() {
     );
     let (b, err, art_b) = p.build_native("src/main.mind");
     assert_eq!(b, 0, "{err}");
-    assert_eq!(
-        run(&art_b.expect("artifact")),
+    let bytes = art_b.expect("artifact");
+    assert_native_result(
+        &p,
+        &bytes,
         16,
-        "the emitted artifact must reflect the retargeted dependency, not a cached one"
+        "the emitted artifact must reflect the retargeted dependency, not a cached one",
     );
 }
 

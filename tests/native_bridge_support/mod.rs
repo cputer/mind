@@ -3,8 +3,8 @@
 //! Split out so neither control file exceeds the 800-line ceiling
 //! `tests/module_size_ratchet.rs` pins. This is a `tests/<dir>/mod.rs` module,
 //! not a test target, so it compiles into each consumer rather than running as
-//! its own binary. Nothing here was rewritten: the harness moved verbatim and
-//! only gained the `pub` needed to cross the module boundary.
+//! its own binary. The real stage1 image is executed only on Linux x86-64;
+//! other hosts use the host-native drain fixture for admission and transport.
 
 #![allow(dead_code)]
 
@@ -14,6 +14,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+use std::sync::OnceLock;
 
 pub const MINDC: &str = env!("CARGO_BIN_EXE_mindc");
 
@@ -92,9 +94,10 @@ impl Project {
             .arg(&out)
             .current_dir(self.root())
             .env("MINDC_STD_DIR", repo_path("std"))
+            .env("MINDC_NATIVE_ELF", native_compiler())
             .env(
-                "MINDC_NATIVE_ELF",
-                repo_path("examples/mindc_mind/testdata/selfhost_loop/stage1.elf"),
+                "MIND_NATIVE_TEST_CAPTURE",
+                self.root().join("native-image.bin"),
             )
             .output()
             .expect("spawn mindc");
@@ -104,6 +107,82 @@ impl Project {
             String::from_utf8_lossy(&res.stderr).into_owned(),
             bytes,
         )
+    }
+}
+
+/// The committed compiler image is Linux x86-64.  Admission and source-image
+/// transport are still portable controls, so other CI targets use a host-native
+/// executable that drains stdin and emits a deterministic non-executable anchor.
+/// Semantic native execution remains covered by `assert_native_result` on the
+/// Linux x86-64 target where the real image can run.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn native_compiler() -> PathBuf {
+    repo_path("examples/mindc_mind/testdata/selfhost_loop/stage1.elf")
+}
+
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+fn native_compiler() -> PathBuf {
+    static FIXTURE: OnceLock<PathBuf> = OnceLock::new();
+    FIXTURE
+        .get_or_init(|| {
+            let dir = tempfile::tempdir().expect("native fixture directory");
+            let root = dir.keep();
+            let output = root.join(if cfg!(windows) {
+                "draining_native_compiler.exe"
+            } else {
+                "draining_native_compiler"
+            });
+            let status = Command::new("rustc")
+                .args([
+                    "--edition",
+                    "2024",
+                    "--crate-name",
+                    "draining_native_compiler",
+                ])
+                .arg(repo_path(
+                    "tests/native_bridge_support/draining_native_compiler.rs",
+                ))
+                .arg("-o")
+                .arg(&output)
+                .status()
+                .expect("compile host-native drain fixture");
+            assert!(
+                status.success(),
+                "host-native drain fixture compilation failed: {status}"
+            );
+            output
+        })
+        .clone()
+}
+
+/// Assert a semantic result where the real Linux x86-64 image is available.
+/// Other targets assert the host fixture's complete transport and artifact
+/// shape; they do not pretend that a fake anchor executed MIND semantics.
+pub fn assert_native_result(project: &Project, bytes: &[u8], expected: i32, context: &str) {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let _ = project;
+        assert_eq!(run(bytes), expected, "{context}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let captured = std::fs::read(project.root().join("native-image.bin"))
+            .expect("host-native fixture must capture the complete source image");
+        assert!(
+            !captured.is_empty(),
+            "{context}: host-native fixture received no source image"
+        );
+        assert_eq!(
+            bytes.len(),
+            397,
+            "{context}: host-native transport fixture must emit its fixed anchor"
+        );
+        assert_eq!(
+            &bytes[..4],
+            b"\x7fELF",
+            "{context}: host-native transport fixture must preserve ELF framing"
+        );
+        let _ = expected;
     }
 }
 
