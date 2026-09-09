@@ -35,6 +35,8 @@ struct Empty { xs: [i64; 0], tail: i64 }
 struct Wide { xs: [i64; 64] }
 struct LeftOwner { xs: TwoWords }
 struct RightOwner { xs: ThreeWords }
+struct Narrow { xs: [u8; 4], sibling: i64 }
+struct SignedNarrow { xs: [i8; 4] }
 
 fn read_struct(s: S) -> i64 {
     let a = s.xs
@@ -79,6 +81,27 @@ fn empty_read(s: Empty) -> i64 { return s.tail }
 fn indexed_param4(s: S, i: i64) -> i64 { return s.xs[i] }
 fn indexed_param64(s: Wide, i: i64) -> i64 { return s.xs[i] }
 
+fn narrow_scan(s: Narrow) -> i64 {
+    let mut i: i64 = 0
+    let mut total: i64 = 0
+    while i < 4 { total = total + s.xs[i]; i = i + 1 }
+    return total
+}
+
+fn narrow_copy(s: Narrow) -> i64 {
+    let values = s.xs
+    return values[3] + values[0]
+}
+
+fn narrow_update(s: Narrow) -> i64 {
+    s.xs[1] = 255
+    return s.xs[1] + s.xs[0] + s.sibling
+}
+
+fn signed_narrow_scan(s: SignedNarrow) -> i64 {
+    return s.xs[0] + s.xs[1] + s.xs[2] + s.xs[3]
+}
+
 pub fn run() -> i64 {
     let s = S { xs: [10, 20, 30, 40], tail: 7 }
     let s = replace(s)
@@ -116,6 +139,16 @@ pub fn same_owner_left() -> i64 {
 pub fn same_owner_right() -> i64 {
     let s = RightOwner { xs: [31, 32, 43] }
     return s.xs[2]
+}
+
+pub fn narrow_u8_run() -> i64 {
+    let s = Narrow { xs: [0, 127, 128, 255], sibling: 900 }
+    return narrow_scan(s) + narrow_copy(s) + narrow_update(s)
+}
+
+pub fn narrow_i8_run() -> i64 {
+    let s = SignedNarrow { xs: [-128, -1, 0, 127] }
+    return signed_narrow_scan(s)
 }
 "#;
 
@@ -162,6 +195,10 @@ fn fixed_array_struct_fields_run_native_artifact() {
             lib.get(b"same_owner_left").expect("load same_owner_left");
         let same_owner_right: Symbol<unsafe extern "C" fn() -> i64> =
             lib.get(b"same_owner_right").expect("load same_owner_right");
+        let narrow_u8_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_u8_run").expect("load narrow_u8_run");
+        let narrow_i8_run: Symbol<unsafe extern "C" fn() -> i64> =
+            lib.get(b"narrow_i8_run").expect("load narrow_i8_run");
         assert_eq!(run(), 16 + 9 + 12 + 84 + 6 + 9 + 9 + 6 + 12 + 13);
         assert_eq!(float_run().to_bits(), 2.5f64.to_bits());
         assert_eq!(float_signed_zero().to_bits(), (-0.0f64).to_bits());
@@ -169,6 +206,9 @@ fn fixed_array_struct_fields_run_native_artifact() {
         assert_eq!(indexed_read64(), 37);
         assert_eq!(same_owner_left(), 22);
         assert_eq!(same_owner_right(), 43);
+        // scan=510, copy=255, update=1155; the sibling remains untouched.
+        assert_eq!(narrow_u8_run(), 1920);
+        assert_eq!(narrow_i8_run(), -2);
     }
 }
 
@@ -212,6 +252,22 @@ fn indexed_struct_field_read_does_not_expand_with_field_length() {
         );
     }
     assert_eq!(small.len(), wide.len(), "indexed read IR expanded with N");
+
+    let narrow = body("narrow_scan");
+    let narrow_debug = format!("{narrow:?}");
+    assert!(
+        narrow_debug.contains("name: \"__mind_load_i8\""),
+        "u8 indexed field read did not use its declared-width load: {narrow:?}"
+    );
+    assert!(
+        narrow_debug.contains("name: \"__mind_oob_check\""),
+        "u8 indexed field read omitted its bounds check: {narrow:?}"
+    );
+    let update = body("narrow_update");
+    assert!(
+        format!("{update:?}").contains("name: \"__mind_store_i8\""),
+        "u8 indexed field write did not use its declared-width store: {update:?}"
+    );
 }
 
 #[test]
@@ -380,13 +436,13 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
         "unused declaration emitted no artifact"
     );
 
-    // Field-index mutation used to reach the generic fixed-array panic before
-    // the post-lowering blocker could run. It must now refuse structurally.
+    // A fixed-array field with an unsupported handle element still refuses
+    // structurally; the narrow integer-cell path is covered separately.
     let mutation = root.join("mutation.mind");
     let mutation_so = root.join("mutation.so");
     std::fs::write(
         &mutation,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { s.xs[1] = 3; return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { s.xs[1] = 3; return 0 }\n",
     )
     .expect("write mutation control");
     let out = run(
@@ -415,7 +471,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
     let loop_mutation = root.join("loop_mutation.mind");
     std::fs::write(
         &loop_mutation,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { for i in 0..1 { s.xs[i] = 3 } return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { for i in 0..1 { s.xs[i] = 3 } return 0 }\n",
     )
     .expect("write loop mutation control");
     for (flag, output) in [
@@ -446,7 +502,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
     let array_read = root.join("array_read.mind");
     std::fs::write(
         &array_read,
-        "struct S { xs: [u8; 2] }\nfn main(s: S) -> i64 { let values = [s.xs[1]]; return 0 }\n",
+        "struct S { xs: [u64; 2] }\nfn main(s: S) -> i64 { let values = [s.xs[1]]; return 0 }\n",
     )
     .expect("write array read control");
     for (flag, output) in [
@@ -495,7 +551,7 @@ fn fixed_array_capability_gate_is_operation_scoped_and_project_aware() {
             .expect("write boundary manifest");
             std::fs::write(
                 project.join("src/a.mind"),
-                "pub struct Bad { xs: [u8; 2] }\n",
+                "pub struct Bad { xs: [u64; 2] }\n",
             )
             .expect("write unsupported owner");
             std::fs::write(
