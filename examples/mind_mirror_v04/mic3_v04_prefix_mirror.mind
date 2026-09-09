@@ -124,6 +124,8 @@
 //   42 RETURN_SIGNATURE      FnDef return metadata disagrees with its declaration
 //   43 FUNCTION_IDENTITY     FnDef name disagrees with its resolved declaration
 //   44 PARAMETER_ARITY        FnDef parameter count disagrees with declaration
+//   45 NONLOCAL_FUNCTION_BODY FnDef references an external/intrinsic declaration
+//                            that cannot carry a local body
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -1252,12 +1254,13 @@ pub fn mv_walk_functions(
         if kind == 2 {
             return mv_fail(st, 34);
         }
-        __mind_store_i64(fnt + 48 * idx + 0, owner);
-        __mind_store_i64(fnt + 48 * idx + 8, name);
-        __mind_store_i64(fnt + 48 * idx + 16, 0);
-        __mind_store_i64(fnt + 48 * idx + 24, 0);
-        __mind_store_i64(fnt + 48 * idx + 32, 0);
-        __mind_store_i64(fnt + 48 * idx + 40, nparam);
+        __mind_store_i64(fnt + 56 * idx + 0, owner);
+        __mind_store_i64(fnt + 56 * idx + 8, name);
+        __mind_store_i64(fnt + 56 * idx + 16, 0);
+        __mind_store_i64(fnt + 56 * idx + 24, 0);
+        __mind_store_i64(fnt + 56 * idx + 32, 0);
+        __mind_store_i64(fnt + 56 * idx + 40, nparam);
+        __mind_store_i64(fnt + 56 * idx + 48, kind);
         return mv_walk_functions(
             buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
         );
@@ -1285,12 +1288,13 @@ pub fn mv_walk_functions(
             return mv_fail(st, 34);
         }
     }
-    __mind_store_i64(fnt + 48 * idx + 0, owner);
-    __mind_store_i64(fnt + 48 * idx + 8, name);
-    __mind_store_i64(fnt + 48 * idx + 16, p4 + 1);
-    __mind_store_i64(fnt + 48 * idx + 24, p5);
-    __mind_store_i64(fnt + 48 * idx + 32, 1);
-    __mind_store_i64(fnt + 48 * idx + 40, nparam);
+    __mind_store_i64(fnt + 56 * idx + 0, owner);
+    __mind_store_i64(fnt + 56 * idx + 8, name);
+    __mind_store_i64(fnt + 56 * idx + 16, p4 + 1);
+    __mind_store_i64(fnt + 56 * idx + 24, p5);
+    __mind_store_i64(fnt + 56 * idx + 32, 1);
+    __mind_store_i64(fnt + 56 * idx + 40, nparam);
+    __mind_store_i64(fnt + 56 * idx + 48, kind);
     mv_walk_functions(
         buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
     )
@@ -1412,28 +1416,33 @@ pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, 
 // ---- function identity table ----------------------------------------------
 
 // Total identity bytes of function `i`, for the reference's identity-projection
-// charge. `fnt` holds one 48-byte row per admitted declaration: the owner and
-// name string indices, declared return descriptor range, and parameter count.
+// charge. `fnt` holds one 56-byte row per admitted declaration: the owner and
+// name string indices, declared return descriptor range, parameter count, and
+// declaration kind (Local, External, or Intrinsic).
 pub fn mv_fn_ident_bytes(fnt: i64, tab: i64, i: i64) -> i64 {
-    let owner: i64 = __mind_load_i64(fnt + 48 * i + 0);
-    let name: i64 = __mind_load_i64(fnt + 48 * i + 8);
+    let owner: i64 = __mind_load_i64(fnt + 56 * i + 0);
+    let name: i64 = __mind_load_i64(fnt + 56 * i + 8);
     mv_str_len(tab, owner) + mv_str_len(tab, name)
 }
 
 pub fn mv_fn_return_present(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 48 * i + 32)
+    __mind_load_i64(fnt + 56 * i + 32)
 }
 
 pub fn mv_fn_return_start(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 48 * i + 16)
+    __mind_load_i64(fnt + 56 * i + 16)
 }
 
 pub fn mv_fn_return_end(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 48 * i + 24)
+    __mind_load_i64(fnt + 56 * i + 24)
 }
 
 pub fn mv_fn_param_count(fnt: i64, i: i64) -> i64 {
-    __mind_load_i64(fnt + 48 * i + 40)
+    __mind_load_i64(fnt + 56 * i + 40)
+}
+
+pub fn mv_fn_kind(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 56 * i + 48)
 }
 
 // Keep the optional return-ID branch in the parser helper, where the frozen
@@ -1459,7 +1468,7 @@ pub fn mv_prepare_return(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
 }
 
 pub fn mv_fn_name_matches(buf: i64, tab: i64, fnt: i64, i: i64, name: i64) -> i64 {
-    let declared: i64 = __mind_load_i64(fnt + 48 * i + 8);
+    let declared: i64 = __mind_load_i64(fnt + 56 * i + 8);
     let left: i64 = mv_str_off(tab, declared);
     let right: i64 = mv_str_off(tab, name);
     let left_len: i64 = mv_str_len(tab, declared);
@@ -1895,6 +1904,9 @@ pub fn mv_instr(
             __mind_load_i64(st + 2176 + depth * 8)
         ) == 0 {
             return mv_fail(st, 43);
+        }
+        if mv_fn_kind(fnt, fidx) != 0 {
+            return mv_fail(st, 45);
         }
         let rcpp: i64 = mv_prepare_params(st, fnt, fidx, depth);
         if rcpp != 0 {
@@ -2387,7 +2399,7 @@ pub fn main() -> i64 {
     if rc9 != 0 {
         return rc9;
     }
-    let fnt: i64 = __mind_alloc(48 * nfunc + 16);
+    let fnt: i64 = __mind_alloc(56 * nfunc + 16);
     let rc10: i64 = mv_walk_functions(
         inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st
     );

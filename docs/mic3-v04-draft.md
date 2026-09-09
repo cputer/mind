@@ -101,9 +101,10 @@ completion of those dependencies.
 The experimental pure-MIND body mirror now reads and re-emits the complete
 supported core body, including instructions, exports and scoped value rows.
 Its separate semantic gate checks module `next_id` coverage, function identity,
-parameter arity and return metadata against the declared signature. Nested
-functions retain independent return IDs. CI executes 69 wire vectors and 13
-semantic vectors, with exact re-emission checks on every positive fixture.
+declaration kind, parameter arity and return metadata against the declared
+signature. Nested functions retain independent return IDs. CI executes 69 wire
+vectors and 14 semantic vectors, with exact re-emission checks on every positive
+fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.
 Parameter descriptors, local-definition coverage, semantic scope budgets,

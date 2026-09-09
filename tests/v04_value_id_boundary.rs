@@ -119,6 +119,19 @@ fn canonical_parameter_arity_matches_its_declaration() {
 }
 
 #[test]
+fn canonical_nonlocal_function_body_is_refused_by_declaration_kind() {
+    let bytes = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/neg_nonlocal_function_body.mic3"
+    );
+    let error = parse_mic3_body(bytes).expect_err("external declaration cannot carry a body");
+    assert!(
+        error.message.contains("External function") && error.message.contains("local body"),
+        "nonlocal FnDef must identify the declaration-kind refusal: {}",
+        error.message
+    );
+}
+
+#[test]
 fn nested_functions_keep_their_own_return_value_id() {
     let positive =
         include_bytes!("../examples/mind_mirror_v04/testdata/semantic/pos_nested_return_ids.mic3");
