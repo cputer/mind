@@ -180,7 +180,16 @@ jobs:
       # release archive.
       - name: Execute CLI signing, tamper and key-pair controls
         shell: bash
-        run: python3 scripts/run_gate.py --min-asserted 15 scripts/pqc_hybrid_cli_ci.sh
+        run: |
+          # On Windows, run_gate's bare `bash` can resolve to the WSL launcher
+          # instead of the Git Bash that is executing this step. Pass this
+          # shell's executable explicitly; cygpath gives native Python a path
+          # it can open without changing the Linux/macOS path.
+          gate_bash="$BASH"
+          if command -v cygpath >/dev/null 2>&1; then
+            gate_bash="$(cygpath -w "$BASH")"
+          fi
+          python3 scripts/run_gate.py --min-asserted 15 "$gate_bash" scripts/pqc_hybrid_cli_ci.sh
 
   build_test:
     name: Build & Test

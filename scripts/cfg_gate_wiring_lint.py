@@ -59,6 +59,11 @@ TIER_FEAT_RE = re.compile(r'^FEATURES_([a-z0-9_]+)="([^"]*)"', re.M)
 GATE_CALL_RE = re.compile(r'scripts/exec_semantics_gate\.sh([^\n|;&]*)')
 CARGO_FEAT_RE = re.compile(r'^([a-z0-9\-_]+)\s*=\s*\[([^\]]*)\]', re.M)
 QUOTED_RE = re.compile(r'"([^"]+)"')
+SHELL_GATE_RE = re.compile(
+    r'scripts/run_gate\.py[^\n|;&]*\s(scripts/[a-zA-Z0-9_./-]+\.sh)(?![a-zA-Z0-9_./-])'
+)
+SHELL_ASSIGN_RE = re.compile(r'^(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"', re.M)
+SHELL_ARRAY_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=\((.*?)^\)', re.M | re.S)
 
 
 def feature_deps() -> dict[str, set[str]]:
@@ -241,10 +246,93 @@ def ci_lines(text: str) -> list[str]:
                 out.append(line)
     if cur:
         out.append(cur)
+    out.extend(shell_gate_cargo_lines(text))
     return out
 
 
+def _shell_flag(body: str, flag: str, assignments: dict[str, str]) -> str | None:
+    """Resolve a literal or one-level shell variable used for a cargo flag."""
+    match = re.search(rf'{re.escape(flag)}\s+"?([^\s"]+)"?', body)
+    if match is None:
+        return None
+    value = match.group(1)
+    var = re.fullmatch(r'\$(?:\{)?([A-Za-z_][A-Za-z0-9_]*)(?:\})?', value)
+    return assignments.get(var.group(1)) if var is not None else value
+
+
+def shell_gate_cargo_lines(
+    ci_text: str,
+    *,
+    loader=None,
+) -> list[str]:
+    """Cargo invocations proven inside shell gates that CI actually invokes.
+
+    A wrapper earns wiring credit only when its cargo array names literal or
+    one-level-variable features and target, and that array is executed on a
+    non-listing line. Merely declaring it, listing tests, or naming the script
+    in a YAML comment earns nothing.
+    """
+    read = loader or (lambda path: path.read_text(encoding="utf-8"))
+    lines: list[str] = []
+    for relative in sorted(set(SHELL_GATE_RE.findall(code_only(ci_text)))):
+        path = ROOT / relative
+        if loader is None and (not path.is_file() or path.parent != ROOT / "scripts"):
+            continue
+        source = code_only(read(path))
+        assignments = dict(SHELL_ASSIGN_RE.findall(source))
+        for array_name, body in SHELL_ARRAY_RE.findall(source):
+            if re.match(r'\s*cargo\s+test(?:\s|$)', body) is None:
+                continue
+            execution = re.compile(rf'^\s*"?\$\{{{re.escape(array_name)}\[@\]\}}"?(?:\s|$)')
+            executed = any(
+                execution.search(line) is not None and "--list" not in line
+                for line in source.splitlines()
+            )
+            if not executed:
+                continue
+            features = _shell_flag(body, "--features", assignments)
+            target = _shell_flag(body, "--test", assignments)
+            if features is not None and target is not None:
+                lines.append(f'cargo test --features "{features}" --test {target}')
+    return lines
+
+
+def shell_gate_parser_self_test() -> None:
+    """Mutation controls for the wrapper parser, run by every lint invocation."""
+    valid = '''
+readonly feature_set="std-surface,evidence-mldsa,evidence-slhdsa"
+readonly test_target="pqc_hybrid_cli_signing"
+cargo_test=(
+  cargo test
+  --features "$feature_set"
+  --test "$test_target"
+)
+"${cargo_test[@]}" -- --list
+"${cargo_test[@]}" -- --test-threads=1
+'''
+    ci = 'run: python3 scripts/run_gate.py /usr/bin/bash scripts/pqc_hybrid_cli_ci.sh'
+
+    def load(_path):
+        return valid
+
+    assert shell_gate_cargo_lines(ci, loader=load) == [
+        'cargo test --features "std-surface,evidence-mldsa,evidence-slhdsa" '
+        '--test pqc_hybrid_cli_signing'
+    ]
+    assert shell_gate_cargo_lines(f'# {ci}', loader=load) == []
+    assert shell_gate_cargo_lines(ci, loader=lambda _path: valid.replace(
+        'cargo test', 'printf cargo test'
+    )) == []
+    assert shell_gate_cargo_lines(ci, loader=lambda _path: valid.replace(
+        '"${cargo_test[@]}" -- --test-threads=1', ''
+    )) == []
+    assert shell_gate_cargo_lines(ci, loader=lambda _path: valid.replace(
+        '--features "$feature_set"', '--features "$missing"'
+    )) == []
+
+
 def main() -> int:
+    shell_gate_parser_self_test()
     if not CI.exists():
         print(f"FAIL: {CI} missing", file=sys.stderr); return 1
     ci_text = CI.read_text(encoding="utf-8")
