@@ -104,9 +104,9 @@ Its separate semantic gate checks module `next_id` coverage, function identity,
 declaration kind, parameter arity and return metadata against the declared
 signature, refuses a declaration that is defined more than once, refuses a
 `Return` outside any function body when the module carries semantic authority,
-and refuses a body that carries no authority at all. The return rule is
-conditional rather than blanket: an authority-free body is refused for the
-missing authority, not for the return. That
+and refuses a body that carries no authority at all. The return diagnosis is
+conditional on authority: an authority-free body is refused for the
+missing authority. Neither path accepts an authority-free v0x04 body. The
 uniqueness rule is module-wide rather than per-function: the reference keeps one
 identity set for the whole instruction stream, so a second definition is refused
 whether it appears beside the first or nested inside it, and both cases are
@@ -115,7 +115,8 @@ vectors and 19 semantic vectors, with exact re-emission checks on every positive
 fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.
-Parameter descriptors, local-definition coverage, semantic scope budgets,
-authority presence and string-table minimality remain explicit parity gaps.
+Parameter descriptors, local-definition coverage, semantic scope budgets
+and string-table minimality remain explicit parity gaps. Those gaps can also
+change which refusal is diagnosed first; general diagnostic parity is not claimed.
 This mirror is not installed as the production decoder or a promoted consumer
 compiler.

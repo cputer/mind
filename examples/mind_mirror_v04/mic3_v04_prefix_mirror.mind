@@ -23,8 +23,8 @@
 //     this mirror. The parameter arity, return-presence, return ValueId, return
 //     descriptor, and FnDef-name-to-declaration identity checks are implemented
 //     below.
-//   * the "carries no semantic authority" condition, which refuses a body whose
-//     bundle is empty and whose instructions carry no metadata.
+// Semantic authority presence is checked: a body whose bundle is empty and
+// whose instructions carry no metadata is refused.
 //   * string-table minimality: the reference rebuilds the table from the
 //     strings actually referenced, so a body carrying an entry nothing names is
 //     noncanonical. The mirror re-emits the table it was given.
@@ -2499,10 +2499,10 @@ pub fn main() -> i64 {
     //
     // The reference refuses a body that carries no authority at all. It is
     // implemented here, in the same commit as the rule above, because it is
-    // what makes that rule's CONDITION falsifiable: without an accepted
-    // no-authority path there is no body that distinguishes the conditional
-    // refusal from a blanket one, and a mutation collapsing the two survives
-    // the whole corpus silently. Measured: it did.
+    // what makes that rule's diagnostic condition testable: the authority-free
+    // control has a distinct refusal cause. A blanket Return refusal reports
+    // 47 where the control requires 48. Neither path accepts an authority-free
+    // v0x04 body; this distinction concerns the diagnosed cause.
     if nschema + nfunc + nrow == 0 {
         return 48;
     }

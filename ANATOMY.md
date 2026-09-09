@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1750 | **Est. tokens:** ~3441759
-**Generated:** 2026-09-09 12:59 UTC
+**Files:** 1750 | **Est. tokens:** ~3441788
+**Generated:** 2026-09-09 13:01 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~104512 |
+| `docs/` | 37 | ~104539 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -66,7 +66,7 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~24912 |
+| `examples/mind_mirror_v04/` | 3 | ~24914 |
 | `examples/mind_mirror_v04/testdata/` | 2 | ~3318 |
 | `examples/mindc_mind/` | 172 | ~442925 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
@@ -473,7 +473,7 @@
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
 - `ir-stability.md` (~1763 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
-- `mic3-v04-draft.md` (~1730 tok, huge) — MIC3 `0x04` core codec — implementation draft
+- `mic3-v04-draft.md` (~1757 tok, huge) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -638,7 +638,7 @@
 ### `examples/mind_mirror_v04/`
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
-- `mic3_v04_prefix_mirror.mind` (~21077 tok, huge) — ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~21079 tok, huge) — ===========================================================================
 - `mirror_gate.py` (~3051 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
