@@ -62,10 +62,13 @@ This roadmap outlines upcoming milestones for the MIND language, runtime, and to
   proven wedge; no vendor toolchain offers it.
 - ✅ **Emitted evidence chain** – each artifact carries an embedded evidence
   chain, `trace_hash = SHA-256` of the canonical `mic@3` bytes. Cryptographic
-  Ed25519 / ML-DSA *signing* of the chain is **shipped opt-in** (RFC 0016
-  Phase C — enable with a key-seed env var); artifacts are unsigned and
-  tamper-evident by default, with release-CI auto-signing the remaining
-  deferred leg.
+  signing of the chain is **shipped opt-in** with the CLI production profile's
+  exact ML-DSA-87 + SLH-DSA-SHAKE-256s hybrid pair (RFC 0016 Phase C — enable with key-seed
+  environment variables); Ed25519 and the earlier Ed25519/ML-DSA-65 hybrid
+  are retired from signing and trust verification. Artifacts remain unsigned
+  and tamper-evident by default. Release archives remain unsigned until
+  operational custody, signed manifests, and independent release replay are
+  established; CI test keys do not sign releases.
 - ✅ **Self-host fixed-point — canonical binary IR (`mic@3`)** – the pure-MIND
   `mindc` front-end reproduces the **canonical `mic@3` binary IR** of its own
   ~15k-line source **byte-for-byte** against the Rust reference

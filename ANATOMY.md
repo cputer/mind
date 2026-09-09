@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1749 | **Est. tokens:** ~3423947
-**Generated:** 2026-09-09 16:25 UTC
+**Files:** 1749 | **Est. tokens:** ~3424073
+**Generated:** 2026-09-09 16:35 UTC
 
 ## Token Budget Guide
 
@@ -22,7 +22,7 @@
 
 | Directory | Files | Est. tokens |
 |-----------|-------|-------------|
-| `./` | 33 | ~30400 |
+| `./` | 33 | ~30471 |
 | `.agents/skills/mindc-development/` | 1 | ~235 |
 | `.arch-mind/` | 2 | ~644 |
 | `.cargo/` | 1 | ~130 |
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~104710 |
+| `docs/` | 37 | ~104765 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -225,7 +225,7 @@
 - `LICENSE` (~2573 tok, huge) —                                  Apache License
 - `LICENSE-COMMERCIAL` (~399 tok, medium) — COMMERCIAL LICENSE NOTICE – MIND (Enterprise & SaaS)
 - `Mind.toml` (~108 tok, small) — [package]
-- `README.md` (~7126 tok, huge) — MIND — Machine Intelligence Native Design
+- `README.md` (~7197 tok, huge) — MIND — Machine Intelligence Native Design
 - `RELEASING.md` (~131 tok, small) — Release checklist (as of v0.2.1)
 - `SECURITY.md` (~1903 tok, huge) — Security Policy
 - `STATUS.md` (~4457 tok, huge) — MIND Compiler Status
@@ -429,7 +429,7 @@
 
 - `ARRAY_SEMANTICS.md` (~8111 tok, huge) — MIND array semantics — normative architecture record
 - `ENGINE_CONSUMER_LIST.md` (~9442 tok, huge) — Engine consumer list — the evidence pack for every hand-written semantics engine
-- `INDEPENDENCE_ROADMAP.md` (~18728 tok, huge) — MIND Rust-Independence Roadmap
+- `INDEPENDENCE_ROADMAP.md` (~18783 tok, huge) — MIND Rust-Independence Roadmap
 - `MHS_ROADMAP.md` (~2657 tok, huge) — MHS / Governed Device I/O Roadmap — SUPERSEDED
 - `README.md` (~162 tok, small) — MIND Documentation
 - `RI_DEPENDENCY_MATRIX.md` (~6279 tok, huge) — Rust-Independence (RI) Dependency Matrix

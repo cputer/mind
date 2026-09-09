@@ -22,7 +22,10 @@ Rust-independence is **one** pillar. The north star is a **SOTA compiler — fas
 innovative, AND deterministic**. Independence must never be bought by sacrificing speed:
 - **Determinism + tamper-evident evidence chain = the innovative moat** no gcc/clang/rustc has.
   Bit-identical cross-substrate output with an artifact-embedded, tamper-evident evidence chain
-  (opt-in Ed25519/ML-DSA/PQC signing, RFC 0016 Phase C) is the differentiation, not a side-constraint.
+  (opt-in CLI production signing with ML-DSA-87 + SLH-DSA-SHAKE-256s; legacy Ed25519 and the earlier
+  Ed25519/ML-DSA-65 hybrid are retired, and release archives remain unsigned
+  until operational custody, signed manifests, and independent replay exist; RFC 0016 Phase C)
+  is the differentiation, not a side-constraint.
 - **"Fastest" is a hard requirement, not an afterthought.** The native-ELF independence path
   is currently *unoptimized* (correct but slow); LLVM's `-O3` is what makes the MLIR path fast.
   So Phase C6 (an optimizing backend in MIND) is not optional — it's how independence and SOTA
