@@ -1260,9 +1260,7 @@ pub fn mv_walk_functions(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn
         __mind_store_i64(fnt + 64 * idx + 40, nparam);
         __mind_store_i64(fnt + 64 * idx + 48, kind);
         __mind_store_i64(fnt + 64 * idx + 56, p3);
-        return mv_walk_functions(
-            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
-        );
+        return mv_walk_functions(buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st);
     }
     if present != 1 {
         return mv_fail(st, 32);
@@ -1295,9 +1293,7 @@ pub fn mv_walk_functions(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn
     __mind_store_i64(fnt + 64 * idx + 40, nparam);
     __mind_store_i64(fnt + 64 * idx + 48, kind);
     __mind_store_i64(fnt + 64 * idx + 56, p3);
-    mv_walk_functions(
-        buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
-    )
+    mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st)
 }
 
 // ---- schema section: canonical re-emission --------------------------------
@@ -1510,14 +1506,7 @@ pub fn mv_nth_param_vid(buf: i64, len: i64, pos: i64, i: i64, st: i64) -> i64 {
 // to the module rows: the reference looks the parameter up in that function's
 // own scoped values, and a fallback would accept a body whose parameter is typed
 // nowhere in its own scope.
-pub fn mv_row_desc_for(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    vid: i64,
-    st: i64
-) -> i64 {
+pub fn mv_row_desc_for(buf: i64, len: i64, pos: i64, n: i64, vid: i64, st: i64) -> i64 {
     if n <= 0 {
         return 0 - 1;
     }
@@ -1536,17 +1525,7 @@ pub fn mv_row_desc_for(
 
 // Check that parameter `i` and every parameter after it agree with the declared
 // signature descriptor at the same position.
-pub fn mv_check_params(
-    buf: i64,
-    len: i64,
-    i: i64,
-    nparam: i64,
-    params_start: i64,
-    decl_start: i64,
-    rows_start: i64,
-    nrow: i64,
-    st: i64
-) -> i64 {
+pub fn mv_check_params(buf: i64, len: i64, i: i64, nparam: i64, params_start: i64, decl_start: i64, rows_start: i64, nrow: i64, st: i64) -> i64 {
     if i >= nparam {
         return 0;
     }
@@ -1567,9 +1546,7 @@ pub fn mv_check_params(
     if mv_bytes_equal(buf, got, want, want_end - want) == 0 {
         return mv_fail(st, 50);
     }
-    mv_check_params(
-        buf, len, i + 1, nparam, params_start, decl_start, rows_start, nrow, st
-    )
+    mv_check_params(buf, len, i + 1, nparam, params_start, decl_start, rows_start, nrow, st)
 }
 
 // Keep the optional return-ID branch in the parser helper, where the frozen
@@ -2111,17 +2088,7 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         // The rows are searched for the parameter's ValueId with no module
         // fallback: the reference resolves a parameter in that function's own
         // scoped values, so a miss is a refusal rather than a wider lookup.
-        let rcpa: i64 = mv_check_params(
-            buf,
-            len,
-            0,
-            nparam,
-            p2,
-            mv_fn_param_start(fnt, fidx),
-            p10,
-            nrow,
-            st
-        );
+        let rcpa: i64 = mv_check_params(buf, len, 0, nparam, p2, mv_fn_param_start(fnt, fidx), p10, nrow, st);
         if rcpa != 0 {
             return rcpa;
         }
