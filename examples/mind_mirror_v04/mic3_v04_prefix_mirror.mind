@@ -125,6 +125,7 @@
 //   43 FUNCTION_IDENTITY     FnDef name disagrees with its resolved declaration
 //   44 PARAMETER_ARITY        FnDef parameter count disagrees with declaration
 //   45 NONLOCAL_FUNCTION_BODY FnDef references an external/intrinsic declaration
+//   46 DUPLICATE_FUNCTION    two FnDef bodies define the same declaration
 //                            that cannot carry a local body
 // ===========================================================================
 
@@ -1470,6 +1471,38 @@ pub fn mv_prepare_params(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
     0
 }
 
+// ---- module-wide function definition set ----------------------------------
+
+// Zero `n` slots. __mind_alloc is malloc, NOT zeroed: runtime-support's
+// allocator hands back whatever the heap held. Every table this program indexes
+// by a decoded value must therefore be cleared before its first read, or the
+// verdict depends on heap residue.
+pub fn mv_zero(ptr: i64, n: i64, i: i64) -> i64 {
+    if i >= n {
+        return 0;
+    }
+    __mind_store_i64(ptr + 8 * i, 0);
+    mv_zero(ptr, n, i + 1)
+}
+
+// Record that declaration `fidx` has been DEFINED by a local FnDef body, and
+// report whether it already was.
+//
+// This is the one piece of per-module state the FnDef walk carries. Everything
+// else in a FnDef frame is depth-indexed because it belongs to that frame; this
+// deliberately is NOT, because the reference's rule is module-wide: its
+// `identities` set spans siblings AND nested bodies for the whole stream
+// (canonical_verify.rs:326-330), and it is checked before the name, kind and
+// arity rules. A depth-indexed version of this would accept exactly the bodies
+// it exists to refuse.
+pub fn mv_define_function(fdef: i64, fidx: i64) -> i64 {
+    if __mind_load_i64(fdef + 8 * fidx) != 0 {
+        return 1;
+    }
+    __mind_store_i64(fdef + 8 * fidx, 1);
+    0
+}
+
 // ---- instructions ---------------------------------------------------------
 
 // Read a ULEB at `pos` into st+8 and the end cursor into st+0, or return the
@@ -1632,7 +1665,7 @@ pub fn mv_walk_args(buf: i64, len: i64, pos: i64, n: i64, st: i64) -> i64 {
 // Opcodes outside the core scalar subset are refused by name (37). They are not
 // skipped and their operands are never guessed at: an unknown opcode makes the
 // remaining byte stream unparseable, so continuing would be invention.
-pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, st: i64) -> i64 {
+pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, fdef: i64, st: i64) -> i64 {
     if depth >= 256 {
         return mv_fail(st, 36);
     }
@@ -1827,7 +1860,7 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         if rcb != 0 {
             return rcb;
         }
-        let rc7: i64 = mv_walk_instrs(buf, len, p6, nbody, depth + 1, nstr, nschema, nfunc, tab, sch, fnt, st);
+        let rc7: i64 = mv_walk_instrs(buf, len, p6, nbody, depth + 1, nstr, nschema, nfunc, tab, sch, fnt, fdef, st);
         if rc7 != 0 {
             return rc7;
         }
@@ -1845,6 +1878,9 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
         let p9: i64 = mv_st_cursor(st);
         if fidx >= nfunc {
             return mv_fail(st, 23);
+        }
+        if mv_define_function(fdef, fidx) == 1 {
+            return mv_fail(st, 46);
         }
         if mv_fn_name_matches(buf, tab, fnt, fidx, __mind_load_i64(st + 2176 + depth * 8)) == 0 {
             return mv_fail(st, 43);
@@ -1896,17 +1932,17 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
 }
 
 // `n` instructions in sequence at one nesting level.
-pub fn mv_walk_instrs(buf: i64, len: i64, pos: i64, n: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, st: i64) -> i64 {
+pub fn mv_walk_instrs(buf: i64, len: i64, pos: i64, n: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, fdef: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
     }
-    let rc: i64 = mv_instr(buf, len, pos, depth, nstr, nschema, nfunc, tab, sch, fnt, st);
+    let rc: i64 = mv_instr(buf, len, pos, depth, nstr, nschema, nfunc, tab, sch, fnt, fdef, st);
     if rc != 0 {
         return rc;
     }
     let p1: i64 = mv_st_cursor(st);
-    mv_walk_instrs(buf, len, p1, n - 1, depth, nstr, nschema, nfunc, tab, sch, fnt, st)
+    mv_walk_instrs(buf, len, p1, n - 1, depth, nstr, nschema, nfunc, tab, sch, fnt, fdef, st)
 }
 
 // ---- module next_id and exports -------------------------------------------
@@ -2316,6 +2352,10 @@ pub fn main() -> i64 {
         return rc9;
     }
     let fnt: i64 = __mind_alloc(56 * nfunc + 16);
+    // Cleared explicitly: __mind_alloc does not zero, and this table is read
+    // through a decoded index before it is otherwise written.
+    let fdef: i64 = __mind_alloc(8 * nfunc + 16);
+    mv_zero(fdef, nfunc + 1, 0);
     let rc10: i64 = mv_walk_functions(inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st);
     if rc10 != 0 {
         return rc10;
@@ -2368,7 +2408,7 @@ pub fn main() -> i64 {
     // bound. FnDef switches this flag off while decoding its independent
     // declaration/body namespace and restores it on successful completion.
     __mind_store_i64(st + 72, 1);
-    let rc17: i64 = mv_walk_instrs(inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, st);
+    let rc17: i64 = mv_walk_instrs(inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, fdef, st);
     if rc17 != 0 {
         return rc17;
     }

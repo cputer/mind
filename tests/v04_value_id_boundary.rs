@@ -181,3 +181,42 @@ fn duplicate_module_rows_are_refused_before_core_bound_check() {
         error.message
     );
 }
+
+/// A declaration may be DEFINED at most once, across sibling and nested bodies
+/// alike.
+///
+/// The reference keeps one module-wide identity set for the whole instruction
+/// stream (`canonical_verify.rs`), so the rule spans nesting levels. That is why
+/// both a sibling pair and a nested pair are pinned here: a per-frame
+/// implementation of this rule accepts exactly the bodies it exists to refuse,
+/// and only the nested fixture can tell the two apart.
+#[test]
+fn canonical_function_identity_is_defined_at_most_once() {
+    let distinct = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/pos_distinct_function_identities.mic3"
+    );
+    parse_mic3_body(distinct).expect("two distinct identities are a valid module");
+
+    for (label, bytes) in [
+        (
+            "siblings",
+            &include_bytes!(
+                "../examples/mind_mirror_v04/testdata/semantic/neg_duplicate_function_siblings.mic3"
+            )[..],
+        ),
+        (
+            "nested",
+            &include_bytes!(
+                "../examples/mind_mirror_v04/testdata/semantic/neg_duplicate_function_nested.mic3"
+            )[..],
+        ),
+    ] {
+        let error = parse_mic3_body(bytes).expect_err("duplicate function identity");
+        assert!(
+            error.message.contains("duplicate") && error.message.contains("identity"),
+            "{label}: the duplicate identity must be the diagnosed cause, not an \
+             incidental refusal: {}",
+            error.message
+        );
+    }
+}

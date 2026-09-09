@@ -1784,7 +1784,7 @@ jobs:
 
       - name: Pure-MIND v04 scoped semantic boundary gate
         # Fourteen verdicts plus five byte comparisons, separate from wire parity.
-        run: python3 scripts/run_gate.py --min-asserted 19 examples/mind_mirror_v04/mirror_gate.py --semantic
+        run: python3 scripts/run_gate.py --min-asserted 23 examples/mind_mirror_v04/mirror_gate.py --semantic
         working-directory: ${{ github.workspace }}
 
   sdlc_integrity:
