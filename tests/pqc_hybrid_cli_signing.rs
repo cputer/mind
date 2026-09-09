@@ -761,16 +761,31 @@ fn a_historical_old_hybrid_is_rejected_but_still_inspectable() {
     );
 }
 
-fn assert_bad_32_byte_seed(env_name: &str, seed: &str, label: &str) {
+fn assert_bad_32_byte_seed(env_name: &str, seed: &str, label: &str, diagnostic: &str) {
     let c = Case::new();
-    let (code, output) = c.emit(label, &[(env_name, seed)]);
-    assert_ne!(
-        code, 0,
-        "malformed 32-byte seed must refuse for {env_name}: {output}"
+    // Include the other hybrid leg for ML-DSA-87. Otherwise a parser that
+    // silently accepts the malformed value still fails for the unrelated
+    // "one leg is missing" rule.
+    let seeds = if env_name == "MIND_EVIDENCE_MLDSA87_KEY" {
+        vec![
+            (env_name, seed),
+            ("MIND_EVIDENCE_SLHDSA_KEY", TEST_SLHDSA_SEED),
+        ]
+    } else {
+        vec![(env_name, seed)]
+    };
+    let (code, output) = c.emit(label, &seeds);
+    assert_eq!(
+        code, 1,
+        "malformed 32-byte seed must exit 1 for {env_name}: {output}"
     );
     assert!(
         !c.exists(label),
         "refusal must leave no artifact for {env_name}"
+    );
+    assert!(
+        output.contains(diagnostic),
+        "malformed 32-byte seed must report {diagnostic:?} for {env_name}: {output}"
     );
     assert!(
         !output.contains(seed),
@@ -789,6 +804,7 @@ fn a_wrong_length_32_byte_seed_refuses_for_both_readers() {
             env_name,
             "bad-32-byte-length-sentinel-7f3b",
             &format!("bad-32-length-{index}.mic3"),
+            "expected 64 hex chars",
         );
     }
 }
@@ -802,7 +818,12 @@ fn an_invalid_ascii_32_byte_seed_refuses_for_both_readers() {
         .into_iter()
         .enumerate()
     {
-        assert_bad_32_byte_seed(env_name, malformed, &format!("bad-32-ascii-{index}.mic3"));
+        assert_bad_32_byte_seed(
+            env_name,
+            malformed,
+            &format!("bad-32-ascii-{index}.mic3"),
+            "seed must be hex digits only",
+        );
     }
 }
 
@@ -818,6 +839,7 @@ fn a_non_ascii_32_byte_seed_refuses_for_both_readers() {
             env_name,
             &malformed,
             &format!("bad-32-nonascii-{index}.mic3"),
+            "seed must be ASCII hex",
         );
     }
 }
@@ -835,10 +857,26 @@ fn a_non_utf8_32_byte_seed_refuses_for_both_readers() {
         let c = Case::new();
         let raw = OsString::from_vec(vec![0xff; 64]);
         let label = format!("bad-32-utf8-{index}.mic3");
-        let (code, output) = c.emit_with_os_seed(&label, env_name, &raw);
-        assert_ne!(
-            code, 0,
-            "non-UTF-8 32-byte seed must refuse for {env_name}: {output}"
+        let mut cmd = Command::new(MINDC);
+        cmd.arg(c.path("p.mind"))
+            .arg("--emit-evidence")
+            .arg(c.path(&label))
+            .current_dir(c.dir.path())
+            .envs_cleared_of_signing_state()
+            .env(env_name, &raw);
+        if env_name == "MIND_EVIDENCE_MLDSA87_KEY" {
+            cmd.env("MIND_EVIDENCE_SLHDSA_KEY", TEST_SLHDSA_SEED);
+        }
+        let output = cmd.output().expect("spawn mindc");
+        let code = output.status.code().unwrap_or(-1);
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            code, 1,
+            "non-UTF-8 32-byte seed must exit 1 for {env_name}: {output}"
         );
         assert!(!c.exists(&label), "refusal must leave no artifact");
         assert!(
@@ -868,6 +906,27 @@ fn a_wrong_length_slhdsa_seed_refuses_without_an_artifact_or_seed_leak() {
     assert!(
         err.contains("192") && !err.contains(malformed),
         "the refusal must report length without echoing the configured seed: {err}"
+    );
+}
+
+/// A correctly sized ASCII value with a non-hex character must be rejected by
+/// the 96-byte SLH-DSA reader before any byte-offset decoding.
+#[test]
+fn an_invalid_ascii_slhdsa_seed_refuses_without_an_artifact_or_seed_leak() {
+    let c = Case::new();
+    let malformed = format!("SLHDSA_BAD_HEX_SENTINEL_7f3b{}", "z".repeat(164));
+    let (code, err) = c.emit(
+        "bad-slhdsa-ascii.mic3",
+        &[
+            ("MIND_EVIDENCE_MLDSA87_KEY", TEST_MLDSA87_SEED),
+            ("MIND_EVIDENCE_SLHDSA_KEY", malformed.as_str()),
+        ],
+    );
+    assert_eq!(code, 1, "invalid ASCII SLH seed must exit 1: {err}");
+    assert!(!c.exists("bad-slhdsa-ascii.mic3"));
+    assert!(
+        err.contains("seed must be hex digits only") && !err.contains(&malformed),
+        "the refusal must identify invalid hex without echoing the seed: {err}"
     );
 }
 
