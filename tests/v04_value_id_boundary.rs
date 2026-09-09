@@ -220,3 +220,44 @@ fn canonical_function_identity_is_defined_at_most_once() {
         );
     }
 }
+
+/// A `Return` outside any function body is refused, but only when the module
+/// carries semantic authority.
+///
+/// The reference guards this rule on `authority_present`, so it is conditional,
+/// not blanket. A body with no schema, no declaration and no module row is
+/// refused for carrying no semantic authority at all rather than for the
+/// return, and that distinction is why the mirror defers this verdict until the
+/// module rows have been read instead of refusing inside the Return arm.
+#[test]
+fn canonical_module_scope_return_is_refused_under_authority() {
+    let bytes = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/neg_module_scope_return.mic3"
+    );
+    let error = parse_mic3_body(bytes).expect_err("module-scope return");
+    assert!(
+        error.message.contains("return") && error.message.contains("<module>"),
+        "the module scope must be the diagnosed cause: {}",
+        error.message
+    );
+}
+
+/// A body carrying no schema, no declaration and no module semantic row is
+/// refused for carrying no semantic authority.
+///
+/// This is the control that makes the module-scope return rule above FALSIFIABLE
+/// as a CONDITIONAL rule. Without an authority-free body in the corpus, a
+/// mutation collapsing that conditional into a blanket refusal passes every
+/// vector; measured, it did, until this fixture existed.
+#[test]
+fn canonical_body_without_semantic_authority_is_refused() {
+    let bytes = include_bytes!(
+        "../examples/mind_mirror_v04/testdata/semantic/neg_no_semantic_authority.mic3"
+    );
+    let error = parse_mic3_body(bytes).expect_err("no semantic authority");
+    assert!(
+        error.message.contains("authority"),
+        "authority must be the diagnosed cause, not the return rule: {}",
+        error.message
+    );
+}

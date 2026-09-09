@@ -125,8 +125,12 @@
 //   43 FUNCTION_IDENTITY     FnDef name disagrees with its resolved declaration
 //   44 PARAMETER_ARITY        FnDef parameter count disagrees with declaration
 //   45 NONLOCAL_FUNCTION_BODY FnDef references an external/intrinsic declaration
+//                          that cannot carry a local body
 //   46 DUPLICATE_FUNCTION    two FnDef bodies define the same declaration
-//                            that cannot carry a local body
+//   47 MODULE_SCOPE_RETURN   a Return outside any function body, where the
+//                            module carries semantic authority
+//   48 NO_SEMANTIC_AUTHORITY the body declares no schema, no function and no
+//                            module semantic row
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -172,6 +176,9 @@ pub fn mv_max_descriptor_elements() -> i64 {
 // st+2176+depth*8 saved FnDef name string index
 // st+4256+depth*8 saved FnDef parameter count
 // st+6400+depth*8 saved FnDef return ValueId (nested functions have their own)
+// st+8448 whether a Return was decoded at module scope (verdict deferred: the
+//         reference's rule is conditional on authority, which is not decidable
+//         until the module semantic rows have been read)
 
 pub fn mv_st_cursor(st: i64) -> i64 {
     __mind_load_i64(st + 0)
@@ -1736,6 +1743,15 @@ pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i6
 
     // Return: an optional value id.
     if op == 23 {
+        // A Return outside any function body. The reference refuses this only
+        // when the module carries semantic authority (canonical_verify.rs), and
+        // authority depends on the module semantic rows, which are encoded
+        // AFTER the instruction list. So the observation is recorded here and
+        // the verdict is taken once the rows are known. Refusing unconditionally
+        // here would turn a conditional rule into a blanket one.
+        if depth == 0 {
+            __mind_store_i64(st + 8448, 1)
+        }
         return mv_opt_vid(buf, len, pos + 1, st);
     }
 
@@ -2222,13 +2238,15 @@ pub fn main() -> i64 {
         return 17;
     }
 
-    let st: i64 = __mind_alloc(8448);
+    let st: i64 = __mind_alloc(8456);
     __mind_store_i64(st + 40, 0);
     __mind_store_i64(st + 48, 0);
     __mind_store_i64(st + 64, 0);
     __mind_store_i64(st + 72, 0);
+    __mind_store_i64(st + 112, 0);
     __mind_store_i64(st + 120, 0);
     __mind_store_i64(st + 128, 0);
+    __mind_store_i64(st + 8448, 0);
 
     // --- header ---
     if len < 4 {
@@ -2460,6 +2478,33 @@ pub fn main() -> i64 {
     }
     if next_id < __mind_load_i64(st + 64) {
         return mv_fail(st, 41);
+    }
+
+    // --- deferred module-scope Return verdict ---
+    //
+    // The reference refuses a Return outside any function body only when the
+    // module carries SEMANTIC AUTHORITY, which is a nonempty bundle or a FnDef
+    // carrying scoped metadata. A v0x04 bundle is nonempty exactly when it
+    // declares a schema, a function, or a module semantic row, and any FnDef
+    // needs a declaration to resolve against, so the three counts decide it.
+    // The rows are encoded after the instructions, which is why this verdict
+    // waits until here rather than firing inside the Return arm.
+    if __mind_load_i64(st + 8448) == 1 {
+        if nschema + nfunc + nrow > 0 {
+            return 47;
+        }
+    }
+
+    // --- semantic authority ---
+    //
+    // The reference refuses a body that carries no authority at all. It is
+    // implemented here, in the same commit as the rule above, because it is
+    // what makes that rule's CONDITION falsifiable: without an accepted
+    // no-authority path there is no body that distinguishes the conditional
+    // refusal from a blanket one, and a mutation collapsing the two survives
+    // the whole corpus silently. Measured: it did.
+    if nschema + nfunc + nrow == 0 {
+        return 48;
     }
     let prefix_len: i64 = mv_st_cursor(st);
     if prefix_len > mv_max_prefix() {

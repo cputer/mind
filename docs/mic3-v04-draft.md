@@ -102,12 +102,16 @@ The experimental pure-MIND body mirror now reads and re-emits the complete
 supported core body, including instructions, exports and scoped value rows.
 Its separate semantic gate checks module `next_id` coverage, function identity,
 declaration kind, parameter arity and return metadata against the declared
-signature, and refuses a declaration that is defined more than once. That
+signature, refuses a declaration that is defined more than once, refuses a
+`Return` outside any function body when the module carries semantic authority,
+and refuses a body that carries no authority at all. The return rule is
+conditional rather than blanket: an authority-free body is refused for the
+missing authority, not for the return. That
 uniqueness rule is module-wide rather than per-function: the reference keeps one
 identity set for the whole instruction stream, so a second definition is refused
 whether it appears beside the first or nested inside it, and both cases are
 pinned. Nested functions retain independent return IDs. CI executes 69 wire
-vectors and 17 semantic vectors, with exact re-emission checks on every positive
+vectors and 19 semantic vectors, with exact re-emission checks on every positive
 fixture.
 The Rust reference decoder independently accepts or refuses the semantic
 controls; a passing mirror result does not yet mean full canonical validation.
