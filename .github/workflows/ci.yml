@@ -190,6 +190,9 @@ jobs:
             gate_bash="$(cygpath -w "$BASH")"
           fi
           python3 scripts/run_gate.py --min-asserted 15 "$gate_bash" scripts/pqc_hybrid_cli_ci.sh
+      - name: Canonical byte integrity under the supported signing profile
+        shell: bash
+        run: MIND_TEST_REQUIRE_PQC=1 cargo test --release --locked --features std-surface,evidence-mldsa,evidence-slhdsa --test verify_canonical_bytes
 
   build_test:
     name: Build & Test

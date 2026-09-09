@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1746 | **Est. tokens:** ~3417160
-**Generated:** 2026-09-09 09:30 UTC
+**Files:** 1746 | **Est. tokens:** ~3417452
+**Generated:** 2026-09-09 09:42 UTC
 
 ## Token Budget Guide
 
@@ -29,7 +29,7 @@
 | `.githooks/` | 4 | ~1755 |
 | `.github/` | 4 | ~894 |
 | `.github/ISSUE_TEMPLATE/` | 3 | ~440 |
-| `.github/workflows/` | 9 | ~37038 |
+| `.github/workflows/` | 9 | ~37099 |
 | `agents/` | 1 | ~436 |
 | `assets/logo/` | 1 | ~453 |
 | `audits/` | 6 | ~607 |
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 394 | ~798803 |
+| `tests/` | 394 | ~799034 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -270,7 +270,7 @@
 
 - `bench-gate.yml` (~2452 tok, huge) — name: Bench gate
 - `cargo-deny.yml` (~293 tok, medium) — name: Cargo Deny
-- `ci.yml` (~25147 tok, huge) — name: CI
+- `ci.yml` (~25208 tok, huge) — name: CI
 - `crypto-vectors.yml` (~1590 tok, huge) — name: Crypto Vectors
 - `docs-claims.yml` (~2645 tok, huge) — name: Docs Claims
 - `link-check.yml` (~229 tok, medium) — name: Link Check
@@ -2386,7 +2386,7 @@
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.
 - `verify_audit.rs` (~2074 tok, huge) — Audit coverage tests for the IR verifier (C1: SSA verification, conv2d stride/axis validation).
-- `verify_canonical_bytes.rs` (~3803 tok, huge) — Copyright 2025 STARGA Inc.
+- `verify_canonical_bytes.rs` (~4034 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify_cli.rs` (~3865 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify_holes.rs` (~3127 tok, huge) — Copyright 2025 STARGA Inc.
 - `verify_pinned_signer.rs` (~993 tok, large) — Copyright 2025 STARGA Inc.
