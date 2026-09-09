@@ -312,31 +312,10 @@ fn cyclic_imports_terminate_and_bridge() {
     assert_native_result(&p, &bytes, 5, "cyclic import result");
 }
 
-/// LIMITATION, pinned so it is visible rather than folklore: `pub const` is
-/// outside the frozen compiler's native profile, even though `mindc check`
-/// accepts the program.
-///
-/// CORRECTED after measuring it properly. This test previously claimed the
-/// refusal was "the `pub` const in a sibling specifically". That attribution was
-/// WRONG and made a profile limit look like a composition defect. The measured
-/// matrix, single file unless stated, built with the frozen compiler:
-///
-/// | source                        | result                        |
-/// |-------------------------------|-------------------------------|
-/// | `const X: i64 = 5;`           | builds, exit 7, 435 B         |
-/// | `pub const X: i64 = 5;`       | REFUSED, unsupported construct|
-/// | no const at all               | builds, exit 7, 435 B         |
-/// | `pub fn`                      | builds, exit 7, 464 B         |
-/// | `pub const` in a SIBLING      | REFUSED, identical message    |
-///
-/// So it is `pub` applied to a `const`. Neither siblings nor flattening are
-/// involved: the entry-only case refuses with the same message. `pub fn` is
-/// admitted, so it is not `pub`; a bare `const` is admitted and folds to the
-/// same 435 bytes as the literal, so it is not `const`. Only the combination.
-///
-/// The test still drives the SIBLING shape, because that is the arrangement this
-/// bridge composes and the one a caller will hit first. When the frozen compiler
-/// gains support this flips to a positive and the limitation closes.
+/// LIMITATION: the frozen stage1 compiler refuses `pub const` even though
+/// `mindc check` accepts it. The sibling form is retained because it exercises
+/// the composed bridge. Linux x86-64 tests the real parser refusal; other hosts
+/// test only captured source transport because they use a drain fixture.
 #[test]
 fn pub_const_is_refused_by_the_frozen_profile_anywhere() {
     let p = Project::new("pubconst");
