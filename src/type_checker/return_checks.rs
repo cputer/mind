@@ -75,17 +75,7 @@ fn check_return_and_cond_node(
     errs: &mut Vec<Pretty>,
 ) {
     match node {
-        Node::Return { value, span } => match (ret_ty, value) {
-            (Some(rt), None) => errs.push(diag_from_span(
-                src,
-                file,
-                format!(
-                    "return type mismatch: function returns {} but this return has no value",
-                    describe_value_type(rt)
-                ),
-                *span,
-                RETURN_TYPE_MISMATCH_CODE,
-            )),
+        Node::Return { value, .. } => match (ret_ty, value) {
             (Some(rt), Some(v)) if is_int_scalar(rt) => {
                 if let Ok((vt, _)) = infer_expr(v, env) {
                     if is_float_scalar(&vt) {

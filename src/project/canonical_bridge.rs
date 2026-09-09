@@ -505,9 +505,14 @@ fn collect_node_calls(
                 "trait-generated functions are outside the canonical source slice",
             ));
         }
+        Node::Return { value: None, span } => {
+            return Err(binding_error(
+                *span,
+                "return type mismatch: canonical scalar return has no value",
+            ));
+        }
         Node::Lit(_, _)
         | Node::Import { .. }
-        | Node::Return { value: None, .. }
         | Node::Break { .. }
         | Node::Continue { .. }
         | Node::CallTensorRand { .. }

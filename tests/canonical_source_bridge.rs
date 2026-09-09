@@ -152,6 +152,14 @@ fn typed_branch_return_without_a_value_is_refused_before_lowering() {
     let error = compile(source, &[]).expect_err("typed branch return must carry a value");
     assert!(error.contains("return type mismatch"), "{error}");
     assert!(error.contains("no value"), "{error}");
+
+    // The ordinary evaluator retains its unit-placeholder return convention.
+    // Canonical metadata cannot certify that placeholder as a typed producer,
+    // so the stronger refusal belongs to this API, not the shared checker.
+    let module = mind::parser::parse(source).expect("ordinary source");
+    let env = mind::type_checker::TypeEnv::default();
+    let errors = mind::type_checker::check_module_types(&module, source, &env);
+    assert!(errors.is_empty(), "canonical refusal leaked: {errors:?}");
 }
 
 #[test]

@@ -80,7 +80,9 @@ scope. It preserves resolved function owners and call identities, records scalar
 producer types from the existing checker, and verifies returns in their
 function scope. Changed snapshots, missing required facts, and unsupported
 source forms are refused. Unit functions and functions without an explicit
-return annotation remain outside this canonical source slice; ordinary
+return annotation remain outside this canonical source slice. Bare returns
+without a value are also refused by this API; the ordinary evaluator's
+unit-placeholder convention is preserved. Ordinary
 compilation keeps its existing behavior.
 The API returns verified IR before optimization or backend execution.
 

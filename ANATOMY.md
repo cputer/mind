@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1730 | **Est. tokens:** ~3364036
-**Generated:** 2026-09-09 03:52 UTC
+**Files:** 1730 | **Est. tokens:** ~3364146
+**Generated:** 2026-09-09 04:16 UTC
 
 ## Token Budget Guide
 
@@ -46,7 +46,7 @@
 | `benchmarks/mojo/` | 8 | ~4276 |
 | `benchmarks/pytorch_comparison/` | 5 | ~4880 |
 | `config/` | 2 | ~3347 |
-| `docs/` | 37 | ~103959 |
+| `docs/` | 37 | ~103990 |
 | `docs/backends/` | 1 | ~1482 |
 | `docs/benchmarks/` | 3 | ~9042 |
 | `docs/design/` | 4 | ~11498 |
@@ -121,17 +121,17 @@
 | `src/package/` | 2 | ~1877 |
 | `src/parser/` | 4 | ~24443 |
 | `src/phf/` | 1 | ~4955 |
-| `src/project/` | 18 | ~59013 |
+| `src/project/` | 18 | ~59056 |
 | `src/runtime/` | 3 | ~1485 |
 | `src/shapes/` | 2 | ~6052 |
 | `src/stdlib/` | 2 | ~560 |
 | `src/test/` | 4 | ~14244 |
-| `src/type_checker/` | 17 | ~56258 |
+| `src/type_checker/` | 17 | ~56166 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
 | `src/types/` | 8 | ~18062 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 392 | ~783469 |
+| `tests/` | 392 | ~783597 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -471,7 +471,7 @@
 - `ir-mlir.md` (~480 tok, medium) — IR & MLIR Integration
 - `ir-stability.md` (~1658 tok, huge) — IR stability contract
 - `ir.md` (~451 tok, medium) — MIND IR core
-- `mic3-v04-draft.md` (~1337 tok, large) — MIC3 `0x04` core codec — implementation draft
+- `mic3-v04-draft.md` (~1368 tok, large) — MIC3 `0x04` core codec — implementation draft
 - `migration-roadmap.md` (~1896 tok, huge) — MIND Migration Roadmap — Any Language → Pure Executing MIND
 ### `docs/mindcraft/`
 
@@ -1275,7 +1275,7 @@
 - `build_input_snapshot.rs` (~4632 tok, huge) — Copyright 2025 STARGA Inc.
 - `build_lock.rs` (~1630 tok, huge) — Copyright 2026 STARGA Inc.
 - `call_bindings.rs` (~5326 tok, huge) — Copyright 2025-2026 STARGA Inc.
-- `canonical_bridge.rs` (~5884 tok, huge) — Copyright 2026 STARGA Inc.
+- `canonical_bridge.rs` (~5927 tok, huge) — Copyright 2026 STARGA Inc.
 - `compiled_sources.rs` (~461 tok, medium) — Copyright 2025 STARGA Inc.
 - `embedded_entry.rs` (~670 tok, large) — Copyright 2025-2026 STARGA Inc.
 - `identity.rs` (~1719 tok, huge) — Copyright 2026 STARGA Inc.
@@ -1331,7 +1331,7 @@
 - `qualified_enums.rs` (~3239 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `qualified_imports.rs` (~268 tok, medium) — Feature-neutral span-scoped qualified import predicates for name resolution.
 - `resolve.rs` (~15095 tok, huge) — Copyright 2025 STARGA Inc.
-- `return_checks.rs` (~1336 tok, large) — Copyright 2025 STARGA Inc.
+- `return_checks.rs` (~1244 tok, large) — Copyright 2025 STARGA Inc.
 - `slice_abi.rs` (~7414 tok, huge) — Copyright 2025 STARGA Inc.
 ### `src/type_checker/slice_abi/`
 
@@ -1443,7 +1443,7 @@
 - `bytes_buffer_run.rs` (~669 tok, large) — Copyright 2025 STARGA Inc.
 - `bytes_fixed_into_vec_run.rs` (~1764 tok, huge) — Copyright 2025 STARGA Inc.
 - `bytes_zero_run.rs` (~843 tok, large) — Copyright 2025 STARGA Inc.
-- `canonical_source_bridge.rs` (~3002 tok, huge)
+- `canonical_source_bridge.rs` (~3130 tok, huge) — The ordinary evaluator retains its unit-placeholder return convention.
 - `capability_refusal_cause_scan.rs` (~3400 tok, huge) — Copyright 2025 STARGA Inc.
 - `cerebras_stencil_tile.rs` (~1929 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `chacha20_poly1305_smoke.rs` (~2259 tok, huge) — Copyright 2025 STARGA Inc.
