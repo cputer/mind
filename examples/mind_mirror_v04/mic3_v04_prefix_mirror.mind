@@ -1137,21 +1137,7 @@ pub fn mv_walk_params(buf: i64, len: i64, pos: i64, n: i64, nschema: i64, sch: i
 
 // Walk `n` remaining function declarations. Order is checked on the identity
 // string indices for the same reason it is for schemas.
-pub fn mv_walk_functions(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    prevo: i64,
-    prevn: i64,
-    nstr: i64,
-    nschema: i64,
-    tab: i64,
-    sch: i64,
-    fnt: i64,
-    idx: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_functions(buf: i64, len: i64, pos: i64, n: i64, prevo: i64, prevn: i64, nstr: i64, nschema: i64, tab: i64, sch: i64, fnt: i64, idx: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1261,9 +1247,7 @@ pub fn mv_walk_functions(
         __mind_store_i64(fnt + 56 * idx + 32, 0);
         __mind_store_i64(fnt + 56 * idx + 40, nparam);
         __mind_store_i64(fnt + 56 * idx + 48, kind);
-        return mv_walk_functions(
-            buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
-        );
+        return mv_walk_functions(buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st);
     }
     if present != 1 {
         return mv_fail(st, 32);
@@ -1295,9 +1279,7 @@ pub fn mv_walk_functions(
     __mind_store_i64(fnt + 56 * idx + 32, 1);
     __mind_store_i64(fnt + 56 * idx + 40, nparam);
     __mind_store_i64(fnt + 56 * idx + 48, kind);
-    mv_walk_functions(
-        buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
-    )
+    mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st)
 }
 
 // ---- schema section: canonical re-emission --------------------------------
@@ -1460,9 +1442,9 @@ pub fn mv_prepare_return(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
         __mind_store_i64(st + 88, mv_fn_return_start(fnt, fidx));
         __mind_store_i64(st + 96, mv_fn_return_end(fnt, fidx));
         __mind_store_i64(st + 104, 0);
-        __mind_store_i64(st + 112, 1);
+        __mind_store_i64(st + 112, 1)
     } else {
-        __mind_store_i64(st + 112, 0);
+        __mind_store_i64(st + 112, 0)
     }
     0
 }
@@ -1501,7 +1483,7 @@ pub fn mv_vid(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
         let value: i64 = mv_st_value(st);
         let exclusive: i64 = value + 1;
         if exclusive > __mind_load_i64(st + 64) {
-            __mind_store_i64(st + 64, exclusive);
+            __mind_store_i64(st + 64, exclusive)
         }
     }
     0
@@ -1571,17 +1553,7 @@ pub fn mv_reserved_zero(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
 // value id. Used for a function's own scoped table. When return validation is
 // active, the row carrying the declared ret_id must reproduce the declaration's
 // exact descriptor bytes.
-pub fn mv_walk_value_rows(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    prev: i64,
-    nschema: i64,
-    sch: i64,
-    tab: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_value_rows(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nschema: i64, sch: i64, tab: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1612,22 +1584,14 @@ pub fn mv_walk_value_rows(
             if mv_bytes_equal(buf, p1, expected_start, p2 - p1) == 0 {
                 return mv_fail(st, 42);
             }
-            __mind_store_i64(st + 104, 1);
+            __mind_store_i64(st + 104, 1)
         }
     }
     mv_walk_value_rows(buf, len, p2, n - 1, vid, nschema, sch, tab, st)
 }
 
 // `n` FnDef parameters, each a string reference and a value id.
-pub fn mv_walk_named_values(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    nstr: i64,
-    tab: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_named_values(buf: i64, len: i64, pos: i64, n: i64, nstr: i64, tab: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1668,19 +1632,7 @@ pub fn mv_walk_args(buf: i64, len: i64, pos: i64, n: i64, st: i64) -> i64 {
 // Opcodes outside the core scalar subset are refused by name (37). They are not
 // skipped and their operands are never guessed at: an unknown opcode makes the
 // remaining byte stream unparseable, so continuing would be invention.
-pub fn mv_instr(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    depth: i64,
-    nstr: i64,
-    nschema: i64,
-    nfunc: i64,
-    tab: i64,
-    sch: i64,
-    fnt: i64,
-    st: i64
-) -> i64 {
+pub fn mv_instr(buf: i64, len: i64, pos: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, st: i64) -> i64 {
     if depth >= 256 {
         return mv_fail(st, 36);
     }
@@ -1875,9 +1827,7 @@ pub fn mv_instr(
         if rcb != 0 {
             return rcb;
         }
-        let rc7: i64 = mv_walk_instrs(
-            buf, len, p6, nbody, depth + 1, nstr, nschema, nfunc, tab, sch, fnt, st
-        );
+        let rc7: i64 = mv_walk_instrs(buf, len, p6, nbody, depth + 1, nstr, nschema, nfunc, tab, sch, fnt, st);
         if rc7 != 0 {
             return rc7;
         }
@@ -1896,13 +1846,7 @@ pub fn mv_instr(
         if fidx >= nfunc {
             return mv_fail(st, 23);
         }
-        if mv_fn_name_matches(
-            buf,
-            tab,
-            fnt,
-            fidx,
-            __mind_load_i64(st + 2176 + depth * 8)
-        ) == 0 {
+        if mv_fn_name_matches(buf, tab, fnt, fidx, __mind_load_i64(st + 2176 + depth * 8)) == 0 {
             return mv_fail(st, 43);
         }
         if mv_fn_kind(fnt, fidx) != 0 {
@@ -1952,20 +1896,7 @@ pub fn mv_instr(
 }
 
 // `n` instructions in sequence at one nesting level.
-pub fn mv_walk_instrs(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    depth: i64,
-    nstr: i64,
-    nschema: i64,
-    nfunc: i64,
-    tab: i64,
-    sch: i64,
-    fnt: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_instrs(buf: i64, len: i64, pos: i64, n: i64, depth: i64, nstr: i64, nschema: i64, nfunc: i64, tab: i64, sch: i64, fnt: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -1988,16 +1919,7 @@ pub fn mv_walk_instrs(
 // "mean" the same module. The ordering rule is what makes the encoding
 // canonical, so it is checked here on the wire values themselves, before any
 // set could hide it.
-pub fn mv_walk_exports(
-    buf: i64,
-    len: i64,
-    pos: i64,
-    n: i64,
-    prev: i64,
-    nstr: i64,
-    tab: i64,
-    st: i64
-) -> i64 {
+pub fn mv_walk_exports(buf: i64, len: i64, pos: i64, n: i64, prev: i64, nstr: i64, tab: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, pos);
         return 0;
@@ -2050,14 +1972,7 @@ pub fn mv_relay_uleb(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> 
     mv_put_uleb(outbuf, opos, v)
 }
 
-pub fn mv_emit_value_rows(
-    inbuf: i64,
-    outbuf: i64,
-    ipos: i64,
-    opos: i64,
-    n: i64,
-    st: i64
-) -> i64 {
+pub fn mv_emit_value_rows(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, ipos);
         return opos;
@@ -2069,14 +1984,7 @@ pub fn mv_emit_value_rows(
     mv_emit_value_rows(inbuf, outbuf, p2, o2, n - 1, st)
 }
 
-pub fn mv_emit_named_values(
-    inbuf: i64,
-    outbuf: i64,
-    ipos: i64,
-    opos: i64,
-    n: i64,
-    st: i64
-) -> i64 {
+pub fn mv_emit_named_values(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, st: i64) -> i64 {
     if n <= 0 {
         __mind_store_i64(st + 0, ipos);
         return opos;
@@ -2178,10 +2086,18 @@ pub fn mv_emit_instr(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, st: i64) -> 
     };
     let ftag: i64 = __mind_load_i8(inbuf + p4);
     __mind_store_i8(outbuf + o4, ftag);
-    let o5: i64 = if ftag == 0 { o4 + 1 } else { o4 + 9 };
-    let p5: i64 = if ftag == 0 { p4 + 1 } else { p4 + 9 };
+    let o5: i64 = if ftag == 0 {
+        o4 + 1
+    } else {
+        o4 + 9
+    };
+    let p5: i64 = if ftag == 0 {
+        p4 + 1
+    } else {
+        p4 + 9
+    };
     if ftag != 0 {
-        mv_copy(inbuf + p4 + 1, outbuf + o4 + 1, 8, 0);
+        mv_copy(inbuf + p4 + 1, outbuf + o4 + 1, 8, 0)
     }
     mv_uleb(inbuf, p5 + 12, p5, 0, 0, 1, st);
     let nbody: i64 = mv_st_value(st);
@@ -2400,9 +2316,7 @@ pub fn main() -> i64 {
         return rc9;
     }
     let fnt: i64 = __mind_alloc(56 * nfunc + 16);
-    let rc10: i64 = mv_walk_functions(
-        inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st
-    );
+    let rc10: i64 = mv_walk_functions(inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st);
     if rc10 != 0 {
         return rc10;
     }
@@ -2454,9 +2368,7 @@ pub fn main() -> i64 {
     // bound. FnDef switches this flag off while decoding its independent
     // declaration/body namespace and restores it on successful completion.
     __mind_store_i64(st + 72, 1);
-    let rc17: i64 = mv_walk_instrs(
-        inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, st
-    );
+    let rc17: i64 = mv_walk_instrs(inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, st);
     if rc17 != 0 {
         return rc17;
     }
@@ -2502,9 +2414,7 @@ pub fn main() -> i64 {
     if rc23 != 0 {
         return rc23;
     }
-    let rc24: i64 = mv_walk_value_rows(
-        inbuf, len, row_start, nrow, 0 - 1, nschema, sch, tab, st
-    );
+    let rc24: i64 = mv_walk_value_rows(inbuf, len, row_start, nrow, 0 - 1, nschema, sch, tab, st);
     if rc24 != 0 {
         return rc24;
     }
@@ -2555,7 +2465,7 @@ pub fn main() -> i64 {
     // be redone outside this process rather than taken on its word.
     if __mind_argc() > 2 {
         if mv_is_dump(__mind_argv(2)) == 1 {
-            __mind_write(1, outbuf, o19, 0 - 1);
+            __mind_write(1, outbuf, o19, 0 - 1)
         }
     }
 
