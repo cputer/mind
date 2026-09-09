@@ -348,12 +348,34 @@ fn pub_const_is_refused_by_the_frozen_profile_anywhere() {
         "src/main.mind",
         "import c;\n\nfn main() -> i64 {\n    return kk() + 2;\n}\n",
     );
-    let (code, _err, art) = p.build_native("src/main.mind");
-    assert_ne!(
-        code, 0,
-        "pub const in a sibling is not yet supported natively"
-    );
-    assert!(art.is_none());
+    let (code, err, art) = p.build_native("src/main.mind");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        // Only this target executes the committed stage1 compiler. Keep the
+        // measured frozen-profile refusal on the real semantic path.
+        assert_ne!(
+            code, 0,
+            "pub const in a sibling is not yet supported natively: {err}"
+        );
+        assert!(art.is_none());
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        // Other CI hosts use a host-native drain fixture by design. It checks
+        // source transport and emits an anchor; it cannot establish the
+        // stage1 parser's profile refusal. Verify that this exact unsupported
+        // source reached the fixture instead of asserting a simulated status.
+        assert_eq!(code, 0, "host transport must complete: {err}");
+        let bytes = art.expect("host transport anchor");
+        let captured = p.captured_source_image();
+        assert!(
+            captured
+                .windows(b"pub const K: i64 = 5;".len())
+                .any(|window| window == b"pub const K: i64 = 5;"),
+            "host fixture must receive the pub-const source"
+        );
+        assert_native_result(&p, &bytes, 0, "pub-const source transport");
+    }
 
     // CONTROL: the same shape with a non-pub const DOES build, proving the
     // refusal is specific to `pub const` and not to constants or to siblings.
