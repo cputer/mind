@@ -32,6 +32,14 @@ use crate::eval::materialization::{
     MaterializationBudget, MaterializationLimits, MaterializationRefusal,
 };
 
+#[cfg(feature = "cross-module-imports")]
+#[path = "canonical_lowering.rs"]
+mod canonical_lowering;
+#[cfg(feature = "cross-module-imports")]
+#[path = "canonical_producers.rs"]
+mod canonical_producers;
+#[path = "lower_entry.rs"]
+mod lower_entry;
 use crate::ir::BinOp;
 use crate::ir::IRModule;
 use crate::ir::IndexSpec;
@@ -40,6 +48,9 @@ use crate::ir::SliceSpec;
 use crate::ir::ValueId;
 use crate::types::DType;
 use crate::types::ShapeDim;
+#[cfg(feature = "cross-module-imports")]
+pub use canonical_lowering::lower_to_ir_with_canonical_plan;
+use lower_entry::lower_expr;
 
 /// The shared refusal rules for the two constructs lowering must not emit —
 /// a collection mutator whose realloc'd handle cannot be rebound, and a
@@ -1123,20 +1134,33 @@ pub fn lower_to_ir(module: &ast::Module) -> Result<IRModule, MaterializationRefu
 }
 
 pub struct LoweringContext {
-    budget: MaterializationBudget,
-    refusal: Option<MaterializationRefusal>,
+    pub(super) budget: MaterializationBudget,
+    pub(super) refusal: Option<MaterializationRefusal>,
+    #[cfg(feature = "cross-module-imports")]
+    pub(super) canonical: Option<canonical_lowering::CanonicalLoweringState>,
 }
 
 impl LoweringContext {
-    fn new(limits: MaterializationLimits) -> Self {
+    pub(super) fn new(limits: MaterializationLimits) -> Self {
         Self {
             budget: MaterializationBudget::new(limits),
             refusal: None,
+            #[cfg(feature = "cross-module-imports")]
+            canonical: None,
         }
     }
 
     fn failed(&self) -> bool {
-        self.refusal.is_some()
+        self.refusal.is_some() || {
+            #[cfg(feature = "cross-module-imports")]
+            {
+                self.canonical_failed()
+            }
+            #[cfg(not(feature = "cross-module-imports"))]
+            {
+                false
+            }
+        }
     }
 
     #[cfg(feature = "std-surface")]
@@ -1218,7 +1242,7 @@ pub fn lower_to_ir_with_limits(
     context.refusal.map_or(Ok(ir), Err)
 }
 
-fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRModule {
+pub(super) fn lower_to_ir_inner(module: &ast::Module, context: &mut LoweringContext) -> IRModule {
     // PURE-SCALAR FAST LANE. For a module whose every item passes
     // `is_pure_scalar_arith_item` (the `scalar_math` compile-speed floor:
     // `1 + 2 * 3 - 4 / 2`) AND an empty whole-project registry, every setup
@@ -5071,15 +5095,12 @@ fn lower_logical_expr(
     lower_expr(&desugared, ir, env, struct_env, receiver_types, context)
 }
 
-/// Keep a large match arm's temporaries in a non-recursive frame. This generic
-/// boundary is monomorphized per closure and stays outside `lower_expr` in
-/// debug builds, where the Windows frame regression occurs.
 #[cfg_attr(debug_assertions, inline(never))]
 fn lower_out_of_line<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
-fn lower_expr(
+pub(super) fn lower_expr_inner(
     node: &ast::Node,
     ir: &mut IRModule,
     env: &HashMap<String, ValueId>,
@@ -5879,7 +5900,9 @@ fn lower_expr(
             }
             addr
         }),
-        ast::Node::FnDef(fd, _) => lower_out_of_line(|| {
+        ast::Node::FnDef(fd, span) => lower_out_of_line(|| {
+            #[cfg(not(feature = "cross-module-imports"))]
+            let _ = span;
             let ast::FnDefData {
                 name,
                 type_params,
@@ -6062,6 +6085,9 @@ fn lower_expr(
                 }
             }
 
+            #[cfg(feature = "cross-module-imports")]
+            context.canonical_begin_function_for_span(*span, name, &param_pairs);
+
             // NARROW-SIGNATURE ABI: an `i8`/`u8`/`i16`/`u16` param arrives in an
             // i64 SLOT (the `func.func` signature stays i64-typed). Materialise
             // it at its declared width ON ENTRY — zext `BitAnd` mask for
@@ -6161,12 +6187,11 @@ fn lower_expr(
                                 &fn_struct_env,
                                 receiver_types,
                                 context,
-                            );
-                            // Narrow-signature ABI: mask a `-> i8/u8/i16/u16`
+                            ); // Narrow-signature ABI: mask a `-> i8/u8/i16/u16`
                             // return to its declared width (no-op otherwise).
                             #[cfg(feature = "std-surface")]
                             let lowered = mask_narrow_ret(&mut fn_ir, lowered);
-                            ret_id = Some(lowered);
+                            ret_id = Some(lower_entry::validated_value(context, val, lowered));
                         }
                         fn_ir.instrs.push(Instr::Return { value: ret_id });
                     }
@@ -6601,6 +6626,9 @@ fn lower_expr(
                 ret_id = ret_id.map(|v| mask_narrow_ret(&mut fn_ir, v));
             }
 
+            #[cfg(feature = "cross-module-imports")]
+            let canonical_semantic = context.canonical_finish_function(ret_id);
+
             // Add function definition to IR, propagating the REAP threshold
             // from the AST attribute if present.
             ir.instrs.push(Instr::FnDef {
@@ -6615,6 +6643,9 @@ fn lower_expr(
                 // of aggregates defined in THIS scope. Empty until the S3 population
                 // slice (so byte-neutral now); moving it here keeps the scope's
                 // types co-located with the scope's instructions.
+                #[cfg(feature = "cross-module-imports")]
+                semantic_types: canonical_semantic.map(Box::new),
+                #[cfg(not(feature = "cross-module-imports"))]
                 semantic_types: None,
                 #[cfg(feature = "std-surface")]
                 value_types: fn_ir.value_types,
@@ -6647,6 +6678,7 @@ fn lower_expr(
             // declared width (no-op for every other return type).
             #[cfg(feature = "std-surface")]
             let ret_val = ret_val.map(|v| mask_narrow_ret(ir, v));
+            let ret_val = lower_entry::ret(context, value.as_deref(), ret_val);
             ir.instrs.push(Instr::Return { value: ret_val });
             let id = ir.fresh();
             ir.instrs.push(Instr::ConstI64(id, 0));
@@ -6987,11 +7019,11 @@ fn lower_expr(
                                     context,
                                 )
                             }
-                        });
-                        // Narrow-signature ABI: mask a `-> i8/u8/i16/u16`
+                        }); // Narrow-signature ABI: mask a `-> i8/u8/i16/u16`
                         // return to its declared width (no-op otherwise).
                         #[cfg(feature = "std-surface")]
                         let ret_val = ret_val.map(|v| mask_narrow_ret(&mut then_ir, v));
+                        let ret_val = lower_entry::ret(context, value.as_deref(), ret_val);
                         then_ir.instrs.push(Instr::Return { value: ret_val });
                         if let Some(rv) = ret_val {
                             then_result = rv;
@@ -7394,6 +7426,7 @@ fn lower_expr(
                             // return to its declared width (no-op otherwise).
                             #[cfg(feature = "std-surface")]
                             let ret_val = ret_val.map(|v| mask_narrow_ret(&mut else_ir, v));
+                            let ret_val = lower_entry::ret(context, value.as_deref(), ret_val);
                             else_ir.instrs.push(Instr::Return { value: ret_val });
                             if let Some(rv) = ret_val {
                                 else_result = rv;
@@ -7947,7 +7980,11 @@ fn lower_expr(
                 id
             })
         }
-        ast::Node::Call { callee, args, .. } => {
+        ast::Node::Call { callee, args, span } => {
+            #[cfg(not(feature = "cross-module-imports"))]
+            let _ = span;
+            #[cfg(feature = "cross-module-imports")]
+            let canonical_identity = context.canonical_call_identity(*span, callee);
             // "finish MIND" Step 5 — payload-carrying enum constructor.
             // When the callee resolves to an enum variant in
             // `enum_variant_tags` AND the call has at least one argument
@@ -8014,8 +8051,8 @@ fn lower_expr(
                     return emit_boxed_enum_record(ir, tag, &payloads, total_slots);
                 }
             }
-            // RFC 0005 phase 2 (first slice) — param-type-directed array-literal
-            // ARGUMENT lowering. When the callee's declared param at this
+            // Param-type-directed array-literal argument lowering. When the
+            // callee's declared param at this
             // position is `array<T>` (per the `ARRAY_PARAM_FNS` pre-pass) and
             // the argument is an array literal (`f([1, 2, 3])`, `[]` included),
             // lower it onto the std.vec heap runtime — the SAME opaque i64 vec
@@ -8078,13 +8115,24 @@ fn lower_expr(
                 .iter()
                 .map(|a| lower_expr(a, ir, env, struct_env, receiver_types, context))
                 .collect();
-            // Codegen monomorphization: if the callee is a registered generic
-            // and the concrete arg type is inferable, route this call to the
             // mangled instance (`id$i64`) and queue that instance for emission.
             // A non-generic callee (or a shape outside the bounded slice) keeps
             // the original name, so non-generic call lowering is byte-identical.
             let name = try_register_mono_instance(callee, args).unwrap_or_else(|| callee.clone());
             let dst = ir.fresh();
+            #[cfg(feature = "cross-module-imports")]
+            context.canonical_record_call(*span, canonical_identity.as_ref(), &arg_ids, dst);
+            #[cfg(feature = "cross-module-imports")]
+            if !context.emit_canonical_call(
+                ir,
+                dst,
+                name.clone(),
+                arg_ids.clone(),
+                canonical_identity.clone(),
+            ) {
+                ir.instrs.push(Instr::legacy_call(dst, name, arg_ids));
+            }
+            #[cfg(not(feature = "cross-module-imports"))]
             ir.instrs.push(Instr::legacy_call(dst, name, arg_ids));
             dst
         }

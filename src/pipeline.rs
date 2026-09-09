@@ -28,6 +28,11 @@ use crate::parser;
 use crate::runtime::types::BackendTarget;
 use crate::type_checker;
 
+#[cfg(feature = "cross-module-imports")]
+use crate::project::canonical_bridge::{CanonicalBindingError, CanonicalBindingPlan};
+#[cfg(feature = "cross-module-imports")]
+use crate::project::single_file_scope::ProjectScope;
+
 /// Core v1 diagnostic for deterministic compiler-side materialization refusal.
 ///
 /// `E6002` remains the stable backend-unavailable code. Materialization was
@@ -296,6 +301,87 @@ pub fn compile_source_with_limits(
     limits: crate::eval::materialization::MaterializationLimits,
 ) -> Result<CompileProducts, CompileError> {
     compile_source_with_name_and_limits(source, None, opts, limits)
+}
+
+/// Compile a source snapshot into verified canonical IR using an explicit,
+/// captured project scope. This opt-in frontend intentionally stops before
+/// optimizer/backend/ABI handling; legacy `compile_source` is unchanged.
+#[cfg(feature = "cross-module-imports")]
+pub fn compile_source_to_canonical_ir(
+    source: &str,
+    source_name: Option<&str>,
+    scope: &ProjectScope,
+    owner: &str,
+) -> Result<ir::IRModule, CanonicalBindingError> {
+    let _scope_guard = scope.install();
+    let _module_guard = crate::qualified_enums::ModuleGuard::install(owner.to_string());
+    let mut module = parser::parse(source).map_err(|errors| CanonicalBindingError::Binding {
+        span: crate::ast::Span::new(0, source.len()),
+        message: errors
+            .into_iter()
+            .map(|error| error.to_string())
+            .collect::<Vec<_>>()
+            .join("; "),
+    })?;
+    let parsed_snapshot = module.clone();
+    let (collapse_diags, _) = opt::collapse::collapse_module(&mut module, source, source_name);
+    if !collapse_diags.is_empty() {
+        return Err(CanonicalBindingError::Binding {
+            span: crate::ast::Span::new(0, source.len()),
+            message: collapse_diags
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect::<Vec<_>>()
+                .join("; "),
+        });
+    }
+    let trait_diags = eval::desugar_traits(&mut module, source, source_name);
+    if !trait_diags.is_empty() {
+        return Err(CanonicalBindingError::Binding {
+            span: crate::ast::Span::new(0, source.len()),
+            message: "trait desugaring is outside the first canonical source slice".to_string(),
+        });
+    }
+    let closure_diags = eval::desugar_closures(&mut module, source, source_name);
+    if !closure_diags.is_empty() {
+        return Err(CanonicalBindingError::Binding {
+            span: crate::ast::Span::new(0, source.len()),
+            message: "closure desugaring is outside the first canonical source slice".to_string(),
+        });
+    }
+    if module != parsed_snapshot {
+        return Err(CanonicalBindingError::SnapshotMismatch(owner.to_string()));
+    }
+    let fact_guard = crate::type_checker::canonical_facts::Guard::install();
+    let type_diags = type_checker::check_module_types_in_file(
+        &module,
+        source,
+        source_name,
+        &crate::type_checker::TypeEnv::default(),
+    );
+    let checked_facts = fact_guard.finish();
+    if !type_diags.is_empty() {
+        return Err(CanonicalBindingError::Binding {
+            span: crate::ast::Span::new(0, source.len()),
+            message: type_diags
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect::<Vec<_>>()
+                .join("; "),
+        });
+    }
+    let plan = CanonicalBindingPlan::build_with_checked_facts(
+        &module,
+        source,
+        scope,
+        owner,
+        checked_facts,
+    )?;
+    eval::lower::lower_to_ir_with_canonical_plan(
+        &module,
+        crate::eval::materialization::MaterializationLimits::default(),
+        plan,
+    )
 }
 
 fn compile_source_with_name_and_limits(

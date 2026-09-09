@@ -74,14 +74,24 @@ body that its own decoder rejects solely on that budget.
 
 ## Verification and remaining work
 
+With `cross-module-imports` enabled, the opt-in Rust library API
+`compile_source_to_canonical_ir` binds a source snapshot to a captured project
+scope. It preserves resolved function owners and call identities, records scalar
+producer types from the existing checker, and verifies returns in their
+function scope. Changed snapshots, missing required facts, and unsupported
+source forms are refused. Unit functions and functions without an explicit
+return annotation remain outside this canonical source slice; ordinary
+compilation keeps its existing behavior.
+The API returns verified IR before optimization or backend execution.
+
 Controls cover equivalent registries built in different insertion orders,
 reused SSA value numbers in separate scopes, owner-qualified calls, recursive
 descriptors, malformed encodings, and bounds. Core vectors execute under bare
 and standard-surface feature profiles. These checks do not establish identity
 across every chip, backend, or compiler implementation.
 
-Resolver and type-checker ownership must still reach lowering without collapsing
-names from different modules. Standard-surface opcode transport, pure-MIND
+Full aggregate ownership and source lowering remain unfinished. Standard-surface
+opcode transport, pure-MIND
 encoder/decoder parity, native consumption, a reviewed shared vector set, and
 protocol release remain separate work. Successful scalar transport is not
 completion of those dependencies.

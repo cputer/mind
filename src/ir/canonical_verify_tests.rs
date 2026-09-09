@@ -118,6 +118,53 @@ fn user_call_without_resolved_identity_is_rejected() {
     ));
 }
 
+#[cfg(feature = "std-surface")]
+#[test]
+fn nested_typed_return_without_a_value_is_rejected() {
+    let identity = FunctionIdentity::new("module", "branch");
+    let mut bundle =
+        CanonicalModuleTypes::new(SchemaRegistryBuilder::default().finish().expect("registry"));
+    bundle
+        .add_declaration(FunctionDeclaration::new(
+            identity.clone(),
+            FunctionKind::Local,
+            FunctionSignature::new(Vec::new(), Some(SemanticType::Scalar(ScalarType::I64))),
+        ))
+        .expect("function declaration");
+    let mut module = IRModule::new();
+    module.instrs.push(Instr::FnDef {
+        name: "branch".to_string(),
+        params: Vec::new(),
+        ret_id: Some(ValueId(0)),
+        body: vec![Instr::If {
+            cond_id: ValueId(0),
+            cond_instrs: vec![],
+            then_instrs: vec![Instr::Return { value: None }],
+            then_result: ValueId(0),
+            else_instrs: vec![],
+            else_result: ValueId(0),
+            dst: ValueId(0),
+            branch_bindings: vec![],
+            merges: vec![],
+        }],
+        reap_threshold: None,
+        value_types: std::collections::BTreeMap::new(),
+        semantic_types: Some(Box::new({
+            let mut types = FunctionSemanticTypes::new(identity);
+            types
+                .set_value_type(ValueId(0), SemanticType::Scalar(ScalarType::I64))
+                .expect("return value type");
+            types
+        })),
+    });
+    module.canonical_types = Some(Box::new(bundle));
+    assert!(matches!(
+        verify_canonical_metadata(&module),
+        Err(CanonicalMetadataError::ReturnTypeMismatch { value, .. })
+            if value == ValueId(usize::MAX)
+    ));
+}
+
 #[test]
 fn canonical_authority_requires_every_function_body_metadata() {
     let registry = SchemaRegistryBuilder::default().finish().expect("registry");

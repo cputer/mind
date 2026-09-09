@@ -51,12 +51,16 @@ use crate::ast::{Module, Node, TypeAnn};
 /// against the declaration in the source module.
 ///
 /// Only `Node::FnDef` populates this; struct / const / enum exports
-/// are name-only.  When the imported module has an explicit
-/// `export { ... }` block (RFC 0002 surface), `exported_fns` stays
-/// empty because the block declares names, not signatures.
+/// are name-only. When the imported module has an explicit `export { ... }`
+/// block (RFC 0002 surface), signatures are captured only for names that the
+/// block exports and that resolve to module-local functions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportedFn {
     pub name: String,
+    /// Source generic parameters are declaration authority, even though the
+    /// current project table does not monomorphize them. Consumers must not
+    /// mistake a non-empty list for a concrete, owner-qualified function.
+    pub type_params: Vec<String>,
     pub param_types: Vec<TypeAnn>,
     pub ret_type: Option<TypeAnn>,
 }
@@ -390,6 +394,7 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
                 if exported_set.contains(name) {
                     exported_fns.push(ExportedFn {
                         name: name.clone(),
+                        type_params: fd.type_params.clone(),
                         param_types: params.iter().map(|p| aliases.resolve(&p.ty)).collect(),
                         ret_type: ret_type.as_ref().map(|ty| aliases.resolve(ty)),
                     });
@@ -408,6 +413,7 @@ pub fn collect_module_exports(module_path: &str, ast: &Module) -> ModuleExports 
                     exported.push(name.clone());
                     exported_fns.push(ExportedFn {
                         name: name.clone(),
+                        type_params: fd.type_params.clone(),
                         param_types: params.iter().map(|p| aliases.resolve(&p.ty)).collect(),
                         ret_type: ret_type.as_ref().map(|ty| aliases.resolve(ty)),
                     });

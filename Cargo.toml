@@ -166,6 +166,12 @@ name = "source_confinement"
 required-features = ["cross-module-imports"]
 
 [[test]]
+# Owner-preserving source-function resolution is compiled only with the
+# project module table; keep this target structurally absent otherwise.
+name = "project_function_resolution"
+required-features = ["cross-module-imports"]
+
+[[test]]
 name = "merge_kind_order_symmetry"
 # BOTH features are load-bearing, and declaring only one broke the required `build_test`
 # job. `std-surface` is what makes ScalarU64/ScalarU32 exist at all -- without it the

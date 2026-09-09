@@ -21,6 +21,15 @@ use serde::Deserialize;
 #[cfg(feature = "cross-module-imports")]
 pub(crate) mod active_module_table;
 
+/// Owner-preserving source-function resolution for canonical lowering plans.
+/// This is additive metadata only; legacy checking and lowering do not consume it.
+#[cfg(feature = "cross-module-imports")]
+pub mod call_bindings;
+
+/// Opt-in source-to-canonical IR bridge. Legacy compilation remains inert.
+#[cfg(feature = "cross-module-imports")]
+pub mod canonical_bridge;
+
 /// Cross-module import resolution (Phase 10.6 item 9 / Phase 15
 /// self-hosting prerequisite). Deliverable 1: the module table.
 /// Gated; not yet wired into the type-checker (mirrors RFC 0002's

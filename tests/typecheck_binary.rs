@@ -31,3 +31,15 @@ fn unknown_ident_reports_error() {
     let diags = type_checker::check_module_types(&module, src, &env);
     assert!(!diags.is_empty());
 }
+
+#[test]
+fn no_arrow_explicit_value_return_remains_ordinary_valid() {
+    let src = "fn main(x: i64) { if x { return 1 } return 0 }";
+    let module = parser::parse(src).unwrap();
+    let env = libmind::type_checker::TypeEnv::default();
+    let diags = type_checker::check_module_types(&module, src, &env);
+    assert!(
+        diags.is_empty(),
+        "ordinary no-arrow value returns must retain inferred i64 behavior: {diags:?}"
+    );
+}

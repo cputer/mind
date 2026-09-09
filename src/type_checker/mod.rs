@@ -12,8 +12,12 @@
 
 // Part of the MIND project (Machine Intelligence Native Design).
 
+#[macro_use]
+mod canonical_macro;
 #[cfg(feature = "std-surface")]
 mod array_lengths;
+#[cfg(feature = "cross-module-imports")]
+pub(crate) mod canonical_facts;
 #[cfg(feature = "cross-module-imports")]
 mod cross_module_types;
 mod duplicate_structs;
@@ -23,6 +27,7 @@ pub mod nerve_lint;
 mod nerve_walk;
 mod qualified_enums;
 mod qualified_imports;
+mod return_checks;
 mod struct_bindings;
 use qualified_enums::variant_payload_of;
 use struct_bindings::{StructNamesGuard, struct_name_in_scope};
@@ -849,6 +854,11 @@ fn closest_identifier(name: &str, env: &TypeEnv) -> Option<String> {
 }
 
 fn infer_expr(node: &Node, env: &TypeEnv) -> Result<(ValueType, AstSpan), TypeErrSpan> {
+    let result = infer_expr_inner(node, env);
+    mind_cf!(canonical_facts::record(node, &result));
+    result
+}
+fn infer_expr_inner(node: &Node, env: &TypeEnv) -> Result<(ValueType, AstSpan), TypeErrSpan> {
     match node {
         Node::Lit(Literal::Int(_), span) => Ok((ValueType::ScalarI32, *span)),
         Node::Lit(Literal::Float(_), span) => Ok((ValueType::ScalarF64, *span)),
@@ -2789,113 +2799,6 @@ fn cond_is_boolean_intent(node: &Node) -> bool {
         ),
         Node::Logical { .. } | Node::Not { .. } => true,
         _ => false,
-    }
-}
-
-/// Early check-phase diagnostics that need the enclosing function's declared
-/// return type in scope (E2010) or that inspect condition position (E2011).
-/// Walks the function body's statement positions, recursing through control
-/// flow but stopping at nested `FnDef`s (which carry their own return type).
-/// Uses `env` = params + module symbols (NO body-local bindings): a value that
-/// can't be resolved yields `Err` from `infer_expr` and is skipped, so this
-/// only ever fires on confidently-typed expressions — no false positives on
-/// locals. Additive: it only pushes E2010/E2011 on the sound conditions
-/// documented at each code constant.
-fn check_return_and_cond_types(
-    stmts: &[Node],
-    ret_ty: Option<&ValueType>,
-    env: &TypeEnv,
-    src: &str,
-    file: Option<&str>,
-    errs: &mut Vec<Pretty>,
-) {
-    for stmt in stmts {
-        check_return_and_cond_node(stmt, ret_ty, env, src, file, errs);
-    }
-}
-
-fn check_cond_type(
-    cond: &Node,
-    env: &TypeEnv,
-    src: &str,
-    file: Option<&str>,
-    errs: &mut Vec<Pretty>,
-) {
-    if cond_is_boolean_intent(cond) {
-        return;
-    }
-    if let Ok((vt, _)) = infer_expr(cond, env) {
-        if is_float_scalar(&vt) {
-            errs.push(diag_from_span(
-                src,
-                file,
-                format!(
-                    "condition must be a boolean or integer expression, but this is {}",
-                    describe_value_type(&vt)
-                ),
-                cond.span(),
-                COND_TYPE_MISMATCH_CODE,
-            ));
-        }
-    }
-}
-
-fn check_return_and_cond_node(
-    node: &Node,
-    ret_ty: Option<&ValueType>,
-    env: &TypeEnv,
-    src: &str,
-    file: Option<&str>,
-    errs: &mut Vec<Pretty>,
-) {
-    match node {
-        Node::Return { value: Some(v), .. } => {
-            if let Some(rt) = ret_ty {
-                if is_int_scalar(rt) {
-                    if let Ok((vt, _)) = infer_expr(v, env) {
-                        if is_float_scalar(&vt) {
-                            errs.push(diag_from_span(
-                                src,
-                                file,
-                                format!(
-                                    "return type mismatch: function returns {} but this returns {}",
-                                    describe_value_type(rt),
-                                    describe_value_type(&vt)
-                                ),
-                                v.span(),
-                                RETURN_TYPE_MISMATCH_CODE,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        Node::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            check_cond_type(cond, env, src, file, errs);
-            check_return_and_cond_types(then_branch, ret_ty, env, src, file, errs);
-            if let Some(eb) = else_branch {
-                check_return_and_cond_types(eb, ret_ty, env, src, file, errs);
-            }
-        }
-        #[cfg(feature = "std-surface")]
-        Node::While { cond, body, .. } => {
-            check_cond_type(cond, env, src, file, errs);
-            check_return_and_cond_types(body, ret_ty, env, src, file, errs);
-        }
-        Node::For { body, .. } | Node::ForEach { body, .. } => {
-            check_return_and_cond_types(body, ret_ty, env, src, file, errs);
-        }
-        Node::Block { stmts, .. } => {
-            check_return_and_cond_types(stmts, ret_ty, env, src, file, errs);
-        }
-        // Nested function definitions carry their own return type; the outer
-        // `ret_ty` does not apply, so do not descend into them here.
-        _ => {}
     }
 }
 
@@ -4864,6 +4767,7 @@ fn check_module_types_in_file_impl(
                             Err(e) => errs.push(diag_from_type_err(src, file, e)),
                         }
                         tenv.insert(name.clone(), vt_ann);
+                        mind_cf!(canonical_facts::bind(name, value.span()));
                     }
                     // E2026 — annotation names a locally-declared struct but
                     // the RHS is provably a scalar (`let v: Value = 42`, or
@@ -4898,6 +4802,7 @@ fn check_module_types_in_file_impl(
                 None => match infer_expr(value, &tenv) {
                     Ok((vt, _)) => {
                         tenv.insert(name.clone(), vt);
+                        mind_cf!(canonical_facts::bind(name, value.span()));
                     }
                     Err(e) => errs.push(diag_from_type_err(src, file, e)),
                 },
@@ -4942,6 +4847,7 @@ fn check_module_types_in_file_impl(
                     }
                     (_, Err(e)) => errs.push(diag_from_type_err(src, file, e)),
                 }
+                mind_cf!(canonical_facts::bind(name, value.span()));
             }
             // Import statements are handled at module level. With the
             // `cross-module-imports` feature and a populated module
@@ -5039,6 +4945,7 @@ fn check_module_types_in_file_impl(
                     }
                     Err(e) => errs.push(diag_from_type_err(src, file, e)),
                 }
+                mind_cf!(canonical_facts::bind(name, value.span()));
             }
             // `extern const NAME: TYPE` — record the name in the type env so
             // consumers resolve it. An array/aggregate annotation has no direct
@@ -5202,6 +5109,8 @@ fn check_module_types_in_file_impl(
                     let vt = valuetype_from_ann(&param.ty).unwrap_or(ValueType::ScalarI64);
                     fn_env.insert(param.name.clone(), vt);
                 }
+                #[cfg(feature = "cross-module-imports")]
+                let _canonical_fact_scope = canonical_facts::enter_function(*fn_span, params);
                 // Walk the function body as a mini-module so shape checks on
                 // `let` bindings inside the function body fire the same
                 // `shape::*` diagnostics.  This reuses the existing module-
@@ -5293,7 +5202,14 @@ fn check_module_types_in_file_impl(
                 // `fn_env` (params + module symbols). Sound-condition only —
                 // see RETURN_TYPE_MISMATCH_CODE / COND_TYPE_MISMATCH_CODE.
                 let ret_vt = ret_type.as_ref().and_then(valuetype_from_ann);
-                check_return_and_cond_types(body, ret_vt.as_ref(), &fn_env, src, file, &mut errs);
+                return_checks::check_return_and_cond_types(
+                    body,
+                    ret_vt.as_ref(),
+                    &fn_env,
+                    src,
+                    file,
+                    &mut errs,
+                );
 
                 // Confidence-gated scalar-class checks (RFC 0011 — no implicit
                 // int↔float coercion): E2010 float-return + int-value direction,

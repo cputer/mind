@@ -465,6 +465,38 @@ fn verify_stream(
                     }
                 }
             }
+            Instr::Return { value } => {
+                let Some(function) = owner else {
+                    if authority_present {
+                        return Err(CanonicalMetadataError::ReturnTypeMismatch {
+                            function: "<module>".to_string(),
+                            value: value.unwrap_or(ValueId(usize::MAX)),
+                        });
+                    }
+                    continue;
+                };
+                let identity = function.identity().to_string();
+                let Some(declaration) = bundle.functions().get(function.identity()) else {
+                    return Err(CanonicalMetadataError::FunctionNotRegistered { identity });
+                };
+                match (value, declaration.signature().return_type()) {
+                    (Some(value), Some(expected))
+                        if type_for(*value, bundle, owner) == Some(expected) => {}
+                    (None, None) => {}
+                    (Some(value), _) => {
+                        return Err(CanonicalMetadataError::ReturnTypeMismatch {
+                            function: identity,
+                            value: *value,
+                        });
+                    }
+                    (None, Some(_)) => {
+                        return Err(CanonicalMetadataError::ReturnTypeMismatch {
+                            function: identity,
+                            value: ValueId(usize::MAX),
+                        });
+                    }
+                }
+            }
             #[cfg(feature = "std-surface")]
             Instr::If {
                 cond_instrs,

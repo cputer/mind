@@ -89,14 +89,12 @@ impl ProjectScope {
     /// Resolve a source-level import through the same canonical module table
     /// used by project checking and native compilation.
     pub(crate) fn resolve_import_path(&self, owner: &str, path: &[String]) -> Option<&str> {
-        self.resolved_imports
-            .get(&(owner.to_string(), path.to_vec()))
-            .map(String::as_str)
-            .or_else(|| {
-                self.table
-                    .get_import(path)
-                    .map(|module| module.module_path.as_str())
-            })
+        super::call_bindings::resolve_import_target(
+            &self.table,
+            &self.resolved_imports,
+            owner,
+            path,
+        )
     }
     /// Check a qualified symbol against the exact module selected during
     /// captured project discovery, including that module's export boundary.
@@ -109,6 +107,27 @@ impl ProjectScope {
         self.resolve_import_path(owner, path)
             .and_then(|target| self.table.get(target))
             .is_some_and(|module| module.exported.iter().any(|name| name == symbol))
+    }
+    /// Resolve one source function without losing its declaration owner or
+    /// conflating ambiguity with absence. This metadata API is not wired into
+    /// the legacy checker or lowering paths.
+    pub fn resolve_function(
+        &self,
+        source_owner: &str,
+        reference: super::call_bindings::FunctionReference<'_>,
+    ) -> super::call_bindings::FunctionResolution {
+        let source_module = self
+            .sources
+            .iter()
+            .find(|source| source.module_path() == source_owner)
+            .map(CapturedSource::module);
+        super::call_bindings::resolve_function(
+            &self.table,
+            &self.resolved_imports,
+            source_owner,
+            source_module,
+            reference,
+        )
     }
     pub fn install(&self) -> ProjectTableGuard {
         let entry_module = self

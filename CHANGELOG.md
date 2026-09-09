@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — checked source ownership for canonical IR
+- The opt-in `compile_source_to_canonical_ir` library API binds source to a
+  captured project scope and retains resolved function owners, signatures,
+  call targets, and checked scalar types through lowering.
+- Canonical verification checks every return against its defining function,
+  including returns inside control flow. Unknown required producer types,
+  changed source snapshots, and unsupported source forms are refused.
+- Ordinary functions without a return annotation retain their existing return
+  behavior. This API is a bounded Rust frontend stage; native consumption,
+  aggregate lowering, and the standalone pure-MIND driver remain unfinished.
+
 ### Added — draft canonical MIC3 `0x04` core codec
 - Checked binary emission and loading preserve owner-qualified schema and
   function registries, resolved callees, and semantic values in their module or
@@ -17,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one layout across build profiles. Unsupported content, inconsistent metadata,
   noncanonical encodings, and inputs exceeding resource limits are refused.
 - Legacy `0x02`/`0x03` output is retained. The new revision remains a draft:
-  resolver/lowering population, pure-MIND codec parity, native consumption, and
+  full resolver/lowering population, pure-MIND codec parity, native consumption, and
   protocol release are separate unfinished steps. See
   [the draft scope](docs/mic3-v04-draft.md).
 
@@ -59,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Functions read initialized globals from their defining module without
   capturing caller-local variables. Module-level loop updates remain visible
   to called helpers, and scalar parameters clear stale tensor metadata.
+- Indexed assignments preserve supported array writes in statement contexts.
+  Unsupported receivers produce errors instead of being discarded by the test
+  evaluator.
 
 ### Fixed — aggregate constants preserve struct values (#247)
 - Struct-valued constants and supported fixed arrays of structs now lower their
