@@ -19,6 +19,8 @@ use std::path::PathBuf;
 use libmind::ir::compact::v3::{emit_mic3_checked, parse_mic3_prefix};
 #[path = "support/v04_mirror_descriptor_vectors.rs"]
 mod descriptor_vectors;
+#[path = "support/v04_mirror_intrinsic_vectors.rs"]
+mod intrinsic_vectors;
 #[path = "support/v04_mirror_modules.rs"]
 mod mirror_modules;
 #[path = "support/v04_mirror_oracle.rs"]
@@ -85,6 +87,7 @@ mod code {
     pub const RESERVED_OWNER: u32 = 31;
     pub const BAD_OPTIONAL_TAG: u32 = 32;
     pub const DESCRIPTOR_ELEMENTS: u32 = 33;
+    pub const INTRINSIC_CONTRACT: u32 = 34;
 }
 fn splice_surface(prefix: &[u8], replacement: &[u8]) -> Vec<u8> {
     // The surface field starts at offset 5; find its end by walking continuations.
@@ -614,6 +617,8 @@ fn v04_prefix_vectors() {
         });
     }
 
+    intrinsic_vectors::add_intrinsic_vectors(&mut vectors);
+
     // --- reference-decoder cross-check on every vector -------------------
     //
     // Positive control for the negatives: each malformed vector must be REFUSED
@@ -653,7 +658,7 @@ fn v04_prefix_vectors() {
             refused += 1;
         }
     }
-    assert_eq!(accepted, 4, "four full-body positives");
+    assert_eq!(accepted, 5, "five full-body positives");
     assert!(refused >= 14, "at least fourteen refusals, got {refused}");
 
     // --- write the corpus ------------------------------------------------

@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1782 | **Est. tokens:** ~3398940
-**Generated:** 2026-09-09 05:27 UTC
+**Files:** 1789 | **Est. tokens:** ~3402364
+**Generated:** 2026-09-09 05:28 UTC
 
 ## Token Budget Guide
 
@@ -66,8 +66,8 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~13924 |
-| `examples/mind_mirror_v04/testdata/` | 42 | ~2239 |
+| `examples/mind_mirror_v04/` | 3 | ~15206 |
+| `examples/mind_mirror_v04/testdata/` | 48 | ~2583 |
 | `examples/mindc_mind/` | 172 | ~441747 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
@@ -91,7 +91,7 @@
 | `sdk/ts/mic-map/test/` | 4 | ~7843 |
 | `sdk/ts/mic-map/test/fixtures/` | 2 | ~96 |
 | `skills/write-mind/` | 1 | ~6002 |
-| `src/` | 11 | ~51601 |
+| `src/` | 11 | ~51968 |
 | `src/ast/` | 1 | ~10960 |
 | `src/autodiff/` | 3 | ~6624 |
 | `src/bin/` | 1 | ~9878 |
@@ -130,10 +130,10 @@
 | `src/test/` | 4 | ~14244 |
 | `src/type_checker/` | 17 | ~56166 |
 | `src/type_checker/slice_abi/` | 3 | ~10768 |
-| `src/types/` | 10 | ~20723 |
+| `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 393 | ~790261 |
+| `tests/` | 393 | ~790306 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -191,7 +191,7 @@
 | `tests/selfhost_gaps/never_wrong/` | 18 | ~338 |
 | `tests/shapes/` | 3 | ~260 |
 | `tests/skip_shape_scan/` | 2 | ~10401 |
-| `tests/support/` | 4 | ~7835 |
+| `tests/support/` | 5 | ~9204 |
 | `tests/type_checker/` | 2 | ~140 |
 | `tools/` | 5 | ~13565 |
 | `tools/mindfuzz/` | 7 | ~16763 |
@@ -638,11 +638,11 @@
 ### `examples/mind_mirror_v04/`
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) â€” `mirror_gate.py` â€” replacement checklist
-- `mic3_v04_prefix_mirror.mind` (~10240 tok, huge) â€” ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~11522 tok, huge) â€” ===========================================================================
 - `mirror_gate.py` (~2900 tok, huge) â€” Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
-- `MANIFEST.tsv` (~1575 tok, huge) â€” # name	expected_exit	bytes	sha256	consumed	note
+- `MANIFEST.tsv` (~1803 tok, huge) â€” # name	expected_exit	bytes	sha256	consumed	note
 - `neg_bad_magic.mic3` (~26 tok, tiny) â€” MIC4	PairalphaentrymainownerAownerBstepxzeta
 - `neg_bad_return_present_tag.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
 - `neg_bad_utf8_string.mic3` (~3 tok, tiny) â€” MIC3Ã(
@@ -651,7 +651,11 @@
 - `neg_dynamic_over_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
 - `neg_empty_schema_owner.mic3` (~6 tok, tiny) â€” MIC3Pairf
 - `neg_function_cumulative_elements.mic3` (~14 tok, tiny) â€” MIC3entrymain€€ €€@€€ €€@
+- `neg_intrinsic_missing_return.mic3` (~14 tok, tiny) â€” MIC3__mind_intrinsic	store_i64
 - `neg_intrinsic_without_reserved_owner.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_intrinsic_wrong_arity.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
+- `neg_intrinsic_wrong_param_type.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
+- `neg_intrinsic_wrong_return_type.mic3` (~13 tok, tiny) â€” MIC3__mind_intrinsicload_i64
 - `neg_non_minimal_surface.mic3` (~26 tok, tiny) â€” MIC3€	PairalphaentrymainownerAownerBstepxzeta
 - `neg_overlong_surface.mic3` (~29 tok, tiny) â€” MIC3€€€€€€€€€€€€	PairalphaentrymainownerAownerBstepxzeta
 - `neg_path_like_function_owner.mic3` (~6 tok, tiny) â€” MIC3A..Bmain
@@ -667,6 +671,7 @@
 - `neg_truncated_schema_headers.mic3` (~15 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 - `neg_truncated_string_bytes.mic3` (~25 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 - `neg_unknown_function_kind.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicentrymainother
+- `neg_unknown_intrinsic.mic3` (~12 tok, tiny) â€” MIC3__mind_intrinsicevil
 - `neg_unknown_scalar_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta	
 - `neg_unknown_surface_bits.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 - `neg_unknown_type_tag.mic3` (~16 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
@@ -676,6 +681,7 @@
 - `neg_wrong_version.mic3` (~26 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 - `neg_zero_extent_hides_product.mic3` (~11 tok, tiny) â€” MIC3ABfÿÿÿÿÿÿÿÿ
 - `pos_full_body_element_boundary.mic3` (~10 tok, tiny) â€” MIC3ABf€€@€€@
+- `pos_full_body_intrinsic_catalog.mic3` (~51 tok, small) â€” MIC3__mind_intrinsicallocargcargvload8load_i64openreadstore8	store_i
 - `pos_full_body_long_string.mic3` (~57 tok, small) â€” MIC3Èxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 - `pos_full_body_scoped.mic3` (~41 tok, tiny) â€” MIC3	PairalphaentrymainownerAownerBstepxzeta
 - `pos_full_body_small.mic3` (~6 tok, tiny) â€” MIC3T
@@ -1210,7 +1216,7 @@
 - `printer.rs` (~17300 tok, huge) â€” Copyright 2025 STARGA Inc.
 ### `src/`
 
-- `intrinsic_contract.rs` (~2601 tok, huge) â€” Copyright 2025 STARGA Inc.
+- `intrinsic_contract.rs` (~2968 tok, huge) â€” Copyright 2025 STARGA Inc.
 - `intrinsics.rs` (~10966 tok, huge) â€” Copyright 2025 STARGA Inc.
 ### `src/ir/`
 
@@ -1402,7 +1408,7 @@
 - `canonical_intrinsic_validation.rs` (~446 tok, medium) â€” Copyright 2025 STARGA Inc.
 - `canonical_registry.rs` (~5107 tok, huge) â€” Copyright 2025 STARGA Inc.
 - `canonical_tests.rs` (~3544 tok, huge)
-- `canonical_types.rs` (~6521 tok, huge) â€” Copyright 2025 STARGA Inc.
+- `canonical_types.rs` (~6538 tok, huge) â€” Copyright 2025 STARGA Inc.
 - `infer.rs` (~448 tok, medium) â€” Copyright 2025 STARGA Inc.
 - `intern.rs` (~1554 tok, huge) â€” Copyright 2025 STARGA Inc.
 - `mod.rs` (~1132 tok, large) â€” Copyright 2025 STARGA Inc.
@@ -2377,7 +2383,8 @@
 
 - `g2_policy_rejections.rs` (~773 tok, large) â€” Copyright 2026 STARGA Inc.
 - `v04_mirror_descriptor_vectors.rs` (~1853 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
-- `v04_mirror_modules.rs` (~1403 tok, large) â€” Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_intrinsic_vectors.rs` (~1361 tok, large) â€” Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_modules.rs` (~1411 tok, large) â€” Copyright 2025-2026 STARGA Inc.
 - `v04_mirror_oracle.rs` (~3806 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
 ### `tests/`
 
@@ -2417,7 +2424,7 @@
 - `typo_reject.rs` (~1127 tok, large) â€” Copyright 2025 STARGA Inc.
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) â€” Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) â€” Copyright 2025 STARGA Inc.
-- `v04_mirror_vector_dump.rs` (~6664 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_vector_dump.rs` (~6709 tok, huge) â€” Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) â€” Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) â€” Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) â€” Copyright 2025 STARGA Inc.

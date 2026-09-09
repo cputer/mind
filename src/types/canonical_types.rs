@@ -706,10 +706,11 @@ fn validate_function_declaration(declaration: &FunctionDeclaration) -> Result<()
                     identity: declaration.identity.clone(),
                 });
             }
-            // Canonical declarations are backend-neutral on the wire, but
-            // their only admitted first-cut capability is the exact frozen
-            // native profile. Other backend selections must go through the
-            // explicit profile seam below and refuse closed.
+            // Canonical declarations are backend-neutral on the wire. The
+            // FrozenNative profile selects the bounded first-cut contract
+            // vocabulary here; validating a declaration does not itself grant
+            // native execution capability. Other profile queries use the
+            // explicit seam below and refuse closed.
             validate_intrinsic_profile(
                 &declaration.identity,
                 crate::intrinsics::IntrinsicProfile::FrozenNative,

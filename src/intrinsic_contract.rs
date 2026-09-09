@@ -289,6 +289,48 @@ mod tests {
                 IntrinsicImplementation::FrozenNative { seed_id: id } if id == seed_id
             ));
         }
+        for (name, effect) in [
+            ("alloc", IntrinsicEffect::ArenaAlloc),
+            ("argc", IntrinsicEffect::Argc),
+            ("argv", IntrinsicEffect::Argv),
+            ("load8", IntrinsicEffect::MemoryRead { width_bytes: 1 }),
+            ("load_i64", IntrinsicEffect::MemoryRead { width_bytes: 8 }),
+            ("open", IntrinsicEffect::OpenReadOnly),
+            ("read", IntrinsicEffect::FdRead),
+            ("store8", IntrinsicEffect::MemoryWrite { width_bytes: 1 }),
+            ("store_i64", IntrinsicEffect::MemoryWrite { width_bytes: 8 }),
+            ("write", IntrinsicEffect::FdWrite),
+        ] {
+            assert_eq!(
+                intrinsic_contract(name).expect("contract row").effect,
+                effect
+            );
+        }
+        for name in ["read", "write"] {
+            assert_eq!(
+                intrinsic_contract(name)
+                    .expect("I/O contract")
+                    .offset_policy,
+                IntrinsicOffsetPolicy::MustBeMinusOneIgnored
+            );
+        }
+        for name in [
+            "alloc",
+            "argc",
+            "argv",
+            "load8",
+            "load_i64",
+            "open",
+            "store8",
+            "store_i64",
+        ] {
+            assert_eq!(
+                intrinsic_contract(name)
+                    .expect("non-I/O contract")
+                    .offset_policy,
+                IntrinsicOffsetPolicy::Any
+            );
+        }
         assert!(intrinsic_supports_profile(
             "load_i64",
             IntrinsicProfile::RustMlir

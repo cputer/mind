@@ -3,6 +3,7 @@
 
 //! Canonical module builders used by the MIC3 v0x04 mirror vector generator.
 
+#[cfg(feature = "std-surface")]
 use std::collections::BTreeMap;
 
 use libmind::ir::{IRModule, Instr, ValueId};

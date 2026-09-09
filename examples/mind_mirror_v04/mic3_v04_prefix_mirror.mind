@@ -84,6 +84,8 @@
 //   32 BAD_OPTIONAL_TAG     an explicit 0/1 presence tag is neither
 //   33 DESCRIPTOR_ELEMENTS  one semantic descriptor or its cumulative scope
 //                           exceeds the reference's 2^40 element bound
+//   34 INTRINSIC_CONTRACT   reserved intrinsic has no exact registered
+//                           name or `(i64...) -> i64` signature
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -116,6 +118,7 @@ pub fn mv_max_descriptor_elements() -> i64 {
 // st+0 cursor   st+8 value   st+16 status   st+24 remaining allocation budget
 // st+32 last descriptor elements   st+40 schema cumulative elements
 // st+48 module-value/function-signature cumulative elements
+// st+56 current intrinsic-signature mismatch flag
 
 pub fn mv_st_cursor(st: i64) -> i64 {
     __mind_load_i64(st + 0)
@@ -831,6 +834,139 @@ pub fn mv_is_reserved_owner(buf: i64, off: i64, n: i64, i: i64) -> i64 {
     mv_is_reserved_owner(buf, off, n, i + 1)
 }
 
+// Exact logical names and arities of the ten reference registry rows admitted
+// by canonical v0x04 declarations. Effects and FrozenNative result-use policy
+// are registry metadata, not fields in the v0x04 wire signature. In particular,
+// store signatures remain `(i64, i64) -> i64` here; later native admission owns
+// the DiscardOnly use rule.
+pub fn mv_intrinsic_name_len(id: i64) -> i64 {
+    if id == 0 { return 5; } // alloc
+    if id == 1 { return 4; } // argc
+    if id == 2 { return 4; } // argv
+    if id == 3 { return 5; } // load8
+    if id == 4 { return 8; } // load_i64
+    if id == 5 { return 4; } // open
+    if id == 6 { return 4; } // read
+    if id == 7 { return 6; } // store8
+    if id == 8 { return 9; } // store_i64
+    if id == 9 { return 5; } // write
+    0
+}
+
+pub fn mv_intrinsic_arity(id: i64) -> i64 {
+    if id == 1 { return 0; }
+    if id == 0 { return 1; }
+    if id == 2 { return 1; }
+    if id == 3 { return 1; }
+    if id == 4 { return 1; }
+    if id == 5 { return 1; }
+    if id == 7 { return 2; }
+    if id == 8 { return 2; }
+    if id == 6 { return 4; }
+    if id == 9 { return 4; }
+    0 - 1
+}
+
+pub fn mv_intrinsic_name_byte(id: i64, i: i64) -> i64 {
+    if id == 0 { // alloc
+        if i == 0 { return 97; }
+        if i == 1 { return 108; }
+        if i == 2 { return 108; }
+        if i == 3 { return 111; }
+        return 99;
+    }
+    if id == 1 { // argc
+        if i == 0 { return 97; }
+        if i == 1 { return 114; }
+        if i == 2 { return 103; }
+        return 99;
+    }
+    if id == 2 { // argv
+        if i == 0 { return 97; }
+        if i == 1 { return 114; }
+        if i == 2 { return 103; }
+        return 118;
+    }
+    if id == 3 { // load8
+        if i == 0 { return 108; }
+        if i == 1 { return 111; }
+        if i == 2 { return 97; }
+        if i == 3 { return 100; }
+        return 56;
+    }
+    if id == 4 { // load_i64
+        if i == 0 { return 108; }
+        if i == 1 { return 111; }
+        if i == 2 { return 97; }
+        if i == 3 { return 100; }
+        if i == 4 { return 95; }
+        if i == 5 { return 105; }
+        if i == 6 { return 54; }
+        return 52;
+    }
+    if id == 5 { // open
+        if i == 0 { return 111; }
+        if i == 1 { return 112; }
+        if i == 2 { return 101; }
+        return 110;
+    }
+    if id == 6 { // read
+        if i == 0 { return 114; }
+        if i == 1 { return 101; }
+        if i == 2 { return 97; }
+        return 100;
+    }
+    if id == 7 { // store8
+        if i == 0 { return 115; }
+        if i == 1 { return 116; }
+        if i == 2 { return 111; }
+        if i == 3 { return 114; }
+        if i == 4 { return 101; }
+        return 56;
+    }
+    if id == 8 { // store_i64
+        if i == 0 { return 115; }
+        if i == 1 { return 116; }
+        if i == 2 { return 111; }
+        if i == 3 { return 114; }
+        if i == 4 { return 101; }
+        if i == 5 { return 95; }
+        if i == 6 { return 105; }
+        if i == 7 { return 54; }
+        return 52;
+    }
+    if id == 9 { // write
+        if i == 0 { return 119; }
+        if i == 1 { return 114; }
+        if i == 2 { return 105; }
+        if i == 3 { return 116; }
+        return 101;
+    }
+    0 - 1
+}
+
+pub fn mv_intrinsic_name_eq(buf: i64, off: i64, id: i64, i: i64) -> i64 {
+    if i >= mv_intrinsic_name_len(id) {
+        return 1;
+    }
+    if __mind_load_i8(buf + off + i) != mv_intrinsic_name_byte(id, i) {
+        return 0;
+    }
+    mv_intrinsic_name_eq(buf, off, id, i + 1)
+}
+
+pub fn mv_intrinsic_find(buf: i64, off: i64, n: i64, id: i64) -> i64 {
+    if id >= 10 {
+        return 0 - 1;
+    }
+    if n == mv_intrinsic_name_len(id) {
+        if mv_intrinsic_name_eq(buf, off, id, 0) == 1 {
+            return id;
+        }
+    }
+    mv_intrinsic_find(buf, off, n, id + 1)
+}
+
 // Walk `n` signature parameters, each a semantic type descriptor. The wire
 // grammar for a semantic type is the schema field grammar, so the same walker
 // admits both; the reference keeps two functions over one encoding.
@@ -842,6 +978,7 @@ pub fn mv_walk_params(
     nschema: i64,
     sch: i64,
     tab: i64,
+    declaration_kind: i64,
     st: i64
 ) -> i64 {
     if n <= 0 {
@@ -856,8 +993,16 @@ pub fn mv_walk_params(
     if rce != 0 {
         return rce;
     }
+    if declaration_kind == 2 {
+        if __mind_load_i8(buf + pos) != 0 {
+            __mind_store_i64(st + 56, 1);
+        }
+        if __mind_load_i8(buf + pos + 1) != 1 {
+            __mind_store_i64(st + 56, 1);
+        }
+    }
     let p1: i64 = mv_st_cursor(st);
-    mv_walk_params(buf, len, p1, n - 1, nschema, sch, tab, st)
+    mv_walk_params(buf, len, p1, n - 1, nschema, sch, tab, declaration_kind, st)
 }
 
 // Walk `n` remaining function declarations. Order is checked on the identity
@@ -933,6 +1078,17 @@ pub fn mv_walk_functions(
             return mv_fail(st, 31);
         }
     }
+    __mind_store_i64(st + 56, 0);
+    let intrinsic_id: i64 = if kind == 2 {
+        mv_intrinsic_find(buf, mv_str_off(tab, name), mv_str_len(tab, name), 0)
+    } else {
+        0 - 1
+    };
+    if kind == 2 {
+        if intrinsic_id < 0 {
+            __mind_store_i64(st + 56, 1);
+        }
+    }
     let rc3: i64 = mv_uleb(buf, len, p2 + 1, 0, 0, 1, st);
     if rc3 != 0 {
         return rc3;
@@ -942,11 +1098,18 @@ pub fn mv_walk_functions(
     if nparam > len - p3 {
         return mv_fail(st, 10);
     }
+    if kind == 2 {
+        if intrinsic_id >= 0 {
+            if nparam != mv_intrinsic_arity(intrinsic_id) {
+                __mind_store_i64(st + 56, 1);
+            }
+        }
+    }
     let rcc: i64 = mv_charge(st, nparam * 128);
     if rcc != 0 {
         return rcc;
     }
-    let rc4: i64 = mv_walk_params(buf, len, p3, nparam, nschema, sch, tab, st);
+    let rc4: i64 = mv_walk_params(buf, len, p3, nparam, nschema, sch, tab, kind, st);
     if rc4 != 0 {
         return rc4;
     }
@@ -956,6 +1119,9 @@ pub fn mv_walk_functions(
     }
     let present: i64 = __mind_load_i8(buf + p4);
     if present == 0 {
+        if kind == 2 {
+            return mv_fail(st, 34);
+        }
         return mv_walk_functions(
             buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, st
         );
@@ -972,6 +1138,17 @@ pub fn mv_walk_functions(
         return rce;
     }
     let p5: i64 = mv_st_cursor(st);
+    if kind == 2 {
+        if __mind_load_i8(buf + p4 + 1) != 0 {
+            __mind_store_i64(st + 56, 1);
+        }
+        if __mind_load_i8(buf + p4 + 2) != 1 {
+            __mind_store_i64(st + 56, 1);
+        }
+        if __mind_load_i64(st + 56) != 0 {
+            return mv_fail(st, 34);
+        }
+    }
     mv_walk_functions(buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, st)
 }
 
