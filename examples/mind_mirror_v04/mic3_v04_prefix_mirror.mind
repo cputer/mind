@@ -12,26 +12,27 @@
 // input bytes. Exit 0 means the body decoded AND re-encoded byte for byte AND
 // the artifact contained nothing past it.
 //
-// WHAT THIS IS NOT. Wire acceptance is NOT semantic validity, and exit 0 must
-// not be read as the latter. These reference predicates are NOT implemented
-// here; each is a separately named outstanding obligation, not a rule this
-// program has checked:
+// WHAT THIS IS NOT. Wire acceptance is NOT full semantic validity, and exit 0
+// must not be read as the latter. The module-scope ValueId bound is checked
+// below because it is a framing invariant of this body reader. These other
+// reference predicates remain separately named outstanding obligations, not
+// rules this program has checked:
 //
-//   * validate_core_value_ids — module next_id must cover every ValueId the
-//     instructions and module rows define. The mirror reads next_id and
-//     re-emits it without relating it to anything.
-//   * verify_canonical_metadata — a FnDef's ret_id must agree with its declared
-//     signature, and each function's semantic rows carry their own cumulative
-//     element budget, enforced in canonical_verify.rs rather than in the codec.
+//   * verify_canonical_metadata — parameter descriptors/names, local definition
+//     coverage, and each function's semantic-row scope/budget remain outside
+//     this mirror. The parameter arity, return-presence, return ValueId, return
+//     descriptor, and FnDef-name-to-declaration identity checks are implemented
+//     below.
 //   * the "carries no semantic authority" condition, which refuses a body whose
 //     bundle is empty and whose instructions carry no metadata.
 //   * string-table minimality: the reference rebuilds the table from the
 //     strings actually referenced, so a body carrying an entry nothing names is
 //     noncanonical. The mirror re-emits the table it was given.
 //
-// A body this program exits 0 on is therefore WIRE-CANONICAL — it decoded, and
-// its canonical re-encoding is byte-identical to the bytes consumed — and
-// nothing stronger is claimed. Content past the body is still refused (20).
+// A body this program exits 0 on is therefore WIRE-CANONICAL and has passed the
+// module-scope core ValueId bound — it decoded, its canonical re-encoding is
+// byte-identical to the bytes consumed, and nothing stronger is claimed.
+// Content past the body is still refused (20).
 // A complete `0x04` artifact from the reference encoder is read through the
 // module rows and exits 0 when no trailing bytes remain; this still does not
 // certify the semantic predicates listed above.
@@ -119,6 +120,10 @@
 //   38 RESERVED_NONZERO     a reserved compatibility count is not zero
 //   39 VALUE_ROW_ORDER      semantic value rows not strictly sorted by ValueId
 //   40 BAD_BINOP            binary operator tag outside the core set
+//   41 VALUE_ID_BOUND       module next_id is below a module-scope ValueId
+//   42 RETURN_SIGNATURE      FnDef return metadata disagrees with its declaration
+//   43 FUNCTION_IDENTITY     FnDef name disagrees with its resolved declaration
+//   44 PARAMETER_ARITY        FnDef parameter count disagrees with declaration
 // ===========================================================================
 
 // ---- declared bounds ------------------------------------------------------
@@ -152,6 +157,18 @@ pub fn mv_max_descriptor_elements() -> i64 {
 // st+32 last descriptor elements   st+40 schema cumulative elements
 // st+48 module-value/function-signature cumulative elements
 // st+56 current intrinsic-signature mismatch flag
+// st+64 module-scope exclusive ValueId bound
+// st+72 whether mv_vid currently records module-scope IDs
+// st+80 return ValueId under validation
+// st+88 declared return descriptor start
+// st+96 declared return descriptor end
+// st+104 whether the return row was found
+// st+112 whether return-row validation is active
+// st+120 optional return ValueId presence tag
+// st+128+depth*8 saved FnDef return presence (nested optionals reuse st+120)
+// st+2176+depth*8 saved FnDef name string index
+// st+4256+depth*8 saved FnDef parameter count
+// st+6400+depth*8 saved FnDef return ValueId (nested functions have their own)
 
 pub fn mv_st_cursor(st: i64) -> i64 {
     __mind_load_i64(st + 0)
@@ -176,6 +193,16 @@ pub fn mv_st_budget(st: i64) -> i64 {
 
 pub fn mv_st_elements(st: i64) -> i64 {
     __mind_load_i64(st + 32)
+}
+
+pub fn mv_bytes_equal(buf: i64, left: i64, right: i64, n: i64) -> i64 {
+    if n <= 0 {
+        return 1;
+    }
+    if __mind_load_i8(buf + left) != __mind_load_i8(buf + right) {
+        return 0;
+    }
+    mv_bytes_equal(buf, left + 1, right + 1, n - 1)
 }
 
 // Add the last descriptor's semantic element cost to one reference-owned
@@ -1157,8 +1184,12 @@ pub fn mv_walk_functions(
         if kind == 2 {
             return mv_fail(st, 34);
         }
-        __mind_store_i64(fnt + 16 * idx + 0, owner);
-        __mind_store_i64(fnt + 16 * idx + 8, name);
+        __mind_store_i64(fnt + 48 * idx + 0, owner);
+        __mind_store_i64(fnt + 48 * idx + 8, name);
+        __mind_store_i64(fnt + 48 * idx + 16, 0);
+        __mind_store_i64(fnt + 48 * idx + 24, 0);
+        __mind_store_i64(fnt + 48 * idx + 32, 0);
+        __mind_store_i64(fnt + 48 * idx + 40, nparam);
         return mv_walk_functions(
             buf, len, p4 + 1, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
         );
@@ -1186,8 +1217,12 @@ pub fn mv_walk_functions(
             return mv_fail(st, 34);
         }
     }
-    __mind_store_i64(fnt + 16 * idx + 0, owner);
-    __mind_store_i64(fnt + 16 * idx + 8, name);
+    __mind_store_i64(fnt + 48 * idx + 0, owner);
+    __mind_store_i64(fnt + 48 * idx + 8, name);
+    __mind_store_i64(fnt + 48 * idx + 16, p4 + 1);
+    __mind_store_i64(fnt + 48 * idx + 24, p5);
+    __mind_store_i64(fnt + 48 * idx + 32, 1);
+    __mind_store_i64(fnt + 48 * idx + 40, nparam);
     mv_walk_functions(
         buf, len, p5, n - 1, owner, name, nstr, nschema, tab, sch, fnt, idx + 1, st
     )
@@ -1323,12 +1358,71 @@ pub fn mv_emit_functions(inbuf: i64, outbuf: i64, ipos: i64, opos: i64, n: i64, 
 // ---- function identity table ----------------------------------------------
 
 // Total identity bytes of function `i`, for the reference's identity-projection
-// charge. `fnt` holds one 16-byte row per admitted declaration: the owner and
-// name string indices, recorded by mv_walk_functions.
+// charge. `fnt` holds one 48-byte row per admitted declaration: the owner and
+// name string indices, declared return descriptor range, and parameter count.
 pub fn mv_fn_ident_bytes(fnt: i64, tab: i64, i: i64) -> i64 {
-    let owner: i64 = __mind_load_i64(fnt + 16 * i + 0);
-    let name: i64 = __mind_load_i64(fnt + 16 * i + 8);
+    let owner: i64 = __mind_load_i64(fnt + 48 * i + 0);
+    let name: i64 = __mind_load_i64(fnt + 48 * i + 8);
     mv_str_len(tab, owner) + mv_str_len(tab, name)
+}
+
+pub fn mv_fn_return_present(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 48 * i + 32)
+}
+
+pub fn mv_fn_return_start(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 48 * i + 16)
+}
+
+pub fn mv_fn_return_end(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 48 * i + 24)
+}
+
+pub fn mv_fn_param_count(fnt: i64, i: i64) -> i64 {
+    __mind_load_i64(fnt + 48 * i + 40)
+}
+
+// Keep the optional return-ID branch in the parser helper, where the frozen
+// native backend already accepts the wire tag tests. The declaration table is
+// only available after the body, so this helper compares the captured
+// presence and then arms exact descriptor-row validation.
+pub fn mv_prepare_return(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
+    let got: i64 = __mind_load_i64(st + 128 + depth * 8);
+    let expected: i64 = mv_fn_return_present(fnt, fidx);
+    if got != expected {
+        return mv_fail(st, 42);
+    }
+    if got == 1 {
+        __mind_store_i64(st + 80, __mind_load_i64(st + 6400 + depth * 8));
+        __mind_store_i64(st + 88, mv_fn_return_start(fnt, fidx));
+        __mind_store_i64(st + 96, mv_fn_return_end(fnt, fidx));
+        __mind_store_i64(st + 104, 0);
+        __mind_store_i64(st + 112, 1);
+    } else {
+        __mind_store_i64(st + 112, 0);
+    }
+    0
+}
+
+pub fn mv_fn_name_matches(buf: i64, tab: i64, fnt: i64, i: i64, name: i64) -> i64 {
+    let declared: i64 = __mind_load_i64(fnt + 48 * i + 8);
+    let left: i64 = mv_str_off(tab, declared);
+    let right: i64 = mv_str_off(tab, name);
+    let left_len: i64 = mv_str_len(tab, declared);
+    let right_len: i64 = mv_str_len(tab, name);
+    if left_len != right_len {
+        return 0;
+    }
+    mv_bytes_equal(buf, left, right, left_len)
+}
+
+pub fn mv_prepare_params(st: i64, fnt: i64, fidx: i64, depth: i64) -> i64 {
+    let got: i64 = __mind_load_i64(st + 4256 + depth * 8);
+    let expected: i64 = mv_fn_param_count(fnt, fidx);
+    if got != expected {
+        return mv_fail(st, 44);
+    }
+    0
 }
 
 // ---- instructions ---------------------------------------------------------
@@ -1336,7 +1430,18 @@ pub fn mv_fn_ident_bytes(fnt: i64, tab: i64, i: i64) -> i64 {
 // Read a ULEB at `pos` into st+8 and the end cursor into st+0, or return the
 // cause. Every instruction operand that is a bare value id uses this.
 pub fn mv_vid(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
-    mv_uleb(buf, len, pos, 0, 0, 1, st)
+    let rc: i64 = mv_uleb(buf, len, pos, 0, 0, 1, st);
+    if rc != 0 {
+        return rc;
+    }
+    if __mind_load_i64(st + 72) == 1 {
+        let value: i64 = mv_st_value(st);
+        let exclusive: i64 = value + 1;
+        if exclusive > __mind_load_i64(st + 64) {
+            __mind_store_i64(st + 64, exclusive);
+        }
+    }
+    0
 }
 
 // An explicit 0/1 presence tag followed, when 1, by a value id.
@@ -1346,12 +1451,14 @@ pub fn mv_opt_vid(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
     }
     let tag: i64 = __mind_load_i8(buf + pos);
     if tag == 0 {
+        __mind_store_i64(st + 120, 0);
         __mind_store_i64(st + 0, pos + 1);
         return 0;
     }
     if tag != 1 {
         return mv_fail(st, 32);
     }
+    __mind_store_i64(st + 120, 1);
     mv_vid(buf, len, pos + 1, st)
 }
 
@@ -1398,7 +1505,9 @@ pub fn mv_reserved_zero(buf: i64, len: i64, pos: i64, st: i64) -> i64 {
 }
 
 // `n` semantic value rows, each a value id and a descriptor, strictly sorted by
-// value id. Used for a function's own scoped table.
+// value id. Used for a function's own scoped table. When return validation is
+// active, the row carrying the declared ret_id must reproduce the declaration's
+// exact descriptor bytes.
 pub fn mv_walk_value_rows(
     buf: i64,
     len: i64,
@@ -1430,6 +1539,19 @@ pub fn mv_walk_value_rows(
         return rct;
     }
     let p2: i64 = mv_st_cursor(st);
+    if __mind_load_i64(st + 112) == 1 {
+        if vid == __mind_load_i64(st + 80) {
+            let expected_start: i64 = __mind_load_i64(st + 88);
+            let expected_end: i64 = __mind_load_i64(st + 96);
+            if p2 - p1 != expected_end - expected_start {
+                return mv_fail(st, 42);
+            }
+            if mv_bytes_equal(buf, p1, expected_start, p2 - p1) == 0 {
+                return mv_fail(st, 42);
+            }
+            __mind_store_i64(st + 104, 1);
+        }
+    }
     mv_walk_value_rows(buf, len, p2, n - 1, vid, nschema, sch, tab, st)
 }
 
@@ -1635,16 +1757,23 @@ pub fn mv_instr(
     // a NESTED body, the reserved legacy table, the resolved identity, and the
     // function's own scoped semantic value rows.
     if op == 21 {
+        // The reference's module next_id check excludes every function's
+        // declaration/body namespace. Disable module tracking for this whole
+        // instruction, restoring it before the caller advances its stream.
+        let prior_track: i64 = __mind_load_i64(st + 72);
+        __mind_store_i64(st + 72, 0);
         let rc1: i64 = mv_string_ref(buf, len, pos + 1, nstr, tab, st);
         if rc1 != 0 {
             return rc1;
         }
+        __mind_store_i64(st + 2176 + depth * 8, mv_st_value(st));
         let p1: i64 = mv_st_cursor(st);
         let rc2: i64 = mv_uleb(buf, len, p1, 0, 0, 1, st);
         if rc2 != 0 {
             return rc2;
         }
         let nparam: i64 = mv_st_value(st);
+        __mind_store_i64(st + 4256 + depth * 8, nparam);
         let p2: i64 = mv_st_cursor(st);
         if nparam > len - p2 {
             return mv_fail(st, 10);
@@ -1662,6 +1791,8 @@ pub fn mv_instr(
         if rc4 != 0 {
             return rc4;
         }
+        __mind_store_i64(st + 6400 + depth * 8, mv_st_value(st));
+        __mind_store_i64(st + 128 + depth * 8, __mind_load_i64(st + 120));
         let p4: i64 = mv_st_cursor(st);
         let rc5: i64 = mv_opt_f64(buf, len, p4, st);
         if rc5 != 0 {
@@ -1702,6 +1833,23 @@ pub fn mv_instr(
         if fidx >= nfunc {
             return mv_fail(st, 23);
         }
+        if mv_fn_name_matches(
+            buf,
+            tab,
+            fnt,
+            fidx,
+            __mind_load_i64(st + 2176 + depth * 8)
+        ) == 0 {
+            return mv_fail(st, 43);
+        }
+        let rcpp: i64 = mv_prepare_params(st, fnt, fidx, depth);
+        if rcpp != 0 {
+            return rcpp;
+        }
+        let rcpres: i64 = mv_prepare_return(st, fnt, fidx, depth);
+        if rcpres != 0 {
+            return rcpres;
+        }
         let rcf: i64 = mv_charge(st, mv_fn_ident_bytes(fnt, tab, fidx) * 8);
         if rcf != 0 {
             return rcf;
@@ -1719,7 +1867,19 @@ pub fn mv_instr(
         if rcr != 0 {
             return rcr;
         }
-        return mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, st);
+        let result: i64 = mv_walk_value_rows(buf, len, p10, nrow, 0 - 1, nschema, sch, tab, st);
+        if result == 0 {
+            if __mind_load_i64(st + 112) == 1 {
+                if __mind_load_i64(st + 104) == 0 {
+                    __mind_store_i64(st + 112, 0);
+                    __mind_store_i64(st + 72, prior_track);
+                    return mv_fail(st, 42);
+                }
+            }
+        }
+        __mind_store_i64(st + 112, 0);
+        __mind_store_i64(st + 72, prior_track);
+        return result;
     }
 
     mv_fail(st, 37)
@@ -2044,9 +2204,13 @@ pub fn main() -> i64 {
         return 17;
     }
 
-    let st: i64 = __mind_alloc(64);
+    let st: i64 = __mind_alloc(8448);
     __mind_store_i64(st + 40, 0);
     __mind_store_i64(st + 48, 0);
+    __mind_store_i64(st + 64, 0);
+    __mind_store_i64(st + 72, 0);
+    __mind_store_i64(st + 120, 0);
+    __mind_store_i64(st + 128, 0);
 
     // --- header ---
     if len < 4 {
@@ -2173,7 +2337,7 @@ pub fn main() -> i64 {
     if rc9 != 0 {
         return rc9;
     }
-    let fnt: i64 = __mind_alloc(16 * nfunc + 16);
+    let fnt: i64 = __mind_alloc(48 * nfunc + 16);
     let rc10: i64 = mv_walk_functions(
         inbuf, len, fn_start, nfunc, 0 - 1, 0 - 1, count, nschema, tab, sch, fnt, 0, st
     );
@@ -2224,6 +2388,10 @@ pub fn main() -> i64 {
     if rc16 != 0 {
         return rc16;
     }
+    // Only the module instruction stream contributes to the module next_id
+    // bound. FnDef switches this flag off while decoding its independent
+    // declaration/body namespace and restores it on successful completion.
+    __mind_store_i64(st + 72, 1);
     let rc17: i64 = mv_walk_instrs(
         inbuf, len, instr_start, ninstr, 0, count, nschema, nfunc, tab, sch, fnt, st
     );
@@ -2255,6 +2423,10 @@ pub fn main() -> i64 {
     let z4: i64 = mv_st_cursor(st);
 
     // --- module semantic value rows ---
+    // Module rows are part of the same scope as the top-level instruction
+    // operands, so mv_vid records them while the module tracking flag remains
+    // enabled. The reference performs this check before canonical metadata
+    // verification and before canonical re-emission.
     let rc22: i64 = mv_uleb(inbuf, len, z4, 0, 0, 1, st);
     if rc22 != 0 {
         return rc22;
@@ -2273,6 +2445,9 @@ pub fn main() -> i64 {
     );
     if rc24 != 0 {
         return rc24;
+    }
+    if next_id < __mind_load_i64(st + 64) {
+        return mv_fail(st, 41);
     }
     let prefix_len: i64 = mv_st_cursor(st);
     if prefix_len > mv_max_prefix() {

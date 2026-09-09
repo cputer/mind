@@ -97,3 +97,16 @@ opcode transport, pure-MIND
 encoder/decoder parity, native consumption, a reviewed shared vector set, and
 protocol release remain separate work. Successful scalar transport is not
 completion of those dependencies.
+
+The experimental pure-MIND body mirror now reads and re-emits the complete
+supported core body, including instructions, exports and scoped value rows.
+Its separate semantic gate checks module `next_id` coverage, function identity,
+parameter arity and return metadata against the declared signature. Nested
+functions retain independent return IDs. CI executes 69 wire vectors and 13
+semantic vectors, with exact re-emission checks on every positive fixture.
+The Rust reference decoder independently accepts or refuses the semantic
+controls; a passing mirror result does not yet mean full canonical validation.
+Parameter descriptors, local-definition coverage, semantic scope budgets,
+authority presence and string-table minimality remain explicit parity gaps.
+This mirror is not installed as the production decoder or a promoted consumer
+compiler.

@@ -18,7 +18,11 @@ Two independent checks per positive vector:
      program's word.
 
 Usage:
+  python3 examples/mind_mirror_v04/mirror_gate.py [--semantic]
   python3 examples/mind_mirror_v04/mirror_gate.py [--mutate <sed-expr>]
+
+`--semantic` runs the separate module ValueId and function-metadata controls;
+the default manifest remains the 69-vector wire-canonical corpus.
 """
 
 import hashlib
@@ -33,6 +37,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SRC = HERE / "mic3_v04_prefix_mirror.mind"
 TESTDATA = HERE / "testdata"
 MANIFEST = ROOT / "examples/mindc_mind/testdata/stdlib_manifest.txt"
+SEMANTIC_MANIFEST = TESTDATA / "SEMANTIC_MANIFEST.tsv"
 COMPILER = ROOT / "examples/mindc_mind/testdata/selfhost_loop/stage1.elf"
 FROZEN_SEED_COUNT = 21
 
@@ -120,9 +125,9 @@ def compile_native(src_bytes: bytes, out_path: pathlib.Path):
     return elf, sha(blob)
 
 
-def read_manifest():
+def read_manifest(path):
     rows = []
-    for line in (TESTDATA / "MANIFEST.tsv").read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#") or not line.strip():
             continue
         name, expected, size, digest, consumed, note = line.split("\t", 5)
@@ -132,8 +137,12 @@ def read_manifest():
 
 def main():
     mutate = None
-    if len(sys.argv) >= 3 and sys.argv[1] == "--mutate":
-        mutate = sys.argv[2]
+    semantic = "--semantic" in sys.argv[1:]
+    if "--mutate" in sys.argv[1:]:
+        index = sys.argv.index("--mutate")
+        if index + 1 >= len(sys.argv):
+            sys.exit("--mutate requires a sed expression")
+        mutate = sys.argv[index + 1]
 
     src = SRC.read_bytes()
     if mutate:
@@ -179,7 +188,10 @@ def main():
                 print(f"  - {entry}")
             return 1
 
-        rows = read_manifest()
+        manifest_path = SEMANTIC_MANIFEST if semantic else TESTDATA / "MANIFEST.tsv"
+        fixture_dir = TESTDATA / "semantic" if semantic else TESTDATA
+        rows = read_manifest(manifest_path)
+        print(f"manifest              {manifest_path.name}")
         positives = [r for r in rows if r[0].startswith("pos_")]
         negatives = [r for r in rows if r[0].startswith("neg_")]
         if not positives or not negatives:
@@ -188,7 +200,7 @@ def main():
         failures = []
         dumped = 0
         for name, expected, size, digest, consumed, note in rows:
-            path = TESTDATA / f"{name}.mic3"
+            path = fixture_dir / f"{name}.mic3"
             scratch = None
             if note.startswith("recipe="):
                 # Rebuild a recipe-declared vector in scratch instead of shipping a
@@ -199,7 +211,7 @@ def main():
                 if kind != "pad":
                     failures.append(f"{name}: unknown recipe kind {kind!r}")
                     continue
-                seed_bytes = (TESTDATA / f"{base}.mic3").read_bytes()
+                seed_bytes = (fixture_dir / f"{base}.mic3").read_bytes()
                 built = seed_bytes + b"\x00" * (int(target) - len(seed_bytes))
                 scratch = tempfile.NamedTemporaryFile(suffix=".mic3", delete=False)
                 scratch.write(built)
