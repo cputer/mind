@@ -58,31 +58,112 @@ PREFIX = "__mind_"
 LONG_REGISTRY_NAME = "__mind_nerve_blas_matmul_score_q16_i64"
 
 
-def parse_table():
-    """Parse STD_SURFACE_INTRINSICS from the Rust source (name -> arity)."""
-    src = open(TYPE_CHECKER).read()
+def parse_table_source(src):
+    """Parse the actual IntrinsicSpec declarations (name -> arity).
+
+    The registry used to be a tuple table, but its current declarations carry
+    contract metadata in constructors.  Parse those declarations directly so
+    adding or changing a constructor changes this oracle's input.
+    """
     m = re.search(
-        r"const STD_SURFACE_INTRINSICS: &\[\(&str, usize, Det\)\] = &\[(.*?)\n\];",
+        r"const STD_SURFACE_INTRINSICS: &\[IntrinsicSpec\] = &\[(.*?)\n\];",
         src,
         re.S,
     )
     if not m:
-        print("FAIL: STD_SURFACE_INTRINSICS table not found in", TYPE_CHECKER)
-        sys.exit(1)
-    entries = re.findall(r'\(\s*"([^"]+)"\s*,\s*(\d+)\s*,', m.group(1))
+        raise ValueError("STD_SURFACE_INTRINSICS IntrinsicSpec declarations not found")
+    body = m.group(1)
+    entries = []
+    entries.extend(
+        (name, int(arity))
+        for name, arity in re.findall(
+            r'IntrinsicSpec::legacy\s*\(\s*"([^"]+)"\s*,\s*(\d+)\s*,',
+            body,
+        )
+    )
+    arities = {"NO_I64": 0, "ONE_I64": 1, "TWO_I64": 2, "FOUR_I64": 4}
+    entries.extend(
+        (name, arities[arity])
+        for name, arity in re.findall(
+            r"IntrinsicSpec::(?:frozen_native_value|frozen_value|frozen_native_only|"
+            r'frozen_discard|frozen_io)\s*\(\s*"([^"]+)"\s*,\s*"[^"]+"\s*,\s*'
+            r"(NO_I64|ONE_I64|TWO_I64|FOUR_I64)\s*,",
+            body,
+            re.S,
+        )
+    )
+    declared_kinds = re.findall(
+        r"(?m)^\s*IntrinsicSpec::([A-Za-z0-9_]+)\s*\(", body
+    )
+    supported_kinds = {
+        "legacy",
+        "frozen_native_value",
+        "frozen_value",
+        "frozen_native_only",
+        "frozen_discard",
+        "frozen_io",
+    }
+    if any(kind not in supported_kinds for kind in declared_kinds):
+        raise ValueError(f"unsupported IntrinsicSpec constructor in registry: {declared_kinds!r}")
+    if len(entries) != len(declared_kinds):
+        raise ValueError(
+            f"registry parser consumed {len(entries)} of {len(declared_kinds)} declarations"
+        )
     if len(entries) < 30:
-        print(f"FAIL: implausibly small parsed table ({len(entries)} entries)")
-        sys.exit(1)
+        raise ValueError(f"implausibly small parsed table ({len(entries)} entries)")
     table = {name: int(arity) for name, arity in entries}
     if len(table) != len(entries):
-        raise SystemExit("FAIL: duplicate names in STD_SURFACE_INTRINSICS")
+        raise ValueError("duplicate names in STD_SURFACE_INTRINSICS")
     long_names = sorted(name for name in table if len(name.encode()) > 32)
     if long_names != [LONG_REGISTRY_NAME]:
-        raise SystemExit(
+        raise ValueError(
             "FAIL: unsupported >32-byte registry rows; regenerate the full-span "
             f"twin for {long_names!r}"
         )
     return table
+
+
+def registry_source():
+    with open(TYPE_CHECKER, encoding="utf-8") as registry:
+        return registry.read()
+
+
+def parse_table():
+    """Parse STD_SURFACE_INTRINSICS declarations from the Rust source."""
+    try:
+        return parse_table_source(registry_source())
+    except ValueError as error:
+        print(f"FAIL: {error} in {TYPE_CHECKER}")
+        sys.exit(1)
+
+
+def registry_mutation_control(source, table, span_fn):
+    """Prove a changed declaration is observed by this oracle.
+
+    This is an in-memory mutation: the compiler under test remains untouched,
+    while a changed physical name must change the rule verdict for the real
+    registered call.  If the parser silently falls back to a stale list, this
+    control fails.
+    """
+    mutated_source = source.replace(
+        '"__mind_argc", "argc"', '"__mind_argc_mutated", "argc"', 1
+    )
+    if mutated_source == source:
+        raise SystemExit("FAIL: registry mutation did not find __mind_argc declaration")
+    try:
+        mutated = parse_table_source(mutated_source)
+    except ValueError as error:
+        raise SystemExit(f"FAIL: registry mutation cannot be parsed: {error}") from error
+    name = "__mind_argc"
+    name_bytes = name.encode()
+    name_buf = ctypes.create_string_buffer(name_bytes, len(name_bytes))
+    actual = span_fn(ctypes.addressof(name_buf), len(name_bytes))
+    observed = check(
+        actual == rust_rule(name, table) and actual != rust_rule(name, mutated),
+        "changed IntrinsicSpec declaration changes the self-host registry verdict",
+    )
+    if not observed:
+        raise SystemExit("FAIL: self-host registry parser is stale under declaration mutation")
 
 
 def rust_rule(name, table):
@@ -171,7 +252,8 @@ def build_so():
 
 
 def main():
-    table = parse_table()
+    source = registry_source()
+    table = parse_table_source(source)
     print(f"table: {len(table)} STD_SURFACE_INTRINSICS entries parsed from intrinsics.rs")
     so, built = build_so()
     st = os.stat(so)
@@ -191,6 +273,7 @@ def main():
     if fn(*enc("__mind_alloc")) != 0:
         print("FAIL: legacy selftest_tc_self_host_only_call ABI drifted")
         sys.exit(1)
+    registry_mutation_control(source, table, span_fn)
 
     mindc = resolve_mindc()
     cases = build_cases(table)

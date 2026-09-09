@@ -5,8 +5,8 @@
 > Re-generate with: `anatomy .`
 
 **Project:** `mind`
-**Files:** 1742 | **Est. tokens:** ~3401783
-**Generated:** 2026-09-09 06:04 UTC
+**Files:** 1742 | **Est. tokens:** ~3403305
+**Generated:** 2026-09-09 06:23 UTC
 
 ## Token Budget Guide
 
@@ -66,9 +66,9 @@
 | `examples/grammar_mask/` | 2 | ~4636 |
 | `examples/halbach_q16/` | 2 | ~7856 |
 | `examples/lexer/` | 6 | ~8888 |
-| `examples/mind_mirror_v04/` | 3 | ~15228 |
+| `examples/mind_mirror_v04/` | 3 | ~15405 |
 | `examples/mind_mirror_v04/testdata/` | 1 | ~1803 |
-| `examples/mindc_mind/` | 172 | ~441747 |
+| `examples/mindc_mind/` | 172 | ~442531 |
 | `examples/mindc_mind/testdata/` | 3 | ~4159 |
 | `examples/mindc_mind/testdata/backend_native_bridge/` | 9 | ~1078 |
 | `examples/mindc_mind/testdata/native_elf_oracle/` | 6 | ~913 |
@@ -133,7 +133,7 @@
 | `src/types/` | 10 | ~20740 |
 | `src/workspace/` | 1 | ~4906 |
 | `std/` | 42 | ~202387 |
-| `tests/` | 393 | ~790306 |
+| `tests/` | 393 | ~790867 |
 | `tests/autodiff/` | 2 | ~247 |
 | `tests/backend/` | 2 | ~125 |
 | `tests/common/` | 3 | ~12308 |
@@ -638,7 +638,7 @@
 ### `examples/mind_mirror_v04/`
 
 - `RUNNER_REPLACEMENT.md` (~784 tok, large) — `mirror_gate.py` — replacement checklist
-- `mic3_v04_prefix_mirror.mind` (~11522 tok, huge) — ===========================================================================
+- `mic3_v04_prefix_mirror.mind` (~11699 tok, huge) — ===========================================================================
 - `mirror_gate.py` (~2922 tok, huge) — Gate for the pure-MIND MIC3 v0x04 declared-prefix mirror.
 ### `examples/mind_mirror_v04/testdata/`
 
@@ -796,7 +796,7 @@
 - `self_host_tc_let_infer_smoke.py` (~2132 tok, huge) — self_host_tc_let_infer_smoke — three-leg gate for the T1 type-inference port.
 - `self_host_tc_narrowing_smoke.py` (~1042 tok, large)
 - `self_host_tc_scope_frame_smoke.py` (~5756 tok, huge) — CPU-as-oracle smoke for the pure-MIND B1/D2 NESTED SCOPE-FRAME WALK.
-- `self_host_tc_self_host_only_call_smoke.py` (~2314 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
+- `self_host_tc_self_host_only_call_smoke.py` (~3098 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2024 self-host-only-call rule.
 - `self_host_tc_shape_annot_compat_smoke.py` (~1943 tok, huge) — CPU-as-oracle smoke for the pure-MIND shape annotation-compat rule.
 - `self_host_tc_shape_rules_smoke.py` (~2149 tok, huge) — CPU-as-oracle smoke for the pure-MIND E2005/E2101/E2102/E2103 shape rules + E2023 reserved-prefix rule.
 - `self_host_tc_std_export_smoke.py` (~3500 tok, huge) — CPU-as-oracle smoke for the pure-MIND D3 STD-SURFACE EXPORT NAME SET.
@@ -2377,7 +2377,7 @@
 - `typo_reject.rs` (~1127 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_cast_signed_compare_run.rs` (~832 tok, large) — Copyright 2025 STARGA Inc.
 - `u64_tag_survival_run.rs` (~2732 tok, huge) — Copyright 2025 STARGA Inc.
-- `v04_mirror_vector_dump.rs` (~6709 tok, huge) — Copyright 2025-2026 STARGA Inc.
+- `v04_mirror_vector_dump.rs` (~7270 tok, huge) — Copyright 2025-2026 STARGA Inc.
 - `value_if_comparison.rs` (~763 tok, large) — Copyright 2025 STARGA Inc.
 - `value_if_f64_let.rs` (~1097 tok, large) — Copyright 2025 STARGA Inc.
 - `vars_assign.rs` (~260 tok, medium) — Copyright 2025 STARGA Inc.
